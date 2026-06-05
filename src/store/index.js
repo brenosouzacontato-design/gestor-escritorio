@@ -1,0 +1,144 @@
+import { create } from 'zustand'
+import { supabase } from '../lib/supabase'
+
+export const useStore = create((set, get) => ({
+  // ── Estado ──────────────────────────────────────────────────────────────────
+  clientes: [],
+  tarefas: [],
+  fechamentos: [],
+  loading: false,
+  syncingErp: false,
+  oneflowConfig: {
+    userToken: '',
+    refreshToken: '',
+    escritorioToken: '',
+    escritorioHash: '',
+    tokenExpiresAt: null,
+    configurado: false,
+  },
+
+  // ── Clientes ─────────────────────────────────────────────────────────────────
+  fetchClientes: async () => {
+    set({ loading: true })
+    const { data, error } = await supabase
+      .from('clientes')
+      .select('*')
+      .eq('ativo', true)
+      .order('nome')
+    if (!error) set({ clientes: data || [] })
+    set({ loading: false })
+  },
+
+  addCliente: async (cliente) => {
+    const { data, error } = await supabase.from('clientes').insert(cliente).select().single()
+    if (!error) set(s => ({ clientes: [...s.clientes, data] }))
+    return { data, error }
+  },
+
+  updateCliente: async (id, updates) => {
+    const { data, error } = await supabase
+      .from('clientes').update({ ...updates, updated_at: new Date().toISOString() })
+      .eq('id', id).select().single()
+    if (!error) set(s => ({ clientes: s.clientes.map(c => c.id === id ? data : c) }))
+    return { data, error }
+  },
+
+  deleteCliente: async (id) => {
+    const { error } = await supabase.from('clientes').update({ ativo: false }).eq('id', id)
+    if (!error) set(s => ({ clientes: s.clientes.filter(c => c.id !== id) }))
+    return { error }
+  },
+
+  // ── Tarefas ──────────────────────────────────────────────────────────────────
+  fetchTarefas: async () => {
+    const { data, error } = await supabase
+      .from('tarefas')
+      .select('*, clientes(nome, cnpj)')
+      .order('vencimento', { ascending: true, nullsFirst: false })
+    if (!error) set({ tarefas: data || [] })
+  },
+
+  addTarefa: async (tarefa) => {
+    const { data, error } = await supabase.from('tarefas').insert(tarefa).select('*, clientes(nome, cnpj)').single()
+    if (!error) set(s => ({ tarefas: [data, ...s.tarefas] }))
+    return { data, error }
+  },
+
+  toggleTarefa: async (id) => {
+    const tarefa = get().tarefas.find(t => t.id === id)
+    if (!tarefa) return
+    const concluida = !tarefa.concluida
+    const { data, error } = await supabase
+      .from('tarefas')
+      .update({ concluida, concluida_em: concluida ? new Date().toISOString() : null, updated_at: new Date().toISOString() })
+      .eq('id', id).select('*, clientes(nome, cnpj)').single()
+    if (!error) set(s => ({ tarefas: s.tarefas.map(t => t.id === id ? data : t) }))
+  },
+
+  deleteTarefa: async (id) => {
+    const { error } = await supabase.from('tarefas').delete().eq('id', id)
+    if (!error) set(s => ({ tarefas: s.tarefas.filter(t => t.id !== id) }))
+    return { error }
+  },
+
+  // ── Fechamentos ERP ──────────────────────────────────────────────────────────
+  fetchFechamentos: async () => {
+    const { data, error } = await supabase
+      .from('fechamentos_erp')
+      .select('*, clientes(nome)')
+      .order('sincronizado_em', { ascending: false })
+    if (!error) set({ fechamentos: data || [] })
+  },
+
+  upsertFechamento: async (fechamento) => {
+    const { data, error } = await supabase
+      .from('fechamentos_erp')
+      .upsert(fechamento, { onConflict: 'cliente_id,competencia,tipo' })
+      .select().single()
+    if (!error) {
+      set(s => {
+        const sem = s.fechamentos.filter(
+          f => !(f.cliente_id === fechamento.cliente_id && f.competencia === fechamento.competencia && f.tipo === fechamento.tipo)
+        )
+        return { fechamentos: [data, ...sem] }
+      })
+    }
+    return { data, error }
+  },
+
+  // ── OneFlow config ───────────────────────────────────────────────────────────
+  setOneflowConfig: (cfg) => {
+    set(s => ({ oneflowConfig: { ...s.oneflowConfig, ...cfg } }))
+    // Persistir tokens no Supabase
+    const { userToken, refreshToken, escritorioToken, escritorioHash, tokenExpiresAt } = { ...get().oneflowConfig, ...cfg }
+    supabase.from('configuracoes').upsert([
+      { chave: 'of_user_token', valor: userToken },
+      { chave: 'of_refresh_token', valor: refreshToken },
+      { chave: 'of_escritorio_token', valor: escritorioToken },
+      { chave: 'of_escritorio_hash', valor: escritorioHash },
+      { chave: 'of_token_expires_at', valor: tokenExpiresAt },
+    ], { onConflict: 'chave' })
+  },
+
+  loadOneflowConfig: async () => {
+    const { data } = await supabase.from('configuracoes').select('*').like('chave', 'of_%')
+    if (data?.length) {
+      const cfg = {}
+      data.forEach(r => {
+        if (r.chave === 'of_user_token') cfg.userToken = r.valor
+        if (r.chave === 'of_refresh_token') cfg.refreshToken = r.valor
+        if (r.chave === 'of_escritorio_token') cfg.escritorioToken = r.valor
+        if (r.chave === 'of_escritorio_hash') cfg.escritorioHash = r.valor
+        if (r.chave === 'of_token_expires_at') cfg.tokenExpiresAt = r.valor
+      })
+      cfg.configurado = !!(cfg.userToken)
+      set(s => ({ oneflowConfig: { ...s.oneflowConfig, ...cfg } }))
+    }
+  },
+
+  // ── Init ─────────────────────────────────────────────────────────────────────
+  init: async () => {
+    const { fetchClientes, fetchTarefas, fetchFechamentos, loadOneflowConfig } = get()
+    await Promise.all([fetchClientes(), fetchTarefas(), fetchFechamentos(), loadOneflowConfig()])
+  },
+}))
