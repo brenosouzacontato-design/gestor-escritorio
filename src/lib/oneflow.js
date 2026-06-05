@@ -1,5 +1,5 @@
 const OMIE_BASE = 'https://app.omie.com.br/api/portal'
-const PROXY_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/oneflow-proxy`
+const PROXY_URL = `${import.meta.env.location.origin}/.netlify/functions/oneflow-proxy`
 
 async function proxyFetch(url, options = {}) {
   const key = import.meta.env.VITE_SUPABASE_ANON_KEY
