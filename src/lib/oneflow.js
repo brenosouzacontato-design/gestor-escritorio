@@ -22,7 +22,7 @@ export async function autenticarEscritorioCompleto(userToken) {
   const r1 = await getAppToken(escritorioApp.app_hash, userToken)
   const escritorioToken = r1.token
   const appsEmpresas = await proxyFetch(OMIE_BASE + '/apps/', escritorioToken)
-  const empresas = (Array.isArray(appsEmpresas) ? appsEmpresas : (appsEmpresas.apps || appsEmpresas.results || [])).filter(function(e) { return e.app_hash !== escritorioApp.app_hash })
+  const empresas = (Array.isArray(appsEmpresas) ? appsEmpresas : (appsEmpresas.apps || appsEmpresas.results || []))
   const result = await Promise.allSettled(empresas.map(async function(emp) {
     try {
       const tk = await getAppToken(emp.app_hash, userToken)
