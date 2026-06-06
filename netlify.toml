@@ -1,6 +1,9 @@
-[build]
-  command = "npm run build"
+﻿[build]
+  command = "npm ci && npx vite build"
   publish = "dist"
+
+[functions]
+  directory = "netlify/functions"
 
 [[redirects]]
   from = "/*"
