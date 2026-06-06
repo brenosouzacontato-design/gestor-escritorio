@@ -1,4 +1,4 @@
-﻿[build]
+[build]
   command = "npm ci && npx vite build"
   publish = "dist"
 
