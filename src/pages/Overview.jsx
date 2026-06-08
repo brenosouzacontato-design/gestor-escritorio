@@ -1,21 +1,39 @@
 import { useMemo } from 'react'
-import { CheckIcon } from 'lucide-react'
+import { CheckIcon, ClipboardListIcon, AlertCircleIcon } from 'lucide-react'
 import { useStore } from '../store'
 import { Avatar, StatusDots, DeptChip, PriDot, fmtDate, isOverdue, clientTaskStatus, ErpBadge } from '../components/shared'
 
-export default function Overview({ onAddTarefa, onOpenCliente }) {
+export default function Overview({ onAddTarefa, onOpenCliente, onOpenObrigacoes }) {
   const clientes = useStore(s => s.clientes)
   const tarefas = useStore(s => s.tarefas)
   const fechamentos = useStore(s => s.fechamentos)
+  const obrigacoes = useStore(s => s.obrigacoes || [])
   const toggleTarefa = useStore(s => s.toggleTarefa)
+
+  // competência anterior (mês passado)
+  const compAnt = useMemo(() => {
+    const d = new Date(); d.setMonth(d.getMonth() - 1)
+    return String(d.getMonth()+1).padStart(2,'0') + '/' + d.getFullYear()
+  }, [])
+
+  const compAtual = useMemo(() => {
+    const d = new Date()
+    return String(d.getMonth()+1).padStart(2,'0') + '/' + d.getFullYear()
+  }, [])
 
   const stats = useMemo(() => {
     const pending = tarefas.filter(t => !t.concluida)
     const alta = pending.filter(t => t.prioridade === 'alta')
     const vencidas = pending.filter(t => isOverdue(t.vencimento))
     const erpAbertos = fechamentos.filter(f => f.status === 'aberto').length
-    return { total: pending.length, alta: alta.length, vencidas: vencidas.length, erpAbertos }
-  }, [tarefas, fechamentos])
+
+    const obsAnt = obrigacoes.filter(o => o.competencia === compAnt)
+    const obsPendentes = obsAnt.filter(o => o.status === 'pendente').length
+    const obsVencidas = obsAnt.filter(o => o.status === 'vencido').length
+    const obsEmDia = obsAnt.filter(o => o.status === 'em_dia').length
+
+    return { total: pending.length, alta: alta.length, vencidas: vencidas.length, erpAbertos, obsPendentes, obsVencidas, obsEmDia }
+  }, [tarefas, fechamentos, obrigacoes, compAnt])
 
   const urgentes = useMemo(() =>
     tarefas
@@ -33,7 +51,7 @@ export default function Overview({ onAddTarefa, onOpenCliente }) {
 
   return (
     <div className="page">
-      {/* Métricas */}
+      {/* Métricas tarefas */}
       <div className="metrics-grid">
         <div className="metric">
           <div className="metric-label">Clientes ativos</div>
@@ -52,6 +70,38 @@ export default function Overview({ onAddTarefa, onOpenCliente }) {
           <div className="metric-value">{stats.erpAbertos}</div>
         </div>
       </div>
+
+      {/* Card Obrigações */}
+      {(stats.obsPendentes > 0 || stats.obsVencidas > 0 || stats.obsEmDia > 0) && (
+        <div className="card" style={{ marginBottom:14, cursor:'pointer' }} onClick={onOpenObrigacoes}>
+          <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:10 }}>
+            <span style={{ fontWeight:600, fontSize:13, display:'flex', alignItems:'center', gap:6 }}>
+              <ClipboardListIcon size={15} /> Obrigações — {compAnt}
+            </span>
+            <span style={{ fontSize:11, color:'var(--accent)' }}>ver todas →</span>
+          </div>
+          <div style={{ display:'flex', gap:16 }}>
+            {stats.obsVencidas > 0 && (
+              <div style={{ display:'flex', alignItems:'center', gap:5 }}>
+                <AlertCircleIcon size={13} color="var(--danger)" />
+                <span style={{ fontSize:13, fontWeight:600, color:'var(--danger)' }}>{stats.obsVencidas} vencidas</span>
+              </div>
+            )}
+            {stats.obsPendentes > 0 && (
+              <div style={{ display:'flex', alignItems:'center', gap:5 }}>
+                <span style={{ width:8, height:8, borderRadius:'50%', background:'var(--warn)', display:'inline-block' }} />
+                <span style={{ fontSize:13, color:'var(--warn)' }}>{stats.obsPendentes} pendentes</span>
+              </div>
+            )}
+            {stats.obsEmDia > 0 && (
+              <div style={{ display:'flex', alignItems:'center', gap:5 }}>
+                <span style={{ width:8, height:8, borderRadius:'50%', background:'var(--ok)', display:'inline-block' }} />
+                <span style={{ fontSize:13, color:'var(--ok)' }}>{stats.obsEmDia} em dia</span>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Urgentes */}
       <div className="section-hdr">

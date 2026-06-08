@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import {
   LayoutDashboardIcon, CheckSquareIcon, UsersIcon,
-  RefreshCwIcon, SettingsIcon, PlusIcon
+  RefreshCwIcon, SettingsIcon, PlusIcon, ClipboardListIcon
 } from 'lucide-react'
 import { useStore } from './store'
 import { ToastContainer } from './components/shared'
@@ -12,12 +12,14 @@ import Overview from './pages/Overview'
 import Tarefas from './pages/Tarefas'
 import Clientes from './pages/Clientes'
 import FechamentosERP from './pages/FechamentosERP'
+import Obrigacoes from './pages/Obrigacoes'
 
 const NAV = [
-  { id: 'overview',  label: 'Início',     Icon: LayoutDashboardIcon },
-  { id: 'tarefas',   label: 'Tarefas',    Icon: CheckSquareIcon },
-  { id: 'clientes',  label: 'Clientes',   Icon: UsersIcon },
-  { id: 'erp',       label: 'ERP',        Icon: RefreshCwIcon },
+  { id: 'overview',    label: 'Início',       Icon: LayoutDashboardIcon },
+  { id: 'obrigacoes',  label: 'Obrigações',   Icon: ClipboardListIcon },
+  { id: 'tarefas',     label: 'Tarefas',      Icon: CheckSquareIcon },
+  { id: 'clientes',    label: 'Clientes',     Icon: UsersIcon },
+  { id: 'erp',         label: 'ERP',          Icon: RefreshCwIcon },
 ]
 
 export default function App() {
@@ -30,10 +32,17 @@ export default function App() {
   const init = useStore(s => s.init)
   const loading = useStore(s => s.loading)
   const tarefas = useStore(s => s.tarefas)
+  const obrigacoes = useStore(s => s.obrigacoes || [])
 
   useEffect(() => { init() }, [])
 
   const pendingCount = tarefas.filter(t => !t.concluida).length
+
+  // obrigações vencidas na competência anterior
+  const hoje = new Date()
+  const mesAnt = String(hoje.getMonth()).padStart(2,'0') + '/' + (hoje.getMonth() === 0 ? hoje.getFullYear() - 1 : hoje.getFullYear())
+  const obrigVencidas = obrigacoes.filter(o => o.status === 'vencido').length
+  const obrigPendentes = obrigacoes.filter(o => o.status === 'pendente').length
 
   const openNewTask = (clienteId = '') => {
     setNewTaskClienteId(clienteId)
@@ -77,6 +86,11 @@ export default function App() {
             {id === 'tarefas' && pendingCount > 0 && (
               <span className="badge badge-warn" style={{ marginLeft:'auto' }}>{pendingCount}</span>
             )}
+            {id === 'obrigacoes' && (obrigVencidas > 0 || obrigPendentes > 0) && (
+              <span className="badge badge-warn" style={{ marginLeft:'auto' }}>
+                {obrigVencidas > 0 ? obrigVencidas : obrigPendentes}
+              </span>
+            )}
           </button>
         ))}
         <div style={{ flex:1 }} />
@@ -98,8 +112,10 @@ export default function App() {
               <Overview
                 onAddTarefa={openNewTask}
                 onOpenCliente={(id) => { setSelectedCliente(id); navigate('clientes') }}
+                onOpenObrigacoes={() => navigate('obrigacoes')}
               />
             )}
+            {page === 'obrigacoes' && <Obrigacoes onAddTarefa={openNewTask} />}
             {page === 'tarefas' && <Tarefas onAddTarefa={openNewTask} />}
             {page === 'clientes' && (
               <Clientes

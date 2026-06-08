@@ -6,6 +6,7 @@ export const useStore = create((set, get) => ({
   clientes: [],
   tarefas: [],
   fechamentos: [],
+  obrigacoes: [],
   loading: false,
   syncingErp: false,
   oneflowConfig: {
@@ -52,7 +53,6 @@ export const useStore = create((set, get) => ({
 
   syncEmpresasOneFlow: async (empresas) => {
     if (!empresas?.length) return { error: 'Nenhuma empresa recebida' }
-
     const registros = empresas
       .filter(e => e.cnpj)
       .map(e => ({
@@ -63,19 +63,12 @@ export const useStore = create((set, get) => ({
         oneflow_token: e.token || null,
         ativo: true,
       }))
-
-    console.log('syncEmpresasOneFlow: tentando inserir', registros.length, 'registros')
-    console.log('Primeiro registro:', JSON.stringify(registros[0]))
-
     const { data, error } = await supabase
       .from('clientes')
       .upsert(registros, { onConflict: 'cnpj', ignoreDuplicates: true })
       .select()
-
     console.log('syncEmpresasOneFlow result:', data?.length, 'error:', JSON.stringify(error))
-
     if (!error) await get().fetchClientes()
-
     return { data, error }
   },
 
@@ -136,6 +129,66 @@ export const useStore = create((set, get) => ({
     return { data, error }
   },
 
+  // ── Obrigações ───────────────────────────────────────────────────────────────
+  fetchObrigacoes: async () => {
+    const { data, error } = await supabase
+      .from('obrigacoes')
+      .select('*, clientes(nome)')
+      .order('competencia', { ascending: false })
+    if (error) console.error('fetchObrigacoes error:', error)
+    if (!error) set({ obrigacoes: data || [] })
+  },
+
+  upsertObrigacao: async (obrigacao) => {
+    const { data, error } = await supabase
+      .from('obrigacoes')
+      .upsert({ ...obrigacao, updated_at: new Date().toISOString() }, { onConflict: 'cliente_id,tipo,competencia' })
+      .select().single()
+    if (error) console.error('upsertObrigacao error:', error)
+    if (!error) {
+      set(s => {
+        const sem = s.obrigacoes.filter(o =>
+          !(o.cliente_id === obrigacao.cliente_id && o.tipo === obrigacao.tipo && o.competencia === obrigacao.competencia)
+        )
+        return { obrigacoes: [data, ...sem] }
+      })
+    }
+    return { data, error }
+  },
+
+  gerarObrigacoesMes: async (competencia) => {
+    const { clientes } = get()
+    const TIPOS = ['PGDAS', 'DCTFWeb', 'eSocial', 'NFS-e']
+    const VENCIMENTOS = { PGDAS: 20, DCTFWeb: 15, eSocial: 7, 'NFS-e': 10 }
+
+    const [mes, ano] = competencia.split('/')
+    const registros = []
+
+    clientes.forEach(cliente => {
+      TIPOS.forEach(tipo => {
+        const dia = VENCIMENTOS[tipo] || 20
+        const d = new Date(parseInt(ano), parseInt(mes), dia)
+        registros.push({
+          cliente_id: cliente.id,
+          tipo,
+          competencia,
+          status: 'pendente',
+          vencimento: d.toISOString().split('T')[0],
+          updated_at: new Date().toISOString(),
+        })
+      })
+    })
+
+    const { data, error } = await supabase
+      .from('obrigacoes')
+      .upsert(registros, { onConflict: 'cliente_id,tipo,competencia', ignoreDuplicates: true })
+      .select()
+
+    if (error) { console.error('gerarObrigacoesMes error:', error); throw error }
+    await get().fetchObrigacoes()
+    return { data }
+  },
+
   // ── OneFlow config ───────────────────────────────────────────────────────────
   setOneflowConfig: (cfg) => {
     set(s => ({ oneflowConfig: { ...s.oneflowConfig, ...cfg } }))
@@ -167,7 +220,7 @@ export const useStore = create((set, get) => ({
 
   // ── Init ─────────────────────────────────────────────────────────────────────
   init: async () => {
-    const { fetchClientes, fetchTarefas, fetchFechamentos, loadOneflowConfig } = get()
-    await Promise.all([fetchClientes(), fetchTarefas(), fetchFechamentos(), loadOneflowConfig()])
+    const { fetchClientes, fetchTarefas, fetchFechamentos, loadOneflowConfig, fetchObrigacoes } = get()
+    await Promise.all([fetchClientes(), fetchTarefas(), fetchFechamentos(), loadOneflowConfig(), fetchObrigacoes()])
   },
 }))
