@@ -9,6 +9,7 @@ export default function OneflowConfigModal({ onClose }) {
   const setOneflowConfig = useStore(s => s.setOneflowConfig)
   const clientes = useStore(s => s.clientes)
   const updateCliente = useStore(s => s.updateCliente)
+  const syncEmpresasOneFlow = useStore(s => s.syncEmpresasOneFlow)
   const { show } = useToast()
 
   const [tab, setTab] = useState('token')
@@ -52,7 +53,11 @@ export default function OneflowConfigModal({ onClose }) {
       setOneflowConfig({ escritorioToken, escritorioHash })
       setResultado(empresas)
 
-      // Tentar vincular empresas com clientes cadastrados (por CNPJ)
+      // 1. Salvar TODAS as empresas no Supabase (upsert por CNPJ)
+      const { error: errSync } = await syncEmpresasOneFlow(empresas)
+      if (errSync) { show(`Erro ao salvar: ${errSync.message}`); setLoading(false); return }
+
+      // 2. Vincular tokens nas empresas já existentes
       let vinculados = 0
       for (const emp of empresas) {
         if (!emp.cnpj || !emp.token) continue
@@ -67,7 +72,7 @@ export default function OneflowConfigModal({ onClose }) {
           vinculados++
         }
       }
-      show(`${empresas.length} empresas encontradas, ${vinculados} vinculadas automaticamente`)
+      show(`${empresas.length} empresas salvas, ${vinculados} com token vinculado`)
     } catch (e) {
       show(`Erro: ${e.message}`)
     }

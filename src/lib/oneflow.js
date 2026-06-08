@@ -1,4 +1,4 @@
-﻿const PROXY_URL = window.location.origin + '/.netlify/functions/oneflow-proxy'
+const PROXY_URL = window.location.origin + '/.netlify/functions/oneflow-proxy'
 const OMIE_BASE = 'https://app.omie.com.br/api/portal'
 const ONEFLOW_BASE = 'https://rest.oneflow.com.br/api/oneflow'
 
@@ -14,6 +14,13 @@ async function proxyFetch(url, token, bodyData) {
 export async function getUserToken(l, s) { return proxyFetch(OMIE_BASE + '/users/login/', null, { login: l, password: s }) }
 export async function listarApps(t) { return proxyFetch(OMIE_BASE + '/apps/', t) }
 export async function getAppToken(h, t) { return proxyFetch(OMIE_BASE + '/apps/' + h + '/token/', t) }
+
+export async function refreshUserToken(userToken, appHash) {
+  try {
+    const r = await getAppToken(appHash, userToken)
+    return { token: r.token, refresh_token: r.refresh_token }
+  } catch(e) { throw new Error('Falha ao renovar token: ' + e.message) }
+}
 
 export async function autenticarEscritorioCompleto(userToken) {
   const apps = await listarApps(userToken)

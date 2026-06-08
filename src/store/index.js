@@ -47,7 +47,29 @@ export const useStore = create((set, get) => ({
     const { error } = await supabase.from('clientes').update({ ativo: false }).eq('id', id)
     if (!error) set(s => ({ clientes: s.clientes.filter(c => c.id !== id) }))
     return { error }
-  },
+  },syncEmpresasOneFlow: async (empresas) => {
+  if (!empresas?.length) return { error: 'Nenhuma empresa recebida' }
+
+  const registros = empresas
+    .filter(e => e.cnpj)
+    .map(e => ({
+      nome: e.nome || e.razao || 'Sem nome',
+      cnpj: e.cnpj.replace(/\D/g, ''),
+      regime: 'Simples Nacional',
+      oneflow_hash: e.app_hash || null,
+      oneflow_token: e.token || null,
+      ativo: true,
+    }))
+
+  const { data, error } = await supabase
+    .from('clientes')
+    .upsert(registros, { onConflict: 'cnpj', ignoreDuplicates: false })
+    .select()
+
+  if (!error) await get().fetchClientes()
+
+  return { data, error }
+},
 
   // ── Tarefas ──────────────────────────────────────────────────────────────────
   fetchTarefas: async () => {
