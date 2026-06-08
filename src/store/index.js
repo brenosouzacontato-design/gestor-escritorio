@@ -25,6 +25,7 @@ export const useStore = create((set, get) => ({
       .select('*')
       .eq('ativo', true)
       .order('nome')
+    if (error) console.error('fetchClientes error:', error)
     if (!error) set({ clientes: data || [] })
     set({ loading: false })
   },
@@ -47,29 +48,36 @@ export const useStore = create((set, get) => ({
     const { error } = await supabase.from('clientes').update({ ativo: false }).eq('id', id)
     if (!error) set(s => ({ clientes: s.clientes.filter(c => c.id !== id) }))
     return { error }
-  },syncEmpresasOneFlow: async (empresas) => {
-  if (!empresas?.length) return { error: 'Nenhuma empresa recebida' }
+  },
 
-  const registros = empresas
-    .filter(e => e.cnpj)
-    .map(e => ({
-      nome: e.nome || e.razao || 'Sem nome',
-      cnpj: e.cnpj.replace(/\D/g, ''),
-      regime: 'Simples Nacional',
-      oneflow_hash: e.app_hash || null,
-      oneflow_token: e.token || null,
-      ativo: true,
-    }))
+  syncEmpresasOneFlow: async (empresas) => {
+    if (!empresas?.length) return { error: 'Nenhuma empresa recebida' }
 
-  const { data, error } = await supabase
-    .from('clientes')
-    .upsert(registros, { onConflict: 'cnpj', ignoreDuplicates: false })
-    .select()
+    const registros = empresas
+      .filter(e => e.cnpj)
+      .map(e => ({
+        nome: e.nome || e.razao || 'Sem nome',
+        cnpj: e.cnpj.replace(/\D/g, ''),
+        regime: 'Simples Nacional',
+        oneflow_hash: e.app_hash || null,
+        oneflow_token: e.token || null,
+        ativo: true,
+      }))
 
-  if (!error) await get().fetchClientes()
+    console.log('syncEmpresasOneFlow: tentando inserir', registros.length, 'registros')
+    console.log('Primeiro registro:', JSON.stringify(registros[0]))
 
-  return { data, error }
-},
+    const { data, error } = await supabase
+      .from('clientes')
+      .upsert(registros, { onConflict: 'cnpj', ignoreDuplicates: true })
+      .select()
+
+    console.log('syncEmpresasOneFlow result:', data?.length, 'error:', JSON.stringify(error))
+
+    if (!error) await get().fetchClientes()
+
+    return { data, error }
+  },
 
   // ── Tarefas ──────────────────────────────────────────────────────────────────
   fetchTarefas: async () => {
@@ -131,7 +139,6 @@ export const useStore = create((set, get) => ({
   // ── OneFlow config ───────────────────────────────────────────────────────────
   setOneflowConfig: (cfg) => {
     set(s => ({ oneflowConfig: { ...s.oneflowConfig, ...cfg } }))
-    // Persistir tokens no Supabase
     const { userToken, refreshToken, escritorioToken, escritorioHash, tokenExpiresAt } = { ...get().oneflowConfig, ...cfg }
     supabase.from('configuracoes').upsert([
       { chave: 'of_user_token', valor: userToken },
