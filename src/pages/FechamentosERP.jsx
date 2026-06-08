@@ -1,33 +1,59 @@
 import { useState } from 'react'
-import { RefreshCwIcon, KeyIcon, InfoIcon } from 'lucide-react'
+import { RefreshCwIcon, InfoIcon } from 'lucide-react'
 import { useStore } from '../store'
 import { Avatar, ErpBadge } from '../components/shared'
-import { getFolhaStatus, getFiscalStatus, competenciaAtual, competenciaAnterior, tokenExpirado, refreshUserToken } from '../lib/oneflow'
+import { getFolhaStatus, getFiscalStatus, competenciaAtual, competenciaAnterior, tokenExpirado, getAppToken } from '../lib/oneflow'
 import { useToast } from '../components/shared'
 
 export default function FechamentosERP({ onOpenConfig }) {
   const clientes = useStore(s => s.clientes)
   const fechamentos = useStore(s => s.fechamentos)
   const upsertFechamento = useStore(s => s.upsertFechamento)
+  const updateCliente = useStore(s => s.updateCliente)
   const oneflowConfig = useStore(s => s.oneflowConfig)
-  const setOneflowConfig = useStore(s => s.setOneflowConfig)
   const { show } = useToast()
 
   const [syncing, setSyncing] = useState(false)
   const [syncProgress, setSyncProgress] = useState('')
+  const [syncLog, setSyncLog] = useState([])
   const [competencia, setCompetencia] = useState(competenciaAnterior())
 
   const isMockMode = !oneflowConfig.configurado
 
-  const syncCliente = async (cliente) => {
-    if (!cliente.oneflow_token) return
+  const renovarToken = async (cliente) => {
+    try {
+      if (!cliente.oneflow_hash && !cliente.oneflow_app_hash) return null
+      const hash = cliente.oneflow_hash || cliente.oneflow_app_hash
+      const userToken = oneflowConfig.userToken
+      if (!userToken) return null
+      const r = await getAppToken(hash, userToken)
+      if (r?.token) {
+        await updateCliente(cliente.id, {
+          oneflow_token: r.token,
+          oneflow_refresh_token: r.refresh_token || null,
+          oneflow_token_expires_at: new Date(Date.now() + 23 * 60 * 60 * 1000).toISOString(),
+        })
+        return r.token
+      }
+    } catch (e) {
+      console.warn('Falha ao renovar token de', cliente.nome, e.message)
+    }
+    return null
+  }
 
-    // Verificar se token da empresa precisa ser renovado
+  const syncCliente = async (cliente) => {
+    if (!cliente.oneflow_token) return { folha: 'sem_token', fiscal: 'sem_token' }
+
     let token = cliente.oneflow_token
-    if (tokenExpirado(cliente.oneflow_token_expires_at) && cliente.oneflow_refresh_token) {
-      try {
-        // renovação simplificada — token do usuário usado para reautenticar
-      } catch { return }
+
+    // Renovar se expirado
+    if (tokenExpirado(cliente.oneflow_token_expires_at)) {
+      const novoToken = await renovarToken(cliente)
+      if (novoToken) token = novoToken
+      else {
+        console.warn('Token expirado e não renovado:', cliente.nome)
+        return { folha: 'erro', fiscal: 'erro' }
+      }
     }
 
     try {
@@ -36,19 +62,26 @@ export default function FechamentosERP({ onOpenConfig }) {
         getFiscalStatus(token, competencia),
       ])
 
+      // Log para debug
+      console.log(`[${cliente.nome}] folha:`, JSON.stringify(folhaData.value || folhaData.reason?.message))
+      console.log(`[${cliente.nome}] fiscal:`, JSON.stringify(fiscalData.value || fiscalData.reason?.message))
+
       const mapStatus = (r) => {
         if (r.status === 'rejected') return 'aberto'
-        const v = r.value?.status?.toLowerCase() || ''
-        if (v.includes('fech')) return 'fechado'
-        if (v === 'nao_aplica' || v === 'n/a') return 'nao_aplica'
+        const v = JSON.stringify(r.value || '').toLowerCase()
+        if (v.includes('fechad') || v.includes('closed') || v.includes('conclu')) return 'fechado'
+        if (v.includes('nao_aplica') || v.includes('n/a') || v.includes('nao aplica')) return 'nao_aplica'
         return 'aberto'
       }
+
+      const folhaStatus = mapStatus(folhaData)
+      const fiscalStatus = mapStatus(fiscalData)
 
       await upsertFechamento({
         cliente_id: cliente.id,
         competencia,
         tipo: 'folha',
-        status: mapStatus(folhaData),
+        status: folhaStatus,
         dados_erp: folhaData.value || null,
         sincronizado_em: new Date().toISOString(),
       })
@@ -57,28 +90,38 @@ export default function FechamentosERP({ onOpenConfig }) {
         cliente_id: cliente.id,
         competencia,
         tipo: 'fiscal',
-        status: mapStatus(fiscalData),
+        status: fiscalStatus,
         dados_erp: fiscalData.value || null,
         sincronizado_em: new Date().toISOString(),
       })
+
+      return { folha: folhaStatus, fiscal: fiscalStatus }
     } catch (e) {
       console.warn('Erro ao sincronizar', cliente.nome, e)
+      return { folha: 'erro', fiscal: 'erro' }
     }
   }
 
   const syncAll = async () => {
     if (isMockMode) { show('Configure o token OneFlow primeiro'); return }
     setSyncing(true)
+    setSyncLog([])
     const comToken = clientes.filter(c => c.oneflow_token)
     if (!comToken.length) { show('Nenhum cliente vinculado ao OneFlow'); setSyncing(false); return }
 
+    const log = []
     for (const c of comToken) {
       setSyncProgress(`Sincronizando ${c.nome}...`)
-      await syncCliente(c)
+      const result = await syncCliente(c)
+      log.push({ nome: c.nome, ...result })
     }
+    setSyncLog(log)
     setSyncProgress('')
     setSyncing(false)
-    show('Sincronização concluída')
+
+    const fechados = log.filter(l => l.folha === 'fechado' || l.fiscal === 'fechado').length
+    const erros = log.filter(l => l.folha === 'erro' || l.fiscal === 'erro').length
+    show(`Sincronizado: ${comToken.length} clientes, ${fechados} fechados${erros > 0 ? `, ${erros} erros` : ''}`)
   }
 
   const getFechamento = (clienteId, tipo) =>
@@ -99,10 +142,14 @@ export default function FechamentosERP({ onOpenConfig }) {
         <select
           value={competencia}
           onChange={e => setCompetencia(e.target.value)}
-          style={{ flex:1, padding:'8px 11px', border:'1px solid var(--border)', borderRadius:'var(--r-sm)', fontSize:14 }}
+          style={{ flex:1, padding:'8px 11px', border:'1px solid var(--border)', borderRadius:'var(--r-sm)', fontSize:14, background:'var(--surface)', color:'var(--text1)' }}
         >
-          <option value={competenciaAnterior()}>Competência anterior ({competenciaAnterior()})</option>
-          <option value={competenciaAtual()}>Competência atual ({competenciaAtual()})</option>
+          {[0,1,2,3].map(i => {
+            const d = new Date(); d.setMonth(d.getMonth() - i)
+            const c = String(d.getMonth()+1).padStart(2,'0') + '/' + d.getFullYear()
+            const label = i === 0 ? 'Competência atual' : i === 1 ? 'Competência anterior' : ''
+            return <option key={c} value={c}>{label ? `${label} (${c})` : c}</option>
+          })}
         </select>
         <button className="btn btn-accent" onClick={syncAll} disabled={syncing}>
           <RefreshCwIcon size={14} className={syncing ? 'spinning' : ''} />
@@ -120,6 +167,7 @@ export default function FechamentosERP({ onOpenConfig }) {
         const folha = getFechamento(c.id, 'folha')
         const fiscal = getFechamento(c.id, 'fiscal')
         const vinculado = !!c.oneflow_token
+        const tokenExp = tokenExpirado(c.oneflow_token_expires_at)
 
         return (
           <div key={c.id} className="card" style={{ marginBottom:8 }}>
@@ -129,7 +177,9 @@ export default function FechamentosERP({ onOpenConfig }) {
                 <div style={{ fontSize:13, fontWeight:500, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{c.nome}</div>
                 <div style={{ fontSize:11, color:'var(--text2)' }}>
                   {vinculado
-                    ? <span style={{ color:'var(--accent)' }}>● Vinculado ao OneFlow</span>
+                    ? <span style={{ color: tokenExp ? 'var(--warn)' : 'var(--accent)' }}>
+                        {tokenExp ? '⚠ Token expirado' : '● Vinculado ao OneFlow'}
+                      </span>
                     : <span style={{ color:'var(--text3)' }}>○ Não vinculado</span>
                   }
                 </div>
@@ -142,7 +192,7 @@ export default function FechamentosERP({ onOpenConfig }) {
                 <ErpBadge status={isMockMode ? (i % 2 === 0 ? 'aberto' : 'fechado') : folha?.status} />
                 {folha?.sincronizado_em && (
                   <div style={{ fontSize:10, color:'var(--text3)', marginTop:3 }}>
-                    Atualizado {new Date(folha.sincronizado_em).toLocaleDateString('pt-BR')}
+                    {new Date(folha.sincronizado_em).toLocaleDateString('pt-BR')}
                   </div>
                 )}
               </div>
@@ -151,7 +201,7 @@ export default function FechamentosERP({ onOpenConfig }) {
                 <ErpBadge status={isMockMode ? (i % 3 === 0 ? 'fechado' : 'aberto') : fiscal?.status} />
                 {fiscal?.sincronizado_em && (
                   <div style={{ fontSize:10, color:'var(--text3)', marginTop:3 }}>
-                    Atualizado {new Date(fiscal.sincronizado_em).toLocaleDateString('pt-BR')}
+                    {new Date(fiscal.sincronizado_em).toLocaleDateString('pt-BR')}
                   </div>
                 )}
               </div>
