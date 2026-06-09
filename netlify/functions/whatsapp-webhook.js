@@ -12,7 +12,8 @@ const EVOLUTION_INSTANCE = process.env.EVOLUTION_INSTANCE
 const ANTHROPIC_KEY = process.env.ANTHROPIC_API_KEY
 
 async function extrairTarefa(mensagem, clientes) {
-  const listaNomes = clientes.map(c => c.nome).join('\n')
+  const listaNomes = clientes.map(c => `${c.nome} (id: ${c.id})`).join('\n')
+
   const response = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: {
@@ -25,24 +26,31 @@ async function extrairTarefa(mensagem, clientes) {
       max_tokens: 500,
       messages: [{
         role: 'user',
-        content: `Você é um assistente de escritório contábil. Extraia informações de tarefas de mensagens de WhatsApp.
+        content: `Você é um assistente de escritório contábil brasileiro. Extraia informações de tarefas de mensagens de WhatsApp.
 
-Lista de clientes cadastrados:
+Clientes cadastrados:
 ${listaNomes}
 
-Mensagem recebida: "${mensagem}"
+Mensagem: "${mensagem}"
 
-Responda APENAS com JSON válido, sem markdown:
+Responda APENAS com JSON válido sem markdown:
 {
-  "titulo": "título curto da tarefa",
-  "cliente_nome": "nome exato do cliente da lista acima ou null se não mencionado",
-  "prazo": "data no formato YYYY-MM-DD ou null se não mencionado",
-  "departamento": "fiscal" ou "folha" ou "societario" ou "geral",
+  "titulo": "título curto e claro da tarefa",
+  "cliente_id": "id exato do cliente da lista ou null se não identificado",
+  "prazo": "data YYYY-MM-DD ou null",
+  "departamento": "fiscal" ou "folha" ou "societario" ou "contabil",
   "prioridade": "normal" ou "alta"
-}`
+}
+
+Regras:
+- titulo deve ser conciso mas descritivo
+- Se mencionar urgente/urgência, prioridade = alta
+- Se não identificar cliente, cliente_id = null (não invente)
+- departamento: PGDAS/DAS/NFSe/fiscal = fiscal, folha/holerite/eSocial = folha, contrato/abertura/alteração = societario, restante = contabil`
       }]
     })
   })
+
   const data = await response.json()
   const texto = data.content[0].text.trim()
   try {
@@ -76,20 +84,15 @@ exports.handler = async (event) => {
     return { statusCode: 400, body: 'Invalid JSON' }
   }
 
-  // Log completo para debug
   const remoteJid = body?.data?.key?.remoteJid || body?.data?.remoteJid || ''
-  const mensagem = body?.data?.message?.conversation || 
+  const mensagem = body?.data?.message?.conversation ||
                    body?.data?.message?.extendedTextMessage?.text || ''
-  
+
   console.log('remoteJid:', remoteJid)
   console.log('mensagem:', mensagem)
-  console.log('GRUPO_ID esperado:', GRUPO_ID)
-  console.log('body keys:', Object.keys(body || {}))
 
-  // Só processa mensagens com prefixo "tarefa:" — sem filtro de grupo por ora
-  const textoLower = mensagem.toLowerCase().trim()
-  if (!textoLower.startsWith('tarefa:')) {
-    console.log('Ignorado: sem prefixo tarefa:')
+  // Só processa mensagens com prefixo "tarefa:"
+  if (!mensagem.toLowerCase().trim().startsWith('tarefa:')) {
     return { statusCode: 200, body: 'Not a task message' }
   }
 
@@ -102,23 +105,24 @@ exports.handler = async (event) => {
       .eq('ativo', true)
 
     const tarefa = await extrairTarefa(textoTarefa, clientes || [])
+    console.log('Tarefa extraída:', JSON.stringify(tarefa))
 
-    let clienteId = null
-    if (tarefa.cliente_nome && clientes) {
-      const clienteEncontrado = clientes.find(c => 
-        c.nome.toLowerCase().includes(tarefa.cliente_nome.toLowerCase()) ||
-        tarefa.cliente_nome.toLowerCase().includes(c.nome.toLowerCase().split(' ')[0])
-      )
-      if (clienteEncontrado) clienteId = clienteEncontrado.id
+    // Validar cliente_id — garantir que existe na lista
+    let clienteIdFinal = null
+    if (tarefa.cliente_id && clientes) {
+      const existe = clientes.find(c => c.id === tarefa.cliente_id)
+      if (existe) clienteIdFinal = tarefa.cliente_id
     }
 
+    // Inserir tarefa — sempre cria, mesmo sem cliente
     const { data: novaTarefa, error } = await supabase
       .from('tarefas')
       .insert({
-        titulo: tarefa.titulo,
-        cliente_id: clienteId,
+        titulo: tarefa.titulo || textoTarefa.substring(0, 100),
+        observacao: mensagem, // conteúdo completo da mensagem
+        cliente_id: clienteIdFinal,
         vencimento: tarefa.prazo || null,
-        departamento: tarefa.departamento || 'geral',
+        departamento: tarefa.departamento || 'contabil',
         prioridade: tarefa.prioridade || 'normal',
         concluida: false,
         origem: 'whatsapp',
@@ -126,19 +130,26 @@ exports.handler = async (event) => {
       .select()
       .single()
 
-    if (error) throw error
+    if (error) {
+      console.error('Erro insert:', JSON.stringify(error))
+      throw new Error(error.message)
+    }
 
-    const nomeCliente = tarefa.cliente_nome || 'sem cliente'
-    const prazo = tarefa.prazo ? ` · Prazo: ${tarefa.prazo}` : ''
-    const confirmacao = `✅ *Tarefa criada!*\n📋 ${tarefa.titulo}\n👤 ${nomeCliente}${prazo}`
-    
+    // Confirmação no grupo
+    const nomeCliente = clienteIdFinal
+      ? clientes.find(c => c.id === clienteIdFinal)?.nome || 'cliente identificado'
+      : '⚠️ cliente não identificado'
+    const prazo = tarefa.prazo ? `\n📅 Prazo: ${tarefa.prazo}` : ''
+    const confirmacao = `✅ *Tarefa criada!*\n📋 ${tarefa.titulo}${prazo}\n👤 ${nomeCliente}`
+
     await enviarMensagem(remoteJid, confirmacao)
 
     console.log('Tarefa criada:', novaTarefa.id)
-    return { statusCode: 200, body: JSON.stringify({ success: true }) }
+    return { statusCode: 200, body: JSON.stringify({ success: true, id: novaTarefa.id }) }
 
   } catch (e) {
     console.error('Erro:', e.message)
+    await enviarMensagem(remoteJid, `❌ Erro ao criar tarefa: ${e.message}`)
     return { statusCode: 500, body: e.message }
   }
 }
