@@ -3,6 +3,7 @@ import { InfoIcon, KeyIcon, RefreshCwIcon } from 'lucide-react'
 import { Modal, useToast } from './shared'
 import { useStore } from '../store'
 import { getUserToken, autenticarEscritorioCompleto } from '../lib/oneflow'
+import { supabase } from '../lib/supabase'
 
 export default function OneflowConfigModal({ onClose }) {
   const oneflowConfig = useStore(s => s.oneflowConfig)
@@ -12,22 +13,41 @@ export default function OneflowConfigModal({ onClose }) {
   const syncEmpresasOneFlow = useStore(s => s.syncEmpresasOneFlow)
   const { show } = useToast()
 
-  const [tab, setTab] = useState('token')
+  const [tab, setTab] = useState(oneflowConfig.configurado ? 'sincronizar' : 'login')
   const [login, setLogin] = useState('')
   const [senha, setSenha] = useState('')
-  const [token, setToken] = useState(oneflowConfig.userToken || '')
+  const [token, setToken] = useState('')
   const [loading, setLoading] = useState(false)
   const [resultado, setResultado] = useState(null)
 
-  // Opção 1: login + senha para obter token automaticamente
+  const salvarTokenNoSupabase = async (cfg) => {
+    const rows = [
+      { chave: 'of_user_token',       valor: cfg.userToken || '' },
+      { chave: 'of_refresh_token',    valor: cfg.refreshToken || '' },
+      { chave: 'of_escritorio_token', valor: cfg.escritorioToken || '' },
+      { chave: 'of_escritorio_hash',  valor: cfg.escritorioHash || '' },
+      { chave: 'of_token_expires_at', valor: cfg.tokenExpiresAt || '' },
+    ].filter(r => r.valor)
+    
+    if (rows.length > 0) {
+      await supabase.from('configuracoes').upsert(rows, { onConflict: 'chave' })
+    }
+  }
+
   const autenticarViaLogin = async () => {
     if (!login || !senha) { show('Informe login e senha'); return }
     setLoading(true)
     try {
-      const { token: t, refresh_token: rt } = await getUserToken(login, senha)
-      setToken(t)
-      setOneflowConfig({ userToken: t, refreshToken: rt, configurado: true, tokenExpiresAt: new Date(Date.now() + 23 * 60 * 60 * 1000).toISOString() })
-      show('Token obtido com sucesso')
+      const res = await getUserToken(login, senha)
+      const userToken = res.token || res.access_token
+      const refreshToken = res.refresh_token
+      const expiresAt = new Date(Date.now() + 23 * 60 * 60 * 1000).toISOString()
+      
+      const cfg = { userToken, refreshToken, configurado: true, tokenExpiresAt: expiresAt }
+      setOneflowConfig(cfg)
+      await salvarTokenNoSupabase(cfg)
+      
+      show('Token obtido e salvo com sucesso!')
       setTab('sincronizar')
     } catch (e) {
       show(`Erro: ${e.message}`)
@@ -35,44 +55,47 @@ export default function OneflowConfigModal({ onClose }) {
     setLoading(false)
   }
 
-  // Opção 2: token colado manualmente
-  const salvarTokenManual = () => {
+  const salvarTokenManual = async () => {
     if (!token.trim()) { show('Cole o token'); return }
-    setOneflowConfig({ userToken: token.trim(), configurado: true, tokenExpiresAt: new Date(Date.now() + 23 * 60 * 60 * 1000).toISOString() })
-    show('Token salvo')
+    const expiresAt = new Date(Date.now() + 23 * 60 * 60 * 1000).toISOString()
+    const cfg = { userToken: token.trim(), configurado: true, tokenExpiresAt: expiresAt }
+    setOneflowConfig(cfg)
+    await salvarTokenNoSupabase(cfg)
+    show('Token salvo!')
     setTab('sincronizar')
   }
 
-  // Sincronizar empresas do OneFlow → Supabase
   const sincronizarEmpresas = async () => {
-    const t = token || oneflowConfig.userToken
+    const t = oneflowConfig.userToken
     if (!t) { show('Configure o token primeiro'); return }
     setLoading(true)
     try {
       const { escritorioToken, escritorioHash, empresas } = await autenticarEscritorioCompleto(t)
-      setOneflowConfig({ escritorioToken, escritorioHash })
+      
+      const cfg = { ...oneflowConfig, escritorioToken, escritorioHash }
+      setOneflowConfig(cfg)
+      await salvarTokenNoSupabase(cfg)
+      
       setResultado(empresas)
+      await syncEmpresasOneFlow(empresas)
 
-      // 1. Salvar TODAS as empresas no Supabase (upsert por CNPJ)
-      const { error: errSync } = await syncEmpresasOneFlow(empresas)
-      if (errSync) { show(`Erro ao salvar: ${errSync.message}`); setLoading(false); return }
-
-      // 2. Vincular tokens nas empresas já existentes
+      // Vincular tokens nas empresas existentes
       let vinculados = 0
+      const clientesAtuais = clientes.length > 0 ? clientes : []
       for (const emp of empresas) {
         if (!emp.cnpj || !emp.token) continue
-        const cliente = clientes.find(c => c.cnpj?.replace(/\D/g,'') === emp.cnpj?.replace(/\D/g,''))
+        const cliente = clientesAtuais.find(c => c.cnpj?.replace(/\D/g,'') === emp.cnpj?.replace(/\D/g,''))
         if (cliente) {
           await updateCliente(cliente.id, {
             oneflow_app_hash: emp.app_hash,
             oneflow_token: emp.token,
-            oneflow_refresh_token: emp.refresh_token,
+            oneflow_refresh_token: emp.refresh_token || null,
             oneflow_token_expires_at: new Date(Date.now() + 23 * 60 * 60 * 1000).toISOString(),
           })
           vinculados++
         }
       }
-      show(`${empresas.length} empresas salvas, ${vinculados} com token vinculado`)
+      show(`${empresas.length} empresas, ${vinculados} vinculadas`)
     } catch (e) {
       show(`Erro: ${e.message}`)
     }
@@ -86,23 +109,41 @@ export default function OneflowConfigModal({ onClose }) {
       </p>
 
       <div className="tabs">
-        <button className={`tab-btn ${tab==='token'?'active':''}`} onClick={() => setTab('token')}>Token</button>
         <button className={`tab-btn ${tab==='login'?'active':''}`} onClick={() => setTab('login')}>Login</button>
+        <button className={`tab-btn ${tab==='token'?'active':''}`} onClick={() => setTab('token')}>Token</button>
         <button className={`tab-btn ${tab==='sincronizar'?'active':''}`} onClick={() => setTab('sincronizar')}>Vincular</button>
       </div>
+
+      {tab === 'login' && (
+        <>
+          <div className="notice notice-info">
+            <InfoIcon size={14} />
+            <span>Informe as credenciais do usuário de integração do OneFlow/Omie.</span>
+          </div>
+          <div className="form-field">
+            <label className="form-label">Login (e-mail)</label>
+            <input type="email" value={login} onChange={e => setLogin(e.target.value)} placeholder="email@escritorio.com" />
+          </div>
+          <div className="form-field">
+            <label className="form-label">Senha</label>
+            <input type="password" value={senha} onChange={e => setSenha(e.target.value)} placeholder="••••••••" />
+          </div>
+          <button className="btn btn-accent" style={{ width:'100%' }} onClick={autenticarViaLogin} disabled={loading}>
+            {loading ? 'Autenticando...' : 'Entrar e salvar token'}
+          </button>
+        </>
+      )}
 
       {tab === 'token' && (
         <>
           <div className="notice notice-info">
             <InfoIcon size={14} />
-            <span>
-              Acesse <strong>app.omie.com.br/api/portal/users/me/token/</strong> com seu usuário de integração e cole o token abaixo. Expira em 24h.
-            </span>
+            <span>Cole o token JWT obtido em <strong>app.omie.com.br/api/portal/users/me/token/</strong></span>
           </div>
           <div className="form-field">
-            <label className="form-label">Token JWT do usuário</label>
+            <label className="form-label">Token JWT</label>
             <textarea
-              style={{ fontFamily:'var(--mono)', fontSize:11 }}
+              style={{ fontFamily:'monospace', fontSize:11 }}
               placeholder="eyJ..."
               value={token}
               onChange={e => setToken(e.target.value)}
@@ -112,26 +153,11 @@ export default function OneflowConfigModal({ onClose }) {
           <button className="btn btn-accent" style={{ width:'100%' }} onClick={salvarTokenManual}>
             Salvar token
           </button>
-        </>
-      )}
-
-      {tab === 'login' && (
-        <>
-          <div className="notice notice-info">
-            <InfoIcon size={14} />
-            <span>Informe as credenciais do usuário de integração (recomendamos criar um usuário separado).</span>
-          </div>
-          <div className="form-field">
-            <label className="form-label">Login (e-mail)</label>
-            <input type="email" value={login} onChange={e => setLogin(e.target.value)} placeholder="integracao@escritorio.com" />
-          </div>
-          <div className="form-field">
-            <label className="form-label">Senha</label>
-            <input type="password" value={senha} onChange={e => setSenha(e.target.value)} placeholder="••••••••" />
-          </div>
-          <button className="btn btn-accent" style={{ width:'100%' }} onClick={autenticarViaLogin} disabled={loading}>
-            {loading ? 'Autenticando...' : 'Obter token automaticamente'}
-          </button>
+          {oneflowConfig.configurado && (
+            <div style={{ marginTop:10, padding:'8px 12px', background:'var(--ok-dim)', borderRadius:'var(--r-sm)', fontSize:12, color:'var(--ok)' }}>
+              ✓ Token configurado — expira {oneflowConfig.tokenExpiresAt ? new Date(oneflowConfig.tokenExpiresAt).toLocaleString('pt-BR') : 'em breve'}
+            </div>
+          )}
         </>
       )}
 
@@ -147,7 +173,7 @@ export default function OneflowConfigModal({ onClose }) {
               <p style={{ fontSize:12, color:'var(--text2)', marginBottom:8 }}>{resultado.length} empresa(s) encontrada(s) no OneFlow</p>
               {resultado.slice(0,8).map((e, i) => (
                 <div key={i} style={{ display:'flex', justifyContent:'space-between', padding:'5px 0', borderBottom:'1px solid var(--border)', fontSize:13 }}>
-                  <span>{e.nome || e.razao_social || `Empresa ${i+1}`}</span>
+                  <span style={{ color:'var(--text1)' }}>{e.nome || e.razao_social || `Empresa ${i+1}`}</span>
                   <span className={`badge ${e.token ? 'badge-ok' : 'badge-gray'}`}>{e.token ? 'ok' : 'sem token'}</span>
                 </div>
               ))}
