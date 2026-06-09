@@ -13,7 +13,6 @@ const ANTHROPIC_KEY = process.env.ANTHROPIC_API_KEY
 
 async function extrairTarefa(mensagem, clientes) {
   const listaNomes = clientes.map(c => c.nome).join('\n')
-  
   const response = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: {
@@ -44,15 +43,12 @@ Responda APENAS com JSON válido, sem markdown:
       }]
     })
   })
-
   const data = await response.json()
   const texto = data.content[0].text.trim()
-  
   try {
     return JSON.parse(texto)
   } catch {
-    const clean = texto.replace(/```json|```/g, '').trim()
-    return JSON.parse(clean)
+    return JSON.parse(texto.replace(/```json|```/g, '').trim())
   }
 }
 
@@ -60,14 +56,8 @@ async function enviarMensagem(numero, texto) {
   try {
     await fetch(`${EVOLUTION_URL}/message/sendText/${EVOLUTION_INSTANCE}`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'apikey': EVOLUTION_KEY
-      },
-      body: JSON.stringify({
-        number: numero,
-        text: texto
-      })
+      headers: { 'Content-Type': 'application/json', 'apikey': EVOLUTION_KEY },
+      body: JSON.stringify({ number: numero, text: texto })
     })
   } catch (e) {
     console.error('Erro ao enviar mensagem:', e.message)
@@ -86,36 +76,33 @@ exports.handler = async (event) => {
     return { statusCode: 400, body: 'Invalid JSON' }
   }
 
-  // Verifica se é mensagem de grupo correto
+  // Log completo para debug
   const remoteJid = body?.data?.key?.remoteJid || body?.data?.remoteJid || ''
   const mensagem = body?.data?.message?.conversation || 
                    body?.data?.message?.extendedTextMessage?.text || ''
-  const fromMe = body?.data?.key?.fromMe || false
+  
+  console.log('remoteJid:', remoteJid)
+  console.log('mensagem:', mensagem)
+  console.log('GRUPO_ID esperado:', GRUPO_ID)
+  console.log('body keys:', Object.keys(body || {}))
 
-  // Só processa mensagens do grupo configurado
-  if (remoteJid !== GRUPO_ID) {
-    return { statusCode: 200, body: 'Not target group' }
-  }
-
-  // Só processa mensagens que começam com "tarefa:"
+  // Só processa mensagens com prefixo "tarefa:" — sem filtro de grupo por ora
   const textoLower = mensagem.toLowerCase().trim()
   if (!textoLower.startsWith('tarefa:')) {
+    console.log('Ignorado: sem prefixo tarefa:')
     return { statusCode: 200, body: 'Not a task message' }
   }
 
-  const textoTarefa = mensagem.substring(7).trim() // remove "tarefa:"
+  const textoTarefa = mensagem.substring(7).trim()
 
   try {
-    // Busca clientes do Supabase
     const { data: clientes } = await supabase
       .from('clientes')
       .select('id, nome')
       .eq('ativo', true)
 
-    // Extrai informações com Claude
     const tarefa = await extrairTarefa(textoTarefa, clientes || [])
 
-    // Encontra o cliente pelo nome
     let clienteId = null
     if (tarefa.cliente_nome && clientes) {
       const clienteEncontrado = clientes.find(c => 
@@ -125,7 +112,6 @@ exports.handler = async (event) => {
       if (clienteEncontrado) clienteId = clienteEncontrado.id
     }
 
-    // Insere tarefa no Supabase
     const { data: novaTarefa, error } = await supabase
       .from('tarefas')
       .insert({
@@ -142,21 +128,17 @@ exports.handler = async (event) => {
 
     if (error) throw error
 
-    // Confirma no grupo
     const nomeCliente = tarefa.cliente_nome || 'sem cliente'
     const prazo = tarefa.prazo ? ` · Prazo: ${tarefa.prazo}` : ''
     const confirmacao = `✅ *Tarefa criada!*\n📋 ${tarefa.titulo}\n👤 ${nomeCliente}${prazo}`
     
-    await enviarMensagem(GRUPO_ID, confirmacao)
+    await enviarMensagem(remoteJid, confirmacao)
 
-    return {
-      statusCode: 200,
-      body: JSON.stringify({ success: true, tarefa: novaTarefa })
-    }
+    console.log('Tarefa criada:', novaTarefa.id)
+    return { statusCode: 200, body: JSON.stringify({ success: true }) }
 
   } catch (e) {
     console.error('Erro:', e.message)
-    await enviarMensagem(GRUPO_ID, `❌ Erro ao criar tarefa: ${e.message}`)
     return { statusCode: 500, body: e.message }
   }
 }
