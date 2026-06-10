@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import {
   LayoutDashboardIcon, CheckSquareIcon, UsersIcon,
-  RefreshCwIcon, SettingsIcon, PlusIcon, ClipboardListIcon, BellIcon
+  RefreshCwIcon, SettingsIcon, PlusIcon, ClipboardListIcon, WalletIcon
 } from 'lucide-react'
 import { useStore } from './store'
 import { ToastContainer } from './components/shared'
@@ -12,32 +12,34 @@ import Tarefas from './pages/Tarefas'
 import Clientes from './pages/Clientes'
 import FechamentosERP from './pages/FechamentosERP'
 import Obrigacoes from './pages/Obrigacoes'
+import Parcelamentos from './pages/Parcelamentos'
 
 const NAV = [
-  { id: 'overview',   label: 'Painel',      Icon: LayoutDashboardIcon },
-  { id: 'obrigacoes', label: 'Obrigações',  Icon: ClipboardListIcon },
-  { id: 'tarefas',    label: 'Tarefas',     Icon: CheckSquareIcon },
-  { id: 'clientes',   label: 'Clientes',    Icon: UsersIcon },
-  { id: 'erp',        label: 'ERP',         Icon: RefreshCwIcon },
+  { id: 'overview',      label: 'Painel',         Icon: LayoutDashboardIcon },
+  { id: 'obrigacoes',    label: 'Obrigações',     Icon: ClipboardListIcon },
+  { id: 'parcelamentos', label: 'Parcelamentos',  Icon: WalletIcon },
+  { id: 'tarefas',       label: 'Tarefas',        Icon: CheckSquareIcon },
+  { id: 'clientes',      label: 'Clientes',       Icon: UsersIcon },
+  { id: 'erp',           label: 'ERP',            Icon: RefreshCwIcon },
 ]
 
 export default function App() {
-  const [page, setPage]                   = useState('overview')
+  const [page, setPage]                       = useState('overview')
   const [selectedCliente, setSelectedCliente] = useState(null)
-  const [showNewTask, setShowNewTask]     = useState(false)
+  const [showNewTask, setShowNewTask]         = useState(false)
   const [newTaskClienteId, setNewTaskClienteId] = useState('')
-  const [showConfig, setShowConfig]       = useState(false)
-  const init    = useStore(s => s.init)
-  const loading = useStore(s => s.loading)
-  const tarefas = useStore(s => s.tarefas)
-  const obrigacoes = useStore(s => s.obrigacoes || [])
+  const [showConfig, setShowConfig]           = useState(false)
+
+  const init        = useStore(s => s.init)
+  const loading     = useStore(s => s.loading)
+  const tarefas     = useStore(s => s.tarefas)
+  const obrigacoes  = useStore(s => s.obrigacoes || [])
 
   useEffect(() => { init() }, [])
 
   const pendingCount   = tarefas.filter(t => !t.concluida).length
   const obrigVencidas  = obrigacoes.filter(o => o.status === 'vencido').length
   const obrigPendentes = obrigacoes.filter(o => o.status === 'pendente').length
-  const alertas        = obrigVencidas + (pendingCount > 0 ? 1 : 0)
 
   const openNewTask = (clienteId = '') => { setNewTaskClienteId(clienteId); setShowNewTask(true) }
 
@@ -55,8 +57,10 @@ export default function App() {
           <span style={{ fontSize:20 }}>⬡</span> Gestor
         </span>
         <div style={{ display:'flex', gap:6, alignItems:'center' }}>
-          {alertas > 0 && (
-            <span style={{ background:'var(--danger)', color:'#fff', fontSize:10, fontWeight:800, padding:'2px 7px', borderRadius:99 }}>{alertas}</span>
+          {(obrigVencidas > 0 || pendingCount > 0) && (
+            <span style={{ background:'var(--danger)', color:'#fff', fontSize:10, fontWeight:800, padding:'2px 7px', borderRadius:99 }}>
+              {obrigVencidas + (pendingCount > 0 ? 1 : 0)}
+            </span>
           )}
           <button className="btn btn-icon btn-ghost" onClick={() => setShowConfig(true)}>
             <SettingsIcon size={18} />
@@ -87,15 +91,9 @@ export default function App() {
         ))}
 
         <div style={{ flex:1 }} />
-
-        {/* Divisor */}
         <div style={{ height:1, background:'var(--border)', margin:'8px 0' }} />
-
         <button className="nav-item" onClick={() => setShowConfig(true)}>
           <SettingsIcon size={16} /> Configurações
-          {!useStore.getState().oneflowConfig?.configurado && (
-            <span className="badge badge-warn" style={{ marginLeft:'auto', fontSize:9 }}>setup</span>
-          )}
         </button>
       </aside>
 
@@ -105,31 +103,19 @@ export default function App() {
           <div className="center"><div className="spinner" /></div>
         ) : (
           <>
-            {page === 'overview' && (
-              <Overview
-                onAddTarefa={openNewTask}
-                onOpenCliente={(id) => { setSelectedCliente(id); navigate('clientes') }}
-                onOpenObrigacoes={() => navigate('obrigacoes')}
-                onOpenTarefas={() => navigate('tarefas')}
-              />
-            )}
-            {page === 'obrigacoes' && <Obrigacoes />}
-            {page === 'tarefas'    && <Tarefas onAddTarefa={openNewTask} />}
-            {page === 'clientes'   && (
-              <Clientes
-                onAddTarefa={openNewTask}
-                selectedId={selectedCliente}
-                onSelect={setSelectedCliente}
-              />
-            )}
-            {page === 'erp' && <FechamentosERP onOpenConfig={() => setShowConfig(true)} />}
+            {page === 'overview'      && <Overview onAddTarefa={openNewTask} onOpenCliente={(id) => { setSelectedCliente(id); navigate('clientes') }} onOpenObrigacoes={() => navigate('obrigacoes')} onOpenTarefas={() => navigate('tarefas')} />}
+            {page === 'obrigacoes'    && <Obrigacoes />}
+            {page === 'parcelamentos' && <Parcelamentos />}
+            {page === 'tarefas'       && <Tarefas onAddTarefa={openNewTask} />}
+            {page === 'clientes'      && <Clientes onAddTarefa={openNewTask} selectedId={selectedCliente} onSelect={setSelectedCliente} />}
+            {page === 'erp'           && <FechamentosERP onOpenConfig={() => setShowConfig(true)} />}
           </>
         )}
       </main>
 
-      {/* ── Bottom nav mobile ── */}
+      {/* ── Bottom nav ── */}
       <nav className="bottom-nav">
-        {NAV.map(({ id, label, Icon }) => (
+        {NAV.slice(0, 5).map(({ id, label, Icon }) => (
           <button key={id} className={`bottom-nav-item ${page === id ? 'active' : ''}`} onClick={() => navigate(id)}>
             <Icon />
             {label}
@@ -137,16 +123,12 @@ export default function App() {
         ))}
       </nav>
 
-      {/* ── FAB ── */}
       <button className="fab" onClick={() => openNewTask()} title="Nova tarefa">
         <PlusIcon size={22} />
       </button>
 
-      {showNewTask && (
-        <NovaTarefaModal clienteIdInicial={newTaskClienteId} onClose={() => setShowNewTask(false)} />
-      )}
-      {showConfig && <OneflowConfigModal onClose={() => setShowConfig(false)} />}
-
+      {showNewTask && <NovaTarefaModal clienteIdInicial={newTaskClienteId} onClose={() => setShowNewTask(false)} />}
+      {showConfig  && <OneflowConfigModal onClose={() => setShowConfig(false)} />}
       <ToastContainer />
     </div>
   )
