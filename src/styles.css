@@ -3,33 +3,33 @@
 :root {
   --font: 'Inter', -apple-system, sans-serif;
 
-  /* Tema claro-escuro (meio-termo) */
-  --bg:       #1C1F2E;
-  --surface:  #242838;
-  --surface2: #2C3044;
-  --surface3: #343850;
-  --border:   #363A52;
-  --border2:  #464B68;
+  /* Tema claro profissional */
+  --bg:       #F0F2F5;
+  --surface:  #FFFFFF;
+  --surface2: #F5F7FA;
+  --surface3: #EAECF0;
+  --border:   #E2E6EA;
+  --border2:  #C8CDD5;
 
   /* Texto */
-  --text1: #E8EAFF;
-  --text2: #8B92C8;
-  --text3: #4E5478;
+  --text1: #1A1D23;
+  --text2: #4A5568;
+  --text3: #9AA3B0;
 
-  /* Acento — índigo vibrante */
-  --accent:      #6C63FF;
-  --accent-dim:  rgba(108,99,255,0.15);
-  --accent-dark: #5549E8;
+  /* Acento — azul profissional */
+  --accent:      #2563EB;
+  --accent-dim:  rgba(37,99,235,0.10);
+  --accent-dark: #1D4ED8;
 
   /* Status */
-  --ok:        #2DD4BF;
-  --ok-dim:    rgba(45,212,191,0.12);
-  --warn:      #FBBF24;
-  --warn-dim:  rgba(251,191,36,0.12);
-  --danger:    #F87171;
-  --danger-dim:rgba(248,113,113,0.12);
-  --info:      #60A5FA;
-  --info-dim:  rgba(96,165,250,0.12);
+  --ok:        #059669;
+  --ok-dim:    rgba(5,150,105,0.10);
+  --warn:      #D97706;
+  --warn-dim:  rgba(217,119,6,0.10);
+  --danger:    #DC2626;
+  --danger-dim:rgba(220,38,38,0.10);
+  --info:      #2563EB;
+  --info-dim:  rgba(37,99,235,0.10);
 
   /* Raios */
   --r-xs: 4px;
@@ -39,9 +39,9 @@
   --r-xl: 22px;
 
   /* Sombras */
-  --shadow-sm: 0 1px 4px rgba(0,0,0,.35);
-  --shadow-md: 0 4px 20px rgba(0,0,0,.45);
-  --shadow-lg: 0 8px 40px rgba(0,0,0,.6);
+  --shadow-sm: 0 1px 3px rgba(0,0,0,.08);
+  --shadow-md: 0 4px 16px rgba(0,0,0,.10);
+  --shadow-lg: 0 8px 32px rgba(0,0,0,.14);
 }
 
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -59,7 +59,7 @@ button { font-family: var(--font); cursor: pointer; }
 input, select, textarea { font-family: var(--font); }
 
 ::-webkit-scrollbar { width: 4px; height: 4px; }
-::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-track { background: var(--surface2); }
 ::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 4px; }
 
 /* ── Layout ────────────────────────────────────────────── */
@@ -485,8 +485,8 @@ textarea { resize: vertical; min-height: 60px; }
   z-index: 300; display: flex; flex-direction: column; gap: 8px; align-items: center;
 }
 .toast {
-  background: var(--surface3); border: 1px solid var(--border2);
-  color: var(--text1); padding: 10px 20px; border-radius: var(--r-md);
+  background: var(--text1); border: 1px solid var(--border2);
+  color: #fff; padding: 10px 20px; border-radius: var(--r-md);
   font-size: 13px; font-weight: 500; white-space: nowrap;
   animation: toastIn 0.2s ease; box-shadow: var(--shadow-md);
 }

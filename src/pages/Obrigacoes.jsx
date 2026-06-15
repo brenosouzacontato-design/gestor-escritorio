@@ -203,11 +203,11 @@ export default function Obrigacoes() {
       </div>
 
       {/* Tabela — dividida por grupos */}
-      <div className="card" style={{ padding:0, overflow:'auto' }}>
-        <table style={{ width:'100%', borderCollapse:'collapse', fontSize:12 }}>
-          <thead>
+      <div className="card" style={{ padding:0, overflow:'auto', maxHeight:'calc(100vh - 280px)' }}>
+        <table style={{ width:'100%', borderCollapse:'collapse', fontSize:12, tableLayout:'auto' }}>
+          <thead style={{ position:'sticky', top:0, zIndex:10 }}>
             <tr style={{ borderBottom:'1px solid var(--border)', background:'var(--surface2)' }}>
-              <th style={{ padding:'10px 14px', textAlign:'left', fontWeight:700, color:'var(--text3)', fontSize:10, textTransform:'uppercase', letterSpacing:'.6px', minWidth:160 }}>Cliente</th>
+              <th style={{ padding:'10px 14px', textAlign:'left', fontWeight:700, color:'var(--text3)', fontSize:10, textTransform:'uppercase', letterSpacing:'.6px', whiteSpace:'nowrap' }}>Cliente</th>
               {filtroGrupo === 'todos'
                 ? GRUPOS.map(g => g.tipos.map(t => (
                     <th key={t} style={{ padding:'8px 10px', textAlign:'center', fontWeight:700, color:'var(--text3)', fontSize:10, textTransform:'uppercase', letterSpacing:'.4px', whiteSpace:'nowrap' }}>
@@ -215,7 +215,7 @@ export default function Obrigacoes() {
                     </th>
                   )))
                 : tiposExib.map(t => (
-                    <th key={t} style={{ padding:'10px 14px', textAlign:'center', fontWeight:700, color:'var(--text3)', fontSize:10, textTransform:'uppercase', letterSpacing:'.6px' }}>
+                    <th key={t} style={{ padding:'10px 14px', textAlign:'center', fontWeight:700, color:'var(--text3)', fontSize:10, textTransform:'uppercase', letterSpacing:'.6px', whiteSpace:'nowrap' }}>
                       {t}
                     </th>
                   ))
@@ -223,7 +223,7 @@ export default function Obrigacoes() {
             </tr>
             {/* Sub-header com grupos quando mostrando todos */}
             {filtroGrupo === 'todos' && (
-              <tr style={{ background:'var(--bg)' }}>
+              <tr style={{ background:'var(--surface3)' }}>
                 <td />
                 {GRUPOS.map(g => (
                   <td key={g.label} colSpan={g.tipos.length}
@@ -242,10 +242,10 @@ export default function Obrigacoes() {
             )}
             {porCliente.map(({ cliente, obs }, i) => (
               <tr key={cliente.id} style={{ borderBottom:'1px solid var(--border)', background: i%2===0 ? 'transparent' : 'var(--surface2)' }}>
-                <td style={{ padding:'8px 14px' }}>
+                <td style={{ padding:'8px 14px', whiteSpace:'nowrap' }}>
                   <div style={{ display:'flex', alignItems:'center', gap:6 }}>
-                    <div style={{ fontWeight:600, fontSize:12, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis', maxWidth:130 }}>
-                      {cliente.nome.split(' ').slice(0,3).join(' ')}
+                    <div style={{ fontWeight:600, fontSize:12 }}>
+                      {cliente.nome}
                     </div>
                     <button
                       title="Excluir empresa"
