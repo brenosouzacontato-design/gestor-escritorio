@@ -9,7 +9,7 @@ const STATUS_DOT = {
   concluido:  { color: 'var(--ok)',     symbol: '✓' },
   pendente:   { color: 'var(--warn)',   symbol: '○' },
   vencido:    { color: 'var(--danger)', symbol: '!' },
-  nao_aplica: { color: 'var(--text3)', symbol: '—' },
+  nao_aplica: { color: 'var(--info)',   symbol: '—' },
 }
 
 function compMesAtras(n) {
@@ -35,7 +35,7 @@ export default function Overview({ onAddTarefa, onOpenCliente, onOpenObrigacoes,
       tarefasPendentes: pending.length,
       alta:            pending.filter(t => t.prioridade === 'alta').length,
       obsPendentes:    obs.filter(o => o.status === 'pendente').length,
-      obsEmDia:        obs.filter(o => o.status === 'concluido').length,
+      obsEmDia:        obs.filter(o => o.status === 'concluido' || o.status === 'nao_aplica').length,
       obsVencidas:     obs.filter(o => o.status === 'vencido').length,
       obsTotal:        obs.length,
     }
@@ -63,7 +63,7 @@ export default function Overview({ onAddTarefa, onOpenCliente, onOpenObrigacoes,
         TIPOS_OBS.forEach(t => { obsByTipo[t] = obsEmp.find(o => o.tipo === t)?.status || null })
         const pend = obsEmp.filter(o => o.status === 'pendente').length
         const venc = obsEmp.filter(o => o.status === 'vencido').length
-        const ok   = obsEmp.filter(o => o.status === 'concluido').length
+        const ok   = obsEmp.filter(o => o.status === 'concluido' || o.status === 'nao_aplica').length
         return { cliente: c, idx: i, folhaERP, fiscalERP, tPend, obsByTipo, pend, venc, ok, total: obsEmp.length }
       })
   }, [clientes, fechamentos, tarefas, obrigacoes, compSel, busca])

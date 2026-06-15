@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect } from 'react'
-import { RefreshCwIcon, CheckCircleIcon, ClockIcon, AlertCircleIcon, MinusCircleIcon, PencilIcon, ZapIcon, CheckSquareIcon, XIcon, PlusIcon } from 'lucide-react'
+import { RefreshCwIcon, CheckCircleIcon, ClockIcon, AlertCircleIcon, MinusCircleIcon, PencilIcon, ZapIcon, CheckSquareIcon, XIcon, PlusIcon, Trash2Icon } from 'lucide-react'
 import { useStore } from '../store'
 import { useToast } from '../components/shared'
 import { supabase } from '../lib/supabase'
@@ -11,7 +11,7 @@ const STATUS_CFG = {
   pendente:   { label: 'Pendente',  color: 'var(--warn)',   Icon: ClockIcon },
   concluido:  { label: 'Concluído', color: 'var(--ok)',     Icon: CheckCircleIcon },
   vencido:    { label: 'Vencido',   color: 'var(--danger)', Icon: AlertCircleIcon },
-  nao_aplica: { label: 'N/A',       color: 'var(--text3)',  Icon: MinusCircleIcon },
+  nao_aplica: { label: 'N/A',       color: 'var(--info)',   Icon: MinusCircleIcon },
 }
 
 // Grupos visuais para separar na tabela
@@ -48,6 +48,8 @@ export default function Obrigacoes() {
   const [showNovaObs, setShowNovaObs] = useState(false)
   const [gerando, setGerando]       = useState(false)
   const [salvando, setSalvando]     = useState(false)
+  const [confirmExcluir, setConfirmExcluir] = useState(null) // clienteId a excluir
+  const deleteCliente = useStore(s => s.deleteCliente)
 
   useEffect(() => { fetchObrigacoes?.() }, [])
 
@@ -113,6 +115,18 @@ export default function Obrigacoes() {
       show(`${tipo} → ${STATUS_CFG[novoStatus]?.label}`)
     } catch(e) { show('Erro: ' + e.message) }
     setSalvando(false)
+  }
+
+  const handleExcluirCliente = async (clienteId) => {
+    try {
+      await supabase.from('obrigacoes').delete().eq('cliente_id', clienteId)
+      await supabase.from('tarefas').delete().eq('cliente_id', clienteId)
+      await supabase.from('clientes').delete().eq('id', clienteId)
+      await deleteCliente?.(clienteId)
+      await fetchObrigacoes()
+      show('Empresa excluída')
+    } catch(e) { show('Erro ao excluir: ' + e.message) }
+    setConfirmExcluir(null)
   }
 
   return (
@@ -229,8 +243,18 @@ export default function Obrigacoes() {
             {porCliente.map(({ cliente, obs }, i) => (
               <tr key={cliente.id} style={{ borderBottom:'1px solid var(--border)', background: i%2===0 ? 'transparent' : 'var(--surface2)' }}>
                 <td style={{ padding:'8px 14px' }}>
-                  <div style={{ fontWeight:600, fontSize:12, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis', maxWidth:150 }}>
-                    {cliente.nome.split(' ').slice(0,3).join(' ')}
+                  <div style={{ display:'flex', alignItems:'center', gap:6 }}>
+                    <div style={{ fontWeight:600, fontSize:12, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis', maxWidth:130 }}>
+                      {cliente.nome.split(' ').slice(0,3).join(' ')}
+                    </div>
+                    <button
+                      title="Excluir empresa"
+                      onClick={() => setConfirmExcluir(cliente)}
+                      style={{ background:'none', border:'none', cursor:'pointer', color:'var(--text3)', padding:'1px 3px', borderRadius:4, lineHeight:1, opacity:0.5 }}
+                      onMouseEnter={e => e.currentTarget.style.opacity = 1}
+                      onMouseLeave={e => e.currentTarget.style.opacity = 0.5}>
+                      <Trash2Icon size={11} color="var(--danger)" />
+                    </button>
                   </div>
                 </td>
                 {tiposExib.map(tipo => {
@@ -277,6 +301,33 @@ export default function Obrigacoes() {
         <ModalBaixaLote clientes={clientes} obrigacoes={obrigacoes} competenciaInicial={comp}
           onClose={() => setShowBaixa(false)}
           onSaved={() => { fetchObrigacoes(); fetchTarefas(); setShowBaixa(false); show('Baixa realizada!') }} />
+      )}
+
+      {/* Modal confirmação exclusão */}
+      {confirmExcluir && (
+        <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,.75)', backdropFilter:'blur(6px)', zIndex:2000, display:'flex', alignItems:'center', justifyContent:'center', padding:20 }}
+          onClick={() => setConfirmExcluir(null)}>
+          <div style={{ background:'var(--surface)', border:'1px solid var(--border)', borderRadius:'var(--r-xl)', padding:24, maxWidth:360, width:'100%' }}
+            onClick={e => e.stopPropagation()}>
+            <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:12 }}>
+              <Trash2Icon size={20} color="var(--danger)" />
+              <span style={{ fontWeight:700, fontSize:15, color:'var(--text1)' }}>Excluir empresa</span>
+            </div>
+            <p style={{ fontSize:13, color:'var(--text2)', marginBottom:6 }}>
+              Tem certeza que deseja excluir <strong style={{ color:'var(--text1)' }}>{confirmExcluir.nome}</strong>?
+            </p>
+            <p style={{ fontSize:11, color:'var(--danger)', marginBottom:20 }}>
+              ⚠ Isso apagará permanentemente todos os registros de obrigações e tarefas desta empresa.
+            </p>
+            <div style={{ display:'flex', gap:8 }}>
+              <button className="btn" onClick={() => setConfirmExcluir(null)} style={{ flex:1 }}>Cancelar</button>
+              <button onClick={() => handleExcluirCliente(confirmExcluir.id)}
+                style={{ flex:1, background:'var(--danger)', color:'white', border:'none', borderRadius:'var(--r-sm)', padding:'10px', fontWeight:700, cursor:'pointer', fontSize:13 }}>
+                Excluir
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   )
