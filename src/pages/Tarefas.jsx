@@ -1,5 +1,5 @@
-import { useState, useMemo, useRef } from 'react'
-import { Trash2Icon, CheckIcon, XIcon, SaveIcon, MessageSquareIcon, PlusIcon, GripVerticalIcon } from 'lucide-react'
+import { useState, useMemo } from 'react'
+import { Trash2Icon, XIcon, SaveIcon, MessageSquareIcon, PlusIcon, GripVerticalIcon } from 'lucide-react'
 import { useStore } from '../store'
 import { DeptChip, PriDot, fmtDate, isOverdue } from '../components/shared'
 import { supabase } from '../lib/supabase'
@@ -68,27 +68,47 @@ export default function Tarefas({ onAddTarefa }) {
   const handleDrop = async (e, colId) => {
     e.preventDefault()
     if (!dragging || dragging.fromCol === colId) { setDragging(null); setDragOver(null); return }
+    const tarefaId = dragging.id
     const concluida = colId === 'concluido'
-    await supabase.from('tarefas').update({
+    // Atualiza estado local imediatamente (otimista)
+    useStore.setState(s => ({
+      tarefas: s.tarefas.map(t => t.id === tarefaId
+        ? { ...t, kanban_status: colId, concluida, concluida_em: concluida ? new Date().toISOString() : null }
+        : t)
+    }))
+    setDragging(null)
+    setDragOver(null)
+    // Persiste no banco em background
+    const { error } = await supabase.from('tarefas').update({
       kanban_status: colId,
       concluida,
       concluida_em: concluida ? new Date().toISOString() : null,
       updated_at: new Date().toISOString(),
-    }).eq('id', dragging.id)
-    await fetchTarefas()
-    setDragging(null)
-    setDragOver(null)
+    }).eq('id', tarefaId)
+    if (error) {
+      console.error('Erro ao mover tarefa:', error)
+      await fetchTarefas() // reverte se falhou
+    }
   }
 
   const handleMoveCard = async (tarefaId, novaCol) => {
     const concluida = novaCol === 'concluido'
-    await supabase.from('tarefas').update({
+    // Atualiza estado local imediatamente (otimista)
+    useStore.setState(s => ({
+      tarefas: s.tarefas.map(t => t.id === tarefaId
+        ? { ...t, kanban_status: novaCol, concluida, concluida_em: concluida ? new Date().toISOString() : null }
+        : t)
+    }))
+    const { error } = await supabase.from('tarefas').update({
       kanban_status: novaCol,
       concluida,
       concluida_em: concluida ? new Date().toISOString() : null,
       updated_at: new Date().toISOString(),
     }).eq('id', tarefaId)
-    await fetchTarefas()
+    if (error) {
+      console.error('Erro ao mover tarefa:', error)
+      await fetchTarefas()
+    }
   }
 
   return (
