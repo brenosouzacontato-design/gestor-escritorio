@@ -1,5 +1,5 @@
-import { useState, useMemo } from 'react'
-import { Trash2Icon, XIcon, SaveIcon, MessageSquareIcon, PlusIcon, GripVerticalIcon } from 'lucide-react'
+import { useState, useMemo, useRef, useEffect } from 'react'
+import { Trash2Icon, CheckIcon, XIcon, SaveIcon, MessageSquareIcon, PlusIcon, GripVerticalIcon, SendIcon } from 'lucide-react'
 import { useStore } from '../store'
 import { DeptChip, PriDot, fmtDate, isOverdue } from '../components/shared'
 import { supabase } from '../lib/supabase'
@@ -68,47 +68,27 @@ export default function Tarefas({ onAddTarefa }) {
   const handleDrop = async (e, colId) => {
     e.preventDefault()
     if (!dragging || dragging.fromCol === colId) { setDragging(null); setDragOver(null); return }
-    const tarefaId = dragging.id
     const concluida = colId === 'concluido'
-    // Atualiza estado local imediatamente (otimista)
-    useStore.setState(s => ({
-      tarefas: s.tarefas.map(t => t.id === tarefaId
-        ? { ...t, kanban_status: colId, concluida, concluida_em: concluida ? new Date().toISOString() : null }
-        : t)
-    }))
-    setDragging(null)
-    setDragOver(null)
-    // Persiste no banco em background
-    const { error } = await supabase.from('tarefas').update({
+    await supabase.from('tarefas').update({
       kanban_status: colId,
       concluida,
       concluida_em: concluida ? new Date().toISOString() : null,
       updated_at: new Date().toISOString(),
-    }).eq('id', tarefaId)
-    if (error) {
-      console.error('Erro ao mover tarefa:', error)
-      await fetchTarefas() // reverte se falhou
-    }
+    }).eq('id', dragging.id)
+    await fetchTarefas()
+    setDragging(null)
+    setDragOver(null)
   }
 
   const handleMoveCard = async (tarefaId, novaCol) => {
     const concluida = novaCol === 'concluido'
-    // Atualiza estado local imediatamente (otimista)
-    useStore.setState(s => ({
-      tarefas: s.tarefas.map(t => t.id === tarefaId
-        ? { ...t, kanban_status: novaCol, concluida, concluida_em: concluida ? new Date().toISOString() : null }
-        : t)
-    }))
-    const { error } = await supabase.from('tarefas').update({
+    await supabase.from('tarefas').update({
       kanban_status: novaCol,
       concluida,
       concluida_em: concluida ? new Date().toISOString() : null,
       updated_at: new Date().toISOString(),
     }).eq('id', tarefaId)
-    if (error) {
-      console.error('Erro ao mover tarefa:', error)
-      await fetchTarefas()
-    }
+    await fetchTarefas()
   }
 
   return (
@@ -296,6 +276,7 @@ function KanbanCard({ tarefa, colunas, colAtual, onOpen, onDelete, onMove, onDra
 }
 
 function TarefaModal({ tarefa, clientes, onClose, onSaved }) {
+  const [aba,          setAba]          = useState('detalhes')
   const [titulo,       setTitulo]       = useState(tarefa.titulo || '')
   const [observacao,   setObservacao]   = useState(tarefa.observacao || '')
   const [vencimento,   setVencimento]   = useState(tarefa.vencimento ? tarefa.vencimento.split('T')[0] : '')
@@ -303,6 +284,44 @@ function TarefaModal({ tarefa, clientes, onClose, onSaved }) {
   const [departamento, setDepartamento] = useState(tarefa.departamento || 'geral')
   const [clienteId,    setClienteId]    = useState(tarefa.cliente_id || '')
   const [saving,       setSaving]       = useState(false)
+
+  // Chat
+  const [comentarios,  setComentarios]  = useState([])
+  const [msgTexto,     setMsgTexto]     = useState('')
+  const [autor,        setAutor]        = useState(() => localStorage.getItem('gestor_autor') || '')
+  const [sendingMsg,   setSendingMsg]   = useState(false)
+  const chatEndRef = useRef(null)
+
+  useEffect(() => {
+    if (aba === 'chat') carregarComentarios()
+  }, [aba])
+
+  useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [comentarios])
+
+  const carregarComentarios = async () => {
+    const { data } = await supabase
+      .from('tarefa_comentarios')
+      .select('*')
+      .eq('tarefa_id', tarefa.id)
+      .order('created_at', { ascending: true })
+    if (data) setComentarios(data)
+  }
+
+  const handleEnviarMsg = async () => {
+    if (!msgTexto.trim() || !autor.trim()) return
+    setSendingMsg(true)
+    localStorage.setItem('gestor_autor', autor)
+    const { data, error } = await supabase.from('tarefa_comentarios').insert({
+      tarefa_id: tarefa.id,
+      autor: autor.trim(),
+      mensagem: msgTexto.trim(),
+    }).select().single()
+    if (!error && data) setComentarios(c => [...c, data])
+    setMsgTexto('')
+    setSendingMsg(false)
+  }
 
   const handleSave = async () => {
     setSaving(true)
@@ -317,78 +336,183 @@ function TarefaModal({ tarefa, clientes, onClose, onSaved }) {
     onSaved()
   }
 
+  const fmtHora = (iso) => {
+    const d = new Date(iso)
+    return d.toLocaleDateString('pt-BR', { day:'2-digit', month:'2-digit' }) + ' ' +
+           d.toLocaleTimeString('pt-BR', { hour:'2-digit', minute:'2-digit' })
+  }
+
+  // Cores por autor (hash simples)
+  const autorColor = (nome) => {
+    const cores = ['var(--accent)', 'var(--ok)', 'var(--warn)', '#8B5CF6', '#EC4899', '#0EA5E9']
+    let h = 0; for (let i = 0; i < nome.length; i++) h = nome.charCodeAt(i) + ((h << 5) - h)
+    return cores[Math.abs(h) % cores.length]
+  }
+
   return (
     <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.5)', zIndex:1000, display:'flex', alignItems:'flex-end', justifyContent:'center' }}
       onClick={onClose}>
-      <div style={{ background:'var(--surface)', borderRadius:'16px 16px 0 0', width:'100%', maxWidth:600, padding:20, maxHeight:'90vh', overflowY:'auto' }}
+      <div style={{ background:'var(--surface)', borderRadius:'16px 16px 0 0', width:'100%', maxWidth:600, maxHeight:'90vh', display:'flex', flexDirection:'column' }}
         onClick={e => e.stopPropagation()}>
 
-        <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:16 }}>
-          <span style={{ fontWeight:600, fontSize:15, color:'var(--text1)' }}>Detalhes da Tarefa</span>
-          <button className="btn btn-icon btn-ghost" onClick={onClose}><XIcon size={18} /></button>
+        {/* Header */}
+        <div style={{ padding:'16px 20px 0', flexShrink:0 }}>
+          <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:12 }}>
+            <span style={{ fontWeight:700, fontSize:15, color:'var(--text1)' }}>{tarefa.titulo}</span>
+            <button className="btn btn-icon btn-ghost" onClick={onClose}><XIcon size={18} /></button>
+          </div>
+
+          {/* Abas */}
+          <div style={{ display:'flex', gap:0, borderBottom:'2px solid var(--border)' }}>
+            {[{ id:'detalhes', label:'Detalhes' }, { id:'chat', label:`💬 Chat ${comentarios.length > 0 ? `(${comentarios.length})` : ''}` }].map(a => (
+              <button key={a.id} onClick={() => setAba(a.id)}
+                style={{ padding:'8px 16px', fontSize:13, fontWeight:600, border:'none', background:'none', cursor:'pointer',
+                  color: aba === a.id ? 'var(--accent)' : 'var(--text3)',
+                  borderBottom: aba === a.id ? '2px solid var(--accent)' : '2px solid transparent',
+                  marginBottom: -2 }}>
+                {a.label}
+              </button>
+            ))}
+          </div>
         </div>
 
-        {tarefa.origem && (
-          <div style={{ marginBottom:12 }}>
-            <span className="badge badge-info" style={{ fontSize:11 }}>
-              {tarefa.origem === 'whatsapp' ? '📱 WhatsApp' : tarefa.origem === 'erp' ? '🔄 ERP' : '✏️ Manual'}
-            </span>
+        {/* Aba Detalhes */}
+        {aba === 'detalhes' && (
+          <div style={{ padding:'16px 20px 20px', overflowY:'auto' }}>
+            {tarefa.origem && (
+              <div style={{ marginBottom:12 }}>
+                <span className="badge badge-info" style={{ fontSize:11 }}>
+                  {tarefa.origem === 'whatsapp' ? '📱 WhatsApp' : tarefa.origem === 'erp' ? '🔄 ERP' : '✏️ Manual'}
+                </span>
+              </div>
+            )}
+            <div style={{ display:'flex', flexDirection:'column', gap:12 }}>
+              <div>
+                <label style={{ fontSize:12, color:'var(--text2)', marginBottom:4, display:'block' }}>Título</label>
+                <input value={titulo} onChange={e => setTitulo(e.target.value)}
+                  style={{ width:'100%', padding:'8px 10px', border:'1px solid var(--border)', borderRadius:'var(--r-sm)', fontSize:14, background:'var(--surface)', color:'var(--text1)' }} />
+              </div>
+              <div>
+                <label style={{ fontSize:12, color:'var(--text2)', marginBottom:4, display:'block' }}>Cliente</label>
+                <select value={clienteId} onChange={e => setClienteId(e.target.value)}
+                  style={{ width:'100%', padding:'8px 10px', border:'1px solid var(--border)', borderRadius:'var(--r-sm)', fontSize:14, background:'var(--surface)', color:'var(--text1)' }}>
+                  <option value="">— Sem cliente —</option>
+                  {clientes.map(c => <option key={c.id} value={c.id}>{c.nome}</option>)}
+                </select>
+              </div>
+              <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10 }}>
+                <div>
+                  <label style={{ fontSize:12, color:'var(--text2)', marginBottom:4, display:'block' }}>Vencimento</label>
+                  <input type="date" value={vencimento} onChange={e => setVencimento(e.target.value)}
+                    style={{ width:'100%', padding:'8px 10px', border:'1px solid var(--border)', borderRadius:'var(--r-sm)', fontSize:14, background:'var(--surface)', color:'var(--text1)' }} />
+                </div>
+                <div>
+                  <label style={{ fontSize:12, color:'var(--text2)', marginBottom:4, display:'block' }}>Prioridade</label>
+                  <select value={prioridade} onChange={e => setPrioridade(e.target.value)}
+                    style={{ width:'100%', padding:'8px 10px', border:'1px solid var(--border)', borderRadius:'var(--r-sm)', fontSize:14, background:'var(--surface)', color:'var(--text1)' }}>
+                    <option value="normal">Normal</option>
+                    <option value="alta">Alta</option>
+                  </select>
+                </div>
+              </div>
+              <div>
+                <label style={{ fontSize:12, color:'var(--text2)', marginBottom:4, display:'block' }}>Departamento</label>
+                <select value={departamento} onChange={e => setDepartamento(e.target.value)}
+                  style={{ width:'100%', padding:'8px 10px', border:'1px solid var(--border)', borderRadius:'var(--r-sm)', fontSize:14, background:'var(--surface)', color:'var(--text1)' }}>
+                  <option value="fiscal">Fiscal</option>
+                  <option value="folha">Folha</option>
+                  <option value="societario">Societário</option>
+                  <option value="contabil">Contábil</option>
+                  <option value="geral">Geral</option>
+                </select>
+              </div>
+              <div>
+                <label style={{ fontSize:12, color:'var(--text2)', marginBottom:4, display:'block' }}>Observações</label>
+                <textarea value={observacao} onChange={e => setObservacao(e.target.value)}
+                  rows={4} placeholder="Adicione observações, detalhes ou anotações..."
+                  style={{ width:'100%', padding:'8px 10px', border:'1px solid var(--border)', borderRadius:'var(--r-sm)', fontSize:14, background:'var(--surface)', color:'var(--text1)', resize:'vertical', fontFamily:'inherit' }} />
+              </div>
+            </div>
+            <button className="btn btn-accent" onClick={handleSave} disabled={saving}
+              style={{ width:'100%', marginTop:16, padding:'10px', fontSize:14 }}>
+              <SaveIcon size={14} />
+              {saving ? 'Salvando...' : 'Salvar'}
+            </button>
           </div>
         )}
 
-        <div style={{ display:'flex', flexDirection:'column', gap:12 }}>
-          <div>
-            <label style={{ fontSize:12, color:'var(--text2)', marginBottom:4, display:'block' }}>Título</label>
-            <input value={titulo} onChange={e => setTitulo(e.target.value)}
-              style={{ width:'100%', padding:'8px 10px', border:'1px solid var(--border)', borderRadius:'var(--r-sm)', fontSize:14, background:'var(--surface)', color:'var(--text1)' }} />
-          </div>
-          <div>
-            <label style={{ fontSize:12, color:'var(--text2)', marginBottom:4, display:'block' }}>Cliente</label>
-            <select value={clienteId} onChange={e => setClienteId(e.target.value)}
-              style={{ width:'100%', padding:'8px 10px', border:'1px solid var(--border)', borderRadius:'var(--r-sm)', fontSize:14, background:'var(--surface)', color:'var(--text1)' }}>
-              <option value="">— Sem cliente —</option>
-              {clientes.map(c => <option key={c.id} value={c.id}>{c.nome}</option>)}
-            </select>
-          </div>
-          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10 }}>
-            <div>
-              <label style={{ fontSize:12, color:'var(--text2)', marginBottom:4, display:'block' }}>Vencimento</label>
-              <input type="date" value={vencimento} onChange={e => setVencimento(e.target.value)}
-                style={{ width:'100%', padding:'8px 10px', border:'1px solid var(--border)', borderRadius:'var(--r-sm)', fontSize:14, background:'var(--surface)', color:'var(--text1)' }} />
-            </div>
-            <div>
-              <label style={{ fontSize:12, color:'var(--text2)', marginBottom:4, display:'block' }}>Prioridade</label>
-              <select value={prioridade} onChange={e => setPrioridade(e.target.value)}
-                style={{ width:'100%', padding:'8px 10px', border:'1px solid var(--border)', borderRadius:'var(--r-sm)', fontSize:14, background:'var(--surface)', color:'var(--text1)' }}>
-                <option value="normal">Normal</option>
-                <option value="alta">Alta</option>
-              </select>
-            </div>
-          </div>
-          <div>
-            <label style={{ fontSize:12, color:'var(--text2)', marginBottom:4, display:'block' }}>Departamento</label>
-            <select value={departamento} onChange={e => setDepartamento(e.target.value)}
-              style={{ width:'100%', padding:'8px 10px', border:'1px solid var(--border)', borderRadius:'var(--r-sm)', fontSize:14, background:'var(--surface)', color:'var(--text1)' }}>
-              <option value="fiscal">Fiscal</option>
-              <option value="folha">Folha</option>
-              <option value="societario">Societário</option>
-              <option value="contabil">Contábil</option>
-              <option value="geral">Geral</option>
-            </select>
-          </div>
-          <div>
-            <label style={{ fontSize:12, color:'var(--text2)', marginBottom:4, display:'block' }}>Observações</label>
-            <textarea value={observacao} onChange={e => setObservacao(e.target.value)}
-              rows={4} placeholder="Adicione observações, detalhes ou anotações..."
-              style={{ width:'100%', padding:'8px 10px', border:'1px solid var(--border)', borderRadius:'var(--r-sm)', fontSize:14, background:'var(--surface)', color:'var(--text1)', resize:'vertical', fontFamily:'inherit' }} />
-          </div>
-        </div>
+        {/* Aba Chat */}
+        {aba === 'chat' && (
+          <div style={{ display:'flex', flexDirection:'column', flex:1, minHeight:0 }}>
+            {/* Campo nome */}
+            {!autor && (
+              <div style={{ padding:'12px 20px', background:'var(--warn-dim)', borderBottom:'1px solid var(--border)' }}>
+                <label style={{ fontSize:12, color:'var(--text2)', display:'block', marginBottom:4 }}>Seu nome (para identificar mensagens)</label>
+                <input placeholder="Ex: Breno, Maria..." value={autor} onChange={e => setAutor(e.target.value)}
+                  style={{ width:'100%', padding:'8px 10px', border:'1px solid var(--border)', borderRadius:'var(--r-sm)', fontSize:13, background:'var(--surface)', color:'var(--text1)' }} />
+              </div>
+            )}
 
-        <button className="btn btn-accent" onClick={handleSave} disabled={saving}
-          style={{ width:'100%', marginTop:16, padding:'10px', fontSize:14 }}>
-          <SaveIcon size={14} />
-          {saving ? 'Salvando...' : 'Salvar'}
-        </button>
+            {/* Mensagens */}
+            <div style={{ flex:1, overflowY:'auto', padding:'12px 20px', display:'flex', flexDirection:'column', gap:10 }}>
+              {comentarios.length === 0 && (
+                <div style={{ textAlign:'center', color:'var(--text3)', fontSize:13, padding:'30px 0' }}>
+                  Nenhuma mensagem ainda. Seja o primeiro!
+                </div>
+              )}
+              {comentarios.map(c => {
+                const isMe = c.autor === autor
+                return (
+                  <div key={c.id} style={{ display:'flex', flexDirection:'column', alignItems: isMe ? 'flex-end' : 'flex-start' }}>
+                    <div style={{ fontSize:10, color:'var(--text3)', marginBottom:3, display:'flex', gap:6, alignItems:'center' }}>
+                      <span style={{ fontWeight:700, color: autorColor(c.autor) }}>{c.autor}</span>
+                      <span>{fmtHora(c.created_at)}</span>
+                    </div>
+                    <div style={{
+                      maxWidth:'80%', padding:'8px 12px', borderRadius: isMe ? '12px 12px 2px 12px' : '12px 12px 12px 2px',
+                      background: isMe ? 'var(--accent)' : 'var(--surface2)',
+                      color: isMe ? '#fff' : 'var(--text1)',
+                      fontSize:13, lineHeight:1.5,
+                      border: isMe ? 'none' : '1px solid var(--border)',
+                    }}>
+                      {c.mensagem}
+                    </div>
+                  </div>
+                )
+              })}
+              <div ref={chatEndRef} />
+            </div>
+
+            {/* Input mensagem */}
+            <div style={{ padding:'12px 20px 20px', borderTop:'1px solid var(--border)', flexShrink:0 }}>
+              {autor && (
+                <div style={{ fontSize:11, color:'var(--text3)', marginBottom:6 }}>
+                  Enviando como <strong style={{ color: autorColor(autor) }}>{autor}</strong>
+                  <button onClick={() => { setAutor(''); localStorage.removeItem('gestor_autor') }}
+                    style={{ background:'none', border:'none', cursor:'pointer', color:'var(--text3)', fontSize:11, marginLeft:6, textDecoration:'underline' }}>
+                    trocar
+                  </button>
+                </div>
+              )}
+              <div style={{ display:'flex', gap:8 }}>
+                {!autor && (
+                  <input placeholder="Seu nome..." value={autor} onChange={e => setAutor(e.target.value)}
+                    style={{ width:110, flexShrink:0, padding:'8px 10px', border:'1px solid var(--border)', borderRadius:'var(--r-sm)', fontSize:13, background:'var(--surface)', color:'var(--text1)' }} />
+                )}
+                <input
+                  placeholder="Digite uma mensagem..."
+                  value={msgTexto}
+                  onChange={e => setMsgTexto(e.target.value)}
+                  onKeyDown={e => e.key === 'Enter' && !e.shiftKey && handleEnviarMsg()}
+                  style={{ flex:1, padding:'8px 10px', border:'1px solid var(--border)', borderRadius:'var(--r-sm)', fontSize:13, background:'var(--surface)', color:'var(--text1)' }} />
+                <button onClick={handleEnviarMsg} disabled={sendingMsg || !msgTexto.trim() || !autor.trim()}
+                  style={{ background:'var(--accent)', border:'none', borderRadius:'var(--r-sm)', padding:'8px 14px', cursor:'pointer', color:'#fff', display:'flex', alignItems:'center', opacity: (!msgTexto.trim() || !autor.trim()) ? .5 : 1 }}>
+                  <SendIcon size={15} />
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   )
