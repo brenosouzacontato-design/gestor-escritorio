@@ -7,6 +7,7 @@ export const useStore = create((set, get) => ({
   tarefas: [],
   fechamentos: [],
   obrigacoes: [],
+  prospectos: [],
   loading: false,
   syncingErp: false,
   oneflowConfig: {
@@ -218,9 +219,56 @@ export const useStore = create((set, get) => ({
     }
   },
 
-  // ── Init ─────────────────────────────────────────────────────────────────────
+  // ── Prospectos ───────────────────────────────────────────────────────────────
+  fetchProspectos: async () => {
+    const { data, error } = await supabase
+      .from('prospectos')
+      .select('*')
+      .order('created_at', { ascending: false })
+    if (error) console.error('fetchProspectos error:', error)
+    if (!error) set({ prospectos: data || [] })
+  },
+
+  addProspecto: async (prospecto) => {
+    const { data, error } = await supabase.from('prospectos').insert(prospecto).select().single()
+    if (!error) set(s => ({ prospectos: [data, ...s.prospectos] }))
+    return { data, error }
+  },
+
+  updateProspecto: async (id, updates) => {
+    const { data, error } = await supabase
+      .from('prospectos')
+      .update({ ...updates, updated_at: new Date().toISOString() })
+      .eq('id', id).select().single()
+    if (!error) set(s => ({ prospectos: s.prospectos.map(p => p.id === id ? data : p) }))
+    return { data, error }
+  },
+
+  deleteProspecto: async (id) => {
+    const { error } = await supabase.from('prospectos').delete().eq('id', id)
+    if (!error) set(s => ({ prospectos: s.prospectos.filter(p => p.id !== id) }))
+    return { error }
+  },
+
+  converterProspectoEmCliente: async (prospecto, dadosCliente) => {
+    const { data: cliente, error: errCliente } = await supabase.from('clientes').insert({
+      nome: dadosCliente.nome || prospecto.nome,
+      cnpj: dadosCliente.cnpj || null,
+      regime: dadosCliente.regime || 'Simples Nacional',
+      ativo: true,
+    }).select().single()
+    if (errCliente) return { error: errCliente }
+    await supabase.from('prospectos').update({ status: 'convertido', updated_at: new Date().toISOString() }).eq('id', prospecto.id)
+    set(s => ({
+      clientes: [...s.clientes, cliente],
+      prospectos: s.prospectos.map(p => p.id === prospecto.id ? { ...p, status: 'convertido' } : p),
+    }))
+    return { data: cliente }
+  },
+
+  // ── Init ──────────────────────────────────────────────────────────────────────
   init: async () => {
-    const { fetchClientes, fetchTarefas, fetchFechamentos, loadOneflowConfig, fetchObrigacoes } = get()
-    await Promise.all([fetchClientes(), fetchTarefas(), fetchFechamentos(), loadOneflowConfig(), fetchObrigacoes()])
+    const { fetchClientes, fetchTarefas, fetchFechamentos, loadOneflowConfig, fetchObrigacoes, fetchProspectos } = get()
+    await Promise.all([fetchClientes(), fetchTarefas(), fetchFechamentos(), loadOneflowConfig(), fetchObrigacoes(), fetchProspectos()])
   },
 }))

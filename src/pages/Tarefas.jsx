@@ -350,9 +350,9 @@ function TarefaModal({ tarefa, clientes, onClose, onSaved }) {
   }
 
   return (
-    <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.5)', zIndex:1000, display:'flex', alignItems:'flex-end', justifyContent:'center' }}
+    <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.5)', zIndex:1000, display:'flex', alignItems:'center', justifyContent:'center', padding:20 }}
       onClick={onClose}>
-      <div style={{ background:'var(--surface)', borderRadius:'16px 16px 0 0', width:'100%', maxWidth:600, maxHeight:'90vh', display:'flex', flexDirection:'column' }}
+      <div style={{ background:'var(--surface)', borderRadius:'var(--r-xl)', width:'100%', maxWidth:600, height:'min(680px, 90vh)', display:'flex', flexDirection:'column', boxShadow:'var(--shadow-lg)' }}
         onClick={e => e.stopPropagation()}>
 
         {/* Header */}
@@ -378,7 +378,7 @@ function TarefaModal({ tarefa, clientes, onClose, onSaved }) {
 
         {/* Aba Detalhes */}
         {aba === 'detalhes' && (
-          <div style={{ padding:'16px 20px 20px', overflowY:'auto' }}>
+          <div style={{ padding:'16px 20px 20px', overflowY:'auto', flex:1, minHeight:0 }}>
             {tarefa.origem && (
               <div style={{ marginBottom:12 }}>
                 <span className="badge badge-info" style={{ fontSize:11 }}>
