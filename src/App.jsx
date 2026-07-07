@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { LayoutDashboardIcon, CheckSquareIcon, UsersIcon, RefreshCwIcon, SettingsIcon, PlusIcon, ClipboardListIcon, TargetIcon, BuildingIcon } from 'lucide-react'
+import { LayoutDashboardIcon, CheckSquareIcon, UsersIcon, RefreshCwIcon, SettingsIcon, PlusIcon, ClipboardListIcon, TargetIcon, BuildingIcon, AppWindowIcon } from 'lucide-react'
 import { useStore } from './store'
 import { ToastContainer } from './components/shared'
 import NovaTarefaModal from './components/NovaTarefaModal'
@@ -11,6 +11,7 @@ import FechamentosERP from './pages/FechamentosERP'
 import Obrigacoes from './pages/Obrigacoes'
 import Prospectos from './pages/Prospectos'
 import Empresas from './pages/Empresas'
+import Central from './pages/Central'
 
 const NAV = [
   { id: 'overview',   label: 'Painel',      Icon: LayoutDashboardIcon },
@@ -20,6 +21,7 @@ const NAV = [
   { id: 'clientes',   label: 'Clientes',    Icon: UsersIcon },
   { id: 'prospectos', label: 'Prospectos',  Icon: TargetIcon },
   { id: 'erp',        label: 'ERP',         Icon: RefreshCwIcon },
+  { id: 'central',    label: 'Central',     Icon: AppWindowIcon },
 ]
 
 export default function App() {
@@ -92,6 +94,7 @@ export default function App() {
             {page === 'clientes'   && <Clientes onAddTarefa={openNewTask} selectedId={selectedCliente} onSelect={setSelectedCliente} />}
             {page === 'prospectos' && <Prospectos />}
             {page === 'erp'        && <FechamentosERP onOpenConfig={() => setShowConfig(true)} />}
+            {page === 'central'    && <Central />}
           </>
         )}
       </main>
