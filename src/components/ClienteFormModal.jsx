@@ -17,8 +17,12 @@ export default function ClienteFormModal({ onClose, cliente = null }) {
     email: cliente?.email || '',
     telefone: cliente?.telefone || '',
     responsavel: cliente?.responsavel || '',
+    carteira: cliente?.carteira || '',
   })
   const [loading, setLoading] = useState(false)
+
+  const clientes = useStore(s => s.clientes)
+  const carteirasExistentes = [...new Set(clientes.map(c => c.carteira).filter(Boolean))].sort()
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
 
@@ -110,6 +114,22 @@ export default function ClienteFormModal({ onClose, cliente = null }) {
             value={form.telefone}
             onChange={e => set('telefone', fmtTel(e.target.value))}
           />
+        </div>
+      </div>
+
+      <div className="form-row">
+        <div className="form-field">
+          <label className="form-label">Carteira</label>
+          <input
+            type="text"
+            placeholder="Ex: Breno, Maria, Escritório A..."
+            value={form.carteira}
+            onChange={e => set('carteira', e.target.value)}
+            list="carteiras-list"
+          />
+          <datalist id="carteiras-list">
+            {carteirasExistentes.map(c => <option key={c} value={c} />)}
+          </datalist>
         </div>
       </div>
 
