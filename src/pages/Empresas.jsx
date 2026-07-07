@@ -19,10 +19,10 @@ const ALL_TIPOS = ['PGDAS','DCTFWeb','NFS-e','eSocial','Folha','Documentos','Ext
 const STATUS_OBS       = ['pendente','concluido','nao_aplica','vencido']
 const STATUS_OBS_LABEL = { pendente:'Pendente', concluido:'Concluído', nao_aplica:'N/A', vencido:'Vencido' }
 const STATUS_OBS_COLOR = {
-  pendente:   { bg:'rgba(251,191,36,.18)',  color:'#fbbf24' },
-  concluido:  { bg:'rgba(52,211,153,.18)',  color:'#34d399' },
-  nao_aplica: { bg:'rgba(96,165,250,.18)',  color:'#60a5fa' },
-  vencido:    { bg:'rgba(248,113,113,.18)', color:'#f87171' },
+  pendente:   { bg:'rgba(154,107,26,.12)',  color:'#9A6B1A' },
+  concluido:  { bg:'rgba(42,122,90,.12)',   color:'#2A7A5A' },
+  nao_aplica: { bg:'rgba(30,95,160,.12)',   color:'#1E5FA0' },
+  vencido:    { bg:'rgba(168,48,48,.12)',   color:'#A83030' },
 }
 
 const DEPTS_LABELS = ['fiscal','folha','societario','contabil','escritorio','geral','pessoal']
@@ -46,12 +46,12 @@ function getStatusDept(obsEmp, tarefasEmp, dept) {
   return { s, pct, val: obs.length > 0 ? `${ok}/${obs.length}` : tasks.length > 0 ? `${tasks.length}t` : '—' }
 }
 
-const S_COLOR = { ok:'#34d399', warn:'#fbbf24', danger:'#f87171', na:'#60a5fa', empty:'#2d3a5a' }
-const S_BG    = { ok:'rgba(52,211,153,.08)', warn:'rgba(251,191,36,.08)', danger:'rgba(248,113,113,.08)', na:'rgba(96,165,250,.08)', empty:'transparent' }
+const S_COLOR = { ok:'#2A7A5A', warn:'#9A6B1A', danger:'#A83030', na:'#1E5FA0', empty:'#8A8F9E' }
+const S_BG    = { ok:'rgba(42,122,90,.10)', warn:'rgba(154,107,26,.10)', danger:'rgba(168,48,48,.10)', na:'rgba(30,95,160,.10)', empty:'var(--surface2)' }
 const S_ICON  = { ok:CheckCircleIcon, warn:ClockIcon, danger:AlertCircleIcon, na:MinusCircleIcon, empty:null }
 
 const AVATAR_COLORS = [
-  ['#1a2e22','#34d399'],['#2a1f10','#fbbf24'],['#18203a','#93c5fd'],
+  ['#1a2e22','#34d399'],['#2a1f10','#fbbf24'],['#18203a','var(--accent)'],
   ['#2a1820','#f9a8d4'],['#1e1a30','#c4b5fd'],['#182828','#5eead4'],
   ['#1a2a1a','#86efac'],['#1e2a2a','#67e8f9'],['#2a1a1a','#fca5a5'],
 ]
@@ -71,10 +71,10 @@ function DeptPill({ data, onClick }) {
           {data.s==='empty'?'—':data.s==='na'?'N/A':`${data.pct}%`}
         </span>
       </div>
-      <div style={{ width:50, height:3, background:'#232840', borderRadius:99, overflow:'hidden' }}>
+      <div style={{ width:50, height:3, background:'var(--border)', borderRadius:99, overflow:'hidden' }}>
         <div style={{ height:'100%', width:`${data.pct}%`, background:S_COLOR[data.s], borderRadius:99 }} />
       </div>
-      <span style={{ fontSize:9, color:'#4b5a80' }}>{data.val}</span>
+      <span style={{ fontSize:9, color:'var(--text3)' }}>{data.val}</span>
     </div>
   )
 }
@@ -178,39 +178,39 @@ export default function Empresas() {
   }
 
   return (
-    <div style={{ display:'flex', flexDirection:'column', height:'100%', background:'#1a1f2e', overflow:'hidden' }}>
+    <div style={{ display:'flex', flexDirection:'column', height:'100%', background:'var(--bg)', overflow:'hidden' }}>
 
       {/* Topbar */}
-      <div style={{ display:'flex', alignItems:'center', gap:8, padding:'10px 16px', background:'#12151f', borderBottom:'1px solid #1e2438', flexShrink:0, flexWrap:'wrap', rowGap:6 }}>
+      <div style={{ display:'flex', alignItems:'center', gap:8, padding:'10px 16px', background:'var(--surface)', borderBottom:'1px solid var(--border)', flexShrink:0, flexWrap:'wrap', rowGap:6 }}>
         <div>
-          <h2 style={{ fontSize:14, fontWeight:500, color:'#e2e8f0', margin:0 }}>Empresas</h2>
-          <p style={{ fontSize:10, color:'#4b5a80', margin:0 }}>Status por departamento · {rows.length} empresas</p>
+          <h2 style={{ fontSize:14, fontWeight:500, color:'var(--text1)', margin:0 }}>Empresas</h2>
+          <p style={{ fontSize:10, color:'var(--text3)', margin:0 }}>Status por departamento · {rows.length} empresas</p>
         </div>
-        <div style={{ display:'flex', alignItems:'center', gap:5, background:'#1a2035', border:'1px solid #232840', borderRadius:8, padding:'5px 9px', marginLeft:12 }}>
-          <span style={{ fontSize:12, color:'#4b5a80' }}>🔍</span>
+        <div style={{ display:'flex', alignItems:'center', gap:5, background:'var(--surface2)', border:'1px solid #232840', borderRadius:8, padding:'5px 9px', marginLeft:12 }}>
+          <span style={{ fontSize:12, color:'var(--text3)' }}>🔍</span>
           <input value={busca} onChange={e => setBusca(e.target.value)} placeholder="Buscar empresa..."
-            style={{ background:'none', border:'none', outline:'none', fontSize:11, color:'#94a3b8', width:160 }} />
+            style={{ background:'none', border:'none', outline:'none', fontSize:11, color:'var(--text2)', width:160 }} />
         </div>
         {carteiras.length > 1 && (
           <select value={carteira} onChange={e => setCarteira(e.target.value)}
-            style={{ background:'#1a2035', border:'1px solid #232840', borderRadius:8, padding:'5px 8px', fontSize:11, color:'#94a3b8' }}>
+            style={{ background:'var(--surface2)', border:'1px solid #232840', borderRadius:8, padding:'5px 8px', fontSize:11, color:'var(--text2)' }}>
             {carteiras.map(c => <option key={c} value={c}>{c==='todas'?'Todas as carteiras':c}</option>)}
           </select>
         )}
         <div style={{ marginLeft:'auto' }}>
           <select value={compSel} onChange={e => setCompSel(e.target.value)}
-            style={{ background:'#1a2035', border:'1px solid #232840', borderRadius:8, padding:'5px 8px', fontSize:11, color:'#94a3b8' }}>
+            style={{ background:'var(--surface2)', border:'1px solid #232840', borderRadius:8, padding:'5px 8px', fontSize:11, color:'var(--text2)' }}>
             {[0,1,2,3].map(i => { const c=compMesAtras(i); return <option key={c} value={c}>{i===0?`Atual (${c})`:i===1?`Anterior (${c})`:c}</option> })}
           </select>
         </div>
       </div>
 
       {/* Filtros */}
-      <div style={{ display:'flex', gap:5, padding:'7px 16px', borderBottom:'1px solid #1e2438', flexShrink:0, background:'#151929', alignItems:'center' }}>
+      <div style={{ display:'flex', gap:5, padding:'7px 16px', borderBottom:'1px solid #1e2438', flexShrink:0, background:'var(--surface2)', alignItems:'center' }}>
         {[['todos','Todos'],['pendentes','Pendentes'],['criticos','Críticos'],['ok','100% ok']].map(([id,lbl]) => (
           <button key={id} onClick={() => setFiltro(id)}
-            style={{ background:filtro===id?'#1a2f5e':'#1a2035', border:`1px solid ${filtro===id?'#2563eb':'#232840'}`,
-              borderRadius:99, padding:'3px 9px', fontSize:10, color:filtro===id?'#93c5fd':'#4b5a80', cursor:'pointer', fontWeight:500 }}>
+            style={{ background:filtro===id?'var(--accent-dim)':'var(--surface2)', border:`1px solid ${filtro===id?'var(--accent)':'var(--border)'}`,
+              borderRadius:99, padding:'3px 9px', fontSize:10, color:filtro===id?'var(--accent)':'var(--text3)', cursor:'pointer', fontWeight:500 }}>
             {lbl}
           </button>
         ))}
@@ -223,7 +223,7 @@ export default function Empresas() {
         <div style={{ flex:1, overflow:'auto', padding:'12px 16px' }}>
           <table style={{ width:'100%', borderCollapse:'collapse', tableLayout:'fixed',
             minWidth: nomeColW + depts.length*110 + 40,
-            background:'#1e2540', borderRadius:10, overflow:'hidden' }}>
+            background:'var(--surface)', borderRadius:10, overflow:'hidden' }}>
             <colgroup>
               <col style={{ width:nomeColW }} />
               {depts.map(d => <col key={d} style={{ width:110 }} />)}
@@ -231,28 +231,32 @@ export default function Empresas() {
             </colgroup>
 
             <thead>
-              <tr style={{ background:'#0f1320' }}>
-                <th style={{ padding:'9px 12px', textAlign:'left', fontWeight:500, fontSize:9, color:'#4b5a80',
+              <tr style={{ background:'#1B2B4B' }}>
+                <th style={{ padding:'9px 12px', textAlign:'left', fontWeight:500, fontSize:9, color:'#8fadd4',
                   textTransform:'uppercase', letterSpacing:.6, position:'relative',
-                  borderBottom:'2px solid #232840', borderRight:'1px solid #232840', userSelect:'none' }}>
-                  Empresa
+                  borderBottom:'2px solid #243660', borderRight:'1px solid #243660', userSelect:'none' }}>
+                  <span style={{ display:'flex', alignItems:'center', gap:5 }}>🏢 Empresa</span>
                   <div onMouseDown={handleResizeNome}
                     style={{ position:'absolute', right:0, top:0, bottom:0, width:5, cursor:'col-resize' }} />
                 </th>
-                {depts.map(d => (
-                  <th key={d} style={{ padding:'9px 6px', textAlign:'center', fontWeight:500, fontSize:9,
-                    color:'#4b5a80', textTransform:'uppercase', letterSpacing:.5,
-                    borderBottom:'2px solid #232840', borderRight:'1px solid #1e2438' }}>
-                    {d}
-                    <div style={{ fontSize:8, color:'#2d3a5a', marginTop:1, fontWeight:400 }}>
-                      {DEPT_OBS_MAP[d]?.length||0} obrig.
-                    </div>
-                  </th>
-                ))}
-                <th style={{ padding:'9px 4px', textAlign:'center', borderBottom:'2px solid #232840' }}>
+                {depts.map(d => {
+                  const icons = { 'Fiscal':'🧾','Folha':'👥','Societário':'💼','Contábil':'🧮','Escritório':'🏠' }
+                  return (
+                    <th key={d} style={{ padding:'9px 6px', textAlign:'center', fontWeight:500, fontSize:9,
+                      color:'#8fadd4', textTransform:'uppercase', letterSpacing:.5,
+                      borderBottom:'2px solid #243660', borderRight:'1px solid #243660' }}>
+                      <div style={{ fontSize:14, marginBottom:3 }}>{icons[d]||'📋'}</div>
+                      <div>{d}</div>
+                      <div style={{ fontSize:8, color:'#6B80A8', marginTop:1, fontWeight:400 }}>
+                        {DEPT_OBS_MAP[d]?.length||0} obrig.
+                      </div>
+                    </th>
+                  )
+                })}
+                <th style={{ padding:'9px 4px', textAlign:'center', borderBottom:'2px solid #243660' }}>
                   <button onClick={() => setShowAddDept(true)}
-                    style={{ background:'none', border:'1px dashed #2d3a5a', borderRadius:4, width:18, height:18,
-                      color:'#2d3a5a', cursor:'pointer', display:'inline-flex', alignItems:'center', justifyContent:'center' }}>
+                    style={{ background:'none', border:'1px dashed #3b5280', borderRadius:4, width:18, height:18,
+                      color:'#6B80A8', cursor:'pointer', display:'inline-flex', alignItems:'center', justifyContent:'center' }}>
                     <PlusIcon size={9} />
                   </button>
                 </th>
@@ -261,7 +265,7 @@ export default function Empresas() {
 
             <tbody>
               {rows.length === 0 && (
-                <tr><td colSpan={depts.length+2} style={{ padding:40, textAlign:'center', color:'#3d4a6a', fontSize:12 }}>
+                <tr><td colSpan={depts.length+2} style={{ padding:40, textAlign:'center', color:'var(--text3)', fontSize:12 }}>
                   Nenhuma empresa encontrada
                 </td></tr>
               )}
@@ -269,11 +273,11 @@ export default function Empresas() {
                 const [bg, tc] = AVATAR_COLORS[ri % AVATAR_COLORS.length]
                 const initials = c.nome.split(' ').slice(0,2).map(w=>w[0]).join('').toUpperCase()
                 const isSel = drawer?.c?.id === c.id
-                const zebra = ri%2===0 ? '#1e2540' : '#192038'
+                const zebra = ri%2===0 ? 'var(--surface)' : 'var(--surface2)'
                 return (
                   <tr key={c.id}
-                    style={{ background: isSel?'#1a2f5e33':zebra, borderBottom:'1px solid #171c2e', cursor:'pointer' }}
-                    onMouseEnter={e => { if(!isSel) e.currentTarget.style.background='#243058' }}
+                    style={{ background: isSel?'rgba(30,95,160,.08)':zebra, borderBottom:'1px solid var(--border)', cursor:'pointer' }}
+                    onMouseEnter={e => { if(!isSel) e.currentTarget.style.background='var(--sand-dim)' }}
                     onMouseLeave={e => { if(!isSel) e.currentTarget.style.background=zebra }}>
                     <td style={{ padding:'8px 12px', borderRight:'1px solid #1a2035' }}
                       onClick={() => openDrawer(c, null)}>
@@ -283,8 +287,8 @@ export default function Empresas() {
                           {initials}
                         </div>
                         <div style={{ minWidth:0 }}>
-                          <div style={{ fontSize:11, fontWeight:500, color:'#dde4f0', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{c.nome}</div>
-                          <div style={{ fontSize:9, color:'#4b5a80', display:'flex', gap:4, alignItems:'center' }}>
+                          <div style={{ fontSize:11, fontWeight:500, color:'var(--text1)', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{c.nome}</div>
+                          <div style={{ fontSize:9, color:'var(--text3)', display:'flex', gap:4, alignItems:'center' }}>
                             {c.regime||'SN'}
                             {c.carteira && <span style={{ background:'rgba(96,165,250,.15)', color:'#60a5fa', borderRadius:99, padding:'0 4px', fontSize:8, fontWeight:600 }}>{c.carteira}</span>}
                           </div>
@@ -305,10 +309,10 @@ export default function Empresas() {
             </tbody>
 
             <tfoot>
-              <tr style={{ background:'#0f1320', borderTop:'1px solid #232840' }}>
+              <tr style={{ background:'var(--surface2)', borderTop:'1px solid var(--border)' }}>
                 <td colSpan={depts.length+2} style={{ padding:'6px 12px' }}>
                   <div style={{ display:'flex', justifyContent:'space-between' }}>
-                    <span style={{ fontSize:10, color:'#2d3a5a' }}>{rows.length} empresas</span>
+                    <span style={{ fontSize:10, color:'var(--text3)' }}>{rows.length} empresas</span>
                     <span style={{ fontSize:10, color:'#3b82f6' }}>{compSel}</span>
                   </div>
                 </td>
@@ -322,53 +326,53 @@ export default function Empresas() {
           <>
             <div style={{ position:'absolute', inset:0, zIndex:9 }} onClick={() => setDrawer(null)} />
             <div style={{ position:'absolute', top:0, right:0, bottom:0, width:340, zIndex:10,
-              background:'#12151f', borderLeft:'1px solid #232840', display:'flex', flexDirection:'column',
-              boxShadow:'-8px 0 32px rgba(0,0,0,.5)', animation:'sli .2s ease' }}>
+              background:'var(--surface)', borderLeft:'1px solid var(--border)', display:'flex', flexDirection:'column',
+              boxShadow:'-4px 0 20px rgba(27,43,75,.15)', animation:'sli .2s ease' }}>
               <style>{`@keyframes sli{from{transform:translateX(100%)}to{transform:translateX(0)}}`}</style>
 
-              {/* Header drawer */}
-              <div style={{ padding:'12px 14px', borderBottom:'1px solid #1e2438', flexShrink:0, display:'flex', alignItems:'flex-start', gap:8 }}>
+              {/* Header drawer — navy */}
+              <div style={{ padding:'12px 14px', borderBottom:'1px solid #243660', flexShrink:0,
+                display:'flex', alignItems:'flex-start', gap:8, background:'#1B2B4B' }}>
                 <div style={{ flex:1, minWidth:0 }}>
-                  <div style={{ fontSize:13, fontWeight:500, color:'#e2e8f0', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>
+                  <div style={{ fontSize:13, fontWeight:500, color:'#fff', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>
                     {drawer.c.nome}
                   </div>
-                  <div style={{ fontSize:10, color:'#4b5a80', marginTop:2 }}>{drawer.dept||'Todos os departamentos'} · {compSel}</div>
+                  <div style={{ fontSize:10, color:'#8fadd4', marginTop:2 }}>{drawer.dept||'Todos os departamentos'} · {compSel}</div>
                 </div>
                 <button onClick={() => setDrawer(null)}
-                  style={{ background:'#1e2540', border:'1px solid #232840', borderRadius:6, width:24, height:24,
-                    display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer', color:'#7b8abf', flexShrink:0 }}>
+                  style={{ background:'rgba(255,255,255,.1)', border:'1px solid rgba(255,255,255,.15)', borderRadius:6, width:24, height:24,
+                    display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer', color:'#8fadd4', flexShrink:0 }}>
                   <XIcon size={13} />
                 </button>
               </div>
 
               {/* Tabs */}
-              <div style={{ display:'flex', borderBottom:'1px solid #1e2438', flexShrink:0 }}>
-                {[['obrig',`Obrigações (${drawerObs.length})`],['tarefas',`Tarefas (${drawerTasks.length})`]].map(([id,lbl]) => (
+              <div style={{ display:'flex', borderBottom:'1px solid var(--border)', flexShrink:0, background:'var(--surface)' }}>
+                {[['obrig',`📋 Obrigações (${drawerObs.length})`],['tarefas',`✓ Tarefas (${drawerTasks.length})`]].map(([id,lbl]) => (
                   <button key={id} onClick={() => setDrawerTab(id)}
                     style={{ flex:1, padding:'8px', fontSize:11, fontWeight:500, border:'none', background:'none', cursor:'pointer',
-                      borderBottom:`2px solid ${drawerTab===id?'#3b82f6':'transparent'}`,
-                      color:drawerTab===id?'#60a5fa':'#4b5a80' }}>
+                      borderBottom:`2px solid ${drawerTab===id?'var(--accent)':'transparent'}`,
+                      color:drawerTab===id?'var(--accent)':'var(--text3)' }}>
                     {lbl}
                   </button>
                 ))}
               </div>
 
               {/* Body */}
-              <div style={{ flex:1, overflowY:'auto', padding:'10px 14px', display:'flex', flexDirection:'column', gap:7 }}>
+              <div style={{ flex:1, overflowY:'auto', padding:'10px 14px', display:'flex', flexDirection:'column', gap:7, background:'var(--bg)' }}>
 
                 {/* ── Obrigações ── */}
                 {drawerTab === 'obrig' && <>
                   {drawerObs.length === 0 && (
-                    <div style={{ textAlign:'center', color:'#3d4a6a', fontSize:12, padding:'24px 0' }}>Sem obrigações registradas</div>
+                    <div style={{ textAlign:'center', color:'var(--text3)', fontSize:12, padding:'24px 0' }}>Sem obrigações registradas</div>
                   )}
                   {drawerObs.map(o => {
                     const cfg = STATUS_OBS_COLOR[o.status] || STATUS_OBS_COLOR.pendente
                     const busy = updatingId === o.id
                     return (
-                      <div key={o.id} style={{ background:'#1a2035', border:'1px solid #1e2438', borderRadius:8, padding:'10px 12px' }}>
+                      <div key={o.id} style={{ background:'var(--surface)', border:'1px solid var(--border)', borderRadius:8, padding:'10px 12px' }}>
                         <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:6, marginBottom: o.vencimento ? 6 : 0 }}>
-                          <span style={{ fontSize:12, fontWeight:500, color:'#dde4f0' }}>{o.tipo}</span>
-                          {/* Select de status — controlado pelo valor do store */}
+                          <span style={{ fontSize:12, fontWeight:500, color:'var(--text1)' }}>{o.tipo}</span>
                           <select
                             value={o.status || 'pendente'}
                             disabled={busy}
@@ -378,14 +382,14 @@ export default function Empresas() {
                               cursor:'pointer', outline:'none', opacity:busy?.6:1,
                               appearance:'none', WebkitAppearance:'none' }}>
                             {STATUS_OBS.map(s => (
-                              <option key={s} value={s} style={{ background:'#1a2035', color:'#e2e8f0' }}>
+                              <option key={s} value={s} style={{ background:'var(--surface)', color:'var(--text1)' }}>
                                 {STATUS_OBS_LABEL[s]}
                               </option>
                             ))}
                           </select>
                         </div>
                         {o.vencimento && (
-                          <div style={{ fontSize:10, color:o.status==='vencido'?'#f87171':'#4b5a80', display:'flex', alignItems:'center', gap:4 }}>
+                          <div style={{ fontSize:10, color:o.status==='vencido'?'#f87171':'var(--text3)', display:'flex', alignItems:'center', gap:4 }}>
                             <CalendarIcon size={9} />
                             {o.status==='vencido'?'⚠ ':''}Venc. {new Date(o.vencimento+'T12:00:00').toLocaleDateString('pt-BR')}
                           </div>
@@ -398,13 +402,13 @@ export default function Empresas() {
                 {/* ── Tarefas ── */}
                 {drawerTab === 'tarefas' && <>
                   {drawerTasks.length === 0 && (
-                    <div style={{ textAlign:'center', color:'#3d4a6a', fontSize:12, padding:'24px 0' }}>Sem tarefas</div>
+                    <div style={{ textAlign:'center', color:'var(--text3)', fontSize:12, padding:'24px 0' }}>Sem tarefas</div>
                   )}
                   {drawerTasks.map(t => {
                     const overdue = isOverdue(t.vencimento) && !t.concluida
                     const busy = updatingId === t.id
                     return (
-                      <div key={t.id} style={{ background:'#1a2035', border:'1px solid #1e2438', borderRadius:8, padding:'10px 12px' }}>
+                      <div key={t.id} style={{ background:'var(--surface2)', border:'1px solid #1e2438', borderRadius:8, padding:'10px 12px' }}>
                         <div style={{ display:'flex', alignItems:'flex-start', gap:8, marginBottom:5 }}>
                           <button onClick={() => handleToggleTask(t)} disabled={busy}
                             style={{ width:16, height:16, borderRadius:4, flexShrink:0, marginTop:1, cursor:'pointer',
@@ -415,14 +419,14 @@ export default function Empresas() {
                           </button>
                           <div style={{ flex:1, minWidth:0 }}>
                             <div style={{ fontSize:11, fontWeight:500, lineHeight:1.4,
-                              color:t.concluida?'#4b5a80':'#dde4f0',
+                              color:t.concluida?'var(--text3)':'var(--text1)',
                               textDecoration:t.concluida?'line-through':'none' }}>
                               <PriDot pri={t.prioridade} /> {t.titulo}
                             </div>
                             <div style={{ display:'flex', gap:5, alignItems:'center', marginTop:3, flexWrap:'wrap' }}>
                               <DeptChip dept={t.departamento} />
                               {t.vencimento && (
-                                <span style={{ fontSize:10, color:overdue?'#f87171':'#4b5a80', display:'flex', alignItems:'center', gap:2 }}>
+                                <span style={{ fontSize:10, color:overdue?'#f87171':'var(--text3)', display:'flex', alignItems:'center', gap:2 }}>
                                   <CalendarIcon size={9} />{overdue?'⚠ ':''}{fmtDate(t.vencimento)}
                                 </span>
                               )}
@@ -436,14 +440,14 @@ export default function Empresas() {
               </div>
 
               {/* Footer drawer */}
-              <div style={{ padding:'10px 14px', borderTop:'1px solid #1e2438', flexShrink:0, display:'flex', gap:7 }}>
+              <div style={{ padding:'10px 14px', borderTop:'1px solid var(--border)', flexShrink:0, display:'flex', gap:7, background:'var(--surface)' }}>
                 <button onClick={() => { setShowNovaObs(true) }}
-                  style={{ flex:1, background:'#1a2035', border:'1px solid #232840', borderRadius:8, padding:'7px', fontSize:11, color:'#7b8abf', fontWeight:500, cursor:'pointer' }}>
-                  + Obrigação
+                  style={{ flex:1, background:'var(--surface2)', border:'1px solid var(--border)', borderRadius:8, padding:'7px', fontSize:11, color:'var(--text2)', fontWeight:500, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', gap:4 }}>
+                  🧾 + Obrigação
                 </button>
                 <button onClick={() => { setShowNovaTarefa(true) }}
-                  style={{ flex:1, background:'#1a2f5e', border:'1px solid #2563eb', borderRadius:8, padding:'7px', fontSize:11, color:'#93c5fd', fontWeight:500, cursor:'pointer' }}>
-                  + Tarefa
+                  style={{ flex:1, background:'#1B2B4B', border:'none', borderRadius:8, padding:'7px', fontSize:11, color:'#fff', fontWeight:500, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', gap:4 }}>
+                  ✓ + Tarefa
                 </button>
               </div>
             </div>
@@ -455,18 +459,18 @@ export default function Empresas() {
       {showAddDept && (
         <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,.6)', zIndex:1000, display:'flex', alignItems:'center', justifyContent:'center' }}
           onClick={() => setShowAddDept(false)}>
-          <div style={{ background:'#1e2540', border:'1px solid #2a3158', borderRadius:12, padding:20, width:300 }}
+          <div style={{ background:'var(--surface)', border:'1px solid var(--border)', borderRadius:12, padding:20, width:300 }}
             onClick={e => e.stopPropagation()}>
-            <div style={{ fontSize:13, fontWeight:500, color:'#e2e8f0', marginBottom:12 }}>Novo departamento</div>
+            <div style={{ fontSize:13, fontWeight:500, color:'var(--text1)', marginBottom:12 }}>🏢 Novo departamento</div>
             <input value={novoDept} onChange={e => setNovoDept(e.target.value)}
               onKeyDown={e => e.key==='Enter' && handleAddDept()} autoFocus
               placeholder="Ex: Pessoal, Fiscal Estadual..."
-              style={{ width:'100%', background:'#151929', border:'1px solid #232840', borderRadius:8, padding:'8px 10px', fontSize:13, color:'#e2e8f0', marginBottom:12, outline:'none' }} />
+              style={{ width:'100%', background:'var(--surface2)', border:'1px solid var(--border)', borderRadius:8, padding:'8px 10px', fontSize:13, color:'var(--text1)', marginBottom:12, outline:'none' }} />
             <div style={{ display:'flex', gap:8 }}>
               <button onClick={() => setShowAddDept(false)}
-                style={{ flex:1, background:'#1a2035', border:'1px solid #232840', borderRadius:8, padding:'8px', fontSize:12, color:'#7b8abf', cursor:'pointer' }}>Cancelar</button>
+                style={{ flex:1, background:'var(--surface2)', border:'1px solid var(--border)', borderRadius:8, padding:'8px', fontSize:12, color:'var(--text2)', cursor:'pointer' }}>Cancelar</button>
               <button onClick={handleAddDept}
-                style={{ flex:1, background:'#2563eb', border:'none', borderRadius:8, padding:'8px', fontSize:12, color:'#fff', fontWeight:500, cursor:'pointer' }}>Adicionar</button>
+                style={{ flex:1, background:'var(--navy)', border:'none', borderRadius:8, padding:'8px', fontSize:12, color:'#fff', fontWeight:500, cursor:'pointer' }}>Adicionar</button>
             </div>
           </div>
         </div>
@@ -520,31 +524,31 @@ function NovaObrigacaoModal({ cliente, dept, competencia, onClose, onSaved }) {
     <ModalBase onClose={onClose} titulo={`Nova obrigação — ${cliente.nome.split(' ')[0]}`}>
       <div style={{ display:'flex', flexDirection:'column', gap:12 }}>
         <div>
-          <label style={{ fontSize:11, color:'#7b8abf', display:'block', marginBottom:4 }}>Tipo</label>
+          <label style={{ fontSize:11, color:'var(--text2)', display:'block', marginBottom:4 }}>Tipo</label>
           <select value={tipo} onChange={e => setTipo(e.target.value)}
-            style={{ width:'100%', background:'#151929', border:'1px solid #232840', borderRadius:8, padding:'8px 10px', fontSize:13, color:'#e2e8f0', outline:'none' }}>
+            style={{ width:'100%', background:'var(--surface2)', border:'1px solid var(--border)', borderRadius:8, padding:'8px 10px', fontSize:13, color:'var(--text1)', outline:'none' }}>
             {tiposDisponiveis.map(t => <option key={t} value={t}>{t}</option>)}
           </select>
         </div>
         <div>
-          <label style={{ fontSize:11, color:'#7b8abf', display:'block', marginBottom:4 }}>Status inicial</label>
+          <label style={{ fontSize:11, color:'var(--text2)', display:'block', marginBottom:4 }}>Status inicial</label>
           <select value={status} onChange={e => setStatus(e.target.value)}
-            style={{ width:'100%', background:'#151929', border:'1px solid #232840', borderRadius:8, padding:'8px 10px', fontSize:13, color:'#e2e8f0', outline:'none' }}>
+            style={{ width:'100%', background:'var(--surface2)', border:'1px solid var(--border)', borderRadius:8, padding:'8px 10px', fontSize:13, color:'var(--text1)', outline:'none' }}>
             {STATUS_OBS.map(s => <option key={s} value={s}>{STATUS_OBS_LABEL[s]}</option>)}
           </select>
         </div>
         <div>
-          <label style={{ fontSize:11, color:'#7b8abf', display:'block', marginBottom:4 }}>Vencimento</label>
+          <label style={{ fontSize:11, color:'var(--text2)', display:'block', marginBottom:4 }}>Vencimento</label>
           <input type="date" value={vencimento} onChange={e => setVencimento(e.target.value)}
-            style={{ width:'100%', background:'#151929', border:'1px solid #232840', borderRadius:8, padding:'8px 10px', fontSize:13, color:'#e2e8f0', outline:'none' }} />
+            style={{ width:'100%', background:'var(--surface2)', border:'1px solid var(--border)', borderRadius:8, padding:'8px 10px', fontSize:13, color:'var(--text1)', outline:'none' }} />
         </div>
-        <div style={{ fontSize:10, color:'#4b5a80' }}>Competência: <strong style={{ color:'#7b8abf' }}>{competencia}</strong></div>
+        <div style={{ fontSize:10, color:'var(--text3)' }}>Competência: <strong style={{ color:'var(--text2)' }}>{competencia}</strong></div>
       </div>
       <div style={{ display:'flex', gap:8, marginTop:16 }}>
         <button onClick={onClose}
-          style={{ flex:1, background:'#1a2035', border:'1px solid #232840', borderRadius:8, padding:'9px', fontSize:12, color:'#7b8abf', cursor:'pointer' }}>Cancelar</button>
+          style={{ flex:1, background:'var(--surface2)', border:'1px solid #232840', borderRadius:8, padding:'9px', fontSize:12, color:'var(--text2)', cursor:'pointer' }}>Cancelar</button>
         <button onClick={handleSave} disabled={saving||!tipo}
-          style={{ flex:1, background:'#2563eb', border:'none', borderRadius:8, padding:'9px', fontSize:12, color:'#fff', fontWeight:500, cursor:'pointer', opacity:saving?.6:1 }}>
+          style={{ flex:1, background:'var(--accent)', border:'none', borderRadius:8, padding:'9px', fontSize:12, color:'#fff', fontWeight:500, cursor:'pointer', opacity:saving?.6:1 }}>
           <SaveIcon size={13} style={{ marginRight:5, verticalAlign:-2 }} />
           {saving?'Salvando...':'Salvar'}
         </button>
@@ -579,47 +583,47 @@ function NovaTarefaModal({ cliente, dept, onClose, onSaved }) {
     <ModalBase onClose={onClose} titulo={`Nova tarefa — ${cliente.nome.split(' ')[0]}`}>
       <div style={{ display:'flex', flexDirection:'column', gap:12 }}>
         <div>
-          <label style={{ fontSize:11, color:'#7b8abf', display:'block', marginBottom:4 }}>Título *</label>
+          <label style={{ fontSize:11, color:'var(--text2)', display:'block', marginBottom:4 }}>Título *</label>
           <input value={titulo} onChange={e => setTitulo(e.target.value)} autoFocus
             placeholder="Descreva a tarefa..."
-            style={{ width:'100%', background:'#151929', border:'1px solid #232840', borderRadius:8, padding:'8px 10px', fontSize:13, color:'#e2e8f0', outline:'none' }} />
+            style={{ width:'100%', background:'var(--surface2)', border:'1px solid var(--border)', borderRadius:8, padding:'8px 10px', fontSize:13, color:'var(--text1)', outline:'none' }} />
         </div>
         <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10 }}>
           <div>
-            <label style={{ fontSize:11, color:'#7b8abf', display:'block', marginBottom:4 }}>Departamento</label>
+            <label style={{ fontSize:11, color:'var(--text2)', display:'block', marginBottom:4 }}>Departamento</label>
             <select value={departamento} onChange={e => setDepartamento(e.target.value)}
-              style={{ width:'100%', background:'#151929', border:'1px solid #232840', borderRadius:8, padding:'8px 10px', fontSize:13, color:'#e2e8f0', outline:'none' }}>
+              style={{ width:'100%', background:'var(--surface2)', border:'1px solid var(--border)', borderRadius:8, padding:'8px 10px', fontSize:13, color:'var(--text1)', outline:'none' }}>
               {['fiscal','folha','societario','contabil','escritorio','geral','pessoal'].map(d => (
                 <option key={d} value={d}>{d.charAt(0).toUpperCase()+d.slice(1)}</option>
               ))}
             </select>
           </div>
           <div>
-            <label style={{ fontSize:11, color:'#7b8abf', display:'block', marginBottom:4 }}>Prioridade</label>
+            <label style={{ fontSize:11, color:'var(--text2)', display:'block', marginBottom:4 }}>Prioridade</label>
             <select value={prioridade} onChange={e => setPrioridade(e.target.value)}
-              style={{ width:'100%', background:'#151929', border:'1px solid #232840', borderRadius:8, padding:'8px 10px', fontSize:13, color:'#e2e8f0', outline:'none' }}>
+              style={{ width:'100%', background:'var(--surface2)', border:'1px solid var(--border)', borderRadius:8, padding:'8px 10px', fontSize:13, color:'var(--text1)', outline:'none' }}>
               <option value="normal">Normal</option>
               <option value="alta">Alta</option>
             </select>
           </div>
         </div>
         <div>
-          <label style={{ fontSize:11, color:'#7b8abf', display:'block', marginBottom:4 }}>Vencimento</label>
+          <label style={{ fontSize:11, color:'var(--text2)', display:'block', marginBottom:4 }}>Vencimento</label>
           <input type="date" value={vencimento} onChange={e => setVencimento(e.target.value)}
-            style={{ width:'100%', background:'#151929', border:'1px solid #232840', borderRadius:8, padding:'8px 10px', fontSize:13, color:'#e2e8f0', outline:'none' }} />
+            style={{ width:'100%', background:'var(--surface2)', border:'1px solid var(--border)', borderRadius:8, padding:'8px 10px', fontSize:13, color:'var(--text1)', outline:'none' }} />
         </div>
         <div>
-          <label style={{ fontSize:11, color:'#7b8abf', display:'block', marginBottom:4 }}>Observações</label>
+          <label style={{ fontSize:11, color:'var(--text2)', display:'block', marginBottom:4 }}>Observações</label>
           <textarea value={observacao} onChange={e => setObservacao(e.target.value)} rows={3}
             placeholder="Detalhes adicionais..."
-            style={{ width:'100%', background:'#151929', border:'1px solid #232840', borderRadius:8, padding:'8px 10px', fontSize:13, color:'#e2e8f0', outline:'none', resize:'vertical', fontFamily:'inherit' }} />
+            style={{ width:'100%', background:'var(--surface2)', border:'1px solid var(--border)', borderRadius:8, padding:'8px 10px', fontSize:13, color:'var(--text1)', outline:'none', resize:'vertical', fontFamily:'inherit' }} />
         </div>
       </div>
       <div style={{ display:'flex', gap:8, marginTop:16 }}>
         <button onClick={onClose}
-          style={{ flex:1, background:'#1a2035', border:'1px solid #232840', borderRadius:8, padding:'9px', fontSize:12, color:'#7b8abf', cursor:'pointer' }}>Cancelar</button>
+          style={{ flex:1, background:'var(--surface2)', border:'1px solid #232840', borderRadius:8, padding:'9px', fontSize:12, color:'var(--text2)', cursor:'pointer' }}>Cancelar</button>
         <button onClick={handleSave} disabled={saving||!titulo.trim()}
-          style={{ flex:1, background:'#2563eb', border:'none', borderRadius:8, padding:'9px', fontSize:12, color:'#fff', fontWeight:500, cursor:'pointer', opacity:(saving||!titulo.trim())?.6:1 }}>
+          style={{ flex:1, background:'var(--accent)', border:'none', borderRadius:8, padding:'9px', fontSize:12, color:'#fff', fontWeight:500, cursor:'pointer', opacity:(saving||!titulo.trim())?.6:1 }}>
           <SaveIcon size={13} style={{ marginRight:5, verticalAlign:-2 }} />
           {saving?'Salvando...':'Criar tarefa'}
         </button>
@@ -631,18 +635,23 @@ function NovaTarefaModal({ cliente, dept, onClose, onSaved }) {
 // ── Modal Base ───────────────────────────────────────────────────────────────
 function ModalBase({ onClose, titulo, children }) {
   return (
-    <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,.65)', zIndex:2000,
+    <div style={{ position:'fixed', inset:0, background:'rgba(27,43,75,.45)', zIndex:2000,
       display:'flex', alignItems:'center', justifyContent:'center', padding:20 }}
       onClick={onClose}>
-      <div style={{ background:'#1e2540', border:'1px solid #2a3158', borderRadius:12, padding:20,
-        width:'100%', maxWidth:400, maxHeight:'90vh', overflowY:'auto' }}
+      <div style={{ background:'var(--surface)', border:'1px solid var(--border)', borderRadius:12,
+        overflow:'hidden', width:'100%', maxWidth:400, maxHeight:'90vh', display:'flex', flexDirection:'column' }}
         onClick={e => e.stopPropagation()}>
-        <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:16 }}>
-          <span style={{ fontSize:13, fontWeight:600, color:'#e2e8f0' }}>{titulo}</span>
+        <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center',
+          padding:'12px 16px', background:'#1B2B4B', borderBottom:'1px solid #243660' }}>
+          <span style={{ fontSize:13, fontWeight:500, color:'#fff' }}>{titulo}</span>
           <button onClick={onClose}
-            style={{ background:'none', border:'none', color:'#7b8abf', cursor:'pointer', fontSize:18, lineHeight:1 }}>✕</button>
+            style={{ background:'rgba(255,255,255,.1)', border:'1px solid rgba(255,255,255,.15)',
+              borderRadius:6, width:22, height:22, color:'#8fadd4', cursor:'pointer',
+              display:'flex', alignItems:'center', justifyContent:'center', fontSize:13 }}>✕</button>
         </div>
-        {children}
+        <div style={{ padding:20, overflowY:'auto' }}>
+          {children}
+        </div>
       </div>
     </div>
   )
