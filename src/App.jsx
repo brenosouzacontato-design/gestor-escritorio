@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { LayoutDashboardIcon, CheckSquareIcon, UsersIcon, RefreshCwIcon, SettingsIcon, PlusIcon, ClipboardListIcon, TargetIcon } from 'lucide-react'
+import { LayoutDashboardIcon, CheckSquareIcon, UsersIcon, RefreshCwIcon, SettingsIcon, PlusIcon, ClipboardListIcon, TargetIcon, BuildingIcon } from 'lucide-react'
 import { useStore } from './store'
 import { ToastContainer } from './components/shared'
 import NovaTarefaModal from './components/NovaTarefaModal'
@@ -10,10 +10,12 @@ import Clientes from './pages/Clientes'
 import FechamentosERP from './pages/FechamentosERP'
 import Obrigacoes from './pages/Obrigacoes'
 import Prospectos from './pages/Prospectos'
+import Empresas from './pages/Empresas'
 
 const NAV = [
   { id: 'overview',   label: 'Painel',      Icon: LayoutDashboardIcon },
   { id: 'obrigacoes', label: 'Obrigações',  Icon: ClipboardListIcon },
+  { id: 'empresas',   label: 'Empresas',    Icon: BuildingIcon },
   { id: 'tarefas',    label: 'Tarefas',     Icon: CheckSquareIcon },
   { id: 'clientes',   label: 'Clientes',    Icon: UsersIcon },
   { id: 'prospectos', label: 'Prospectos',  Icon: TargetIcon },
@@ -85,6 +87,7 @@ export default function App() {
           <>
             {page === 'overview'   && <Overview onAddTarefa={openNewTask} onOpenCliente={(id) => { setSelectedCliente(id); navigate('clientes') }} onOpenObrigacoes={() => navigate('obrigacoes')} onOpenTarefas={() => navigate('tarefas')} />}
             {page === 'obrigacoes' && <Obrigacoes />}
+            {page === 'empresas'   && <Empresas onOpenTarefas={() => navigate('tarefas')} />}
             {page === 'tarefas'    && <Tarefas onAddTarefa={openNewTask} />}
             {page === 'clientes'   && <Clientes onAddTarefa={openNewTask} selectedId={selectedCliente} onSelect={setSelectedCliente} />}
             {page === 'prospectos' && <Prospectos />}

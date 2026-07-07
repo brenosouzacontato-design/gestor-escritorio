@@ -3,33 +3,33 @@
 :root {
   --font: 'Inter', -apple-system, sans-serif;
 
-  /* Tema claro profissional */
-  --bg:       #F0F2F5;
-  --surface:  #FFFFFF;
-  --surface2: #F5F7FA;
-  --surface3: #EAECF0;
-  --border:   #E2E6EA;
-  --border2:  #C8CDD5;
+  /* Paleta azul-escuro médio */
+  --bg:       #1a1f2e;
+  --surface:  #1e2540;
+  --surface2: #232840;
+  --surface3: #2a3158;
+  --border:   #232840;
+  --border2:  #2a3158;
 
   /* Texto */
-  --text1: #1A1D23;
-  --text2: #4A5568;
-  --text3: #9AA3B0;
+  --text1: #e2e8f0;
+  --text2: #94a3b8;
+  --text3: #4b5a80;
 
-  /* Acento — azul profissional */
-  --accent:      #2563EB;
-  --accent-dim:  rgba(37,99,235,0.10);
-  --accent-dark: #1D4ED8;
+  /* Acento */
+  --accent:      #2563eb;
+  --accent-dim:  rgba(37,99,235,0.15);
+  --accent-dark: #1d4ed8;
 
   /* Status */
-  --ok:        #059669;
-  --ok-dim:    rgba(5,150,105,0.10);
-  --warn:      #D97706;
-  --warn-dim:  rgba(217,119,6,0.10);
-  --danger:    #DC2626;
-  --danger-dim:rgba(220,38,38,0.10);
-  --info:      #2563EB;
-  --info-dim:  rgba(37,99,235,0.10);
+  --ok:        #34d399;
+  --ok-dim:    rgba(52,211,153,0.12);
+  --warn:      #fbbf24;
+  --warn-dim:  rgba(251,191,36,0.12);
+  --danger:    #f87171;
+  --danger-dim:rgba(248,113,113,0.12);
+  --info:      #60a5fa;
+  --info-dim:  rgba(96,165,250,0.12);
 
   /* Raios */
   --r-xs: 4px;
@@ -39,9 +39,9 @@
   --r-xl: 22px;
 
   /* Sombras */
-  --shadow-sm: 0 1px 3px rgba(0,0,0,.08);
-  --shadow-md: 0 4px 16px rgba(0,0,0,.10);
-  --shadow-lg: 0 8px 32px rgba(0,0,0,.14);
+  --shadow-sm: 0 1px 4px rgba(0,0,0,.35);
+  --shadow-md: 0 4px 20px rgba(0,0,0,.45);
+  --shadow-lg: 0 8px 40px rgba(0,0,0,.6);
 }
 
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -60,7 +60,7 @@ input, select, textarea { font-family: var(--font); }
 
 ::-webkit-scrollbar { width: 4px; height: 4px; }
 ::-webkit-scrollbar-track { background: var(--surface2); }
-::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 4px; }
+::-webkit-scrollbar-thumb { background: var(--surface3); border-radius: 4px; }
 
 /* ── Layout ────────────────────────────────────────────── */
 .app-shell { display: flex; flex-direction: column; height: 100%; background: var(--bg); }
@@ -485,8 +485,8 @@ textarea { resize: vertical; min-height: 60px; }
   z-index: 300; display: flex; flex-direction: column; gap: 8px; align-items: center;
 }
 .toast {
-  background: var(--text1); border: 1px solid var(--border2);
-  color: #fff; padding: 10px 20px; border-radius: var(--r-md);
+  background: var(--surface3); border: 1px solid var(--border2);
+  color: var(--text1); padding: 10px 20px; border-radius: var(--r-md);
   font-size: 13px; font-weight: 500; white-space: nowrap;
   animation: toastIn 0.2s ease; box-shadow: var(--shadow-md);
 }
