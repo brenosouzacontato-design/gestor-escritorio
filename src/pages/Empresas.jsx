@@ -93,6 +93,7 @@ export default function Empresas({ onOpenTarefas }) {
   const [drawer,       setDrawer]       = useState(null)
   const [drawerTab,    setDrawerTab]    = useState('obrig')
   const [updatingId,   setUpdatingId]   = useState(null)
+  const [nomeColW,     setNomeColW]     = useState(200)
 
   // Carteiras únicas dos clientes
   const carteiras = useMemo(() => {
@@ -145,6 +146,16 @@ export default function Empresas({ onOpenTarefas }) {
   }, [drawer, tarefas])
 
   const openDrawer = (c, dept) => { setDrawer({ c, dept }); setDrawerTab('obrig') }
+
+  const handleResizeNome = (e) => {
+    e.preventDefault()
+    const startX = e.clientX
+    const startW = nomeColW
+    const onMove = (ev) => setNomeColW(Math.max(120, Math.min(400, startW + ev.clientX - startX)))
+    const onUp   = () => { window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp) }
+    window.addEventListener('mousemove', onMove)
+    window.addEventListener('mouseup', onUp)
+  }
 
   const handleStatusObs = async (obs, novoStatus) => {
     setUpdatingId(obs.id)
@@ -213,12 +224,20 @@ export default function Empresas({ onOpenTarefas }) {
 
         {/* Tabela — ocupa tudo, drawer sobrepõe */}
         <div style={{ flex:1, overflowY:'auto', overflowX:'auto', padding:'12px 16px' }}>
-          <div style={{ background:'#1e2540', border:'1px solid #232840', borderRadius:10, overflow:'hidden', minWidth: 180 + depts.length * 100 }}>
+          <div style={{ background:'#1e2540', border:'1px solid #232840', borderRadius:10, overflow:'auto', minWidth: nomeColW + depts.length * 100 + 40 }}>
 
-            {/* Header */}
-            <div style={{ display:'grid', gridTemplateColumns:`minmax(180px,1fr) repeat(${depts.length}, minmax(90px,120px)) 34px`, background:'#12151f', borderBottom:'1px solid #232840' }}>
-              <div style={{ padding:'8px 12px' }}>
+            {/* Header — sticky */}
+            <div style={{ display:'grid', gridTemplateColumns:`${nomeColW}px repeat(${depts.length}, minmax(90px,120px)) 34px`,
+              background:'#12151f', borderBottom:'1px solid #232840',
+              position:'sticky', top:0, zIndex:5 }}>
+              <div style={{ padding:'8px 12px', display:'flex', alignItems:'center', gap:0, position:'relative' }}>
                 <span style={{ fontSize:9, fontWeight:500, color:'#3d4a6a', textTransform:'uppercase', letterSpacing:.5 }}>Empresa</span>
+                {/* Handle de resize */}
+                <div onMouseDown={handleResizeNome}
+                  style={{ position:'absolute', right:0, top:0, bottom:0, width:6, cursor:'col-resize',
+                    display:'flex', alignItems:'center', justifyContent:'center' }}>
+                  <div style={{ width:2, height:14, background:'#2a3158', borderRadius:1 }} />
+                </div>
               </div>
               {depts.map(d => (
                 <div key={d} style={{ padding:'8px 6px', textAlign:'center' }}>
@@ -244,7 +263,7 @@ export default function Empresas({ onOpenTarefas }) {
               const isSel = drawer?.c?.id === c.id
               return (
                 <div key={c.id}
-                  style={{ display:'grid', gridTemplateColumns:`minmax(180px,1fr) repeat(${depts.length}, minmax(90px,120px)) 34px`,
+                  style={{ display:'grid', gridTemplateColumns:`${nomeColW}px repeat(${depts.length}, minmax(90px,120px)) 34px`,
                     borderBottom:'1px solid #171c2e', background: isSel ? '#1a2f5e22' : 'transparent', transition:'background .1s' }}
                   onMouseEnter={e => { if(!isSel) e.currentTarget.style.background='#1a2035' }}
                   onMouseLeave={e => { if(!isSel) e.currentTarget.style.background='transparent' }}>
