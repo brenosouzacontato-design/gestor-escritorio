@@ -127,23 +127,19 @@ export default function Empresas({ onOpenTarefas }) {
       })
   }, [clientes, obrigacoes, tarefas, compSel, busca, depts, filtro, carteira])
 
-  const drawerObs = useMemo(() => {
-    if (!drawer) return []
+  const drawerObs = obrigacoes.filter(o => {
+    if (!drawer) return false
     const tipos = drawer.dept ? (DEPT_OBS_MAP[drawer.dept] || []) : Object.values(DEPT_OBS_MAP).flat()
-    return obrigacoes.filter(o =>
-      o.cliente_id === drawer.c.id &&
+    return o.cliente_id === drawer.c.id &&
       o.competencia === compSel &&
       (drawer.dept ? tipos.includes(o.tipo) : true)
-    )
-  }, [drawer, obrigacoes, compSel])
+  })
 
-  const drawerTasks = useMemo(() => {
-    if (!drawer) return []
-    return tarefas.filter(t =>
-      t.cliente_id === drawer.c.id &&
+  const drawerTasks = tarefas.filter(t => {
+    if (!drawer) return false
+    return t.cliente_id === drawer.c.id &&
       (drawer.dept ? (t.departamento || '').toLowerCase() === drawer.dept.toLowerCase() : true)
-    )
-  }, [drawer, tarefas])
+  })
 
   const openDrawer = (c, dept) => { setDrawer({ c, dept }); setDrawerTab('obrig') }
 
@@ -222,90 +218,124 @@ export default function Empresas({ onOpenTarefas }) {
       {/* Área principal */}
       <div style={{ flex:1, overflow:'hidden', position:'relative', display:'flex' }}>
 
-        {/* Tabela — ocupa tudo, drawer sobrepõe */}
-        <div style={{ flex:1, overflowY:'auto', overflowX:'auto', padding:'12px 16px' }}>
-          <div style={{ background:'#1e2540', border:'1px solid #232840', borderRadius:10, overflow:'auto', minWidth: nomeColW + depts.length * 100 + 40 }}>
+        {/* Tabela — thead sticky via table layout */}
+        <div style={{ flex:1, overflow:'auto', padding:'12px 16px' }}>
+          <div style={{ background:'#1e2540', border:'1px solid #232840', borderRadius:10, overflow:'hidden' }}>
+            <table style={{ width:'100%', borderCollapse:'collapse', tableLayout:'fixed',
+              minWidth: nomeColW + depts.length * 110 + 40 }}>
+              <colgroup>
+                <col style={{ width: nomeColW }} />
+                {depts.map(d => <col key={d} style={{ width:110 }} />)}
+                <col style={{ width:34 }} />
+              </colgroup>
 
-            {/* Header — sticky */}
-            <div style={{ display:'grid', gridTemplateColumns:`${nomeColW}px repeat(${depts.length}, minmax(90px,120px)) 34px`,
-              background:'#12151f', borderBottom:'1px solid #232840',
-              position:'sticky', top:0, zIndex:5 }}>
-              <div style={{ padding:'8px 12px', display:'flex', alignItems:'center', gap:0, position:'relative' }}>
-                <span style={{ fontSize:9, fontWeight:500, color:'#3d4a6a', textTransform:'uppercase', letterSpacing:.5 }}>Empresa</span>
-                {/* Handle de resize */}
-                <div onMouseDown={handleResizeNome}
-                  style={{ position:'absolute', right:0, top:0, bottom:0, width:6, cursor:'col-resize',
-                    display:'flex', alignItems:'center', justifyContent:'center' }}>
-                  <div style={{ width:2, height:14, background:'#2a3158', borderRadius:1 }} />
-                </div>
-              </div>
-              {depts.map(d => (
-                <div key={d} style={{ padding:'8px 6px', textAlign:'center' }}>
-                  <div style={{ fontSize:9, fontWeight:500, color:'#3d4a6a', textTransform:'uppercase', letterSpacing:.5 }}>{d}</div>
-                  <div style={{ fontSize:9, color:'#2d3a5a', marginTop:2 }}>{DEPT_OBS_MAP[d]?.length || 0} obrig.</div>
-                </div>
-              ))}
-              <div style={{ padding:'8px 4px', display:'flex', alignItems:'center', justifyContent:'center' }}>
-                <button onClick={() => setShowAddDept(true)} title="Adicionar departamento"
-                  style={{ background:'none', border:'1px dashed #2d3a5a', borderRadius:5, width:20, height:20, color:'#2d3a5a', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center' }}>
-                  <PlusIcon size={10} />
-                </button>
-              </div>
-            </div>
-
-            {/* Linhas */}
-            {rows.length === 0 && (
-              <div style={{ padding:40, textAlign:'center', color:'#3d4a6a', fontSize:12 }}>Nenhuma empresa encontrada</div>
-            )}
-            {rows.map(({ c, deptData }, ri) => {
-              const [bg, tc] = AVATAR_COLORS[ri % AVATAR_COLORS.length]
-              const initials = c.nome.split(' ').slice(0,2).map(w => w[0]).join('').toUpperCase()
-              const isSel = drawer?.c?.id === c.id
-              return (
-                <div key={c.id}
-                  style={{ display:'grid', gridTemplateColumns:`${nomeColW}px repeat(${depts.length}, minmax(90px,120px)) 34px`,
-                    borderBottom:'1px solid #171c2e', background: isSel ? '#1a2f5e22' : 'transparent', transition:'background .1s' }}
-                  onMouseEnter={e => { if(!isSel) e.currentTarget.style.background='#1a2035' }}
-                  onMouseLeave={e => { if(!isSel) e.currentTarget.style.background='transparent' }}>
-
-                  {/* Empresa */}
-                  <div style={{ padding:'8px 12px', display:'flex', alignItems:'center', gap:7, cursor:'pointer' }}
-                    onClick={() => openDrawer(c, null)}>
-                    <div style={{ width:24, height:24, borderRadius:6, background:bg, color:tc, display:'flex', alignItems:'center', justifyContent:'center', fontSize:8, fontWeight:500, flexShrink:0 }}>
-                      {initials}
-                    </div>
-                    <div style={{ minWidth:0 }}>
-                      <div style={{ fontSize:11, fontWeight:500, color:'#dde4f0', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>
-                        {c.nome.split(' ').slice(0,3).join(' ')}
-                      </div>
-                      <div style={{ fontSize:9, color:'#4b5a80', display:'flex', gap:4 }}>
-                        {c.regime || 'SN'}
-                        {c.carteira && <span style={{ background:'rgba(96,165,250,.15)', color:'#60a5fa', borderRadius:99, padding:'0 4px', fontSize:8, fontWeight:600 }}>{c.carteira}</span>}
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Departamentos */}
+              {/* THEAD STICKY */}
+              <thead style={{ position:'sticky', top:0, zIndex:5 }}>
+                <tr style={{ background:'#0f1320', borderBottom:'2px solid #232840' }}>
+                  {/* Th empresa com resize handle */}
+                  <th style={{ padding:'9px 12px', textAlign:'left', fontWeight:500, fontSize:9,
+                    color:'#4b5a80', textTransform:'uppercase', letterSpacing:.6,
+                    position:'relative', borderRight:'1px solid #232840', userSelect:'none' }}>
+                    Empresa
+                    <div onMouseDown={handleResizeNome}
+                      style={{ position:'absolute', right:0, top:0, bottom:0, width:5,
+                        cursor:'col-resize', background:'transparent' }}
+                      title="Arrastar para redimensionar" />
+                  </th>
                   {depts.map(d => (
-                    <div key={d} style={{ padding:'5px 3px', display:'flex', alignItems:'center', justifyContent:'center', borderLeft:'1px solid #171c2e' }}
-                      onClick={() => openDrawer(c, d)}>
-                      <DeptPill data={deptData[d]} onClick={() => {}} />
-                    </div>
+                    <th key={d} style={{ padding:'9px 6px', textAlign:'center', fontWeight:500, fontSize:9,
+                      color:'#4b5a80', textTransform:'uppercase', letterSpacing:.6,
+                      borderRight:'1px solid #1e2438' }}>
+                      <div>{d}</div>
+                      <div style={{ fontSize:8, color:'#2d3a5a', marginTop:1, fontWeight:400 }}>
+                        {DEPT_OBS_MAP[d]?.length || 0} obrig.
+                      </div>
+                    </th>
                   ))}
+                  <th style={{ padding:'9px 4px', textAlign:'center' }}>
+                    <button onClick={() => setShowAddDept(true)} title="Adicionar departamento"
+                      style={{ background:'none', border:'1px dashed #2d3a5a', borderRadius:4,
+                        width:18, height:18, color:'#2d3a5a', cursor:'pointer',
+                        display:'inline-flex', alignItems:'center', justifyContent:'center' }}>
+                      <PlusIcon size={9} />
+                    </button>
+                  </th>
+                </tr>
+              </thead>
 
-                  {/* Ação */}
-                  <div style={{ display:'flex', alignItems:'center', justifyContent:'center', borderLeft:'1px solid #171c2e', cursor:'pointer' }}
-                    onClick={() => openDrawer(c, null)}>
-                    <ChevronRightIcon size={13} color="#2d3a5a" />
-                  </div>
-                </div>
-              )
-            })}
+              {/* TBODY */}
+              <tbody>
+                {rows.length === 0 && (
+                  <tr><td colSpan={depts.length + 2} style={{ padding:40, textAlign:'center', color:'#3d4a6a', fontSize:12 }}>
+                    Nenhuma empresa encontrada
+                  </td></tr>
+                )}
+                {rows.map(({ c, deptData }, ri) => {
+                  const [bg, tc] = AVATAR_COLORS[ri % AVATAR_COLORS.length]
+                  const initials = c.nome.split(' ').slice(0,2).map(w => w[0]).join('').toUpperCase()
+                  const isSel = drawer?.c?.id === c.id
+                  // Zebra: linhas pares #1e2540, ímpares #192038
+                  const zebraBase = ri % 2 === 0 ? '#1e2540' : '#192038'
+                  return (
+                    <tr key={c.id}
+                      style={{ background: isSel ? '#1a2f5e33' : zebraBase,
+                        borderBottom:'1px solid #171c2e', transition:'background .1s', cursor:'pointer' }}
+                      onMouseEnter={e => { if(!isSel) e.currentTarget.style.background='#243058' }}
+                      onMouseLeave={e => { if(!isSel) e.currentTarget.style.background = zebraBase }}>
 
-            <div style={{ padding:'7px 12px', borderTop:'1px solid #232840', display:'flex', justifyContent:'space-between', background:'#12151f' }}>
-              <span style={{ fontSize:10, color:'#2d3a5a' }}>{rows.length} empresas</span>
-              <span style={{ fontSize:10, color:'#3b82f6' }}>{compSel}</span>
-            </div>
+                      <td style={{ padding:'8px 12px', borderRight:'1px solid #1a2035' }}
+                        onClick={() => openDrawer(c, null)}>
+                        <div style={{ display:'flex', alignItems:'center', gap:7 }}>
+                          <div style={{ width:24, height:24, borderRadius:6, background:bg, color:tc,
+                            display:'flex', alignItems:'center', justifyContent:'center',
+                            fontSize:8, fontWeight:500, flexShrink:0 }}>
+                            {initials}
+                          </div>
+                          <div style={{ minWidth:0 }}>
+                            <div style={{ fontSize:11, fontWeight:500, color:'#dde4f0',
+                              whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>
+                              {c.nome}
+                            </div>
+                            <div style={{ fontSize:9, color:'#4b5a80', display:'flex', gap:4, alignItems:'center' }}>
+                              {c.regime || 'SN'}
+                              {c.carteira && (
+                                <span style={{ background:'rgba(96,165,250,.15)', color:'#60a5fa',
+                                  borderRadius:99, padding:'0 4px', fontSize:8, fontWeight:600 }}>
+                                  {c.carteira}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      </td>
+
+                      {depts.map(d => (
+                        <td key={d} style={{ padding:'5px 3px', textAlign:'center',
+                          borderRight:'1px solid #1a2035' }}
+                          onClick={() => openDrawer(c, d)}>
+                          <DeptPill data={deptData[d]} onClick={() => {}} />
+                        </td>
+                      ))}
+
+                      <td style={{ textAlign:'center' }} onClick={() => openDrawer(c, null)}>
+                        <ChevronRightIcon size={13} color="#2d3a5a" />
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+
+              <tfoot>
+                <tr style={{ background:'#0f1320', borderTop:'1px solid #232840' }}>
+                  <td colSpan={depts.length + 2} style={{ padding:'6px 12px' }}>
+                    <div style={{ display:'flex', justifyContent:'space-between' }}>
+                      <span style={{ fontSize:10, color:'#2d3a5a' }}>{rows.length} empresas</span>
+                      <span style={{ fontSize:10, color:'#3b82f6' }}>{compSel}</span>
+                    </div>
+                  </td>
+                </tr>
+              </tfoot>
+            </table>
           </div>
         </div>
 
