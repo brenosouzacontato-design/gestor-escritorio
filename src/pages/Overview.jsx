@@ -259,7 +259,7 @@ function ModalObrigacoesTipo({ tipo, meta, lista, compSel, onClose }) {
   // Ler direto do store para refletir mudanças imediatas
   const listaAtual = obrigacoes
     .filter(o => o.tipo === tipo && o.competencia === compSel)
-    .map(o => ({ ...o, clienteNome: lista.find(l => l.id === o.id)?.clienteNome || '—' }))
+    .map(o => ({ ...o, clienteNome: clientes.find(c => c.id === o.cliente_id)?.nome || '—' }))
 
   const filtrada = listaAtual.filter(o => {
     if (filtro === 'pendente') return o.status === 'pendente'
@@ -342,8 +342,7 @@ function ModalObrigacoesTipo({ tipo, meta, lista, compSel, onClose }) {
                 borderLeft:`4px solid ${cfg.cor}`, borderRadius:'var(--r-sm)', padding:'12px 14px',
                 display:'flex', alignItems:'center', gap:12 }}>
                 <div style={{ flex:1, minWidth:0 }}>
-                  <div style={{ fontSize:14, fontWeight:600, color:'var(--text1)', marginBottom:3,
-                    whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>
+                  <div style={{ fontSize:14, fontWeight:600, color:'var(--text1)', marginBottom:3 }}>
                     {o.clienteNome}
                   </div>
                   {o.vencimento && (
