@@ -58,7 +58,7 @@
 html, body, #root {
   height: 100%;
   font-family: var(--font);
-  font-size: 14px;
+  font-size: 15px;
   color: var(--text1);
   background: var(--bg);
   -webkit-font-smoothing: antialiased;

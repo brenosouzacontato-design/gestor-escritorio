@@ -60,21 +60,21 @@ function DeptPill({ data, onClick }) {
   const Icon = S_ICON[data.s]
   return (
     <div onClick={e => { e.stopPropagation(); onClick() }}
-      style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:3, padding:'5px 6px',
-        borderRadius:8, background:S_BG[data.s], border:'1px solid transparent',
-        cursor:'pointer', minWidth:70, transition:'border-color .12s' }}
-      onMouseEnter={e => e.currentTarget.style.borderColor='#3b82f6'}
+      style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:4, padding:'7px 8px',
+        borderRadius:9, background:S_BG[data.s], border:'1px solid transparent',
+        cursor:'pointer', minWidth:80, transition:'border-color .12s' }}
+      onMouseEnter={e => e.currentTarget.style.borderColor='var(--accent)'}
       onMouseLeave={e => e.currentTarget.style.borderColor='transparent'}>
-      <div style={{ display:'flex', alignItems:'center', gap:4 }}>
-        {Icon && <Icon size={11} color={S_COLOR[data.s]} />}
-        <span style={{ fontSize:11, fontWeight:500, color:S_COLOR[data.s] }}>
+      <div style={{ display:'flex', alignItems:'center', gap:5 }}>
+        {Icon && <Icon size={14} color={S_COLOR[data.s]} />}
+        <span style={{ fontSize:13, fontWeight:600, color:S_COLOR[data.s] }}>
           {data.s==='empty'?'—':data.s==='na'?'N/A':`${data.pct}%`}
         </span>
       </div>
-      <div style={{ width:50, height:3, background:'var(--border)', borderRadius:99, overflow:'hidden' }}>
+      <div style={{ width:56, height:4, background:'var(--border)', borderRadius:99, overflow:'hidden' }}>
         <div style={{ height:'100%', width:`${data.pct}%`, background:S_COLOR[data.s], borderRadius:99 }} />
       </div>
-      <span style={{ fontSize:9, color:'var(--text3)' }}>{data.val}</span>
+      <span style={{ fontSize:10, color:'var(--text3)', fontWeight:500 }}>{data.val}</span>
     </div>
   )
 }
@@ -219,45 +219,55 @@ export default function Empresas() {
       {/* Área principal */}
       <div style={{ flex:1, overflow:'hidden', position:'relative', display:'flex' }}>
 
-        {/* Tabela com scroll — thead sticky funciona quando o scroll está neste div */}
+        {/* Scroll container — sticky funciona aqui */}
         <div style={{ flex:1, overflow:'auto', padding:'12px 16px' }}>
           <table style={{ width:'100%', borderCollapse:'collapse', tableLayout:'fixed',
-            minWidth: nomeColW + depts.length*110 + 40,
-            background:'var(--surface)', borderRadius:10, overflow:'hidden' }}>
+            minWidth: nomeColW + 120 + depts.length*120 + 40,
+            background:'var(--surface)' }}>
             <colgroup>
               <col style={{ width:nomeColW }} />
-              {depts.map(d => <col key={d} style={{ width:110 }} />)}
-              <col style={{ width:34 }} />
+              <col style={{ width:120 }} /> {/* Resumo */}
+              {depts.map(d => <col key={d} style={{ width:120 }} />)}
+              <col style={{ width:38 }} />
             </colgroup>
 
-            <thead>
+            <thead style={{ position:'sticky', top:0, zIndex:5 }}>
               <tr style={{ background:'#1B2B4B' }}>
-                <th style={{ padding:'9px 12px', textAlign:'left', fontWeight:500, fontSize:9, color:'#8fadd4',
+                {/* Empresa */}
+                <th style={{ padding:'10px 14px', textAlign:'left', fontWeight:600, fontSize:11, color:'#8fadd4',
                   textTransform:'uppercase', letterSpacing:.6, position:'relative',
                   borderBottom:'2px solid #243660', borderRight:'1px solid #243660', userSelect:'none' }}>
-                  <span style={{ display:'flex', alignItems:'center', gap:5 }}>🏢 Empresa</span>
+                  <span style={{ display:'flex', alignItems:'center', gap:6 }}>🏢 Empresa</span>
                   <div onMouseDown={handleResizeNome}
                     style={{ position:'absolute', right:0, top:0, bottom:0, width:5, cursor:'col-resize' }} />
+                </th>
+                {/* Resumo — primeira coluna de dept */}
+                <th style={{ padding:'10px 8px', textAlign:'center', fontWeight:600, fontSize:11,
+                  color:'#fbbf24', textTransform:'uppercase', letterSpacing:.5,
+                  borderBottom:'2px solid #243660', borderRight:'2px solid #3b5280', background:'#162240' }}>
+                  <div style={{ fontSize:16, marginBottom:3 }}>📊</div>
+                  <div>Resumo</div>
+                  <div style={{ fontSize:9, color:'#6B80A8', marginTop:1, fontWeight:400 }}>geral</div>
                 </th>
                 {depts.map(d => {
                   const icons = { 'Fiscal':'🧾','Folha':'👥','Societário':'💼','Contábil':'🧮','Escritório':'🏠' }
                   return (
-                    <th key={d} style={{ padding:'9px 6px', textAlign:'center', fontWeight:500, fontSize:9,
+                    <th key={d} style={{ padding:'10px 8px', textAlign:'center', fontWeight:600, fontSize:11,
                       color:'#8fadd4', textTransform:'uppercase', letterSpacing:.5,
                       borderBottom:'2px solid #243660', borderRight:'1px solid #243660' }}>
-                      <div style={{ fontSize:14, marginBottom:3 }}>{icons[d]||'📋'}</div>
+                      <div style={{ fontSize:16, marginBottom:3 }}>{icons[d]||'📋'}</div>
                       <div>{d}</div>
-                      <div style={{ fontSize:8, color:'#6B80A8', marginTop:1, fontWeight:400 }}>
+                      <div style={{ fontSize:9, color:'#6B80A8', marginTop:1, fontWeight:400 }}>
                         {DEPT_OBS_MAP[d]?.length||0} obrig.
                       </div>
                     </th>
                   )
                 })}
-                <th style={{ padding:'9px 4px', textAlign:'center', borderBottom:'2px solid #243660' }}>
+                <th style={{ padding:'10px 4px', textAlign:'center', borderBottom:'2px solid #243660' }}>
                   <button onClick={() => setShowAddDept(true)}
-                    style={{ background:'none', border:'1px dashed #3b5280', borderRadius:4, width:18, height:18,
+                    style={{ background:'none', border:'1px dashed #3b5280', borderRadius:4, width:20, height:20,
                       color:'#6B80A8', cursor:'pointer', display:'inline-flex', alignItems:'center', justifyContent:'center' }}>
-                    <PlusIcon size={9} />
+                    <PlusIcon size={11} />
                   </button>
                 </th>
               </tr>
@@ -265,7 +275,7 @@ export default function Empresas() {
 
             <tbody>
               {rows.length === 0 && (
-                <tr><td colSpan={depts.length+2} style={{ padding:40, textAlign:'center', color:'var(--text3)', fontSize:12 }}>
+                <tr><td colSpan={depts.length+3} style={{ padding:40, textAlign:'center', color:'var(--text3)', fontSize:13 }}>
                   Nenhuma empresa encontrada
                 </td></tr>
               )}
@@ -274,46 +284,67 @@ export default function Empresas() {
                 const initials = c.nome.split(' ').slice(0,2).map(w=>w[0]).join('').toUpperCase()
                 const isSel = drawer?.c?.id === c.id
                 const zebra = ri%2===0 ? 'var(--surface)' : 'var(--surface2)'
+
+                // Resumo: soma todas obrigações do cliente nesta competência
+                const obsTotal = obrigacoes.filter(o => o.cliente_id===c.id && o.competencia===compSel)
+                const resOk   = obsTotal.filter(o => o.status==='concluido'||o.status==='nao_aplica').length
+                const resVenc = obsTotal.filter(o => o.status==='vencido').length
+                const resPend = obsTotal.filter(o => o.status==='pendente').length
+                const resPct  = obsTotal.length > 0 ? Math.round((resOk/obsTotal.length)*100) : 0
+                const resS    = resVenc > 0 ? 'danger' : resPct===100 ? 'ok' : resPend > 0 ? 'warn' : 'empty'
+                const resumo  = { s: resS, pct: resPct, val: obsTotal.length > 0 ? `${resOk}/${obsTotal.length}` : '—' }
+
                 return (
                   <tr key={c.id}
                     style={{ background: isSel?'rgba(30,95,160,.08)':zebra, borderBottom:'1px solid var(--border)', cursor:'pointer' }}
                     onMouseEnter={e => { if(!isSel) e.currentTarget.style.background='var(--sand-dim)' }}
                     onMouseLeave={e => { if(!isSel) e.currentTarget.style.background=zebra }}>
-                    <td style={{ padding:'8px 12px', borderRight:'1px solid #1a2035' }}
+
+                    {/* Empresa */}
+                    <td style={{ padding:'10px 14px', borderRight:'1px solid var(--border)' }}
                       onClick={() => openDrawer(c, null)}>
-                      <div style={{ display:'flex', alignItems:'center', gap:7 }}>
-                        <div style={{ width:24, height:24, borderRadius:6, background:bg, color:tc, flexShrink:0,
-                          display:'flex', alignItems:'center', justifyContent:'center', fontSize:8, fontWeight:500 }}>
+                      <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+                        <div style={{ width:28, height:28, borderRadius:7, background:bg, color:tc, flexShrink:0,
+                          display:'flex', alignItems:'center', justifyContent:'center', fontSize:10, fontWeight:600 }}>
                           {initials}
                         </div>
                         <div style={{ minWidth:0 }}>
-                          <div style={{ fontSize:11, fontWeight:500, color:'var(--text1)', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{c.nome}</div>
-                          <div style={{ fontSize:9, color:'var(--text3)', display:'flex', gap:4, alignItems:'center' }}>
+                          <div style={{ fontSize:12, fontWeight:600, color:'var(--text1)', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{c.nome}</div>
+                          <div style={{ fontSize:10, color:'var(--text3)', display:'flex', gap:4, alignItems:'center', marginTop:1 }}>
                             {c.regime||'SN'}
-                            {c.carteira && <span style={{ background:'rgba(96,165,250,.15)', color:'#60a5fa', borderRadius:99, padding:'0 4px', fontSize:8, fontWeight:600 }}>{c.carteira}</span>}
+                            {c.carteira && <span style={{ background:'rgba(30,95,160,.12)', color:'var(--accent)', borderRadius:99, padding:'0 5px', fontSize:9, fontWeight:600 }}>{c.carteira}</span>}
                           </div>
                         </div>
                       </div>
                     </td>
+
+                    {/* Resumo geral */}
+                    <td style={{ padding:'6px 4px', textAlign:'center', borderRight:'2px solid var(--border)', background: isSel?'rgba(30,95,160,.05)': ri%2===0?'rgba(27,43,75,.03)':'rgba(27,43,75,.06)' }}
+                      onClick={() => openDrawer(c, null)}>
+                      <DeptPill data={resumo} onClick={() => openDrawer(c, null)} />
+                    </td>
+
+                    {/* Departamentos */}
                     {depts.map(d => (
-                      <td key={d} style={{ padding:'5px 3px', textAlign:'center', borderRight:'1px solid #1a2035' }}>
+                      <td key={d} style={{ padding:'6px 4px', textAlign:'center', borderRight:'1px solid var(--border)' }}>
                         <DeptPill data={deptData[d]} onClick={() => openDrawer(c, d)} />
                       </td>
                     ))}
+
                     <td style={{ textAlign:'center' }} onClick={() => openDrawer(c, null)}>
-                      <ChevronRightIcon size={13} color="#2d3a5a" />
+                      <ChevronRightIcon size={15} color="var(--text3)" />
                     </td>
                   </tr>
                 )
               })}
             </tbody>
 
-            <tfoot>
+            <tfoot style={{ position:'sticky', bottom:0, zIndex:4 }}>
               <tr style={{ background:'var(--surface2)', borderTop:'1px solid var(--border)' }}>
-                <td colSpan={depts.length+2} style={{ padding:'6px 12px' }}>
+                <td colSpan={depts.length+3} style={{ padding:'7px 14px' }}>
                   <div style={{ display:'flex', justifyContent:'space-between' }}>
-                    <span style={{ fontSize:10, color:'var(--text3)' }}>{rows.length} empresas</span>
-                    <span style={{ fontSize:10, color:'#3b82f6' }}>{compSel}</span>
+                    <span style={{ fontSize:11, color:'var(--text3)' }}>{rows.length} empresas</span>
+                    <span style={{ fontSize:11, color:'var(--accent)' }}>{compSel}</span>
                   </div>
                 </td>
               </tr>
