@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { LayoutDashboardIcon, CheckSquareIcon, UsersIcon, RefreshCwIcon, SettingsIcon, PlusIcon, ClipboardListIcon, TargetIcon, BuildingIcon, AppWindowIcon } from 'lucide-react'
+import { LayoutDashboardIcon, CheckSquareIcon, UsersIcon, RefreshCwIcon, SettingsIcon, PlusIcon, TargetIcon, BuildingIcon, AppWindowIcon } from 'lucide-react'
 import { useStore } from './store'
 import { ToastContainer } from './components/shared'
 import NovaTarefaModal from './components/NovaTarefaModal'
@@ -8,14 +8,12 @@ import Overview from './pages/Overview'
 import Tarefas from './pages/Tarefas'
 import Clientes from './pages/Clientes'
 import FechamentosERP from './pages/FechamentosERP'
-import Obrigacoes from './pages/Obrigacoes'
 import Prospectos from './pages/Prospectos'
 import Empresas from './pages/Empresas'
 import Central from './pages/Central'
 
 const NAV = [
   { id: 'overview',   label: 'Painel',      Icon: LayoutDashboardIcon },
-  { id: 'obrigacoes', label: 'Obrigações',  Icon: ClipboardListIcon },
   { id: 'empresas',   label: 'Empresas',    Icon: BuildingIcon },
   { id: 'tarefas',    label: 'Tarefas',     Icon: CheckSquareIcon },
   { id: 'clientes',   label: 'Clientes',    Icon: UsersIcon },
@@ -66,11 +64,11 @@ export default function App() {
         </div>
         {NAV.map(({ id, label, Icon }) => (
           <button key={id} className={`nav-item ${page === id ? 'active' : ''}`} onClick={() => navigate(id)}>
-            <Icon size={16} /> {label}
+            <Icon size={17} /> {label}
             {id === 'tarefas' && pendingCount > 0 && (
               <span className="badge badge-warn" style={{ marginLeft:'auto', fontSize:10 }}>{pendingCount}</span>
             )}
-            {id === 'obrigacoes' && (obrigVencidas > 0 || obrigPendentes > 0) && (
+            {id === 'empresas' && (obrigVencidas > 0 || obrigPendentes > 0) && (
               <span className={`badge ${obrigVencidas > 0 ? 'badge-err' : 'badge-warn'}`} style={{ marginLeft:'auto', fontSize:10 }}>
                 {obrigVencidas > 0 ? obrigVencidas : obrigPendentes}
               </span>
@@ -87,8 +85,7 @@ export default function App() {
           <div className="center"><div className="spinner" /></div>
         ) : (
           <>
-            {page === 'overview'   && <Overview onAddTarefa={openNewTask} onOpenCliente={(id) => { setSelectedCliente(id); navigate('clientes') }} onOpenObrigacoes={() => navigate('obrigacoes')} onOpenTarefas={() => navigate('tarefas')} />}
-            {page === 'obrigacoes' && <Obrigacoes />}
+            {page === 'overview'   && <Overview onAddTarefa={openNewTask} onOpenCliente={(id) => { setSelectedCliente(id); navigate('clientes') }} onOpenObrigacoes={() => navigate('empresas')} onOpenTarefas={() => navigate('tarefas')} />}
             {page === 'empresas'   && <Empresas onOpenTarefas={() => navigate('tarefas')} />}
             {page === 'tarefas'    && <Tarefas onAddTarefa={openNewTask} />}
             {page === 'clientes'   && <Clientes onAddTarefa={openNewTask} selectedId={selectedCliente} onSelect={setSelectedCliente} />}

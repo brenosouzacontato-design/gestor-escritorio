@@ -60,21 +60,21 @@ function DeptPill({ data, onClick }) {
   const Icon = S_ICON[data.s]
   return (
     <div onClick={e => { e.stopPropagation(); onClick() }}
-      style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:4, padding:'7px 8px',
-        borderRadius:9, background:S_BG[data.s], border:'1px solid transparent',
-        cursor:'pointer', minWidth:80, transition:'border-color .12s' }}
+      style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:5, padding:'9px 10px',
+        borderRadius:10, background:S_BG[data.s], border:'1px solid transparent',
+        cursor:'pointer', minWidth:88, transition:'border-color .12s' }}
       onMouseEnter={e => e.currentTarget.style.borderColor='var(--accent)'}
       onMouseLeave={e => e.currentTarget.style.borderColor='transparent'}>
-      <div style={{ display:'flex', alignItems:'center', gap:5 }}>
-        {Icon && <Icon size={14} color={S_COLOR[data.s]} />}
-        <span style={{ fontSize:13, fontWeight:600, color:S_COLOR[data.s] }}>
+      <div style={{ display:'flex', alignItems:'center', gap:6 }}>
+        {Icon && <Icon size={16} color={S_COLOR[data.s]} />}
+        <span style={{ fontSize:15, fontWeight:700, color:S_COLOR[data.s] }}>
           {data.s==='empty'?'—':data.s==='na'?'N/A':`${data.pct}%`}
         </span>
       </div>
-      <div style={{ width:56, height:4, background:'var(--border)', borderRadius:99, overflow:'hidden' }}>
+      <div style={{ width:60, height:5, background:'var(--border)', borderRadius:99, overflow:'hidden' }}>
         <div style={{ height:'100%', width:`${data.pct}%`, background:S_COLOR[data.s], borderRadius:99 }} />
       </div>
-      <span style={{ fontSize:10, color:'var(--text3)', fontWeight:500 }}>{data.val}</span>
+      <span style={{ fontSize:11, color:'var(--text3)', fontWeight:600 }}>{data.val}</span>
     </div>
   )
 }
@@ -233,41 +233,39 @@ export default function Empresas() {
 
             <thead style={{ position:'sticky', top:0, zIndex:5 }}>
               <tr style={{ background:'#1B2B4B' }}>
-                {/* Empresa */}
-                <th style={{ padding:'10px 14px', textAlign:'left', fontWeight:600, fontSize:11, color:'#8fadd4',
+                <th style={{ padding:'12px 14px', textAlign:'left', fontWeight:600, fontSize:12, color:'#8fadd4',
                   textTransform:'uppercase', letterSpacing:.6, position:'relative',
                   borderBottom:'2px solid #243660', borderRight:'1px solid #243660', userSelect:'none' }}>
                   <span style={{ display:'flex', alignItems:'center', gap:6 }}>🏢 Empresa</span>
                   <div onMouseDown={handleResizeNome}
                     style={{ position:'absolute', right:0, top:0, bottom:0, width:5, cursor:'col-resize' }} />
                 </th>
-                {/* Resumo — primeira coluna de dept */}
-                <th style={{ padding:'10px 8px', textAlign:'center', fontWeight:600, fontSize:11,
+                <th style={{ padding:'12px 8px', textAlign:'center', fontWeight:600, fontSize:12,
                   color:'#fbbf24', textTransform:'uppercase', letterSpacing:.5,
                   borderBottom:'2px solid #243660', borderRight:'2px solid #3b5280', background:'#162240' }}>
-                  <div style={{ fontSize:16, marginBottom:3 }}>📊</div>
+                  <div style={{ fontSize:18, marginBottom:4 }}>📊</div>
                   <div>Resumo</div>
-                  <div style={{ fontSize:9, color:'#6B80A8', marginTop:1, fontWeight:400 }}>geral</div>
+                  <div style={{ fontSize:10, color:'#6B80A8', marginTop:2, fontWeight:400 }}>geral</div>
                 </th>
                 {depts.map(d => {
                   const icons = { 'Fiscal':'🧾','Folha':'👥','Societário':'💼','Contábil':'🧮','Escritório':'🏠' }
                   return (
-                    <th key={d} style={{ padding:'10px 8px', textAlign:'center', fontWeight:600, fontSize:11,
+                    <th key={d} style={{ padding:'12px 8px', textAlign:'center', fontWeight:600, fontSize:12,
                       color:'#8fadd4', textTransform:'uppercase', letterSpacing:.5,
                       borderBottom:'2px solid #243660', borderRight:'1px solid #243660' }}>
-                      <div style={{ fontSize:16, marginBottom:3 }}>{icons[d]||'📋'}</div>
+                      <div style={{ fontSize:18, marginBottom:4 }}>{icons[d]||'📋'}</div>
                       <div>{d}</div>
-                      <div style={{ fontSize:9, color:'#6B80A8', marginTop:1, fontWeight:400 }}>
+                      <div style={{ fontSize:10, color:'#6B80A8', marginTop:2, fontWeight:400 }}>
                         {DEPT_OBS_MAP[d]?.length||0} obrig.
                       </div>
                     </th>
                   )
                 })}
-                <th style={{ padding:'10px 4px', textAlign:'center', borderBottom:'2px solid #243660' }}>
+                <th style={{ padding:'12px 4px', textAlign:'center', borderBottom:'2px solid #243660' }}>
                   <button onClick={() => setShowAddDept(true)}
-                    style={{ background:'none', border:'1px dashed #3b5280', borderRadius:4, width:20, height:20,
+                    style={{ background:'none', border:'1px dashed #3b5280', borderRadius:4, width:22, height:22,
                       color:'#6B80A8', cursor:'pointer', display:'inline-flex', alignItems:'center', justifyContent:'center' }}>
-                    <PlusIcon size={11} />
+                    <PlusIcon size={12} />
                   </button>
                 </th>
               </tr>
@@ -301,18 +299,18 @@ export default function Empresas() {
                     onMouseLeave={e => { if(!isSel) e.currentTarget.style.background=zebra }}>
 
                     {/* Empresa */}
-                    <td style={{ padding:'10px 14px', borderRight:'1px solid var(--border)' }}
+                    <td style={{ padding:'11px 14px', borderRight:'1px solid var(--border)' }}
                       onClick={() => openDrawer(c, null)}>
-                      <div style={{ display:'flex', alignItems:'center', gap:8 }}>
-                        <div style={{ width:28, height:28, borderRadius:7, background:bg, color:tc, flexShrink:0,
-                          display:'flex', alignItems:'center', justifyContent:'center', fontSize:10, fontWeight:600 }}>
+                      <div style={{ display:'flex', alignItems:'center', gap:9 }}>
+                        <div style={{ width:32, height:32, borderRadius:8, background:bg, color:tc, flexShrink:0,
+                          display:'flex', alignItems:'center', justifyContent:'center', fontSize:12, fontWeight:700 }}>
                           {initials}
                         </div>
                         <div style={{ minWidth:0 }}>
-                          <div style={{ fontSize:12, fontWeight:600, color:'var(--text1)', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{c.nome}</div>
-                          <div style={{ fontSize:10, color:'var(--text3)', display:'flex', gap:4, alignItems:'center', marginTop:1 }}>
+                          <div style={{ fontSize:13, fontWeight:600, color:'var(--text1)', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{c.nome}</div>
+                          <div style={{ fontSize:11, color:'var(--text3)', display:'flex', gap:4, alignItems:'center', marginTop:2 }}>
                             {c.regime||'SN'}
-                            {c.carteira && <span style={{ background:'rgba(30,95,160,.12)', color:'var(--accent)', borderRadius:99, padding:'0 5px', fontSize:9, fontWeight:600 }}>{c.carteira}</span>}
+                            {c.carteira && <span style={{ background:'rgba(30,95,160,.12)', color:'var(--accent)', borderRadius:99, padding:'0 6px', fontSize:10, fontWeight:600 }}>{c.carteira}</span>}
                           </div>
                         </div>
                       </div>

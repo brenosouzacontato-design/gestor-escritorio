@@ -29,7 +29,8 @@ export default function Overview({ onAddTarefa, onOpenCliente, onOpenObrigacoes,
   const obrigacoes   = useStore(s => s.obrigacoes || [])
   const toggleTarefa = useStore(s => s.toggleTarefa)
 
-  const [compSel, setCompSel] = useState(compMesAtras(1))
+  const [compSel, setCompSel]       = useState(compMesAtras(1))
+  const [modalTipo, setModalTipo]   = useState(null) // { tipo, lista, meta }
 
   const stats = useMemo(() => {
     const pending = tarefas.filter(t => !t.concluida)
@@ -69,7 +70,12 @@ export default function Overview({ onAddTarefa, onOpenCliente, onOpenObrigacoes,
         .map(o => clientes.find(c => c.id===o.cliente_id)?.nome?.split(' ').slice(0,2).join(' '))
         .filter(Boolean)
         .slice(0, 3)
-      return { tipo, total, ok, venc, pend, pct, status, clientesPend, meta: TIPO_META[tipo] || { icon:'📋', dept:'Geral', cor:'#5B6B8A' } }
+      // Lista completa com nome do cliente para o modal
+      const listaCompleta = lista.map(o => ({
+        ...o,
+        clienteNome: clientes.find(c => c.id===o.cliente_id)?.nome || '—'
+      }))
+      return { tipo, total, ok, venc, pend, pct, status, clientesPend, listaCompleta, meta: TIPO_META[tipo] || { icon:'📋', dept:'Geral', cor:'#5B6B8A' } }
     }).filter(a => a.total > 0) // só exibe tipos que têm obrigações no período
   }, [obrigacoes, compSel, clientes])
 
@@ -167,60 +173,59 @@ export default function Overview({ onAddTarefa, onOpenCliente, onOpenObrigacoes,
           Nenhuma obrigação registrada para {compSel}
         </div>
       ) : (
-        <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(240px, 1fr))', gap:12, marginBottom:20 }}>
-          {atividadeStats.map(({ tipo, total, ok, venc, pend, pct, status, clientesPend, meta }) => {
+        <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(260px, 1fr))', gap:14, marginBottom:20 }}>
+          {atividadeStats.map(({ tipo, total, ok, venc, pend, pct, status, clientesPend, listaCompleta, meta }) => {
             const corStatus = status==='ok'?'var(--ok)':status==='vencido'?'var(--danger)':status==='pendente'?'var(--warn)':'var(--text3)'
             const bgStatus  = status==='ok'?'var(--ok-dim)':status==='vencido'?'var(--danger-dim)':status==='pendente'?'var(--warn-dim)':'transparent'
             return (
               <div key={tipo}
-                onClick={onOpenObrigacoes}
+                onClick={() => setModalTipo({ tipo, lista: listaCompleta, meta })}
                 style={{ background:'var(--surface)', border:`1px solid var(--border)`,
-                  borderTop:`3px solid ${corStatus}`,
-                  borderRadius:'var(--r-md)', padding:'14px 16px', cursor:'pointer',
-                  transition:'box-shadow .15s' }}
-                onMouseEnter={e => e.currentTarget.style.boxShadow='var(--shadow-md)'}
-                onMouseLeave={e => e.currentTarget.style.boxShadow='none'}>
+                  borderTop:`4px solid ${corStatus}`,
+                  borderRadius:'var(--r-md)', padding:'16px 18px', cursor:'pointer',
+                  transition:'box-shadow .15s, transform .1s' }}
+                onMouseEnter={e => { e.currentTarget.style.boxShadow='var(--shadow-md)'; e.currentTarget.style.transform='translateY(-1px)' }}
+                onMouseLeave={e => { e.currentTarget.style.boxShadow='none'; e.currentTarget.style.transform='none' }}>
 
                 {/* Header do card */}
-                <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:10 }}>
-                  <div style={{ display:'flex', alignItems:'center', gap:8 }}>
-                    <span style={{ fontSize:20 }}>{meta.icon}</span>
+                <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:12 }}>
+                  <div style={{ display:'flex', alignItems:'center', gap:10 }}>
+                    <span style={{ fontSize:26 }}>{meta.icon}</span>
                     <div>
-                      <div style={{ fontSize:13, fontWeight:600, color:'var(--text1)' }}>{tipo}</div>
-                      <div style={{ fontSize:10, color:'var(--text3)', marginTop:1 }}>{meta.dept}</div>
+                      <div style={{ fontSize:15, fontWeight:700, color:'var(--text1)' }}>{tipo}</div>
+                      <div style={{ fontSize:11, color:'var(--text3)', marginTop:1 }}>{meta.dept}</div>
                     </div>
                   </div>
-                  {/* Badge status */}
-                  <span style={{ fontSize:10, fontWeight:600, padding:'3px 8px', borderRadius:99,
+                  <span style={{ fontSize:11, fontWeight:600, padding:'4px 10px', borderRadius:99,
                     background:bgStatus, color:corStatus }}>
                     {status==='ok'?'✓ Em dia':status==='vencido'?'⚠ Vencido':status==='pendente'?'○ Pendente':'—'}
                   </span>
                 </div>
 
                 {/* Barra de progresso */}
-                <div style={{ height:5, background:'var(--surface2)', borderRadius:99, marginBottom:8, overflow:'hidden' }}>
+                <div style={{ height:6, background:'var(--surface2)', borderRadius:99, marginBottom:10, overflow:'hidden' }}>
                   <div style={{ height:'100%', width:`${pct}%`, background:corStatus, borderRadius:99, transition:'width .4s' }} />
                 </div>
 
                 {/* Números */}
-                <div style={{ display:'flex', gap:12, fontSize:12, marginBottom: clientesPend.length > 0 ? 10 : 0 }}>
-                  <span style={{ color:'var(--ok)', fontWeight:600 }}>✓ {ok}</span>
-                  {pend > 0 && <span style={{ color:'var(--warn)', fontWeight:600 }}>○ {pend} pend.</span>}
-                  {venc > 0 && <span style={{ color:'var(--danger)', fontWeight:600 }}>⚠ {venc} venc.</span>}
-                  <span style={{ marginLeft:'auto', fontWeight:700, color:corStatus }}>{pct}%</span>
+                <div style={{ display:'flex', gap:14, fontSize:13, marginBottom: clientesPend.length > 0 ? 12 : 0 }}>
+                  <span style={{ color:'var(--ok)', fontWeight:700 }}>✓ {ok}</span>
+                  {pend > 0 && <span style={{ color:'var(--warn)', fontWeight:700 }}>○ {pend} pend.</span>}
+                  {venc > 0 && <span style={{ color:'var(--danger)', fontWeight:700 }}>⚠ {venc} venc.</span>}
+                  <span style={{ marginLeft:'auto', fontWeight:800, color:corStatus, fontSize:15 }}>{pct}%</span>
                 </div>
 
                 {/* Clientes com pendência */}
                 {clientesPend.length > 0 && (
-                  <div style={{ borderTop:'1px solid var(--border)', paddingTop:8, display:'flex', flexWrap:'wrap', gap:4 }}>
+                  <div style={{ borderTop:'1px solid var(--border)', paddingTop:9, display:'flex', flexWrap:'wrap', gap:5 }}>
                     {clientesPend.map((n,i) => (
-                      <span key={i} style={{ fontSize:9, background:'var(--surface2)', border:'1px solid var(--border)',
-                        borderRadius:4, padding:'2px 6px', color:'var(--text2)', fontWeight:500 }}>
+                      <span key={i} style={{ fontSize:10, background:'var(--surface2)', border:'1px solid var(--border)',
+                        borderRadius:5, padding:'3px 7px', color:'var(--text2)', fontWeight:600 }}>
                         {n}
                       </span>
                     ))}
                     {(pend + venc) > 3 && (
-                      <span style={{ fontSize:9, color:'var(--text3)', padding:'2px 4px' }}>+{pend+venc-3} mais</span>
+                      <span style={{ fontSize:10, color:'var(--text3)', padding:'3px 5px', fontWeight:500 }}>+{pend+venc-3} mais</span>
                     )}
                   </div>
                 )}
@@ -229,6 +234,149 @@ export default function Overview({ onAddTarefa, onOpenCliente, onOpenObrigacoes,
           })}
         </div>
       )}
+
+      {/* ── Modal lista por tipo ── */}
+      {modalTipo && (
+        <ModalObrigacoesTipo
+          tipo={modalTipo.tipo}
+          meta={modalTipo.meta}
+          lista={modalTipo.lista}
+          compSel={compSel}
+          onClose={() => setModalTipo(null)}
+        />
+      )}
+    </div>
+  )
+}
+
+function ModalObrigacoesTipo({ tipo, meta, lista, compSel, onClose }) {
+  const [filtro, setFiltro] = useState('todos')
+  const upsertObrigacao = useStore(s => s.upsertObrigacao)
+  const fetchObrigacoes = useStore(s => s.fetchObrigacoes)
+  const obrigacoes = useStore(s => s.obrigacoes || [])
+  const [updatingId, setUpdatingId] = useState(null)
+
+  // Ler direto do store para refletir mudanças imediatas
+  const listaAtual = obrigacoes
+    .filter(o => o.tipo === tipo && o.competencia === compSel)
+    .map(o => ({ ...o, clienteNome: lista.find(l => l.id === o.id)?.clienteNome || '—' }))
+
+  const filtrada = listaAtual.filter(o => {
+    if (filtro === 'pendente') return o.status === 'pendente'
+    if (filtro === 'vencido')  return o.status === 'vencido'
+    if (filtro === 'concluido') return o.status === 'concluido' || o.status === 'nao_aplica'
+    return true
+  })
+
+  const STATUS_CFG = {
+    pendente:   { label:'Pendente',  cor:'var(--warn)',   bg:'var(--warn-dim)' },
+    concluido:  { label:'Concluído', cor:'var(--ok)',     bg:'var(--ok-dim)' },
+    nao_aplica: { label:'N/A',       cor:'var(--info)',   bg:'var(--info-dim)' },
+    vencido:    { label:'Vencido',   cor:'var(--danger)', bg:'var(--danger-dim)' },
+  }
+
+  const handleStatus = async (obs, novoStatus) => {
+    setUpdatingId(obs.id)
+    const { supabase } = await import('../lib/supabase')
+    await supabase.from('obrigacoes').update({ status: novoStatus, updated_at: new Date().toISOString() }).eq('id', obs.id)
+    await fetchObrigacoes()
+    setUpdatingId(null)
+  }
+
+  const counts = {
+    todos:    listaAtual.length,
+    pendente: listaAtual.filter(o => o.status==='pendente').length,
+    vencido:  listaAtual.filter(o => o.status==='vencido').length,
+    concluido:listaAtual.filter(o => o.status==='concluido'||o.status==='nao_aplica').length,
+  }
+
+  return (
+    <div style={{ position:'fixed', inset:0, background:'rgba(27,43,75,.5)', backdropFilter:'blur(4px)',
+      zIndex:1000, display:'flex', alignItems:'center', justifyContent:'center', padding:20 }}
+      onClick={onClose}>
+      <div style={{ background:'var(--surface)', border:'1px solid var(--border)', borderRadius:'var(--r-xl)',
+        width:'100%', maxWidth:580, maxHeight:'85vh', display:'flex', flexDirection:'column',
+        boxShadow:'var(--shadow-lg)' }}
+        onClick={e => e.stopPropagation()}>
+
+        {/* Header navy */}
+        <div style={{ background:'#1B2B4B', borderRadius:'var(--r-xl) var(--r-xl) 0 0', padding:'16px 20px',
+          display:'flex', alignItems:'center', justifyContent:'space-between' }}>
+          <div style={{ display:'flex', alignItems:'center', gap:12 }}>
+            <span style={{ fontSize:28 }}>{meta.icon}</span>
+            <div>
+              <div style={{ fontSize:16, fontWeight:700, color:'#fff' }}>{tipo}</div>
+              <div style={{ fontSize:12, color:'#8fadd4', marginTop:2 }}>{meta.dept} · {compSel}</div>
+            </div>
+          </div>
+          <button onClick={onClose}
+            style={{ background:'rgba(255,255,255,.1)', border:'1px solid rgba(255,255,255,.2)',
+              borderRadius:8, width:30, height:30, color:'#8fadd4', cursor:'pointer',
+              display:'flex', alignItems:'center', justifyContent:'center', fontSize:16 }}>✕</button>
+        </div>
+
+        {/* Filtros por status */}
+        <div style={{ display:'flex', gap:6, padding:'12px 20px', borderBottom:'1px solid var(--border)', background:'var(--surface2)' }}>
+          {[['todos','Todos'],['pendente','Pendentes'],['vencido','Vencidos'],['concluido','Concluídos']].map(([id,lbl]) => (
+            <button key={id} onClick={() => setFiltro(id)}
+              style={{ background: filtro===id ? '#1B2B4B' : 'var(--surface)', border:`1px solid ${filtro===id?'#1B2B4B':'var(--border)'}`,
+                borderRadius:99, padding:'5px 12px', fontSize:12, fontWeight:600,
+                color: filtro===id ? '#fff' : 'var(--text2)', cursor:'pointer' }}>
+              {lbl} <span style={{ fontSize:11, opacity:.7 }}>({counts[id]})</span>
+            </button>
+          ))}
+        </div>
+
+        {/* Lista */}
+        <div style={{ overflowY:'auto', flex:1, padding:'12px 20px', display:'flex', flexDirection:'column', gap:8 }}>
+          {filtrada.length === 0 && (
+            <div style={{ textAlign:'center', color:'var(--text3)', padding:'40px 0', fontSize:14 }}>
+              Nenhuma obrigação neste filtro
+            </div>
+          )}
+          {filtrada.map(o => {
+            const cfg = STATUS_CFG[o.status] || STATUS_CFG.pendente
+            const busy = updatingId === o.id
+            return (
+              <div key={o.id} style={{ background:'var(--surface2)', border:'1px solid var(--border)',
+                borderLeft:`4px solid ${cfg.cor}`, borderRadius:'var(--r-sm)', padding:'12px 14px',
+                display:'flex', alignItems:'center', gap:12 }}>
+                <div style={{ flex:1, minWidth:0 }}>
+                  <div style={{ fontSize:14, fontWeight:600, color:'var(--text1)', marginBottom:3 }}>
+                    {o.clienteNome}
+                  </div>
+                  {o.vencimento && (
+                    <div style={{ fontSize:11, color: o.status==='vencido'?'var(--danger)':'var(--text3)',
+                      display:'flex', alignItems:'center', gap:4 }}>
+                      📅 Venc. {new Date(o.vencimento+'T12:00:00').toLocaleDateString('pt-BR')}
+                    </div>
+                  )}
+                </div>
+                {/* Dropdown status inline */}
+                <select value={o.status} disabled={busy} onChange={e => handleStatus(o, e.target.value)}
+                  style={{ background:cfg.bg, border:`1px solid ${cfg.cor}55`, borderRadius:99,
+                    padding:'5px 10px', fontSize:11, color:cfg.cor, fontWeight:700,
+                    cursor:'pointer', outline:'none', opacity:busy?.5:1,
+                    appearance:'none', WebkitAppearance:'none', minWidth:100, textAlign:'center' }}>
+                  <option value="pendente" style={{ background:'var(--surface)', color:'var(--warn)' }}>○ Pendente</option>
+                  <option value="concluido" style={{ background:'var(--surface)', color:'var(--ok)' }}>✓ Concluído</option>
+                  <option value="nao_aplica" style={{ background:'var(--surface)', color:'var(--info)' }}>— N/A</option>
+                  <option value="vencido" style={{ background:'var(--surface)', color:'var(--danger)' }}>⚠ Vencido</option>
+                </select>
+              </div>
+            )
+          })}
+        </div>
+
+        {/* Footer */}
+        <div style={{ padding:'12px 20px', borderTop:'1px solid var(--border)', display:'flex', justifyContent:'space-between', alignItems:'center', background:'var(--surface2)', borderRadius:'0 0 var(--r-xl) var(--r-xl)' }}>
+          <span style={{ fontSize:12, color:'var(--text3)' }}>{filtrada.length} de {listaAtual.length} registros</span>
+          <button onClick={onClose}
+            style={{ background:'#1B2B4B', border:'none', borderRadius:8, padding:'8px 18px', fontSize:13, color:'#fff', fontWeight:600, cursor:'pointer' }}>
+            Fechar
+          </button>
+        </div>
+      </div>
     </div>
   )
 }
@@ -238,19 +386,19 @@ function TaskRow({ tarefa, onToggle }) {
   return (
     <div className="task-item">
       <div className={`task-check ${tarefa.concluida ? 'done' : ''}`} onClick={onToggle}>
-        {tarefa.concluida && <CheckIcon size={11} color="white" strokeWidth={3} />}
+        {tarefa.concluida && <CheckIcon size={13} color="white" strokeWidth={3} />}
       </div>
       <div className="task-body">
-        <div className="task-title"><PriDot pri={tarefa.prioridade} />{' '}{tarefa.titulo}</div>
+        <div className="task-title" style={{ fontSize:14 }}><PriDot pri={tarefa.prioridade} />{' '}{tarefa.titulo}</div>
         <div className="task-meta">
-          <span style={{ fontWeight:500 }}>{tarefa.clientes?.nome}</span>
+          <span style={{ fontWeight:500, fontSize:12 }}>{tarefa.clientes?.nome}</span>
           <DeptChip dept={tarefa.departamento} />
           {tarefa.vencimento && (
-            <span style={{ color: overdue?'var(--danger)':'var(--text2)', display:'flex', alignItems:'center', gap:3 }}>
-              <CalendarIcon size={9} />{overdue?'⚠ ':''}{fmtDate(tarefa.vencimento)}
+            <span style={{ color: overdue?'var(--danger)':'var(--text2)', display:'flex', alignItems:'center', gap:3, fontSize:12 }}>
+              <CalendarIcon size={11} />{overdue?'⚠ ':''}{fmtDate(tarefa.vencimento)}
             </span>
           )}
-          {tarefa.origem === 'whatsapp' && <span className="badge badge-info" style={{ fontSize:9 }}>WA</span>}
+          {tarefa.origem === 'whatsapp' && <span className="badge badge-info" style={{ fontSize:10 }}>WA</span>}
         </div>
       </div>
     </div>
