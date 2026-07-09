@@ -342,7 +342,8 @@ function ModalObrigacoesTipo({ tipo, meta, lista, compSel, onClose }) {
                 borderLeft:`4px solid ${cfg.cor}`, borderRadius:'var(--r-sm)', padding:'12px 14px',
                 display:'flex', alignItems:'center', gap:12 }}>
                 <div style={{ flex:1, minWidth:0 }}>
-                  <div style={{ fontSize:14, fontWeight:600, color:'var(--text1)', marginBottom:3 }}>
+                  <div style={{ fontSize:14, fontWeight:600, color:'var(--text1)', marginBottom:3,
+                    whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>
                     {o.clienteNome}
                   </div>
                   {o.vencimento && (
