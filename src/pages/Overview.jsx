@@ -4,6 +4,7 @@ import { CheckIcon, ClipboardListIcon, AlertCircleIcon, TrendingUpIcon, UsersIco
   ClockIcon, MinusCircleIcon, BarChart2Icon, LayersIcon } from 'lucide-react'
 import { useStore } from '../store'
 import { DeptChip, PriDot, fmtDate, isOverdue } from '../components/shared'
+import { supabase } from '../lib/supabase'
 
 const TIPOS_OBS = ['PGDAS', 'DCTFWeb', 'eSocial', 'NFS-e', 'Folha', 'Extrato Bancário', 'Documentos', 'Parcelamento']
 
@@ -277,7 +278,6 @@ function ModalObrigacoesTipo({ tipo, meta, lista, compSel, onClose }) {
 
   const handleStatus = async (obs, novoStatus) => {
     setUpdatingId(obs.id)
-    const { supabase } = await import('../lib/supabase')
     await supabase.from('obrigacoes').update({ status: novoStatus, updated_at: new Date().toISOString() }).eq('id', obs.id)
     await fetchObrigacoes()
     setUpdatingId(null)
