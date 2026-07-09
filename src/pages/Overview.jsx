@@ -251,11 +251,11 @@ export default function Overview({ onAddTarefa, onOpenCliente, onOpenObrigacoes,
 }
 
 function ModalObrigacoesTipo({ tipo, meta, lista, compSel, onClose }) {
-  const [filtro, setFiltro] = useState('todos')
-  const upsertObrigacao = useStore(s => s.upsertObrigacao)
-  const fetchObrigacoes = useStore(s => s.fetchObrigacoes)
-  const obrigacoes = useStore(s => s.obrigacoes || [])
+  const [filtro, setFiltro]     = useState('todos')
   const [updatingId, setUpdatingId] = useState(null)
+  const clientes      = useStore(s => s.clientes)
+  const obrigacoes    = useStore(s => s.obrigacoes || [])
+  const fetchObrigacoes = useStore(s => s.fetchObrigacoes)
 
   // Ler direto do store para refletir mudanças imediatas
   const listaAtual = obrigacoes
