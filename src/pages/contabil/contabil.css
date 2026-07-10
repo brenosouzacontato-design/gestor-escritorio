@@ -1,0 +1,149 @@
+.contabil-modulo {
+  font-size: 15px;
+  color: var(--text1);
+  background: var(--bg);
+}
+
+.contabil-modulo * { box-sizing: border-box; }
+
+.contabil-tabs {
+  display: flex;
+  gap: 4px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 20px;
+}
+
+.contabil-tab {
+  padding: 10px 16px;
+  font-size: 0.95rem;
+  color: var(--text2);
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+}
+
+.contabil-tab[data-active="true"] {
+  color: var(--navy);
+  border-bottom-color: var(--navy2);
+  font-weight: 600;
+}
+
+.contabil-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+}
+
+.contabil-toolbar select,
+.contabil-toolbar input[type="date"] {
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--surface);
+  font-size: 0.9rem;
+  color: var(--text1);
+}
+
+.contabil-tabela {
+  width: 100%;
+  border-collapse: collapse;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  overflow: hidden;
+}
+
+.contabil-tabela th {
+  text-align: left;
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--text2);
+  background: var(--surface2);
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.contabil-tabela td {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+  font-size: 0.9rem;
+}
+
+.contabil-tabela tr:last-child td { border-bottom: none; }
+.contabil-tabela .num { text-align: right; font-variant-numeric: tabular-nums; }
+.contabil-tabela .grupo-row td { background: var(--surface2); font-weight: 600; }
+
+.valor-positivo { color: var(--ok); }
+.valor-negativo { color: var(--danger); }
+
+.contabil-form {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  padding: 16px;
+  margin-bottom: 20px;
+}
+
+.contabil-form-linha {
+  display: grid;
+  grid-template-columns: 1fr 1fr 120px auto;
+  gap: 8px;
+  margin-bottom: 8px;
+  align-items: center;
+}
+
+.contabil-form-linha select,
+.contabil-form-linha input {
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  font-size: 0.9rem;
+}
+
+.btn-navy {
+  background: var(--navy2);
+  color: #fff;
+  border: none;
+  border-radius: var(--r-sm);
+  padding: 8px 16px;
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+
+.btn-navy:hover { background: var(--navy); }
+
+.btn-ghost {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text1);
+  border-radius: var(--r-sm);
+  padding: 8px 16px;
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+
+.contabil-dropzone {
+  border: 2px dashed var(--sand);
+  border-radius: var(--r-sm);
+  padding: 32px;
+  text-align: center;
+  color: var(--text2);
+  background: var(--surface);
+}
+
+.contabil-dropzone.arrastando {
+  border-color: var(--navy3);
+  background: var(--surface2);
+}
+
+.badge-origem {
+  font-size: 0.75rem;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--surface2);
+  color: var(--text2);
+}

@@ -1,0 +1,5203 @@
+[
+  {
+    "codigo": "1.1.01.001.001",
+    "nome": "Caixa",
+    "tipo": "ativo",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "1.1.01.001.002",
+    "nome": "Valores a Identificar",
+    "tipo": "ativo",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "1.1.01.003.001",
+    "nome": "Nubank",
+    "tipo": "ativo",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "1.1.01.003.002",
+    "nome": "Ifood",
+    "tipo": "ativo",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "1.1.01.005.001",
+    "nome": "Aplicações em Fundos",
+    "tipo": "ativo",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "1.1.01.005.002",
+    "nome": "Cdb",
+    "tipo": "ativo",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "1.1.01.005.003",
+    "nome": "Títulos de Capitalização",
+    "tipo": "ativo",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "1.1.01.005.004",
+    "nome": "Aplicações - Ouro",
+    "tipo": "ativo",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "1.1.01.005.005",
+    "nome": "Aplicações - Poupança",
+    "tipo": "ativo",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "1.1.01.005.006",
+    "nome": "Aplicações - Renda Variável - Ações",
+    "tipo": "ativo",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "1.1.01.005.007",
+    "nome": "Aplicações - Renda Fixa",
+    "tipo": "ativo",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "1.1.01.005.008",
+    "nome": "Aplicações - Moeda Extrangeira",
+    "tipo": "ativo",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "1.1.02.001.001",
+    "nome": "Clientes Diversos",
+    "tipo": "ativo",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "1.1.02.005.001",
+    "nome": "Cartão de Crédito",
+    "tipo": "ativo",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "1.1.02.005.002",
+    "nome": "Contas a Receber",
+    "tipo": "ativo",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "1.1.02.005.003",
+    "nome": "Cheques a Receber",
+    "tipo": "ativo",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "1.1.02.005.004",
+    "nome": "Cartão de Débito",
+    "tipo": "ativo",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "1.1.02.005.005",
+    "nome": "Duplicatas a Receber",
+    "tipo": "ativo",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "1.1.02.007.001",
+    "nome": "Adiantamentos Diversos",
+    "tipo": "ativo",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "1.1.02.007.002",
+    "nome": "Adiantamentos de Importações",
+    "tipo": "ativo",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "1.1.02.007.003",
+    "nome": "Adiantamentos de Comissões",
+    "tipo": "ativo",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "1.1.02.007.004",
+    "nome": "Adiantamentos a Fornecedores Nacionais",
+    "tipo": "ativo",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "1.1.02.007.005",
+    "nome": "Adiantamentos a Diretores",
+    "tipo": "ativo",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "1.1.02.007.006",
+    "nome": "Adiantamentos Desp.c/Viagens",
+    "tipo": "ativo",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "1.1.02.007.007",
+    "nome": "Adiantamentos a Coligadas",
+    "tipo": "ativo",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "1.1.02.007.008",
+    "nome": "Antecipação de Indenização",
+    "tipo": "ativo",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "1.1.02.007.009",
+    "nome": "Adiantamentos a Fornecedores do Exterior",
+    "tipo": "ativo",
+    "natureza": "credora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "1.1.02.009.001",
+    "nome": "Salário Familia/Aux.Nat.",
+    "tipo": "ativo",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "1.1.02.009.002",
+    "nome": "Empréstimos a Funcionários",
+    "tipo": "ativo",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "1.1.02.009.003",
+    "nome": "Adiantamentos de 13º Salário",
+    "tipo": "ativo",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "1.1.02.009.004",
+    "nome": "Adiantamentos de Férias",
+    "tipo": "ativo",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "1.1.02.009.005",
+    "nome": "Salário Maternidade",
+    "tipo": "ativo",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "1.1.02.009.006",
+    "nome": "Adiantamentos de Salários",
+    "tipo": "ativo",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "1.1.02.011.001",
+    "nome": "Irrf a Recuperar",
+    "tipo": "ativo",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "1.1.02.011.002",
+    "nome": "Pis a Recuperar",
+    "tipo": "ativo",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "1.1.02.011.003",
+    "nome": "Cofins a Recuperar",
+    "tipo": "ativo",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "1.1.02.011.004",
+    "nome": "Irpj a Recuperar",
+    "tipo": "ativo",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "1.1.02.011.005",
+    "nome": "Csll a Recuperar",
+    "tipo": "ativo",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "1.1.02.011.006",
+    "nome": "Inss a Recuperar",
+    "tipo": "ativo",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "1.1.02.011.007",
+    "nome": "Iss a Recuperar",
+    "tipo": "ativo",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "1.1.02.011.008",
+    "nome": "Irrf sobre Aplicações Financeiras",
+    "tipo": "ativo",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "1.1.02.011.009",
+    "nome": "ICMS Subs Tributária a Recuperar",
+    "tipo": "ativo",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "1.1.02.011.010",
+    "nome": "Ipi a Recuperar",
+    "tipo": "ativo",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "1.1.02.013.001",
+    "nome": "Material de Embalagem",
+    "tipo": "ativo",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "1.1.02.013.002",
+    "nome": "Produtos Acabados",
+    "tipo": "ativo",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "1.1.02.013.003",
+    "nome": "Material Auxiliar",
+    "tipo": "ativo",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "1.1.02.013.004",
+    "nome": "Insumos",
+    "tipo": "ativo",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "1.1.02.013.005",
+    "nome": "Matéria Prima",
+    "tipo": "ativo",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "1.1.02.013.006",
+    "nome": "Mercadorias p/Obras",
+    "tipo": "ativo",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "1.1.02.013.007",
+    "nome": "Imóveis Destinados a Venda",
+    "tipo": "ativo",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "1.1.02.013.008",
+    "nome": "Animais",
+    "tipo": "ativo",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "1.1.02.013.009",
+    "nome": "Produtos Agropecuários",
+    "tipo": "ativo",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "1.1.02.013.010",
+    "nome": "Mercadorias em Consignação",
+    "tipo": "ativo",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "1.1.02.013.011",
+    "nome": "Mercadorias Remetidas p/Demostração",
+    "tipo": "ativo",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "1.1.02.013.012",
+    "nome": "Mercadorias Remetidas p/Conserto",
+    "tipo": "ativo",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "1.1.02.013.013",
+    "nome": "Mercadorias Importadas",
+    "tipo": "ativo",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "1.1.02.013.014",
+    "nome": "Mercadorias para Revenda",
+    "tipo": "ativo",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "1.1.02.013.015",
+    "nome": "Outros Estoques",
+    "tipo": "ativo",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "1.2.01.001.001",
+    "nome": "Consórcios",
+    "tipo": "ativo",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "1.2.01.001.002",
+    "nome": "Depósitos Judiciais",
+    "tipo": "ativo",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "1.2.01.001.003",
+    "nome": "Adiantamentos Diversos",
+    "tipo": "ativo",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "1.2.01.001.004",
+    "nome": "Duplicatas a Receber - Clientes",
+    "tipo": "ativo",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "1.2.02.003.001",
+    "nome": "Outros Investimentos",
+    "tipo": "ativo",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "1.2.05.001.001",
+    "nome": "Terrenos",
+    "tipo": "ativo",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "1.2.05.001.002",
+    "nome": "Obras Civis",
+    "tipo": "ativo",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "1.2.05.001.003",
+    "nome": "Edifícios",
+    "tipo": "ativo",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "1.2.05.001.004",
+    "nome": "Imóveis",
+    "tipo": "ativo",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "1.2.05.003.001",
+    "nome": "Veículos",
+    "tipo": "ativo",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "1.2.05.003.002",
+    "nome": "Móveis e Utensílios",
+    "tipo": "ativo",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "1.2.05.003.003",
+    "nome": "Pastagens em Formação-Plantio",
+    "tipo": "ativo",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "1.2.05.003.004",
+    "nome": "Máquinas e Equipamentos de Escritório",
+    "tipo": "ativo",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "1.2.05.003.005",
+    "nome": "Aparelhos e Ferramentas",
+    "tipo": "ativo",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "1.2.05.003.006",
+    "nome": "Benfeitorias em Imóveis de Terceiros",
+    "tipo": "ativo",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "1.2.05.003.007",
+    "nome": "Utensílios de Copa/Cozinha",
+    "tipo": "ativo",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "1.2.05.003.008",
+    "nome": "Computadores e Periféricos",
+    "tipo": "ativo",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "1.2.05.003.009",
+    "nome": "Instalações",
+    "tipo": "ativo",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "1.2.05.003.010",
+    "nome": "Máquinas e Equipamentos",
+    "tipo": "ativo",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "1.2.05.003.011",
+    "nome": "Animais Reprodutores",
+    "tipo": "ativo",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "1.2.05.003.012",
+    "nome": "Máquinas e Equip. Informática",
+    "tipo": "ativo",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "1.2.05.003.013",
+    "nome": "Móveis e utensilios recepção",
+    "tipo": "ativo",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "1.2.05.003.014",
+    "nome": "Móveis e utensilios cozinha",
+    "tipo": "ativo",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "1.2.05.003.015",
+    "nome": "Utensílios odontológicos",
+    "tipo": "ativo",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "1.2.05.003.016",
+    "nome": "Móveis e utensílios banheiro",
+    "tipo": "ativo",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "1.2.05.003.017",
+    "nome": "Móveis e utensilio consultório",
+    "tipo": "ativo",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "1.2.05.007.001",
+    "nome": "(-) Deprec. Utensílios de Copa/Cozinha",
+    "tipo": "ativo",
+    "natureza": "credora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "1.2.05.007.002",
+    "nome": "(-) Deprec. Máquinas e Equip. Informática",
+    "tipo": "ativo",
+    "natureza": "credora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "1.2.05.007.003",
+    "nome": "(-) Deprec. Máquinas e Equip. de Escritório",
+    "tipo": "ativo",
+    "natureza": "credora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "1.2.05.007.004",
+    "nome": "(-) Deprec. Benfeitorias em Imóveis de Terceiros",
+    "tipo": "ativo",
+    "natureza": "credora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "1.2.05.007.005",
+    "nome": "(-) Deprec. Computadores e Periféricos",
+    "tipo": "ativo",
+    "natureza": "credora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "1.2.05.007.006",
+    "nome": "(-) Deprec. Aparelhos e Ferramentas",
+    "tipo": "ativo",
+    "natureza": "credora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "1.2.05.007.007",
+    "nome": "(-) Deprec. Móveis e Utensílios",
+    "tipo": "ativo",
+    "natureza": "credora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "1.2.05.007.008",
+    "nome": "(-) Deprec. Máquinas e Equipamentos",
+    "tipo": "ativo",
+    "natureza": "credora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "1.2.05.007.009",
+    "nome": "(-) Deprec. Veículos",
+    "tipo": "ativo",
+    "natureza": "credora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "1.2.05.007.010",
+    "nome": "(-) Depreciação Acumulada Mov. Ut. recepção",
+    "tipo": "ativo",
+    "natureza": "credora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "1.2.05.007.011",
+    "nome": "(-) Depreciação Acumulada Mov. Ut. cozinha",
+    "tipo": "ativo",
+    "natureza": "credora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "1.2.05.007.012",
+    "nome": "(-) Depreciação Acumulada Mov. Ut. Utensílios odontológicos",
+    "tipo": "ativo",
+    "natureza": "credora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "1.2.05.007.013",
+    "nome": "(-) Depreciação Acumulada Mov. Ut. banheiro",
+    "tipo": "ativo",
+    "natureza": "credora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "1.2.05.007.014",
+    "nome": "(-) Depreciação Acumulada consultório",
+    "tipo": "ativo",
+    "natureza": "credora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "1.2.06.001.001",
+    "nome": "Marcas, Direitos e Patentes",
+    "tipo": "ativo",
+    "natureza": "credora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "1.2.06.001.002",
+    "nome": "Desenvolvimento de Produtos",
+    "tipo": "ativo",
+    "natureza": "credora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "1.2.06.001.003",
+    "nome": "Licença de Uso de Software",
+    "tipo": "ativo",
+    "natureza": "credora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "1.2.06.001.004",
+    "nome": "Direitos Autorais",
+    "tipo": "ativo",
+    "natureza": "credora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "1.2.06.002.001",
+    "nome": "(-) Amortiz. Lic. de Uso de Software",
+    "tipo": "ativo",
+    "natureza": "credora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "1.2.06.002.002",
+    "nome": "(-) Desenvolvimento de Produtos",
+    "tipo": "ativo",
+    "natureza": "credora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "1.2.06.002.003",
+    "nome": "(-) Amortiz. Marcas, Direitos e Patentes",
+    "tipo": "ativo",
+    "natureza": "credora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "1.2.06.002.004",
+    "nome": "(-) Exaustões",
+    "tipo": "ativo",
+    "natureza": "credora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "2.1.02.001.001",
+    "nome": "Banco do Brasil s/a",
+    "tipo": "passivo",
+    "natureza": "credora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "2.1.02.001.002",
+    "nome": "Banco Bradesco s/a",
+    "tipo": "passivo",
+    "natureza": "credora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "2.1.02.001.003",
+    "nome": "Banco Santander s/a",
+    "tipo": "passivo",
+    "natureza": "credora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "2.1.02.001.004",
+    "nome": "Banco Safra s/a",
+    "tipo": "passivo",
+    "natureza": "credora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "2.1.02.001.005",
+    "nome": "Caixa Econômica Federal",
+    "tipo": "passivo",
+    "natureza": "credora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "2.1.02.001.006",
+    "nome": "Banco Itaú s/a",
+    "tipo": "passivo",
+    "natureza": "credora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "2.1.02.001.007",
+    "nome": "Empréstimo Consignado à Pagar",
+    "tipo": "passivo",
+    "natureza": "credora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "2.1.02.001.008",
+    "nome": "Juros a Pagar de Empréstimos",
+    "tipo": "passivo",
+    "natureza": "credora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "2.1.05.001.001",
+    "nome": "Pis a Recolher",
+    "tipo": "passivo",
+    "natureza": "credora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "2.1.05.001.002",
+    "nome": "Simples a Recolher",
+    "tipo": "passivo",
+    "natureza": "credora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "2.1.05.001.003",
+    "nome": "Irpj a Recolher",
+    "tipo": "passivo",
+    "natureza": "credora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "2.1.05.001.004",
+    "nome": "Iptu a Recolher",
+    "tipo": "passivo",
+    "natureza": "credora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "2.1.05.001.005",
+    "nome": "Csll a Recolher",
+    "tipo": "passivo",
+    "natureza": "credora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "2.1.05.001.006",
+    "nome": "Cofins a Recolher",
+    "tipo": "passivo",
+    "natureza": "credora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "2.1.05.001.007",
+    "nome": "Iss a Recolher",
+    "tipo": "passivo",
+    "natureza": "credora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "2.1.05.001.008",
+    "nome": "Funrural a Recolher",
+    "tipo": "passivo",
+    "natureza": "credora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "2.1.05.001.009",
+    "nome": "Ipi a Recolher",
+    "tipo": "passivo",
+    "natureza": "credora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "2.1.05.001.010",
+    "nome": "Irrf Retido a Recolher",
+    "tipo": "passivo",
+    "natureza": "credora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "2.1.05.001.011",
+    "nome": "Icms-St a Recolher",
+    "tipo": "passivo",
+    "natureza": "credora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "2.1.05.001.012",
+    "nome": "Iss Retido a Recolher",
+    "tipo": "passivo",
+    "natureza": "credora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "2.1.05.001.013",
+    "nome": "Pis/Cofins/CSLL - CSLL - a Recolher",
+    "tipo": "passivo",
+    "natureza": "credora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "2.1.05.001.014",
+    "nome": "Inss Retido a Recolher",
+    "tipo": "passivo",
+    "natureza": "credora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "2.1.05.003.001",
+    "nome": "Rescisões a Pagar",
+    "tipo": "passivo",
+    "natureza": "credora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "2.1.05.003.002",
+    "nome": "13o. Salário a Pagar",
+    "tipo": "passivo",
+    "natureza": "credora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "2.1.05.003.003",
+    "nome": "Indenizações a Pagar",
+    "tipo": "passivo",
+    "natureza": "credora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "2.1.05.003.004",
+    "nome": "Férias a Pagar",
+    "tipo": "passivo",
+    "natureza": "credora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "2.1.05.003.005",
+    "nome": "Salários e Ordenados a Pagar",
+    "tipo": "passivo",
+    "natureza": "credora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "2.1.05.003.006",
+    "nome": "Pró Labore a Pagar",
+    "tipo": "passivo",
+    "natureza": "credora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "2.1.05.003.007",
+    "nome": "Pis a Repassar - Pis Abono Salarial",
+    "tipo": "passivo",
+    "natureza": "credora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "2.1.05.003.008",
+    "nome": "Pensão Alimentícia a Repassar",
+    "tipo": "passivo",
+    "natureza": "credora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "2.1.05.003.009",
+    "nome": "Fgts a Recolher",
+    "tipo": "passivo",
+    "natureza": "credora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "2.1.05.003.010",
+    "nome": "Inss a Recolher",
+    "tipo": "passivo",
+    "natureza": "credora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "2.1.05.003.011",
+    "nome": "Contribuição Sindical a Recolher",
+    "tipo": "passivo",
+    "natureza": "credora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "2.1.05.003.012",
+    "nome": "Contribuição Confederativa a Recolher",
+    "tipo": "passivo",
+    "natureza": "credora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "2.1.06.001.001",
+    "nome": "Seguros a Pagar",
+    "tipo": "passivo",
+    "natureza": "credora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "2.1.06.001.002",
+    "nome": "Adiantamentos de Clientes",
+    "tipo": "passivo",
+    "natureza": "credora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "2.1.06.001.003",
+    "nome": "Alugueis a Pagar",
+    "tipo": "passivo",
+    "natureza": "credora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "2.1.06.001.004",
+    "nome": "Fretes a Pagar",
+    "tipo": "passivo",
+    "natureza": "credora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "2.1.06.001.005",
+    "nome": "Cartão de Crédito a Pagar",
+    "tipo": "passivo",
+    "natureza": "credora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "2.1.06.001.006",
+    "nome": "Contas a Pagar",
+    "tipo": "passivo",
+    "natureza": "credora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "2.1.06.001.007",
+    "nome": "Consórcios a Pagar",
+    "tipo": "passivo",
+    "natureza": "credora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "2.1.08.001.001",
+    "nome": "Provisão Inss sobre Férias",
+    "tipo": "passivo",
+    "natureza": "credora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "2.1.08.001.002",
+    "nome": "Provisão Fgts sobre 13o Salário",
+    "tipo": "passivo",
+    "natureza": "credora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "2.1.08.001.003",
+    "nome": "Provisão Inss sobre 13o Salário",
+    "tipo": "passivo",
+    "natureza": "credora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "2.1.08.001.004",
+    "nome": "Provisões de Natureza Tributária",
+    "tipo": "passivo",
+    "natureza": "credora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "2.1.08.001.005",
+    "nome": "Provisão para 13o Salário",
+    "tipo": "passivo",
+    "natureza": "credora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "2.1.08.001.006",
+    "nome": "Provisão Fgts sobre Férias",
+    "tipo": "passivo",
+    "natureza": "credora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "2.1.08.001.007",
+    "nome": "Provisões de Natureza Trabalhista",
+    "tipo": "passivo",
+    "natureza": "credora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "2.1.08.001.008",
+    "nome": "Provisão para Férias",
+    "tipo": "passivo",
+    "natureza": "credora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "2.1.08.001.009",
+    "nome": "Provisões de Natureza Civel",
+    "tipo": "passivo",
+    "natureza": "credora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "2.1.08.001.010",
+    "nome": "Provisão Pis sobre 13o Salário",
+    "tipo": "passivo",
+    "natureza": "credora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "2.1.08.001.011",
+    "nome": "Provisão Pis sobre Férias",
+    "tipo": "passivo",
+    "natureza": "credora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "2.1.08.001.012",
+    "nome": "Outras Provisões",
+    "tipo": "passivo",
+    "natureza": "credora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "2.1.08.001.013",
+    "nome": "Provisão para Contingências",
+    "tipo": "passivo",
+    "natureza": "credora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "2.2.01.002.001",
+    "nome": "Banco Safra s/a",
+    "tipo": "passivo",
+    "natureza": "credora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "2.2.01.002.002",
+    "nome": "Banco Santander s/a",
+    "tipo": "passivo",
+    "natureza": "credora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "2.2.01.002.003",
+    "nome": "Juros a Pagar de Empréstimos",
+    "tipo": "passivo",
+    "natureza": "credora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "2.2.01.002.004",
+    "nome": "Banco do Brasil s/a",
+    "tipo": "passivo",
+    "natureza": "credora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "2.2.01.002.005",
+    "nome": "Banco Itaú s/a",
+    "tipo": "passivo",
+    "natureza": "credora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "2.2.01.002.006",
+    "nome": "Banco Bradesco s/a",
+    "tipo": "passivo",
+    "natureza": "credora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "2.2.01.002.007",
+    "nome": "Empréstimos de Sócios",
+    "tipo": "passivo",
+    "natureza": "credora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "2.2.01.002.008",
+    "nome": "Financiamentos Diversos",
+    "tipo": "passivo",
+    "natureza": "credora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "2.2.01.002.009",
+    "nome": "Financiamentos Imóveis",
+    "tipo": "passivo",
+    "natureza": "credora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "2.2.01.002.010",
+    "nome": "Caixa Econômica Federal",
+    "tipo": "passivo",
+    "natureza": "credora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "2.2.01.002.011",
+    "nome": "Empréstimos de Terceiros",
+    "tipo": "passivo",
+    "natureza": "credora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "2.3.01.001.001",
+    "nome": "Capital Social",
+    "tipo": "patrimonio_liquido",
+    "natureza": "credora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "2.3.01.001.002",
+    "nome": "(-) Capital a Integralizar",
+    "tipo": "patrimonio_liquido",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "2.3.01.002.001",
+    "nome": "Outras Reservas",
+    "tipo": "patrimonio_liquido",
+    "natureza": "credora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "2.3.01.002.002",
+    "nome": "Reservas de Capital",
+    "tipo": "patrimonio_liquido",
+    "natureza": "credora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "2.3.01.003.001",
+    "nome": "Reservas Patrimoniais",
+    "tipo": "patrimonio_liquido",
+    "natureza": "credora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "2.3.01.003.002",
+    "nome": "Reservas Estatutárias",
+    "tipo": "patrimonio_liquido",
+    "natureza": "credora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "2.3.01.003.003",
+    "nome": "Reservas para Contingências",
+    "tipo": "patrimonio_liquido",
+    "natureza": "credora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "2.3.01.003.004",
+    "nome": "Reservas Estatutárias",
+    "tipo": "patrimonio_liquido",
+    "natureza": "credora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "2.3.01.003.005",
+    "nome": "Reserva Legal",
+    "tipo": "patrimonio_liquido",
+    "natureza": "credora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "2.3.01.003.006",
+    "nome": "Reserva Orçamentária",
+    "tipo": "patrimonio_liquido",
+    "natureza": "credora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "2.3.01.004.001",
+    "nome": "Ajustes Exercicios Anteriores",
+    "tipo": "patrimonio_liquido",
+    "natureza": "credora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "2.3.01.004.002",
+    "nome": "(-) Prejuízos do Exercício",
+    "tipo": "patrimonio_liquido",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "2.3.01.004.003",
+    "nome": "Lucros do Exercício",
+    "tipo": "patrimonio_liquido",
+    "natureza": "credora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "2.3.01.005.001",
+    "nome": "(-) Prejuízos Acumulados",
+    "tipo": "patrimonio_liquido",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "2.3.01.005.002",
+    "nome": "Lucros Acumulados",
+    "tipo": "patrimonio_liquido",
+    "natureza": "credora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "2.4.01.001.001",
+    "nome": "Edifícios",
+    "tipo": "passivo",
+    "natureza": "credora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "2.4.01.001.002",
+    "nome": "Obras Civis",
+    "tipo": "passivo",
+    "natureza": "credora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "2.4.01.001.005",
+    "nome": "Instalações",
+    "tipo": "passivo",
+    "natureza": "credora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "2.4.01.001.006",
+    "nome": "Máquinas e Equipamentos",
+    "tipo": "passivo",
+    "natureza": "credora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "3.1.01.001.001.001",
+    "nome": "Vendas de Produtos - Mercado Interno",
+    "tipo": "receita",
+    "natureza": "credora",
+    "grupo_dre": "receita_bruta"
+  },
+  {
+    "codigo": "3.1.01.001.001.002",
+    "nome": "Vendas de Produtos - Mercado Externo",
+    "tipo": "receita",
+    "natureza": "credora",
+    "grupo_dre": "receita_bruta"
+  },
+  {
+    "codigo": "3.1.01.001.002.001",
+    "nome": "(-) Cofins",
+    "tipo": "receita",
+    "natureza": "devedora",
+    "grupo_dre": "receita_bruta"
+  },
+  {
+    "codigo": "3.1.01.001.002.002",
+    "nome": "(-) Ipi",
+    "tipo": "receita",
+    "natureza": "devedora",
+    "grupo_dre": "receita_bruta"
+  },
+  {
+    "codigo": "3.1.01.001.002.003",
+    "nome": "(-) Icms - St",
+    "tipo": "receita",
+    "natureza": "devedora",
+    "grupo_dre": "receita_bruta"
+  },
+  {
+    "codigo": "3.1.01.001.002.004",
+    "nome": "(-) Simples Nacional",
+    "tipo": "receita",
+    "natureza": "devedora",
+    "grupo_dre": "receita_bruta"
+  },
+  {
+    "codigo": "3.1.01.001.002.005",
+    "nome": "(-) Pis",
+    "tipo": "receita",
+    "natureza": "devedora",
+    "grupo_dre": "receita_bruta"
+  },
+  {
+    "codigo": "3.1.01.001.002.006",
+    "nome": "(-) Iss",
+    "tipo": "receita",
+    "natureza": "devedora",
+    "grupo_dre": "receita_bruta"
+  },
+  {
+    "codigo": "3.1.01.001.002.007",
+    "nome": "(-) Icms",
+    "tipo": "receita",
+    "natureza": "devedora",
+    "grupo_dre": "receita_bruta"
+  },
+  {
+    "codigo": "3.1.01.001.003.001",
+    "nome": "(-) Dev. Vendas de Produtos a Prazo-m.Interno",
+    "tipo": "receita",
+    "natureza": "devedora",
+    "grupo_dre": "receita_bruta"
+  },
+  {
+    "codigo": "3.1.01.001.003.002",
+    "nome": "(-) Dev. Vendas de Produtos a Prazo-m.Externo",
+    "tipo": "receita",
+    "natureza": "devedora",
+    "grupo_dre": "receita_bruta"
+  },
+  {
+    "codigo": "3.1.01.001.003.003",
+    "nome": "(+) Icms Creditado s/Devolução de Vendas",
+    "tipo": "receita",
+    "natureza": "devedora",
+    "grupo_dre": "receita_bruta"
+  },
+  {
+    "codigo": "3.1.01.001.003.004",
+    "nome": "(+) Pis Creditado s/Devolução de Vendas",
+    "tipo": "receita",
+    "natureza": "devedora",
+    "grupo_dre": "receita_bruta"
+  },
+  {
+    "codigo": "3.1.01.001.003.005",
+    "nome": "(+) Cofins Creditado s/Devolução de Vendas",
+    "tipo": "receita",
+    "natureza": "devedora",
+    "grupo_dre": "receita_bruta"
+  },
+  {
+    "codigo": "3.1.01.001.003.006",
+    "nome": "(+) Ipi Creditado s/Devolução de Vendas",
+    "tipo": "receita",
+    "natureza": "devedora",
+    "grupo_dre": "receita_bruta"
+  },
+  {
+    "codigo": "3.1.01.003.001.001",
+    "nome": "Vendas de Mercadorias - Mercado Interno",
+    "tipo": "receita",
+    "natureza": "credora",
+    "grupo_dre": "receita_bruta"
+  },
+  {
+    "codigo": "3.1.01.003.001.002",
+    "nome": "Vendas de Mercadorias - Mercado Externo",
+    "tipo": "receita",
+    "natureza": "credora",
+    "grupo_dre": "receita_bruta"
+  },
+  {
+    "codigo": "3.1.01.003.002.001",
+    "nome": "(-) Cofins",
+    "tipo": "receita",
+    "natureza": "devedora",
+    "grupo_dre": "receita_bruta"
+  },
+  {
+    "codigo": "3.1.01.003.002.002",
+    "nome": "(-) Icms - St",
+    "tipo": "receita",
+    "natureza": "devedora",
+    "grupo_dre": "receita_bruta"
+  },
+  {
+    "codigo": "3.1.01.003.002.003",
+    "nome": "(-) Simples Nacional",
+    "tipo": "receita",
+    "natureza": "devedora",
+    "grupo_dre": "receita_bruta"
+  },
+  {
+    "codigo": "3.1.01.003.002.004",
+    "nome": "(-) Pis",
+    "tipo": "receita",
+    "natureza": "devedora",
+    "grupo_dre": "receita_bruta"
+  },
+  {
+    "codigo": "3.1.01.003.002.005",
+    "nome": "(-) Iss",
+    "tipo": "receita",
+    "natureza": "devedora",
+    "grupo_dre": "receita_bruta"
+  },
+  {
+    "codigo": "3.1.01.003.002.006",
+    "nome": "(-) Ipi",
+    "tipo": "receita",
+    "natureza": "devedora",
+    "grupo_dre": "receita_bruta"
+  },
+  {
+    "codigo": "3.1.01.003.002.007",
+    "nome": "(-) Icms",
+    "tipo": "receita",
+    "natureza": "devedora",
+    "grupo_dre": "receita_bruta"
+  },
+  {
+    "codigo": "3.1.01.003.003.001",
+    "nome": "(-) Devolução de Vendas de Mercadorias - Mercado Interno",
+    "tipo": "receita",
+    "natureza": "devedora",
+    "grupo_dre": "receita_bruta"
+  },
+  {
+    "codigo": "3.1.01.003.003.002",
+    "nome": "(-) Devolução de Vendas de Mercadorias - Mercado Externo",
+    "tipo": "receita",
+    "natureza": "devedora",
+    "grupo_dre": "receita_bruta"
+  },
+  {
+    "codigo": "3.1.01.003.003.003",
+    "nome": "(+) Pis Creditado s/Devolução de Vendas",
+    "tipo": "receita",
+    "natureza": "devedora",
+    "grupo_dre": "receita_bruta"
+  },
+  {
+    "codigo": "3.1.01.003.003.004",
+    "nome": "(+) Cofins Creditado s/Devolução de Vendas",
+    "tipo": "receita",
+    "natureza": "devedora",
+    "grupo_dre": "receita_bruta"
+  },
+  {
+    "codigo": "3.1.01.003.003.005",
+    "nome": "(+) Ipi Creditado s/Devolução de Vendas",
+    "tipo": "receita",
+    "natureza": "devedora",
+    "grupo_dre": "receita_bruta"
+  },
+  {
+    "codigo": "3.1.01.003.003.006",
+    "nome": "(+) Icms Creditado s/Devolução de Vendas",
+    "tipo": "receita",
+    "natureza": "devedora",
+    "grupo_dre": "receita_bruta"
+  },
+  {
+    "codigo": "3.1.01.005.001.001",
+    "nome": "Receita com Locações Diversas",
+    "tipo": "receita",
+    "natureza": "credora",
+    "grupo_dre": "receita_bruta"
+  },
+  {
+    "codigo": "3.1.01.005.001.002",
+    "nome": "Receita por Imóveis Vendidos",
+    "tipo": "receita",
+    "natureza": "credora",
+    "grupo_dre": "receita_bruta"
+  },
+  {
+    "codigo": "3.1.01.005.001.003",
+    "nome": "Receita Imoveis/Variação Monetária",
+    "tipo": "receita",
+    "natureza": "credora",
+    "grupo_dre": "receita_bruta"
+  },
+  {
+    "codigo": "3.1.01.005.002.001",
+    "nome": "(-) Ret - Regime Unificado de Tributo",
+    "tipo": "receita",
+    "natureza": "devedora",
+    "grupo_dre": "receita_bruta"
+  },
+  {
+    "codigo": "3.1.01.005.002.002",
+    "nome": "(-) Cofins",
+    "tipo": "receita",
+    "natureza": "devedora",
+    "grupo_dre": "receita_bruta"
+  },
+  {
+    "codigo": "3.1.01.005.002.003",
+    "nome": "(-) Iss",
+    "tipo": "receita",
+    "natureza": "devedora",
+    "grupo_dre": "receita_bruta"
+  },
+  {
+    "codigo": "3.1.01.005.002.004",
+    "nome": "(-) Pis",
+    "tipo": "receita",
+    "natureza": "devedora",
+    "grupo_dre": "receita_bruta"
+  },
+  {
+    "codigo": "3.1.01.007.001.001",
+    "nome": "Serviços Prestados a Terceiros - Mercado Interno",
+    "tipo": "receita",
+    "natureza": "credora",
+    "grupo_dre": "receita_bruta"
+  },
+  {
+    "codigo": "3.1.01.007.001.002",
+    "nome": "Serviços Prestados a Terceiros - Mercado Externo",
+    "tipo": "receita",
+    "natureza": "credora",
+    "grupo_dre": "receita_bruta"
+  },
+  {
+    "codigo": "3.1.01.007.002.001",
+    "nome": "(-) Simples Nacional",
+    "tipo": "receita",
+    "natureza": "devedora",
+    "grupo_dre": "receita_bruta"
+  },
+  {
+    "codigo": "3.1.01.007.002.002",
+    "nome": "(-) Ipi",
+    "tipo": "receita",
+    "natureza": "devedora",
+    "grupo_dre": "receita_bruta"
+  },
+  {
+    "codigo": "3.1.01.007.002.003",
+    "nome": "(-) Cofins",
+    "tipo": "receita",
+    "natureza": "devedora",
+    "grupo_dre": "receita_bruta"
+  },
+  {
+    "codigo": "3.1.01.007.002.004",
+    "nome": "(-) Pis",
+    "tipo": "receita",
+    "natureza": "devedora",
+    "grupo_dre": "receita_bruta"
+  },
+  {
+    "codigo": "3.1.01.007.002.005",
+    "nome": "(-) Iss",
+    "tipo": "receita",
+    "natureza": "devedora",
+    "grupo_dre": "receita_bruta"
+  },
+  {
+    "codigo": "3.1.01.007.002.006",
+    "nome": "(-) Icms s/Fretes",
+    "tipo": "receita",
+    "natureza": "devedora",
+    "grupo_dre": "receita_bruta"
+  },
+  {
+    "codigo": "3.1.01.007.003.001",
+    "nome": "(-) de Prestação de Serviços Mercado Interno",
+    "tipo": "receita",
+    "natureza": "devedora",
+    "grupo_dre": "receita_bruta"
+  },
+  {
+    "codigo": "3.1.01.007.003.002",
+    "nome": "(-) de Prestação de Serviços Mercado Externo",
+    "tipo": "receita",
+    "natureza": "devedora",
+    "grupo_dre": "receita_bruta"
+  },
+  {
+    "codigo": "3.1.02.001.001.001",
+    "nome": "Receitas em Aplicações na Bm&f",
+    "tipo": "receita",
+    "natureza": "credora",
+    "grupo_dre": "receita_bruta"
+  },
+  {
+    "codigo": "3.1.02.001.001.002",
+    "nome": "Receitas s/Juros Capital Próprio",
+    "tipo": "receita",
+    "natureza": "credora",
+    "grupo_dre": "receita_bruta"
+  },
+  {
+    "codigo": "3.1.02.001.001.003",
+    "nome": "Outras Receitas Financeiras",
+    "tipo": "receita",
+    "natureza": "credora",
+    "grupo_dre": "receita_bruta"
+  },
+  {
+    "codigo": "3.1.02.001.001.004",
+    "nome": "Variações Cambiais Ativa",
+    "tipo": "receita",
+    "natureza": "credora",
+    "grupo_dre": "receita_bruta"
+  },
+  {
+    "codigo": "3.1.02.001.001.005",
+    "nome": "Variações Cambiais Ativa Diferida",
+    "tipo": "receita",
+    "natureza": "credora",
+    "grupo_dre": "receita_bruta"
+  },
+  {
+    "codigo": "3.1.02.001.001.006",
+    "nome": "Receitas Aplicações Mercado Aberto",
+    "tipo": "receita",
+    "natureza": "credora",
+    "grupo_dre": "receita_bruta"
+  },
+  {
+    "codigo": "3.1.02.001.001.007",
+    "nome": "Juros Ativos",
+    "tipo": "receita",
+    "natureza": "credora",
+    "grupo_dre": "receita_bruta"
+  },
+  {
+    "codigo": "3.1.02.001.001.008",
+    "nome": "Receita de Aplicação Financeira",
+    "tipo": "receita",
+    "natureza": "credora",
+    "grupo_dre": "receita_bruta"
+  },
+  {
+    "codigo": "3.1.02.001.001.009",
+    "nome": "Variações Monetárias Ativas",
+    "tipo": "receita",
+    "natureza": "credora",
+    "grupo_dre": "receita_bruta"
+  },
+  {
+    "codigo": "3.1.02.001.001.010",
+    "nome": "Ganhos de Investimentos",
+    "tipo": "receita",
+    "natureza": "credora",
+    "grupo_dre": "receita_bruta"
+  },
+  {
+    "codigo": "3.1.02.001.001.011",
+    "nome": "(-) Pis s/ Receitas Financeiras",
+    "tipo": "receita",
+    "natureza": "credora",
+    "grupo_dre": "receita_bruta"
+  },
+  {
+    "codigo": "3.1.02.001.001.012",
+    "nome": "(-) Cofins s/ Receitas Financeiras",
+    "tipo": "receita",
+    "natureza": "credora",
+    "grupo_dre": "receita_bruta"
+  },
+  {
+    "codigo": "3.1.02.001.002.001",
+    "nome": "Receitas Diversas",
+    "tipo": "receita",
+    "natureza": "credora",
+    "grupo_dre": "receita_bruta"
+  },
+  {
+    "codigo": "3.1.02.001.002.002",
+    "nome": "Receita com Multas Contratuais",
+    "tipo": "receita",
+    "natureza": "credora",
+    "grupo_dre": "receita_bruta"
+  },
+  {
+    "codigo": "3.1.02.001.002.003",
+    "nome": "Receita com Locações Diversas",
+    "tipo": "receita",
+    "natureza": "credora",
+    "grupo_dre": "receita_bruta"
+  },
+  {
+    "codigo": "3.1.02.001.002.004",
+    "nome": "Recuperação de Despesas Administrativas",
+    "tipo": "receita",
+    "natureza": "credora",
+    "grupo_dre": "receita_bruta"
+  },
+  {
+    "codigo": "3.1.02.001.002.005",
+    "nome": "Reembolsos de Despesas",
+    "tipo": "receita",
+    "natureza": "credora",
+    "grupo_dre": "receita_bruta"
+  },
+  {
+    "codigo": "3.2.01.001.001.001",
+    "nome": "Lucros sobre Vendas de Bens",
+    "tipo": "receita",
+    "natureza": "credora",
+    "grupo_dre": "receita_bruta"
+  },
+  {
+    "codigo": "3.2.01.001.001.002",
+    "nome": "Resultado com Alienação de Bens do Ativo Permanent",
+    "tipo": "receita",
+    "natureza": "credora",
+    "grupo_dre": "receita_bruta"
+  },
+  {
+    "codigo": "3.2.01.001.002.001",
+    "nome": "Outras Rec. Não Operacionais",
+    "tipo": "receita",
+    "natureza": "credora",
+    "grupo_dre": "receita_bruta"
+  },
+  {
+    "codigo": "3.2.01.001.002.002",
+    "nome": "Ganho com Vendas de Ações",
+    "tipo": "receita",
+    "natureza": "credora",
+    "grupo_dre": "receita_bruta"
+  },
+  {
+    "codigo": "3.2.01.001.002.003",
+    "nome": "Dividendos de Ações",
+    "tipo": "receita",
+    "natureza": "credora",
+    "grupo_dre": "receita_bruta"
+  },
+  {
+    "codigo": "3.2.01.001.002.004",
+    "nome": "Descontos Obtidos",
+    "tipo": "receita",
+    "natureza": "credora",
+    "grupo_dre": "receita_bruta"
+  },
+  {
+    "codigo": "3.3.01.001.001",
+    "nome": "(-) Descontos Sobre Prestação de Serviços",
+    "tipo": "receita",
+    "natureza": "devedora",
+    "grupo_dre": "receita_bruta"
+  },
+  {
+    "codigo": "3.3.01.001.002",
+    "nome": "(-) Descontos Sobre Vendas de Mercadorias",
+    "tipo": "receita",
+    "natureza": "devedora",
+    "grupo_dre": "receita_bruta"
+  },
+  {
+    "codigo": "3.3.01.001.003",
+    "nome": "(-) Descontos Sobre Vendas de Produtos",
+    "tipo": "receita",
+    "natureza": "devedora",
+    "grupo_dre": "receita_bruta"
+  },
+  {
+    "codigo": "3.3.01.001.004",
+    "nome": "(-) Outras Deduções",
+    "tipo": "receita",
+    "natureza": "devedora",
+    "grupo_dre": "receita_bruta"
+  },
+  {
+    "codigo": "4.1.01.001.001.001",
+    "nome": "Estoque Inicial Matérias-Primas",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.1.01.001.001.002",
+    "nome": "Compras de Materias-Primas Importadas",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.1.01.001.001.003",
+    "nome": "Compras de Matérias-Primas a Prazo",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.1.01.001.001.004",
+    "nome": "Material de Embalagem",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.1.01.001.001.005",
+    "nome": "Material Secundário",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.1.01.001.001.006",
+    "nome": "Materiais Auxiliares e de Consumo",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.1.01.001.001.007",
+    "nome": "Material Acabado/Acondicionado",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.1.01.001.001.008",
+    "nome": "Beneficiamento de Materiais",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.1.01.001.001.009",
+    "nome": "Material Intermediário",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.1.01.001.001.010",
+    "nome": "Despesas Aduaneiras de Importação de Matérias-Prim",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.1.01.001.001.011",
+    "nome": "Fretes sobre Compras de Matérias-Primas",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.1.01.001.001.012",
+    "nome": "(-) Icms sobre Compras de Matérias-Primas - St",
+    "tipo": "custo",
+    "natureza": "credora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.1.01.001.001.013",
+    "nome": "(-) Pis s/Insumos Não Cumulativo",
+    "tipo": "custo",
+    "natureza": "credora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.1.01.001.001.014",
+    "nome": "(-) Cofins s/Insumos Não Cumulativo",
+    "tipo": "custo",
+    "natureza": "credora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.1.01.001.001.015",
+    "nome": "(-) Icms sobre Compras de Matérias-Primas - Rpa",
+    "tipo": "custo",
+    "natureza": "credora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.1.01.001.001.016",
+    "nome": "(-) Ipi sobre Compras de Matérias-Primas",
+    "tipo": "custo",
+    "natureza": "credora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.1.01.001.001.017",
+    "nome": "(-) Estoque Final de Matérias-Primas",
+    "tipo": "custo",
+    "natureza": "credora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.1.01.001.001.018",
+    "nome": "(-) Perdas no Estoque",
+    "tipo": "custo",
+    "natureza": "credora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.1.01.001.001.019",
+    "nome": "Custo dos Produtos Vendidos",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.1.01.001.003.001",
+    "nome": "Transferência de Insumos Recebidos",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.1.01.001.003.002",
+    "nome": "Icms s/Transferência de Insumos Recebidos",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.1.01.001.003.003",
+    "nome": "Ipi s/Transferência de Insumos Recebidos",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.1.01.001.005.001",
+    "nome": "Transferência de Insumos Enviados",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.1.01.001.005.002",
+    "nome": "Icms s/Transferência de Insumos Enviados",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.1.01.001.005.003",
+    "nome": "Ipi s/Transferência de Insumos Enviados",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.1.01.001.006.001",
+    "nome": "Icms s/Devolução de Compras de Materia Prima",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.1.01.001.006.002",
+    "nome": "(-) Devolução de Compras de Matérias-Primas",
+    "tipo": "custo",
+    "natureza": "credora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.1.01.001.006.003",
+    "nome": "Ipi s/Devolução de Compras de Materia Prima",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.1.01.001.009.001",
+    "nome": "(-) Icms s/Outras Entradas",
+    "tipo": "custo",
+    "natureza": "credora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.1.01.001.009.002",
+    "nome": "(-) Ipi s/Outras Entradas",
+    "tipo": "custo",
+    "natureza": "credora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.1.01.001.009.003",
+    "nome": "(-) Pis s/Insumos Não Cumulativo",
+    "tipo": "custo",
+    "natureza": "credora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.1.01.001.009.004",
+    "nome": "(-) Cofins s/Insumos Não Cumulativo",
+    "tipo": "custo",
+    "natureza": "credora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.1.01.001.009.005",
+    "nome": "(-) Pis s/Insumos Não Cumulativo",
+    "tipo": "custo",
+    "natureza": "credora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.1.01.001.009.006",
+    "nome": "(-) Cofins s/Insumos Não Cumulativo",
+    "tipo": "custo",
+    "natureza": "credora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.1.01.004.001.001",
+    "nome": "Pró Labore",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.1.01.004.001.002",
+    "nome": "Salários e Ordenados",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.1.01.004.001.003",
+    "nome": "Indenizações",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.1.01.004.001.004",
+    "nome": "Gratificações",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.1.01.004.001.005",
+    "nome": "Prêmios de Produção",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.1.01.004.001.006",
+    "nome": "Outras Remunerações",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.1.01.004.001.007",
+    "nome": "Instrução de Pessoal",
+    "tipo": "custo",
+    "natureza": "credora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.1.01.004.001.008",
+    "nome": "Descanso Semanal Remunerado",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.1.01.004.001.009",
+    "nome": "Adicional Noturno",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.1.01.004.001.010",
+    "nome": "Aviso Prévio",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.1.01.004.001.011",
+    "nome": "Férias",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.1.01.004.001.012",
+    "nome": "Inss",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.1.01.004.001.013",
+    "nome": "Fgts",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.1.01.004.001.014",
+    "nome": "13º Salário",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.1.01.004.001.015",
+    "nome": "Bolsa Auxílio - Estágio",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.1.01.004.001.016",
+    "nome": "Auxílio Doença",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.1.01.004.001.017",
+    "nome": "Assistência Odontológica",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.1.01.004.001.018",
+    "nome": "Pat - Programa de Alimentação ao Trabalhador",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.1.01.004.001.019",
+    "nome": "Assistência Médica",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.1.01.004.001.020",
+    "nome": "Assistência Social",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.1.01.004.001.021",
+    "nome": "Seguros de Acidentes de Trabalho",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.1.01.004.001.022",
+    "nome": "Auxílio Maternidade",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.1.01.004.001.023",
+    "nome": "Vale Transporte",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.1.01.004.001.024",
+    "nome": "Seguros de Vida em Grupo",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.1.01.004.001.025",
+    "nome": "Seguros de Empregados",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.1.01.004.001.026",
+    "nome": "Cesta Básica",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.1.01.004.001.027",
+    "nome": "Instrução de Pessoal",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.1.01.004.001.028",
+    "nome": "Adicional Insalubridade",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.1.01.004.001.029",
+    "nome": "Equipamentos de Proteção Individual",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.1.01.004.001.030",
+    "nome": "Previdência Privada",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.1.01.004.001.031",
+    "nome": "Custos com Cartão Salário",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.1.01.004.001.032",
+    "nome": "Comissões",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.1.01.004.001.033",
+    "nome": "Benefícios Concedidos",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.1.01.004.001.034",
+    "nome": "Auxilio Educação",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.1.01.004.001.035",
+    "nome": "Pis",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.1.01.004.001.036",
+    "nome": "Autônomos",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.1.01.004.001.037",
+    "nome": "Trabalho Temporário",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.1.01.004.001.038",
+    "nome": "Uniformes",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.1.01.004.001.039",
+    "nome": "Recrutamento e Seleção",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.1.01.004.001.040",
+    "nome": "Treinamento",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.1.01.004.001.041",
+    "nome": "Adicional Periculosidade",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.1.01.004.001.042",
+    "nome": "Plr",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.1.01.006.001.001",
+    "nome": "Locação de Máquinas e Equipamentos",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.1.01.006.001.002",
+    "nome": "Locação de Veículos",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.1.01.006.001.003",
+    "nome": "Locação de Bens",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.1.01.006.001.004",
+    "nome": "Despesas com Condomínio",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.1.01.006.001.005",
+    "nome": "Alugueis de Imóveis",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.1.01.006.001.006",
+    "nome": "Locação de Aeronave",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.1.01.006.003.001",
+    "nome": "Limpeza e Conservação",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.1.01.006.003.002",
+    "nome": "Manutenção e Reparos de Bens",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.1.01.006.003.003",
+    "nome": "Manutenção e Reformas",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.1.01.006.003.004",
+    "nome": "Manutenção de Instalações",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.1.01.006.003.005",
+    "nome": "Manutenção de Máquinas e Equipamentos",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.1.01.006.003.006",
+    "nome": "Manutenção de Eficícios",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.1.01.006.003.007",
+    "nome": "Manutenção de Móveis e Utensílios",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.1.01.006.003.008",
+    "nome": "Manutenção de Veículos",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.1.01.006.003.009",
+    "nome": "Ferramentas Perecíveis",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.1.01.008.005.001",
+    "nome": "Correios",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.1.01.008.005.002",
+    "nome": "Serviços de Vigilância",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.1.01.008.005.003",
+    "nome": "Serviços de Carreto",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.1.01.008.005.004",
+    "nome": "Royalties e Assistência Têcnica",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.1.01.008.005.005",
+    "nome": "Limpeza e Conservação",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.1.01.008.005.006",
+    "nome": "Comissões s/Vendas - Pj-Pj",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.1.01.008.005.007",
+    "nome": "Serviços de Consultoria",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.1.01.008.005.008",
+    "nome": "Serviços de Terceiros",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.1.01.008.005.009",
+    "nome": "Serviços de Garantia",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.1.01.008.005.010",
+    "nome": "Serviços de Manutenção",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.1.01.008.005.011",
+    "nome": "Telecomunicações",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.1.01.008.005.012",
+    "nome": "Água e Esgoto",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.1.01.008.005.013",
+    "nome": "Energia Elétrica",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.1.01.010.006.001",
+    "nome": "Impostos e Taxas",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.1.01.010.006.002",
+    "nome": "Reproduções",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.1.01.010.006.003",
+    "nome": "Material de Expediente",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.1.01.010.006.004",
+    "nome": "Bens de Pequeno Valor",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.1.01.010.006.005",
+    "nome": "Cursos e Treinamentos",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.1.01.010.006.006",
+    "nome": "Despesas com Importação",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.1.01.010.006.007",
+    "nome": "Medicamentos",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.1.01.010.006.008",
+    "nome": "Segurança e Vigilância",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.1.01.010.006.009",
+    "nome": "Seguro de Bens",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.1.01.010.006.010",
+    "nome": "Despesas c/ Veiculos",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.1.01.010.006.011",
+    "nome": "Refeições",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.1.01.010.006.012",
+    "nome": "Material de Limpeza",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.1.01.010.006.013",
+    "nome": "Pneus e Câmaras",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.1.01.010.006.014",
+    "nome": "Lanches, Refeições, Copa e Cozinha",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.1.01.010.006.015",
+    "nome": "Fretes e Carretos",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.1.01.010.006.016",
+    "nome": "Estacionamentos e Conduções",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.1.01.010.006.017",
+    "nome": "Seguros de Veículos",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.1.01.010.006.018",
+    "nome": "Viagens e Estadias",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.1.01.010.006.019",
+    "nome": "Combustíveis e Lubrificantes",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.1.01.010.007.001",
+    "nome": "Exaustões",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.1.01.010.007.002",
+    "nome": "Amortizações",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.1.01.010.007.003",
+    "nome": "Depreciações",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.2.01.001.002.001",
+    "nome": "Estoque Inicial",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.2.01.001.002.002",
+    "nome": "Compras de Mercadorias Importadas",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.2.01.001.002.003",
+    "nome": "Software para Revenda",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.2.01.001.002.004",
+    "nome": "Compras de Mercadorias",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.2.01.001.002.005",
+    "nome": "Combustíveis",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.2.01.001.002.006",
+    "nome": "Fretes sobre Compras de Mercadorias",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.2.01.001.002.007",
+    "nome": "Material de Embalagem",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.2.01.001.002.008",
+    "nome": "Despesas Aduaneiras de Importação de Matérias Prim",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.2.01.001.002.009",
+    "nome": "Mercadorias-Beneficiamento",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.2.01.001.002.010",
+    "nome": "Material de Consumo",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.2.01.001.002.011",
+    "nome": "(-) Icms s/Mercadorias - Rpa",
+    "tipo": "custo",
+    "natureza": "credora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.2.01.001.002.012",
+    "nome": "(-) Icms s/Mercadorias - St",
+    "tipo": "custo",
+    "natureza": "credora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.2.01.001.002.013",
+    "nome": "(-) Ipi s/Compras",
+    "tipo": "custo",
+    "natureza": "credora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.2.01.001.002.014",
+    "nome": "(-) Pis s/Insumos Não Cumulativo",
+    "tipo": "custo",
+    "natureza": "credora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.2.01.001.002.015",
+    "nome": "(-) Cofins s/Insumos Não Cumulativo",
+    "tipo": "custo",
+    "natureza": "credora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.2.01.001.002.016",
+    "nome": "(-) Estoque Final",
+    "tipo": "custo",
+    "natureza": "credora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.2.01.001.002.017",
+    "nome": "Custo das Mercadorias Vendidas",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.2.01.001.002.018",
+    "nome": "(-) Perdas no Estoque",
+    "tipo": "custo",
+    "natureza": "credora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.2.01.001.004.001",
+    "nome": "Transferência de Mercadorias Recebidas",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.2.01.001.004.002",
+    "nome": "(-) Ipi s/Transferência de Mercadorias Recebidas",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.2.01.001.004.003",
+    "nome": "(-) Icms s/Transferência de Mercadorias Recebidas",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.2.01.001.005.001",
+    "nome": "Transferência de Mercadorias Enviados",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.2.01.001.005.002",
+    "nome": "(-) Ipi s/Transferência de Mercadorias Enviados",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.2.01.001.005.003",
+    "nome": "(-) Icms s/Transferência de Mercadorias Enviados",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.2.01.001.007.001",
+    "nome": "Ipi s/Devolução de Compras de Mercadorias",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.2.01.001.007.002",
+    "nome": "(-) Devolução de Compras de Mercadorias",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.2.01.001.007.003",
+    "nome": "Icms s/Devolução de Compras de Mercadorias",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.2.01.001.009.001",
+    "nome": "(-) Irpj",
+    "tipo": "custo",
+    "natureza": "credora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.2.01.001.009.002",
+    "nome": "(-) Csll",
+    "tipo": "custo",
+    "natureza": "credora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.2.01.001.009.003",
+    "nome": "(-) Cofins s/Insumos Não Cumulativo",
+    "tipo": "custo",
+    "natureza": "credora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.2.01.001.009.004",
+    "nome": "(-) Pis s/Insumos Não Cumulativo",
+    "tipo": "custo",
+    "natureza": "credora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.2.01.001.009.005",
+    "nome": "(-) Icms s/Outras Entradas",
+    "tipo": "custo",
+    "natureza": "credora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.2.01.001.009.006",
+    "nome": "(-) Ipi s/Outras Entradas",
+    "tipo": "custo",
+    "natureza": "credora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.3.01.001.001.001",
+    "nome": "Adicional Noturno",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.3.01.001.001.002",
+    "nome": "Outras Remunerações",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.3.01.001.001.003",
+    "nome": "Aviso Prévio",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.3.01.001.001.004",
+    "nome": "Descanso Semanal Remunerado",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.3.01.001.001.005",
+    "nome": "Salários e Ordenados",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.3.01.001.001.006",
+    "nome": "Pró Labore",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.3.01.001.001.007",
+    "nome": "Prêmios de Produção",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.3.01.001.001.008",
+    "nome": "Gratificações",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.3.01.001.001.009",
+    "nome": "Indenizações",
+    "tipo": "custo",
+    "natureza": "credora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.3.01.001.001.010",
+    "nome": "Férias",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.3.01.001.001.011",
+    "nome": "Inss",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.3.01.001.001.012",
+    "nome": "Fgts",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.3.01.001.001.013",
+    "nome": "Bolsa Auxílio - Estágio",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.3.01.001.001.014",
+    "nome": "13º Salário",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.3.01.001.001.015",
+    "nome": "Auxílio Doença",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.3.01.001.001.016",
+    "nome": "Assistência Social",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.3.01.001.001.017",
+    "nome": "Auxílio Maternidade",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.3.01.001.001.018",
+    "nome": "Seguros de Vida em Grupo",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.3.01.001.001.019",
+    "nome": "Seguros de Empregados",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.3.01.001.001.020",
+    "nome": "Seguros de Acidentes de Trabalho",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.3.01.001.001.021",
+    "nome": "Pat - Programa de Alimentação ao Trabalhador",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.3.01.001.001.022",
+    "nome": "Vale Transporte",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.3.01.001.001.023",
+    "nome": "Assistência Odontológica",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.3.01.001.001.024",
+    "nome": "Assistência Médica",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.3.01.001.001.025",
+    "nome": "Instrução de Pessoal",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.3.01.001.001.026",
+    "nome": "Seguros de Vida Estagiários",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.3.01.001.001.027",
+    "nome": "Trabalho Temporário",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.3.01.001.001.028",
+    "nome": "Previdência Privada",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.3.01.001.001.029",
+    "nome": "Equipamentos de Proteção Individual",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.3.01.001.001.030",
+    "nome": "Uniformes",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.3.01.001.001.031",
+    "nome": "Custos com Cartão Salário",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.3.01.001.001.032",
+    "nome": "Recrutamento e Seleção",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.3.01.001.001.033",
+    "nome": "Treinamento",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.3.01.001.001.034",
+    "nome": "Cesta Básica",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.3.01.001.001.035",
+    "nome": "Pis",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.3.01.001.001.036",
+    "nome": "Comissões",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.3.01.001.001.037",
+    "nome": "Benefícios Concedidos",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.3.01.001.001.038",
+    "nome": "Auxilio Educação",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.3.01.001.001.039",
+    "nome": "Autônomos",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.3.01.001.001.040",
+    "nome": "Plr",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.3.01.001.001.041",
+    "nome": "Adicional Insalubridade",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.3.01.001.001.042",
+    "nome": "Adicional Periculosidade",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.3.01.003.001.001",
+    "nome": "Água e Esgoto",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.3.01.003.001.002",
+    "nome": "Locação de Máquinas e Equipamentos",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.3.01.003.001.003",
+    "nome": "Telefonia",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.3.01.003.001.004",
+    "nome": "Locação de Bens",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.3.01.003.001.005",
+    "nome": "Locação de Aeronave",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.3.01.003.001.006",
+    "nome": "Locação de Móveis",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.3.01.003.001.007",
+    "nome": "Locação de Veículos",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.3.01.003.001.008",
+    "nome": "Energia Elétrica",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.3.01.003.001.009",
+    "nome": "Consumo de Gás",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.3.01.003.001.010",
+    "nome": "Despesas c/ Locações",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.3.01.003.001.011",
+    "nome": "Despesas com Condomínio",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.3.01.003.001.012",
+    "nome": "Alugueis de Imóveis",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.3.01.003.002.001",
+    "nome": "Manutenção de Máquinas e Equipamentos",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.3.01.003.002.002",
+    "nome": "Conservação de Bens",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.3.01.003.002.003",
+    "nome": "Manutenção de Móveis e Utensílios",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.3.01.003.002.005",
+    "nome": "Manutenção de Veículos",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.3.01.003.002.007",
+    "nome": "Limpeza e Conservação",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.3.01.003.002.008",
+    "nome": "Manutenção e Reformas",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.3.01.003.002.009",
+    "nome": "Manutenção de Instalações",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.3.01.003.002.010",
+    "nome": "Manutenção e Reparos de Bens",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.3.01.005.001.001",
+    "nome": "Serviços de Vigilância",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.3.01.005.001.002",
+    "nome": "Honorários Advocatícios",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.3.01.005.001.003",
+    "nome": "Serviços de Garantia",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.3.01.005.001.004",
+    "nome": "Serviços de Manutenção",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.3.01.005.001.005",
+    "nome": "Serviços de Terceiros",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.3.01.005.001.006",
+    "nome": "Limpeza e Conservação",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.3.01.005.001.007",
+    "nome": "Serviços de Carreto",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.3.01.005.001.008",
+    "nome": "Serviços de Consultoria",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.3.01.005.001.009",
+    "nome": "Comissões s/Vendas - Pj-Pj",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.3.01.005.001.010",
+    "nome": "Royalties e Assistência Têcnica",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.3.01.005.001.011",
+    "nome": "Correios",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.3.01.005.001.012",
+    "nome": "Impostos s/Serviços Tomados do Exterior",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.3.01.005.001.013",
+    "nome": "Honorários Contábeis",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.3.01.005.001.014",
+    "nome": "Serviços Tomados do Exterior",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.3.01.005.001.015",
+    "nome": "Segurança Patrimonial",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.3.01.005.001.016",
+    "nome": "Processamento de Dados",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.3.01.005.001.017",
+    "nome": "Cursos e Treinamentos",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.3.01.005.001.018",
+    "nome": "Contrato de Manutenção de Frotas",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.3.01.005.001.019",
+    "nome": "Despesas c/Atividade",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.3.01.005.001.020",
+    "nome": "Assessoria Técnica",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.3.01.005.001.021",
+    "nome": "Despesas c/ Veículos",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.3.01.007.001.001",
+    "nome": "Viagens e Estadias",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.3.01.007.001.002",
+    "nome": "Segurança e Vigilância",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.3.01.007.001.003",
+    "nome": "Seguro de Bens",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.3.01.007.001.004",
+    "nome": "Seguros de Veículos",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.3.01.007.001.005",
+    "nome": "Material de Limpeza",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.3.01.007.001.006",
+    "nome": "Combustíveis e Lubrificantes",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.3.01.007.001.007",
+    "nome": "Pneus e Câmaras",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.3.01.007.001.008",
+    "nome": "Condução",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.3.01.007.001.009",
+    "nome": "Condução e Transporte da Diretoria",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.3.01.007.001.010",
+    "nome": "Impressos e Material de Escritório",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.3.01.007.001.011",
+    "nome": "Lanches, Refeições",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.3.01.007.001.012",
+    "nome": "Copa e Cozinha",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.3.01.007.001.013",
+    "nome": "Fretes e Carretos",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.3.01.007.001.014",
+    "nome": "Custos com Importação",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.3.01.007.001.015",
+    "nome": "Estacionamentos e Conduções",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.3.01.007.001.016",
+    "nome": "Cursos e Treinamentos",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.3.01.007.001.017",
+    "nome": "Bens de Pequeno Valor",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.3.01.007.001.018",
+    "nome": "Material de Expediente",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.3.01.007.001.019",
+    "nome": "Reproduções",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.3.01.007.001.020",
+    "nome": "Impostos e Taxas",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.3.01.007.001.021",
+    "nome": "Hospedagem",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.3.01.007.001.022",
+    "nome": "Eventos e Confraternização",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.3.01.007.001.023",
+    "nome": "Medicamentos",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.3.01.007.001.024",
+    "nome": "Contribuição Sindical",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.3.01.007.001.025",
+    "nome": "Refeições",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.3.01.007.001.026",
+    "nome": "Propaganda e Publicidade",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.3.01.007.001.027",
+    "nome": "Custos Legais com Processos",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.3.01.007.001.028",
+    "nome": "Instalações",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.3.01.007.001.029",
+    "nome": "Lavanderia",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.3.01.007.001.030",
+    "nome": "Despesas Cartorárias",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.3.01.007.001.031",
+    "nome": "Materiais Diversos",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.3.01.007.001.032",
+    "nome": "Assinaturas/ Jornais e Revistas",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.3.01.007.001.033",
+    "nome": "Kilometragem",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.3.01.007.001.034",
+    "nome": "Peças p/Manutenção de Equipamentos",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.3.01.007.001.035",
+    "nome": "Passagem Aérea",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.3.01.007.001.036",
+    "nome": "Material de Segurança",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.3.01.007.001.037",
+    "nome": "Material de Consumo",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.3.01.007.002",
+    "nome": "Móveis e materiais recepção",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.3.01.007.003",
+    "nome": "Materiais Cozinha",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.3.01.007.004",
+    "nome": "Materiais banheiro",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.3.01.007.005",
+    "nome": "Materiais de consultório",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.3.01.009.001.001",
+    "nome": "Exaustões",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.3.01.009.001.002",
+    "nome": "Amortizações",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.3.01.009.001.003",
+    "nome": "Depreciações",
+    "tipo": "custo",
+    "natureza": "devedora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.3.01.009.001.004",
+    "nome": "(-) Pis s/Insumos Não Cumulativo",
+    "tipo": "custo",
+    "natureza": "credora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "4.3.01.009.001.005",
+    "nome": "(-) Cofins s/Insumos Não Cumulativo",
+    "tipo": "custo",
+    "natureza": "credora",
+    "grupo_dre": "custo"
+  },
+  {
+    "codigo": "5.1.01.001.001.001",
+    "nome": "Indenizações",
+    "tipo": "despesa",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "5.1.01.001.001.002",
+    "nome": "Outras Remunerações",
+    "tipo": "despesa",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "5.1.01.001.001.003",
+    "nome": "Adicional Noturno",
+    "tipo": "despesa",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "5.1.01.001.001.004",
+    "nome": "Aviso Prévio",
+    "tipo": "despesa",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "5.1.01.001.001.005",
+    "nome": "Descanso Semanal Remunerado",
+    "tipo": "despesa",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "5.1.01.001.001.006",
+    "nome": "Gratificações",
+    "tipo": "despesa",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "5.1.01.001.001.007",
+    "nome": "Prêmios de Produção",
+    "tipo": "despesa",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "5.1.01.001.001.008",
+    "nome": "Pró Labore",
+    "tipo": "despesa",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "5.1.01.001.001.009",
+    "nome": "Salários e Ordenados",
+    "tipo": "despesa",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "5.1.01.001.001.010",
+    "nome": "Fgts",
+    "tipo": "despesa",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "5.1.01.001.001.011",
+    "nome": "Inss",
+    "tipo": "despesa",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "5.1.01.001.001.012",
+    "nome": "Bolsa Auxílio - Estágio",
+    "tipo": "despesa",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "5.1.01.001.001.013",
+    "nome": "Instrução de Pessoal",
+    "tipo": "despesa",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "5.1.01.001.001.014",
+    "nome": "Férias",
+    "tipo": "despesa",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "5.1.01.001.001.015",
+    "nome": "13º Salário",
+    "tipo": "despesa",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "5.1.01.001.001.016",
+    "nome": "Seguros de Vida em Grupo",
+    "tipo": "despesa",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "5.1.01.001.001.017",
+    "nome": "Seguros de Empregados",
+    "tipo": "despesa",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "5.1.01.001.001.018",
+    "nome": "Auxílio Maternidade",
+    "tipo": "despesa",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "5.1.01.001.001.019",
+    "nome": "Seguros de Acidentes de Trabalho",
+    "tipo": "despesa",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "5.1.01.001.001.020",
+    "nome": "Pat - Programa de Alimentação ao Trabalhador",
+    "tipo": "despesa",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "5.1.01.001.001.021",
+    "nome": "Vale Transporte",
+    "tipo": "despesa",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "5.1.01.001.001.022",
+    "nome": "Auxílio Doença",
+    "tipo": "despesa",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "5.1.01.001.001.023",
+    "nome": "Assistência Social",
+    "tipo": "despesa",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "5.1.01.001.001.024",
+    "nome": "Assistência Odontológica",
+    "tipo": "despesa",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "5.1.01.001.001.025",
+    "nome": "Assistência Médica",
+    "tipo": "despesa",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "5.1.01.001.001.026",
+    "nome": "Benefícios Concedidos",
+    "tipo": "despesa",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "5.1.01.001.001.027",
+    "nome": "Adicional Insalubridade",
+    "tipo": "despesa",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "5.1.01.001.001.028",
+    "nome": "Auxilio Educação",
+    "tipo": "despesa",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "5.1.01.001.001.029",
+    "nome": "Adicional Periculosidade",
+    "tipo": "despesa",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "5.1.01.001.001.030",
+    "nome": "Autônomos",
+    "tipo": "despesa",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "5.1.01.001.001.031",
+    "nome": "Plr",
+    "tipo": "despesa",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "5.1.01.001.001.032",
+    "nome": "Programas Educacionais",
+    "tipo": "despesa",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "5.1.01.001.001.033",
+    "nome": "Custos com Cartão Salário",
+    "tipo": "despesa",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "5.1.01.001.001.034",
+    "nome": "Treinamento",
+    "tipo": "despesa",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "5.1.01.001.001.035",
+    "nome": "Auxilio Creche",
+    "tipo": "despesa",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "5.1.01.001.001.036",
+    "nome": "Serviços Prestados p/Pessoa Física",
+    "tipo": "despesa",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "5.1.01.001.001.037",
+    "nome": "Cesta Básica",
+    "tipo": "despesa",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "5.1.01.001.001.038",
+    "nome": "Pis",
+    "tipo": "despesa",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "5.1.01.001.001.039",
+    "nome": "Comissões",
+    "tipo": "despesa",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "5.1.01.001.001.040",
+    "nome": "Recrutamento e Seleção",
+    "tipo": "despesa",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "5.1.01.001.001.041",
+    "nome": "Uniformes",
+    "tipo": "despesa",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "5.1.01.001.001.042",
+    "nome": "Trabalho Temporário",
+    "tipo": "despesa",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "5.1.01.001.001.043",
+    "nome": "Previdência Privada",
+    "tipo": "despesa",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "5.1.01.001.001.044",
+    "nome": "Equipamentos de Proteção Individual",
+    "tipo": "despesa",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "5.1.01.0010.001.001",
+    "nome": "Despesas Cartorárias",
+    "tipo": "despesa",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "5.1.01.0010.001.002",
+    "nome": "Despesas com Animais",
+    "tipo": "despesa",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "5.1.01.0010.001.003",
+    "nome": "Medicamentos",
+    "tipo": "despesa",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "5.1.01.0010.001.005",
+    "nome": "Feiras e Eventos",
+    "tipo": "despesa",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "5.1.01.0010.001.007",
+    "nome": "Despesas c/ Representações",
+    "tipo": "despesa",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "5.1.01.0010.001.008",
+    "nome": "Despesas Legais",
+    "tipo": "despesa",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "5.1.01.0010.001.009",
+    "nome": "Pedágio",
+    "tipo": "despesa",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "5.1.01.0010.001.010",
+    "nome": "Despesas com Informática",
+    "tipo": "despesa",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "5.1.01.0010.001.011",
+    "nome": "Associações de Classe",
+    "tipo": "despesa",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "5.1.01.0010.001.012",
+    "nome": "Dedetização",
+    "tipo": "despesa",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "5.1.01.0010.001.013",
+    "nome": "Feiras e Exposições",
+    "tipo": "despesa",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "5.1.01.0010.001.014",
+    "nome": "Fretes e Carretos",
+    "tipo": "despesa",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "5.1.01.0010.001.015",
+    "nome": "Perdas com Furtos e Desfalques",
+    "tipo": "despesa",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "5.1.01.0010.001.016",
+    "nome": "Lavanderia",
+    "tipo": "despesa",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "5.1.01.0010.001.017",
+    "nome": "Material de Escritório",
+    "tipo": "despesa",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "5.1.01.0010.001.018",
+    "nome": "Reembolso de Despesas",
+    "tipo": "despesa",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "5.1.01.0010.001.019",
+    "nome": "Refeições",
+    "tipo": "despesa",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "5.1.01.0010.001.020",
+    "nome": "Publicações",
+    "tipo": "despesa",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "5.1.01.0010.001.021",
+    "nome": "Encadernação",
+    "tipo": "despesa",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "5.1.01.0010.001.022",
+    "nome": "Licença de Uso",
+    "tipo": "despesa",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "5.1.01.0010.001.023",
+    "nome": "Livros Técnicos",
+    "tipo": "despesa",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "5.1.01.0010.001.024",
+    "nome": "Provedor de Internet",
+    "tipo": "despesa",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "5.1.01.0010.001.025",
+    "nome": "Radiocomunicações",
+    "tipo": "despesa",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "5.1.01.0010.001.026",
+    "nome": "Seminários e Eventos",
+    "tipo": "despesa",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "5.1.01.0010.001.027",
+    "nome": "Custas Judiciais",
+    "tipo": "despesa",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "5.1.01.0010.001.028",
+    "nome": "Assinaturas/ Jornais e Revistas",
+    "tipo": "despesa",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "5.1.01.0010.001.029",
+    "nome": "Condução",
+    "tipo": "despesa",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "5.1.01.0010.001.030",
+    "nome": "Impressos e Material de Escritório",
+    "tipo": "despesa",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "5.1.01.0010.001.031",
+    "nome": "Hospedagem",
+    "tipo": "despesa",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "5.1.01.0010.001.032",
+    "nome": "Condução e Transporte da Diretoria",
+    "tipo": "despesa",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "5.1.01.0010.001.033",
+    "nome": "Kilometragem",
+    "tipo": "despesa",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "5.1.01.0010.001.034",
+    "nome": "Material de Limpeza",
+    "tipo": "despesa",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "5.1.01.0010.001.035",
+    "nome": "Material de Consumo",
+    "tipo": "despesa",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "5.1.01.0010.001.036",
+    "nome": "Propaganda",
+    "tipo": "despesa",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "5.1.01.0010.001.037",
+    "nome": "Material de Segurança",
+    "tipo": "despesa",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "5.1.01.0010.001.038",
+    "nome": "Passagem Aérea",
+    "tipo": "despesa",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "5.1.01.0010.001.039",
+    "nome": "Peças p/Manutenção de Equipamentos",
+    "tipo": "despesa",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "5.1.01.0010.001.040",
+    "nome": "Propaganda e Publicidade",
+    "tipo": "despesa",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "5.1.01.0010.001.041",
+    "nome": "Pneus e Câmaras",
+    "tipo": "despesa",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "5.1.01.0010.001.042",
+    "nome": "Patrocínios",
+    "tipo": "despesa",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "5.1.01.0010.001.043",
+    "nome": "Promoções",
+    "tipo": "despesa",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "5.1.01.0010.001.044",
+    "nome": "Instalações",
+    "tipo": "despesa",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "5.1.01.0010.001.045",
+    "nome": "Lanches, Refeições",
+    "tipo": "despesa",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "5.1.01.0010.001.046",
+    "nome": "Seguros de Veículos",
+    "tipo": "despesa",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "5.1.01.0010.001.047",
+    "nome": "Seguro de Bens",
+    "tipo": "despesa",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "5.1.01.0010.001.048",
+    "nome": "Combustíveis e Lubrificantes",
+    "tipo": "despesa",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "5.1.01.0010.001.049",
+    "nome": "Segurança e Vigilância",
+    "tipo": "despesa",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "5.1.01.0010.001.050",
+    "nome": "Limpeza e Conservação",
+    "tipo": "despesa",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "5.1.01.0010.001.051",
+    "nome": "Copa e Cozinha",
+    "tipo": "despesa",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "5.1.01.0010.001.052",
+    "nome": "Viagens e Estadias",
+    "tipo": "despesa",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "5.1.01.0010.001.053",
+    "nome": "Estacionamentos e Conduções",
+    "tipo": "despesa",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "5.1.01.0010.001.054",
+    "nome": "Despesas com Importação",
+    "tipo": "despesa",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "5.1.01.0010.001.055",
+    "nome": "Cursos e Treinamentos",
+    "tipo": "despesa",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "5.1.01.0010.001.056",
+    "nome": "Bens de Pequeno Valor",
+    "tipo": "despesa",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "5.1.01.0010.001.057",
+    "nome": "Material de Expediente",
+    "tipo": "despesa",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "5.1.01.0010.001.058",
+    "nome": "Reproduções",
+    "tipo": "despesa",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "5.1.01.0010.002.001",
+    "nome": "Irpj",
+    "tipo": "despesa",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "5.1.01.0010.002.002",
+    "nome": "Csll",
+    "tipo": "despesa",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "5.1.01.0010.002.004",
+    "nome": "Iof",
+    "tipo": "despesa",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "5.1.01.0010.002.005",
+    "nome": "Contribuição Sindical",
+    "tipo": "despesa",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "5.1.01.0010.002.006",
+    "nome": "Irf Fonte - Tributação Exclusiva",
+    "tipo": "despesa",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "5.1.01.0010.002.007",
+    "nome": "Ipva",
+    "tipo": "despesa",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "5.1.01.0010.002.008",
+    "nome": "Impostos e Taxas Diversas",
+    "tipo": "despesa",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "5.1.01.0010.002.010",
+    "nome": "Iptu",
+    "tipo": "despesa",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "5.1.01.003.002.001",
+    "nome": "Locação de Móveis",
+    "tipo": "despesa",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "5.1.01.003.002.002",
+    "nome": "Água e Esgoto",
+    "tipo": "despesa",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "5.1.01.003.002.003",
+    "nome": "Energia Elétrica",
+    "tipo": "despesa",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "5.1.01.003.002.004",
+    "nome": "Locação de Aeronave",
+    "tipo": "despesa",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "5.1.01.003.002.005",
+    "nome": "Consumo de Gás",
+    "tipo": "despesa",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "5.1.01.003.002.006",
+    "nome": "Despesas c/ Locações",
+    "tipo": "despesa",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "5.1.01.003.002.007",
+    "nome": "Telefonia",
+    "tipo": "despesa",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "5.1.01.003.002.008",
+    "nome": "Locação de Bens",
+    "tipo": "despesa",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "5.1.01.003.002.009",
+    "nome": "Locação de Veículos",
+    "tipo": "despesa",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "5.1.01.003.002.010",
+    "nome": "Locação de Máquinas e Equipamentos",
+    "tipo": "despesa",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "5.1.01.003.002.011",
+    "nome": "Despesas com Condomínio",
+    "tipo": "despesa",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "5.1.01.003.002.012",
+    "nome": "Alugueis de Imóveis",
+    "tipo": "despesa",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "5.1.01.005.003.001",
+    "nome": "Manutenção de Veículos",
+    "tipo": "despesa",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "5.1.01.005.003.002",
+    "nome": "Manutenção de Instalações",
+    "tipo": "despesa",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "5.1.01.005.003.003",
+    "nome": "Manutenção e Reformas",
+    "tipo": "despesa",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "5.1.01.005.003.004",
+    "nome": "Manutenção de Eficícios",
+    "tipo": "despesa",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "5.1.01.005.003.005",
+    "nome": "Manutenção de Máquinas e Equipamentos",
+    "tipo": "despesa",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "5.1.01.005.003.006",
+    "nome": "Manutenção e Reparos de Bens",
+    "tipo": "despesa",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "5.1.01.005.003.007",
+    "nome": "Ferramentas Perecíveis",
+    "tipo": "despesa",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "5.1.01.005.003.008",
+    "nome": "Manutenção de Móveis e Utensílios",
+    "tipo": "despesa",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "5.1.01.005.003.009",
+    "nome": "Limpeza e Conservação",
+    "tipo": "despesa",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "5.1.01.005.003.010",
+    "nome": "Conservação de Bens",
+    "tipo": "despesa",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "5.1.01.007.004.001",
+    "nome": "Serviços Tomados do Exterior",
+    "tipo": "despesa",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "5.1.01.007.004.002",
+    "nome": "Impostos s/Serviços Tomados do Exterior",
+    "tipo": "despesa",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "5.1.01.007.004.003",
+    "nome": "Assessoria Técnica/ Administrativa",
+    "tipo": "despesa",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "5.1.01.007.004.004",
+    "nome": "Honorários Contábeis",
+    "tipo": "despesa",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "5.1.01.007.004.005",
+    "nome": "Honorários Advocatícios",
+    "tipo": "despesa",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "5.1.01.007.004.006",
+    "nome": "Serviços de Garantia",
+    "tipo": "despesa",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "5.1.01.007.004.007",
+    "nome": "Serviços de Manutenção",
+    "tipo": "despesa",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "5.1.01.007.004.008",
+    "nome": "Serviços de Terceiros",
+    "tipo": "despesa",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "5.1.01.007.004.009",
+    "nome": "Serviços de Vigilância",
+    "tipo": "despesa",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "5.1.01.007.004.010",
+    "nome": "Serviços de Courrier",
+    "tipo": "despesa",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "5.1.01.007.004.011",
+    "nome": "Processamento de Vendas",
+    "tipo": "despesa",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "5.1.01.007.004.012",
+    "nome": "Honorários Diversos",
+    "tipo": "despesa",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "5.1.01.007.004.013",
+    "nome": "Representações",
+    "tipo": "despesa",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "5.1.01.007.004.014",
+    "nome": "Serviços Gráficos",
+    "tipo": "despesa",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "5.1.01.007.004.015",
+    "nome": "Serviços de Consultoria",
+    "tipo": "despesa",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "5.1.01.007.004.016",
+    "nome": "Despesas c/ Decorações",
+    "tipo": "despesa",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "5.1.01.007.004.017",
+    "nome": "Honorários de Auditoria",
+    "tipo": "despesa",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "5.1.01.007.004.018",
+    "nome": "Comissões s/Vendas - Pj-Pj",
+    "tipo": "despesa",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "5.1.01.007.004.019",
+    "nome": "Correios",
+    "tipo": "despesa",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "5.1.01.007.004.020",
+    "nome": "Despesas c/ Veículos",
+    "tipo": "despesa",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "5.1.01.007.004.021",
+    "nome": "Despesas c/ Obras",
+    "tipo": "despesa",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "5.1.01.007.004.022",
+    "nome": "Limpeza e Conservação",
+    "tipo": "despesa",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "5.1.01.007.004.023",
+    "nome": "Royalties e Assistência Têcnica",
+    "tipo": "despesa",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "5.1.01.007.004.024",
+    "nome": "Cursos e Treinamentos",
+    "tipo": "despesa",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "5.1.01.007.004.025",
+    "nome": "Informações Comerciais",
+    "tipo": "despesa",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "5.1.01.007.004.026",
+    "nome": "Monitoramento",
+    "tipo": "despesa",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "5.1.01.007.004.027",
+    "nome": "Despesas c/Atividade",
+    "tipo": "despesa",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "5.1.01.007.004.028",
+    "nome": "Contrato de Manutenção de Frotas",
+    "tipo": "despesa",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "5.1.01.007.004.029",
+    "nome": "Corretagens",
+    "tipo": "despesa",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "5.1.01.007.004.030",
+    "nome": "Processamento de Dados",
+    "tipo": "despesa",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "5.1.01.007.004.031",
+    "nome": "Segurança Patrimonial",
+    "tipo": "despesa",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "5.1.01.007.004.032",
+    "nome": "Assessoria Financeira",
+    "tipo": "despesa",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "5.1.01.007.004.033",
+    "nome": "Assessoria de Planejamento",
+    "tipo": "despesa",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "5.1.01.007.004.034",
+    "nome": "Assessoria de Informática",
+    "tipo": "despesa",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "5.1.01.009.013.001",
+    "nome": "Juros Passivos",
+    "tipo": "despesa",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "5.1.01.009.013.002",
+    "nome": "Encargos sobre Empréstimos e Financiamentos",
+    "tipo": "despesa",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "5.1.01.009.013.003",
+    "nome": "Encargos de Conta Garantida",
+    "tipo": "despesa",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "5.1.01.009.013.004",
+    "nome": "Despesas Bancárias Diversas",
+    "tipo": "despesa",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "5.1.01.009.013.005",
+    "nome": "Descontos Concedidos",
+    "tipo": "despesa",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "5.1.01.009.013.006",
+    "nome": "Variações Monetárias Passivas",
+    "tipo": "despesa",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "5.1.01.009.013.007",
+    "nome": "Multas de Mora",
+    "tipo": "despesa",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "5.1.01.009.013.008",
+    "nome": "Perdas com Aplicações Financeiras",
+    "tipo": "despesa",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "5.1.01.009.013.009",
+    "nome": "Perdas com Investimentos",
+    "tipo": "despesa",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "5.1.01.009.013.010",
+    "nome": "Variações Cambiais Passivas",
+    "tipo": "despesa",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "5.1.01.009.013.011",
+    "nome": "Descontos",
+    "tipo": "despesa",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "5.1.01.009.013.012",
+    "nome": "Juros sobre o Capital Próprio",
+    "tipo": "despesa",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "5.1.01.009.013.013",
+    "nome": "Juros e Encargos Financeiros",
+    "tipo": "despesa",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "5.9.01.001.001.001",
+    "nome": "Vendas do Ativo Investimentos",
+    "tipo": "despesa",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "5.9.01.001.001.001-5193",
+    "nome": "Alienação de Bens do Ativo Imobilizado",
+    "tipo": "despesa",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "5.9.01.001.001.001-5194",
+    "nome": "Vendas do Ativo Imobilizado",
+    "tipo": "despesa",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "5.9.01.001.001.002",
+    "nome": "Custo Vendas do Ativo Investimentos",
+    "tipo": "despesa",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "5.9.01.001.001.002-5196",
+    "nome": "Custo Vendas do Ativo Imobilizado",
+    "tipo": "despesa",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "5.9.01.001.001.002-5197",
+    "nome": "Perdas com Vendas do Ativo Imobilizado",
+    "tipo": "despesa",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "5.9.01.002.002.001",
+    "nome": "Resultado Negativo Participação Societária",
+    "tipo": "despesa",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "5.9.01.002.002.002",
+    "nome": "Resultado Negativo em Scp",
+    "tipo": "despesa",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "5.9.01.002.002.003",
+    "nome": "Perdas em Operações no Exterior",
+    "tipo": "despesa",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "5.9.01.005.003.001",
+    "nome": "Ajuste a Valor Presente Clientes",
+    "tipo": "despesa",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "5.9.01.005.003.002",
+    "nome": "Ajuste a Valor Presente Ativo Imobilizado",
+    "tipo": "despesa",
+    "natureza": "devedora",
+    "grupo_dre": null
+  },
+  {
+    "codigo": "6.1.01.001.001",
+    "nome": "IRPJ",
+    "tipo": "despesa",
+    "natureza": "devedora",
+    "grupo_dre": "ir_csll"
+  },
+  {
+    "codigo": "6.1.01.001.002",
+    "nome": "CSLL",
+    "tipo": "despesa",
+    "natureza": "devedora",
+    "grupo_dre": "ir_csll"
+  },
+  {
+    "codigo": "6.1.01.002.001",
+    "nome": "Encerramento do Exercício",
+    "tipo": "patrimonio_liquido",
+    "natureza": "devedora",
+    "grupo_dre": null
+  }
+]
