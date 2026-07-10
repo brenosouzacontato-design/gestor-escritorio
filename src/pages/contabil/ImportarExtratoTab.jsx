@@ -1,6 +1,10 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { listarContas, listarLancamentos, criarLancamento } from './contabilApi';
 
+// Contrapartida usada quando a transação é salva sem conta classificada ainda
+// (faz parte do plano de contas padrão importado — ver scripts/plano_contas_oneflow.json)
+const CODIGO_CONTA_PENDENTE = '1.1.01.001.002'; // "Valores a Identificar"
+
 /**
  * Chama a Netlify Function netlify/functions/extrair-extrato.js. Ela manda
  * o PDF direto pro Claude (suporte nativo a PDF, sem precisar extrair texto
@@ -116,16 +120,23 @@ export default function ImportarExtratoTab({ empresaId }) {
     setSalvando(true);
     setErro(null);
     try {
-      const validas = transacoes.filter((t) => !t.ignorar && t.conta_id);
+      const contaPendente = contas.find((c) => c.codigo === CODIGO_CONTA_PENDENTE);
+      const validas = transacoes.filter((t) => !t.ignorar);
       for (const t of validas) {
+        // sem conta classificada ainda: lança em "Valores a Identificar" pra
+        // não perder a transação, e fica pra classificar depois no Plano de Contas
+        const contraId = t.conta_id || contaPendente?.id;
+        if (!contraId) {
+          throw new Error(`Não achei a conta "Valores a Identificar" (código ${CODIGO_CONTA_PENDENTE}) no plano dessa empresa, e a transação "${t.descricao}" não tem conta selecionada.`);
+        }
         const valor = Math.abs(Number(t.valor));
         const partidas = t.tipo === 'entrada'
           ? [
               { conta_id: contaBancoId, tipo: 'debito', valor },
-              { conta_id: t.conta_id, tipo: 'credito', valor },
+              { conta_id: contraId, tipo: 'credito', valor },
             ]
           : [
-              { conta_id: t.conta_id, tipo: 'debito', valor },
+              { conta_id: contraId, tipo: 'debito', valor },
               { conta_id: contaBancoId, tipo: 'credito', valor },
             ];
         await criarLancamento({
@@ -202,7 +213,7 @@ export default function ImportarExtratoTab({ empresaId }) {
                   </td>
                   <td>
                     <select value={t.conta_id} onChange={(e) => atualizarTransacao(idx, 'conta_id', e.target.value)}>
-                      <option value="">Selecione...</option>
+                      <option value="">A classificar depois</option>
                       {contas.map((c) => <option key={c.id} value={c.id}>{c.codigo} - {c.nome}</option>)}
                     </select>
                   </td>
@@ -214,7 +225,10 @@ export default function ImportarExtratoTab({ empresaId }) {
               ))}
             </tbody>
           </table>
-          <button className="btn-navy" style={{ marginTop: 12 }} onClick={confirmarImportacao} disabled={salvando}>
+          <p style={{ fontSize: '0.8rem', color: 'var(--text2)', marginTop: 8 }}>
+            Transações sem conta selecionada são lançadas em "Valores a Identificar" pra não se perder. Reclassificar depois ainda é manual (excluir o lançamento e relançar com a conta certa).
+          </p>
+          <button className="btn-navy" style={{ marginTop: 8 }} onClick={confirmarImportacao} disabled={salvando}>
             {salvando ? 'Gerando lançamentos...' : `Confirmar e gerar ${transacoes.filter(t => !t.ignorar).length} lançamentos`}
           </button>
         </>

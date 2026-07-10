@@ -1,5 +1,7 @@
-import React, { useEffect, useState, useCallback } from 'react';
-import { listarContas, criarConta, atualizarConta } from './contabilApi';
+import React, { useEffect, useState, useCallback, useMemo } from 'react';
+import { listarContas, criarConta, atualizarConta, atualizarContasEmLote } from './contabilApi';
+
+const TIPOS_COM_GRUPO_DRE = ['receita', 'despesa', 'custo'];
 
 const GRUPOS_DRE = [
   { value: '', label: '—' },
@@ -23,6 +25,10 @@ export default function PlanoContasTab({ empresaId }) {
   const [carregando, setCarregando] = useState(false);
   const [novaConta, setNovaConta] = useState(contaVazia());
   const [filtro, setFiltro] = useState('');
+  const [selecionadas, setSelecionadas] = useState(() => new Set());
+  const [grupoDreLote, setGrupoDreLote] = useState('');
+  const [aplicandoLote, setAplicandoLote] = useState(false);
+  const [erro, setErro] = useState(null);
 
   const carregar = useCallback(async () => {
     setCarregando(true);
@@ -35,28 +41,84 @@ export default function PlanoContasTab({ empresaId }) {
 
   async function adicionar(e) {
     e.preventDefault();
-    await criarConta({
-      empresa_id: empresaId,
-      codigo: novaConta.codigo,
-      nome: novaConta.nome,
-      tipo: novaConta.tipo,
-      natureza: novaConta.natureza,
-      nivel: novaConta.codigo.split('.').length,
-      aceita_lancamento: novaConta.aceita_lancamento,
-      grupo_dre: novaConta.grupo_dre || null,
-    });
-    setNovaConta(contaVazia());
-    carregar();
+    setErro(null);
+    try {
+      await criarConta({
+        empresa_id: empresaId,
+        codigo: novaConta.codigo,
+        nome: novaConta.nome,
+        tipo: novaConta.tipo,
+        natureza: novaConta.natureza,
+        nivel: novaConta.codigo.split('.').length,
+        aceita_lancamento: novaConta.aceita_lancamento,
+        grupo_dre: novaConta.grupo_dre || null,
+      });
+      setNovaConta(contaVazia());
+      carregar();
+    } catch (e) {
+      setErro(e.code === '23505'
+        ? `Já existe uma conta com o código "${novaConta.codigo}" nesta empresa.`
+        : e.message);
+    }
   }
 
   async function mudarGrupoDre(conta, grupo_dre) {
-    await atualizarConta(conta.id, { grupo_dre: grupo_dre || null });
-    carregar();
+    setErro(null);
+    try {
+      await atualizarConta(conta.id, { grupo_dre: grupo_dre || null });
+      carregar();
+    } catch (e) {
+      setErro(e.message);
+    }
   }
 
   const contasFiltradas = contas.filter((c) =>
     !filtro || c.codigo.includes(filtro) || c.nome.toLowerCase().includes(filtro.toLowerCase())
   );
+
+  // só contas de receita/despesa/custo têm Grupo DRE pra classificar
+  const contasClassificaveis = useMemo(
+    () => contasFiltradas.filter((c) => TIPOS_COM_GRUPO_DRE.includes(c.tipo)),
+    [contasFiltradas]
+  );
+  const todasSelecionadas = contasClassificaveis.length > 0
+    && contasClassificaveis.every((c) => selecionadas.has(c.id));
+
+  function toggleSelecionada(id) {
+    setSelecionadas((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }
+
+  function toggleSelecionarTodas() {
+    setSelecionadas((prev) => {
+      if (todasSelecionadas) {
+        const next = new Set(prev);
+        contasClassificaveis.forEach((c) => next.delete(c.id));
+        return next;
+      }
+      const next = new Set(prev);
+      contasClassificaveis.forEach((c) => next.add(c.id));
+      return next;
+    });
+  }
+
+  async function aplicarGrupoDreLote() {
+    setAplicandoLote(true);
+    setErro(null);
+    try {
+      await atualizarContasEmLote([...selecionadas], { grupo_dre: grupoDreLote || null });
+      setSelecionadas(new Set());
+      setGrupoDreLote('');
+      await carregar();
+    } catch (e) {
+      setErro(e.message);
+    } finally {
+      setAplicandoLote(false);
+    }
+  }
 
   return (
     <div>
@@ -88,6 +150,7 @@ export default function PlanoContasTab({ empresaId }) {
           </select>
           <button type="submit" className="btn-navy">Adicionar</button>
         </div>
+        {erro && <p style={{ color: 'var(--danger)', marginTop: 8 }}>{erro}</p>}
       </form>
 
       <input
@@ -97,10 +160,29 @@ export default function PlanoContasTab({ empresaId }) {
         style={{ marginBottom: 12, padding: '6px 10px', border: '1px solid var(--border)', borderRadius: 8, width: 280 }}
       />
 
+      {selecionadas.size > 0 && (
+        <div className="contabil-form" style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12, padding: '10px 16px' }}>
+          <strong>{selecionadas.size} conta{selecionadas.size > 1 ? 's' : ''} selecionada{selecionadas.size > 1 ? 's' : ''}</strong>
+          <select value={grupoDreLote} onChange={(e) => setGrupoDreLote(e.target.value)}>
+            {GRUPOS_DRE.map((g) => <option key={g.value} value={g.value}>{g.label}</option>)}
+          </select>
+          <button type="button" className="btn-navy" onClick={aplicarGrupoDreLote} disabled={aplicandoLote}>
+            {aplicandoLote ? 'Aplicando...' : 'Aplicar Grupo DRE'}
+          </button>
+          <button type="button" className="btn-ghost" onClick={() => setSelecionadas(new Set())} disabled={aplicandoLote}>
+            Limpar seleção
+          </button>
+        </div>
+      )}
+
       {carregando ? <p>Carregando plano de contas...</p> : (
         <table className="contabil-tabela">
           <thead>
             <tr>
+              <th style={{ width: 32 }}>
+                <input type="checkbox" checked={todasSelecionadas} onChange={toggleSelecionarTodas}
+                  disabled={contasClassificaveis.length === 0} title="Selecionar todas (receita/despesa/custo)" />
+              </th>
               <th>Código</th>
               <th>Nome</th>
               <th>Tipo</th>
@@ -110,22 +192,30 @@ export default function PlanoContasTab({ empresaId }) {
             </tr>
           </thead>
           <tbody>
-            {contasFiltradas.map((c) => (
-              <tr key={c.id}>
-                <td>{c.codigo}</td>
-                <td>{c.nome}</td>
-                <td>{c.tipo}</td>
-                <td>{c.natureza}</td>
-                <td>{c.aceita_lancamento ? 'Sim' : 'Não (sintética)'}</td>
-                <td>
-                  {(c.tipo === 'receita' || c.tipo === 'despesa' || c.tipo === 'custo') ? (
-                    <select value={c.grupo_dre ?? ''} onChange={(e) => mudarGrupoDre(c, e.target.value)}>
-                      {GRUPOS_DRE.map((g) => <option key={g.value} value={g.value}>{g.label}</option>)}
-                    </select>
-                  ) : '—'}
-                </td>
-              </tr>
-            ))}
+            {contasFiltradas.map((c) => {
+              const classificavel = TIPOS_COM_GRUPO_DRE.includes(c.tipo);
+              return (
+                <tr key={c.id}>
+                  <td>
+                    {classificavel && (
+                      <input type="checkbox" checked={selecionadas.has(c.id)} onChange={() => toggleSelecionada(c.id)} />
+                    )}
+                  </td>
+                  <td>{c.codigo}</td>
+                  <td>{c.nome}</td>
+                  <td>{c.tipo}</td>
+                  <td>{c.natureza}</td>
+                  <td>{c.aceita_lancamento ? 'Sim' : 'Não (sintética)'}</td>
+                  <td>
+                    {classificavel ? (
+                      <select value={c.grupo_dre ?? ''} onChange={(e) => mudarGrupoDre(c, e.target.value)}>
+                        {GRUPOS_DRE.map((g) => <option key={g.value} value={g.value}>{g.label}</option>)}
+                      </select>
+                    ) : '—'}
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       )}

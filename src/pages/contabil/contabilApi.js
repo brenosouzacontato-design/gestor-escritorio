@@ -37,6 +37,16 @@ export async function atualizarConta(id, patch) {
   return data;
 }
 
+export async function atualizarContasEmLote(ids, patch) {
+  const { data, error } = await supabase
+    .from('contas_contabeis')
+    .update(patch)
+    .in('id', ids)
+    .select();
+  if (error) throw error;
+  return data;
+}
+
 // ---------- LANÇAMENTOS ----------
 
 // partidas: [{ conta_id, tipo: 'debito'|'credito', valor }, ...]
