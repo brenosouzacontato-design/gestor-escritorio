@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { listarContas, listarLancamentos, criarLancamento } from './contabilApi';
+import { listarContas, listarLancamentos, criarLancamentosEmLote } from './contabilApi';
 
 // Contrapartida usada quando a transação é salva sem conta classificada ainda
 // (faz parte do plano de contas padrão importado — ver scripts/plano_contas_oneflow.json)
@@ -73,6 +73,7 @@ export default function ImportarExtratoTab({ empresaId }) {
   const [processando, setProcessando] = useState(false);
   const [transacoes, setTransacoes] = useState([]); // [{...extraida, conta_id, ignorar}]
   const [erro, setErro] = useState(null);
+  const [info, setInfo] = useState(null);
   const [salvando, setSalvando] = useState(false);
 
   useEffect(() => {
@@ -92,6 +93,7 @@ export default function ImportarExtratoTab({ empresaId }) {
       return;
     }
     setErro(null);
+    setInfo(null);
     setProcessando(true);
     try {
       const [extraidas, historico] = await Promise.all([
@@ -119,12 +121,14 @@ export default function ImportarExtratoTab({ empresaId }) {
   async function confirmarImportacao() {
     setSalvando(true);
     setErro(null);
+    setInfo(null);
     try {
       const contaPendente = contas.find((c) => c.codigo === CODIGO_CONTA_PENDENTE);
       const validas = transacoes.filter((t) => !t.ignorar);
-      for (const t of validas) {
+
+      const itens = validas.map((t) => {
         // sem conta classificada ainda: lança em "Valores a Identificar" pra
-        // não perder a transação, e fica pra classificar depois no Plano de Contas
+        // não perder a transação, e fica pra conciliar depois nos Lançamentos
         const contraId = t.conta_id || contaPendente?.id;
         if (!contraId) {
           throw new Error(`Não achei a conta "Valores a Identificar" (código ${CODIGO_CONTA_PENDENTE}) no plano dessa empresa, e a transação "${t.descricao}" não tem conta selecionada.`);
@@ -139,16 +143,25 @@ export default function ImportarExtratoTab({ empresaId }) {
               { conta_id: contraId, tipo: 'debito', valor },
               { conta_id: contaBancoId, tipo: 'credito', valor },
             ];
-        await criarLancamento({
-          empresaId,
+        // identifica a transação de forma estável pra não duplicar se o
+        // mesmo extrato (ou um período sobreposto) for reimportado depois
+        const extratoReferencia = [contaBancoId, t.data, t.tipo, valor.toFixed(2), t.descricao.trim()].join('|');
+        return {
           data: t.data,
           historico: t.descricao,
           origem: 'importacao_extrato',
+          extratoReferencia,
+          conciliado: !!t.conta_id,
           partidas,
-        });
-      }
+        };
+      });
+
+      const { criados, pulados } = await criarLancamentosEmLote(empresaId, itens);
       setTransacoes([]);
       setArquivo(null);
+      if (pulados > 0) {
+        setInfo(`${criados} lançamento${criados === 1 ? '' : 's'} gerado${criados === 1 ? '' : 's'}. ${pulados} já tinha${pulados === 1 ? '' : 'm'} sido importado${pulados === 1 ? '' : 's'} antes (mesma data/valor/descrição) e ${pulados === 1 ? 'foi' : 'foram'} ignorado${pulados === 1 ? '' : 's'}.`);
+      }
     } catch (e) {
       setErro(e.message);
     } finally {
@@ -185,6 +198,7 @@ export default function ImportarExtratoTab({ empresaId }) {
         </div>
 
         {erro && <p style={{ color: 'var(--danger)', marginTop: 8 }}>{erro}</p>}
+        {info && <p style={{ color: 'var(--text2)', marginTop: 8 }}>{info}</p>}
 
         <button className="btn-navy" style={{ marginTop: 12 }} onClick={processar} disabled={processando}>
           {processando ? 'Processando...' : 'Extrair transações'}
@@ -226,7 +240,7 @@ export default function ImportarExtratoTab({ empresaId }) {
             </tbody>
           </table>
           <p style={{ fontSize: '0.8rem', color: 'var(--text2)', marginTop: 8 }}>
-            Transações sem conta selecionada são lançadas em "Valores a Identificar" pra não se perder. Reclassificar depois ainda é manual (excluir o lançamento e relançar com a conta certa).
+            Transações sem conta selecionada são lançadas em "Valores a Identificar" pra não se perder — dá pra classificar depois direto na aba Lançamentos.
           </p>
           <button className="btn-navy" style={{ marginTop: 8 }} onClick={confirmarImportacao} disabled={salvando}>
             {salvando ? 'Gerando lançamentos...' : `Confirmar e gerar ${transacoes.filter(t => !t.ignorar).length} lançamentos`}

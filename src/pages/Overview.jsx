@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react'
 import { CheckIcon, ClipboardListIcon, AlertCircleIcon, TrendingUpIcon, UsersIcon,
   CheckSquareIcon, ZapIcon, ChevronRightIcon, CalendarIcon, CheckCircleIcon,
-  ClockIcon, MinusCircleIcon, BarChart2Icon, LayersIcon } from 'lucide-react'
+  ClockIcon, MinusCircleIcon, BarChart2Icon, LayersIcon, LandmarkIcon } from 'lucide-react'
 import { useStore } from '../store'
 import { DeptChip, PriDot, fmtDate, isOverdue } from '../components/shared'
 import { supabase } from '../lib/supabase'
@@ -24,11 +24,12 @@ function compMesAtras(n) {
   return String(d.getMonth()+1).padStart(2,'0') + '/' + d.getFullYear()
 }
 
-export default function Overview({ onAddTarefa, onOpenCliente, onOpenObrigacoes, onOpenTarefas }) {
+export default function Overview({ onAddTarefa, onOpenCliente, onOpenObrigacoes, onOpenTarefas, onOpenContabil }) {
   const clientes     = useStore(s => s.clientes)
   const tarefas      = useStore(s => s.tarefas)
   const obrigacoes   = useStore(s => s.obrigacoes || [])
   const toggleTarefa = useStore(s => s.toggleTarefa)
+  const lancamentosContabeisResumo = useStore(s => s.lancamentosContabeisResumo)
 
   const [compSel, setCompSel]       = useState(compMesAtras(1))
   const [modalTipo, setModalTipo]   = useState(null) // { tipo, lista, meta }
@@ -114,6 +115,14 @@ export default function Overview({ onAddTarefa, onOpenCliente, onOpenObrigacoes,
         <div className="metric">
           <div className="metric-label" style={{ display:'flex', alignItems:'center', gap:4 }}><TrendingUpIcon size={12} /> Concluídas</div>
           <div className="metric-value ok">{stats.obsEmDia}</div>
+        </div>
+        <div className="metric" style={{ cursor:'pointer' }} onClick={onOpenContabil}>
+          <div className="metric-label" style={{ display:'flex', alignItems:'center', gap:4 }}><LandmarkIcon size={12} /> Lanç. a conciliar</div>
+          <div className={`metric-value ${lancamentosContabeisResumo.aConciliar > 0 ? 'warn' : ''}`}>{lancamentosContabeisResumo.aConciliar}</div>
+        </div>
+        <div className="metric" style={{ cursor:'pointer' }} onClick={onOpenContabil}>
+          <div className="metric-label" style={{ display:'flex', alignItems:'center', gap:4 }}><LandmarkIcon size={12} /> Lanç. conciliados</div>
+          <div className="metric-value ok">{lancamentosContabeisResumo.conciliados}</div>
         </div>
       </div>
 

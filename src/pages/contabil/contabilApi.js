@@ -87,6 +87,82 @@ export async function criarLancamento({ empresaId, data, historico, numeroDocume
   return lancamento;
 }
 
+// Insere vários lançamentos de uma vez (usado pela importação de extrato —
+// evita 2 round-trips sequenciais por transação, que fica lento demais com
+// extratos grandes). Usa extratoReferencia com índice único parcial em
+// (empresa_id, extrato_referencia) pra pular transações já importadas antes
+// (ON CONFLICT DO NOTHING) em vez de duplicar.
+// itens: [{ data, historico, numeroDocumento, origem, extratoReferencia, conciliado, partidas }]
+export async function criarLancamentosEmLote(empresaId, itens) {
+  for (const item of itens) {
+    const totalDebito = item.partidas.filter(p => p.tipo === 'debito').reduce((s, p) => s + Number(p.valor), 0);
+    const totalCredito = item.partidas.filter(p => p.tipo === 'credito').reduce((s, p) => s + Number(p.valor), 0);
+    if (Math.abs(totalDebito - totalCredito) > 0.005) {
+      throw new Error(`Lançamento "${item.historico}" não bate: débito R$ ${totalDebito.toFixed(2)} x crédito R$ ${totalCredito.toFixed(2)}`);
+    }
+  }
+
+  const itensPorRef = new Map(itens.map((it) => [it.extratoReferencia, it]));
+  const linhas = itens.map((item) => ({
+    empresa_id: empresaId,
+    data: item.data,
+    historico: item.historico,
+    numero_documento: item.numeroDocumento ?? null,
+    origem: item.origem ?? 'importacao_extrato',
+    extrato_referencia: item.extratoReferencia,
+    conciliado: item.conciliado ?? true,
+  }));
+
+  const BATCH = 200;
+  const lancamentosCriados = [];
+  for (let i = 0; i < linhas.length; i += BATCH) {
+    const lote = linhas.slice(i, i + BATCH);
+    const { data, error } = await supabase
+      .from('lancamentos_contabeis')
+      .upsert(lote, { onConflict: 'empresa_id,extrato_referencia', ignoreDuplicates: true })
+      .select();
+    if (error) throw error;
+    lancamentosCriados.push(...data);
+  }
+
+  const partidas = lancamentosCriados.flatMap((lancamento) => {
+    const item = itensPorRef.get(lancamento.extrato_referencia);
+    return item.partidas.map((p) => ({
+      lancamento_id: lancamento.id,
+      conta_id: p.conta_id,
+      tipo: p.tipo,
+      valor: p.valor,
+    }));
+  });
+
+  for (let i = 0; i < partidas.length; i += BATCH) {
+    const lote = partidas.slice(i, i + BATCH);
+    const { error } = await supabase.from('partidas_contabeis').insert(lote);
+    if (error) throw error;
+  }
+
+  return { criados: lancamentosCriados.length, pulados: itens.length - lancamentosCriados.length };
+}
+
+// Reclassifica um lançamento importado que caiu em "Valores a Identificar":
+// troca a conta da partida indicada e marca o lançamento como conciliado.
+export async function reclassificarLancamento(lancamentoId, partidaId, novaContaId) {
+  const { error: errPartida } = await supabase
+    .from('partidas_contabeis')
+    .update({ conta_id: novaContaId })
+    .eq('id', partidaId);
+  if (errPartida) throw errPartida;
+
+  const { data, error: errLanc } = await supabase
+    .from('lancamentos_contabeis')
+    .update({ conciliado: true })
+    .eq('id', lancamentoId)
+    .select('*, partidas_contabeis(*, contas_contabeis(codigo, nome))')
+    .single();
+  if (errLanc) throw errLanc;
+  return data;
+}
+
 export async function listarLancamentos(empresaId, { dataInicio, dataFim } = {}) {
   let query = supabase
     .from('lancamentos_contabeis')

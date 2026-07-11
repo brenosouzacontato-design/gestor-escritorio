@@ -8,6 +8,7 @@ export const useStore = create((set, get) => ({
   fechamentos: [],
   obrigacoes: [],
   prospectos: [],
+  lancamentosContabeisResumo: { conciliados: 0, aConciliar: 0 },
   loading: false,
   syncingErp: false,
   oneflowConfig: {
@@ -266,9 +267,19 @@ export const useStore = create((set, get) => ({
     return { data: cliente }
   },
 
+  // ── Lançamentos Contábeis (resumo pro Painel) ──────────────────────────────────
+  fetchLancamentosContabeisResumo: async () => {
+    const [{ count: conciliados, error: errC }, { count: aConciliar, error: errA }] = await Promise.all([
+      supabase.from('lancamentos_contabeis').select('id', { count: 'exact', head: true }).eq('conciliado', true),
+      supabase.from('lancamentos_contabeis').select('id', { count: 'exact', head: true }).eq('conciliado', false),
+    ])
+    if (errC || errA) { console.error('fetchLancamentosContabeisResumo error:', errC || errA); return }
+    set({ lancamentosContabeisResumo: { conciliados: conciliados || 0, aConciliar: aConciliar || 0 } })
+  },
+
   // ── Init ──────────────────────────────────────────────────────────────────────
   init: async () => {
-    const { fetchClientes, fetchTarefas, fetchFechamentos, loadOneflowConfig, fetchObrigacoes, fetchProspectos } = get()
-    await Promise.all([fetchClientes(), fetchTarefas(), fetchFechamentos(), loadOneflowConfig(), fetchObrigacoes(), fetchProspectos()])
+    const { fetchClientes, fetchTarefas, fetchFechamentos, loadOneflowConfig, fetchObrigacoes, fetchProspectos, fetchLancamentosContabeisResumo } = get()
+    await Promise.all([fetchClientes(), fetchTarefas(), fetchFechamentos(), loadOneflowConfig(), fetchObrigacoes(), fetchProspectos(), fetchLancamentosContabeisResumo()])
   },
 }))

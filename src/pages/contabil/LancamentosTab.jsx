@@ -1,5 +1,9 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { listarContas, listarLancamentos, criarLancamento, excluirLancamento } from './contabilApi';
+import { listarContas, listarLancamentos, criarLancamento, excluirLancamento, reclassificarLancamento } from './contabilApi';
+
+// mesma conta transitória usada em ImportarExtratoTab.jsx pra transações
+// que chegaram sem classificação (ver CODIGO_CONTA_PENDENTE lá)
+const CODIGO_CONTA_PENDENTE = '1.1.01.001.002'; // "Valores a Identificar"
 
 function linhaVazia() {
   return { conta_id: '', tipo: 'debito', valor: '' };
@@ -87,6 +91,17 @@ export default function LancamentosTab({ empresaId, periodo }) {
     carregar();
   }
 
+  async function classificar(lancamento, partidaPendenteId, novaContaId) {
+    if (!novaContaId) return;
+    setErro(null);
+    try {
+      await reclassificarLancamento(lancamento.id, partidaPendenteId, novaContaId);
+      carregar();
+    } catch (e) {
+      setErro(e.message);
+    }
+  }
+
   return (
     <div>
       <form className="contabil-form" onSubmit={salvar}>
@@ -159,6 +174,7 @@ export default function LancamentosTab({ empresaId, periodo }) {
               <th>Contas</th>
               <th className="num">Valor</th>
               <th>Origem</th>
+              <th>Status</th>
               <th></th>
             </tr>
           </thead>
@@ -170,6 +186,7 @@ export default function LancamentosTab({ empresaId, periodo }) {
               const contasResumo = l.partidas_contabeis
                 ?.map((p) => `${p.tipo === 'debito' ? 'D' : 'C'} ${p.contas_contabeis?.codigo}`)
                 .join(' / ');
+              const partidaPendente = l.partidas_contabeis?.find((p) => p.contas_contabeis?.codigo === CODIGO_CONTA_PENDENTE);
               return (
                 <tr key={l.id}>
                   <td>{new Date(l.data + 'T00:00:00').toLocaleDateString('pt-BR')}</td>
@@ -177,12 +194,29 @@ export default function LancamentosTab({ empresaId, periodo }) {
                   <td style={{ fontSize: '0.8rem', color: 'var(--text2)' }}>{contasResumo}</td>
                   <td className="num">R$ {valor.toFixed(2)}</td>
                   <td><span className="badge-origem">{l.origem === 'importacao_extrato' ? 'Extrato' : 'Manual'}</span></td>
+                  <td>
+                    {l.conciliado ? (
+                      <span className="badge-origem" style={{ background: 'var(--ok-dim)', color: 'var(--ok)' }}>Conciliado</span>
+                    ) : (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <span className="badge-origem" style={{ background: 'var(--warn-dim)', color: 'var(--warn)' }}>A conciliar</span>
+                        {partidaPendente && (
+                          <select defaultValue="" onChange={(e) => classificar(l, partidaPendente.id, e.target.value)}>
+                            <option value="" disabled>Classificar...</option>
+                            {contas.filter((c) => c.codigo !== CODIGO_CONTA_PENDENTE).map((c) => (
+                              <option key={c.id} value={c.id}>{c.codigo} - {c.nome}</option>
+                            ))}
+                          </select>
+                        )}
+                      </div>
+                    )}
+                  </td>
                   <td><button className="btn-ghost" onClick={() => apagar(l.id)}>Excluir</button></td>
                 </tr>
               );
             })}
             {lancamentos.length === 0 && (
-              <tr><td colSpan={6} style={{ color: 'var(--text2)' }}>Nenhum lançamento no período.</td></tr>
+              <tr><td colSpan={7} style={{ color: 'var(--text2)' }}>Nenhum lançamento no período.</td></tr>
             )}
           </tbody>
         </table>
