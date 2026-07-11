@@ -12,7 +12,10 @@ const CODIGO_CONTA_PENDENTE = '1.1.01.001.002'; // "Valores a Identificar"
  * só no servidor (env var ANTHROPIC_API_KEY no Netlify), nunca no client.
  *
  * Contrato de retorno: array de
- *   { data: 'YYYY-MM-DD', descricao: string, valor: number, tipo: 'entrada' | 'saida' }
+ *   { data: 'YYYY-MM-DD', descricao: string, identificador: string|null, valor: number, tipo: 'entrada' | 'saida' }
+ * "identificador" é o código de controle da transação no banco (nº do PIX,
+ * nosso número de boleto etc), quando o extrato traz um — vai pro
+ * numero_documento do lançamento.
  */
 async function arquivoParaBase64(arquivo) {
   return new Promise((resolve, reject) => {
@@ -144,11 +147,13 @@ export default function ImportarExtratoTab({ empresaId }) {
               { conta_id: contaBancoId, tipo: 'credito', valor },
             ];
         // identifica a transação de forma estável pra não duplicar se o
-        // mesmo extrato (ou um período sobreposto) for reimportado depois
-        const extratoReferencia = [contaBancoId, t.data, t.tipo, valor.toFixed(2), t.descricao.trim()].join('|');
+        // mesmo extrato (ou um período sobreposto) for reimportado depois —
+        // usa o identificador do banco quando tem, senão cai pra descrição
+        const extratoReferencia = [contaBancoId, t.data, t.tipo, valor.toFixed(2), t.identificador || t.descricao.trim()].join('|');
         return {
           data: t.data,
           historico: t.descricao,
+          numeroDocumento: t.identificador || null,
           origem: 'importacao_extrato',
           extratoReferencia,
           conciliado: !!t.conta_id,
@@ -212,6 +217,7 @@ export default function ImportarExtratoTab({ empresaId }) {
               <tr>
                 <th>Data</th>
                 <th>Descrição</th>
+                <th>Identificador</th>
                 <th className="num">Valor</th>
                 <th>Conta (contrapartida)</th>
                 <th>Ignorar</th>
@@ -220,9 +226,10 @@ export default function ImportarExtratoTab({ empresaId }) {
             <tbody>
               {transacoes.map((t, idx) => (
                 <tr key={idx}>
-                  <td>{new Date(t.data + 'T00:00:00').toLocaleDateString('pt-BR')}</td>
+                  <td style={{ whiteSpace: 'nowrap' }}>{new Date(t.data + 'T00:00:00').toLocaleDateString('pt-BR')}</td>
                   <td>{t.descricao}</td>
-                  <td className={`num ${t.tipo === 'saida' ? 'valor-negativo' : 'valor-positivo'}`}>
+                  <td style={{ fontSize: '0.8rem', color: 'var(--text2)', whiteSpace: 'nowrap' }}>{t.identificador || '—'}</td>
+                  <td className={`num ${t.tipo === 'saida' ? 'valor-negativo' : 'valor-positivo'}`} style={{ whiteSpace: 'nowrap' }}>
                     R$ {Math.abs(Number(t.valor)).toFixed(2)}
                   </td>
                   <td>

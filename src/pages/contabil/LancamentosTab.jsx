@@ -117,19 +117,20 @@ export default function LancamentosTab({ empresaId, periodo }) {
   // partida "Valores a Identificar" (se houver) — usado tanto pra exibir
   // quanto pros filtros/seleção em lote
   const lancamentosEnriquecidos = useMemo(() => lancamentos.map((l) => {
-    const valor = l.partidas_contabeis
-      ?.filter((p) => p.tipo === 'debito')
-      .reduce((s, p) => s + Number(p.valor), 0) ?? 0;
+    const debitoPartidas = l.partidas_contabeis?.filter((p) => p.tipo === 'debito') ?? [];
+    const creditoPartidas = l.partidas_contabeis?.filter((p) => p.tipo === 'credito') ?? [];
+    const valor = debitoPartidas.reduce((s, p) => s + Number(p.valor), 0);
     const contasResumo = l.partidas_contabeis
       ?.map((p) => `${p.tipo === 'debito' ? 'D' : 'C'} ${p.contas_contabeis?.codigo} ${p.contas_contabeis?.nome ?? ''}`)
       .join(' / ') ?? '';
     const partidaPendente = l.partidas_contabeis?.find((p) => p.contas_contabeis?.codigo === CODIGO_CONTA_PENDENTE);
-    return { ...l, valor, contasResumo, partidaPendente };
+    return { ...l, valor, contasResumo, debitoPartidas, creditoPartidas, partidaPendente };
   }), [lancamentos]);
 
   const lancamentosFiltrados = useMemo(() => lancamentosEnriquecidos.filter((l) => {
     if (filtroHistorico && !l.historico?.toLowerCase().includes(filtroHistorico.toLowerCase())) return false;
-    if (filtroContas && !l.contasResumo.toLowerCase().includes(filtroContas.toLowerCase())) return false;
+    if (filtroContas && !l.contasResumo.toLowerCase().includes(filtroContas.toLowerCase())
+      && !l.numero_documento?.toLowerCase().includes(filtroContas.toLowerCase())) return false;
     if (filtroOrigem && l.origem !== filtroOrigem) return false;
     if (filtroStatus === 'conciliado' && !l.conciliado) return false;
     if (filtroStatus === 'a_conciliar' && l.conciliado) return false;
@@ -262,94 +263,97 @@ export default function LancamentosTab({ empresaId, periodo }) {
       {carregando ? (
         <p>Carregando lançamentos...</p>
       ) : (
-        <table className="contabil-tabela">
-          <thead>
-            <tr>
-              <th style={{ width: 32 }}>
-                <input type="checkbox" checked={todosSelecionados} onChange={toggleSelecionarTodos}
-                  disabled={lancamentosClassificaveis.length === 0} title="Selecionar todos os pendentes" />
-              </th>
-              <th>Data</th>
-              <th>
-                Histórico
-                <input placeholder="filtrar..." value={filtroHistorico} onChange={(e) => setFiltroHistorico(e.target.value)}
-                  style={{ display: 'block', marginTop: 4, width: '100%', fontSize: '0.75rem', fontWeight: 400, padding: '3px 6px', border: '1px solid var(--border)', borderRadius: 6 }} />
-              </th>
-              <th>
-                Contas
-                <input placeholder="filtrar..." value={filtroContas} onChange={(e) => setFiltroContas(e.target.value)}
-                  style={{ display: 'block', marginTop: 4, width: '100%', fontSize: '0.75rem', fontWeight: 400, padding: '3px 6px', border: '1px solid var(--border)', borderRadius: 6 }} />
-              </th>
-              <th className="num">Valor</th>
-              <th>
-                Origem
-                <select value={filtroOrigem} onChange={(e) => setFiltroOrigem(e.target.value)}
-                  style={{ display: 'block', marginTop: 4, width: '100%', fontSize: '0.75rem', fontWeight: 400, padding: '3px 4px', border: '1px solid var(--border)', borderRadius: 6 }}>
-                  <option value="">Todas</option>
-                  <option value="manual">Manual</option>
-                  <option value="importacao_extrato">Extrato</option>
-                </select>
-              </th>
-              <th>
-                Status
-                <select value={filtroStatus} onChange={(e) => setFiltroStatus(e.target.value)}
-                  style={{ display: 'block', marginTop: 4, width: '100%', fontSize: '0.75rem', fontWeight: 400, padding: '3px 4px', border: '1px solid var(--border)', borderRadius: 6 }}>
-                  <option value="">Todos</option>
-                  <option value="conciliado">Conciliado</option>
-                  <option value="a_conciliar">A conciliar</option>
-                </select>
-              </th>
-              <th></th>
-            </tr>
-          </thead>
-          <tbody>
-            {lancamentosFiltrados.map((l) => (
-              <tr key={l.id}>
-                <td>
-                  {!l.conciliado && l.partidaPendente && (
-                    <input type="checkbox" checked={selecionados.has(l.id)} onChange={() => toggleSelecionado(l.id)} />
-                  )}
-                </td>
-                <td>{new Date(l.data + 'T00:00:00').toLocaleDateString('pt-BR')}</td>
-                <td>{l.historico}</td>
-                <td style={{ fontSize: '0.8rem' }}>
-                  {l.partidas_contabeis?.map((p, i) => (
-                    <span key={p.id}>
-                      {i > 0 && ' / '}
-                      <span style={{ color: p.tipo === 'debito' ? 'var(--accent)' : 'var(--warn)', fontWeight: 700 }}>
-                        {p.tipo === 'debito' ? 'D' : 'C'}
-                      </span>
-                      {' '}<span style={{ color: 'var(--text2)' }}>{p.contas_contabeis?.codigo}</span>
-                    </span>
-                  ))}
-                </td>
-                <td className="num">R$ {l.valor.toFixed(2)}</td>
-                <td><span className="badge-origem">{l.origem === 'importacao_extrato' ? 'Extrato' : 'Manual'}</span></td>
-                <td>
-                  {l.conciliado ? (
-                    <span className="badge-origem" style={{ background: 'var(--ok-dim)', color: 'var(--ok)' }}>Conciliado</span>
-                  ) : (
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                      <span className="badge-origem" style={{ background: 'var(--warn-dim)', color: 'var(--warn)' }}>A conciliar</span>
-                      {l.partidaPendente && (
-                        <select defaultValue="" onChange={(e) => classificar(l, l.partidaPendente.id, e.target.value)}>
-                          <option value="" disabled>Classificar...</option>
-                          {contas.filter((c) => c.codigo !== CODIGO_CONTA_PENDENTE).map((c) => (
-                            <option key={c.id} value={c.id}>{c.codigo} - {c.nome}</option>
-                          ))}
-                        </select>
-                      )}
-                    </div>
-                  )}
-                </td>
-                <td><button className="btn-ghost" onClick={() => apagar(l.id)}>Excluir</button></td>
+        <div className="contabil-tabela-scroll">
+          <table className="contabil-tabela">
+            <thead>
+              <tr>
+                <th style={{ width: 32 }}>
+                  <input type="checkbox" checked={todosSelecionados} onChange={toggleSelecionarTodos}
+                    disabled={lancamentosClassificaveis.length === 0} title="Selecionar todos os pendentes" />
+                </th>
+                <th style={{ whiteSpace: 'nowrap' }}>Data</th>
+                <th style={{ minWidth: 200 }}>
+                  Histórico
+                  <input placeholder="filtrar..." value={filtroHistorico} onChange={(e) => setFiltroHistorico(e.target.value)}
+                    style={{ display: 'block', marginTop: 4, width: '100%', fontSize: '0.75rem', fontWeight: 400, padding: '3px 6px', border: '1px solid var(--border)', borderRadius: 6 }} />
+                </th>
+                <th style={{ whiteSpace: 'nowrap' }}>Nº doc.</th>
+                <th style={{ whiteSpace: 'nowrap' }}>
+                  Débito / Crédito
+                  <input placeholder="filtrar conta..." value={filtroContas} onChange={(e) => setFiltroContas(e.target.value)}
+                    style={{ display: 'block', marginTop: 4, width: '100%', fontSize: '0.75rem', fontWeight: 400, padding: '3px 6px', border: '1px solid var(--border)', borderRadius: 6 }} />
+                </th>
+                <th className="num" style={{ whiteSpace: 'nowrap' }}>Valor</th>
+                <th style={{ whiteSpace: 'nowrap' }}>
+                  Origem
+                  <select value={filtroOrigem} onChange={(e) => setFiltroOrigem(e.target.value)}
+                    style={{ display: 'block', marginTop: 4, width: '100%', fontSize: '0.75rem', fontWeight: 400, padding: '3px 4px', border: '1px solid var(--border)', borderRadius: 6 }}>
+                    <option value="">Todas</option>
+                    <option value="manual">Manual</option>
+                    <option value="importacao_extrato">Extrato</option>
+                  </select>
+                </th>
+                <th style={{ whiteSpace: 'nowrap' }}>
+                  Status
+                  <select value={filtroStatus} onChange={(e) => setFiltroStatus(e.target.value)}
+                    style={{ display: 'block', marginTop: 4, width: '100%', fontSize: '0.75rem', fontWeight: 400, padding: '3px 4px', border: '1px solid var(--border)', borderRadius: 6 }}>
+                    <option value="">Todos</option>
+                    <option value="conciliado">Conciliado</option>
+                    <option value="a_conciliar">A conciliar</option>
+                  </select>
+                </th>
+                <th></th>
               </tr>
-            ))}
-            {lancamentosFiltrados.length === 0 && (
-              <tr><td colSpan={8} style={{ color: 'var(--text2)' }}>Nenhum lançamento no período{lancamentos.length > 0 ? ' com esses filtros' : ''}.</td></tr>
-            )}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {lancamentosFiltrados.map((l) => (
+                <tr key={l.id}>
+                  <td>
+                    {!l.conciliado && l.partidaPendente && (
+                      <input type="checkbox" checked={selecionados.has(l.id)} onChange={() => toggleSelecionado(l.id)} />
+                    )}
+                  </td>
+                  <td style={{ whiteSpace: 'nowrap' }}>{new Date(l.data + 'T00:00:00').toLocaleDateString('pt-BR')}</td>
+                  <td><span className="truncar" title={l.historico}>{l.historico}</span></td>
+                  <td style={{ fontSize: '0.8rem', color: 'var(--text2)', whiteSpace: 'nowrap' }}>{l.numero_documento || '—'}</td>
+                  <td style={{ whiteSpace: 'nowrap' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 3, alignItems: 'flex-start' }}>
+                      {l.debitoPartidas.map((p) => (
+                        <span key={p.id} className="pill-debito" title={p.contas_contabeis?.nome}>D {p.contas_contabeis?.codigo}</span>
+                      ))}
+                      {l.creditoPartidas.map((p) => (
+                        <span key={p.id} className="pill-credito" title={p.contas_contabeis?.nome}>C {p.contas_contabeis?.codigo}</span>
+                      ))}
+                    </div>
+                  </td>
+                  <td className="num" style={{ whiteSpace: 'nowrap' }}>R$ {l.valor.toFixed(2)}</td>
+                  <td style={{ whiteSpace: 'nowrap' }}><span className="badge-origem">{l.origem === 'importacao_extrato' ? 'Extrato' : 'Manual'}</span></td>
+                  <td style={{ whiteSpace: 'nowrap' }}>
+                    {l.conciliado ? (
+                      <span className="badge-origem" style={{ background: 'var(--ok-dim)', color: 'var(--ok)' }}>Conciliado</span>
+                    ) : (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <span className="badge-origem" style={{ background: 'var(--warn-dim)', color: 'var(--warn)' }}>A conciliar</span>
+                        {l.partidaPendente && (
+                          <select defaultValue="" onChange={(e) => classificar(l, l.partidaPendente.id, e.target.value)}>
+                            <option value="" disabled>Classificar...</option>
+                            {contas.filter((c) => c.codigo !== CODIGO_CONTA_PENDENTE).map((c) => (
+                              <option key={c.id} value={c.id}>{c.codigo} - {c.nome}</option>
+                            ))}
+                          </select>
+                        )}
+                      </div>
+                    )}
+                  </td>
+                  <td style={{ whiteSpace: 'nowrap' }}><button className="btn-ghost" onClick={() => apagar(l.id)}>Excluir</button></td>
+                </tr>
+              ))}
+              {lancamentosFiltrados.length === 0 && (
+                <tr><td colSpan={9} style={{ color: 'var(--text2)' }}>Nenhum lançamento no período{lancamentos.length > 0 ? ' com esses filtros' : ''}.</td></tr>
+              )}
+            </tbody>
+          </table>
+        </div>
       )}
     </div>
   );

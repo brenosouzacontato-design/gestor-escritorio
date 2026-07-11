@@ -9,20 +9,21 @@
 // variables): ANTHROPIC_API_KEY
 //
 // Contrato de retorno (o que ImportarExtratoTab.jsx espera):
-//   [{ "data": "YYYY-MM-DD", "descricao": "...", "valor": 123.45, "tipo": "entrada" | "saida" }]
+//   [{ "data": "YYYY-MM-DD", "descricao": "...", "identificador": "..." | null, "valor": 123.45, "tipo": "entrada" | "saida" }]
 
 const ANTHROPIC_API_URL = 'https://api.anthropic.com/v1/messages';
 const MODELO = 'claude-haiku-4-5-20251001';
 
 const SYSTEM_PROMPT = `Você é um assistente que extrai transações de extratos bancários em PDF.
 Devolva APENAS um JSON array, sem nenhum texto antes ou depois, sem markdown e sem crases, no formato exato:
-[{"data":"YYYY-MM-DD","descricao":"string","valor":number,"tipo":"entrada"|"saida"}]
+[{"data":"YYYY-MM-DD","descricao":"string","identificador":"string ou null","valor":number,"tipo":"entrada"|"saida"}]
 
 Regras:
 - "valor" é sempre positivo (o sinal já fica representado pelo campo "tipo").
 - "tipo" é "entrada" para créditos, depósitos, PIX recebido, transferências recebidas.
 - "tipo" é "saida" para débitos, saques, pagamentos, PIX enviado, tarifas.
-- "descricao" é o histórico da transação como aparece no extrato, sem resumir nem traduzir.
+- "descricao": o tipo de operação + a contraparte (quem pagou/recebeu), limpo e legível, SEM códigos de controle internos do banco. Exemplo: se o extrato traz \`Pix enviado: "Cp :00360305-Eloiza Maria Goncalves Martins"\`, devolva descricao "Pix enviado - Eloiza Maria Goncalves Martins".
+- "identificador": o código de controle/identificação da transação, se houver (número do PIX, "Cp :XXXXXXXX", nosso número de boleto, número do documento etc — só o código, sem o rótulo). No exemplo acima seria "00360305". Se o extrato não trouxer nenhum identificador pra aquela linha, use null — não invente um código.
 - "data" no formato YYYY-MM-DD (assuma o ano correto pelo cabeçalho do extrato, se o dia/mês vier sozinho).
 - Ignore linhas de saldo (saldo anterior, saldo do dia, saldo final), cabeçalho, rodapé e totalizadores — extraia só as transações individuais.
 - Se não conseguir ler uma linha com confiança, não invente: pule essa linha em vez de adivinhar.
