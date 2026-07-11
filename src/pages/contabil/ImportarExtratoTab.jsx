@@ -1,5 +1,9 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { listarContas, listarLancamentos, criarLancamentosEmLote } from './contabilApi';
+import {
+  listarContas, listarLancamentos, criarLancamentosEmLote,
+  listarRegrasClassificacao, salvarRegraClassificacao, extrairPadraoClassificacao,
+} from './contabilApi';
+import ContaCombobox from './ContaCombobox';
 
 // Contrapartida usada quando a transação é salva sem conta classificada ainda
 // (faz parte do plano de contas padrão importado — ver scripts/plano_contas_oneflow.json)
@@ -99,17 +103,28 @@ export default function ImportarExtratoTab({ empresaId }) {
     setInfo(null);
     setProcessando(true);
     try {
-      const [extraidas, historico] = await Promise.all([
+      const [extraidas, historico, regras] = await Promise.all([
         extrairTransacoesDoPDF(arquivo),
         listarLancamentos(empresaId, {}),
+        // regras de classificação são só um bônus — se falhar (ex: tabela
+        // ainda não migrada), a extração não pode travar por causa disso
+        listarRegrasClassificacao(empresaId).catch(() => []),
       ]);
+      const regraPorPadrao = new Map(regras.map((r) => [r.padrao, r.conta_id]));
       const bancoIds = new Set([contaBancoId]);
-      const comSugestao = extraidas.map((t) => ({
-        ...t,
-        conta_id: sugerirConta(t.descricao, historico, { bancoIds }) ?? '',
-        ignorar: false,
-      }));
+      let autoClassificadas = 0;
+      const comSugestao = extraidas.map((t) => {
+        // 1) regra aprendida com classificações anteriores (match exato) tem
+        // prioridade; 2) senão cai pra sugestão fraca por palavras em comum
+        const porRegra = regraPorPadrao.get(extrairPadraoClassificacao(t.descricao));
+        const contaId = porRegra ?? sugerirConta(t.descricao, historico, { bancoIds }) ?? '';
+        if (porRegra) autoClassificadas++;
+        return { ...t, conta_id: contaId, ignorar: false };
+      });
       setTransacoes(comSugestao);
+      if (autoClassificadas > 0) {
+        setInfo(`${autoClassificadas} transaç${autoClassificadas === 1 ? 'ão' : 'ões'} classificada${autoClassificadas === 1 ? '' : 's'} automaticamente com base em lançamentos anteriores.`);
+      }
     } catch (e) {
       setErro(e.message);
     } finally {
@@ -162,6 +177,14 @@ export default function ImportarExtratoTab({ empresaId }) {
       });
 
       const { criados, pulados } = await criarLancamentosEmLote(empresaId, itens);
+
+      // reforça/aprende as regras de classificação com o que foi confirmado
+      // agora (seja de uma regra já existente, sugestão ou escolha manual)
+      const classificadas = validas.filter((t) => t.conta_id);
+      await Promise.all(
+        classificadas.map((t) => salvarRegraClassificacao(empresaId, t.descricao, t.conta_id).catch(() => {}))
+      );
+
       setTransacoes([]);
       setArquivo(null);
       if (pulados > 0) {
@@ -178,10 +201,7 @@ export default function ImportarExtratoTab({ empresaId }) {
     <div>
       <div className="contabil-form">
         <div style={{ display: 'grid', gridTemplateColumns: '260px 1fr', gap: 12, marginBottom: 12 }}>
-          <select value={contaBancoId} onChange={(e) => setContaBancoId(e.target.value)}>
-            <option value="">Conta bancária do extrato...</option>
-            {contas.map((c) => <option key={c.id} value={c.id}>{c.codigo} - {c.nome}</option>)}
-          </select>
+          <ContaCombobox contas={contas} value={contaBancoId} onChange={setContaBancoId} placeholder="Conta bancária do extrato..." />
         </div>
 
         <div
@@ -232,11 +252,10 @@ export default function ImportarExtratoTab({ empresaId }) {
                   <td className={`num ${t.tipo === 'saida' ? 'valor-negativo' : 'valor-positivo'}`} style={{ whiteSpace: 'nowrap' }}>
                     R$ {Math.abs(Number(t.valor)).toFixed(2)}
                   </td>
-                  <td>
-                    <select value={t.conta_id} onChange={(e) => atualizarTransacao(idx, 'conta_id', e.target.value)}>
-                      <option value="">A classificar depois</option>
-                      {contas.map((c) => <option key={c.id} value={c.id}>{c.codigo} - {c.nome}</option>)}
-                    </select>
+                  <td style={{ minWidth: 240 }}>
+                    <ContaCombobox contas={contas} value={t.conta_id}
+                      onChange={(id) => atualizarTransacao(idx, 'conta_id', id)}
+                      placeholder="A classificar depois" style={{ width: '100%' }} />
                   </td>
                   <td>
                     <input type="checkbox" checked={t.ignorar}

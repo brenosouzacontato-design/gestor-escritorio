@@ -179,6 +179,39 @@ export async function reclassificarLancamentosEmLote(partidaIds, lancamentoIds, 
   if (errLancs) throw errLancs;
 }
 
+// ---------- REGRAS DE CLASSIFICAÇÃO AUTOMÁTICA ----------
+
+// Extrai a "contraparte" do histórico pra usar como padrão da regra.
+// Nosso histórico de extrato vem como "Tipo - Contraparte" (ver
+// netlify/functions/extrair-extrato.js), então pega o que vem depois do
+// primeiro " - "; se não achar esse formato, usa o histórico inteiro.
+export function extrairPadraoClassificacao(historico) {
+  const partes = (historico ?? '').split(' - ');
+  const base = partes.length > 1 ? partes.slice(1).join(' - ') : historico ?? '';
+  return base.trim().toUpperCase();
+}
+
+export async function listarRegrasClassificacao(empresaId) {
+  const { data, error } = await supabase
+    .from('regras_classificacao')
+    .select('*')
+    .eq('empresa_id', empresaId);
+  if (error) throw error;
+  return data;
+}
+
+// Grava/atualiza a regra "esse padrão sempre cai nessa conta" — chamado
+// toda vez que um lançamento é classificado (manual, em lote ou na
+// importação de extrato), pra ir aprendendo sozinho com o histórico.
+export async function salvarRegraClassificacao(empresaId, historico, contaId) {
+  const padrao = extrairPadraoClassificacao(historico);
+  if (!padrao) return;
+  const { error } = await supabase
+    .from('regras_classificacao')
+    .upsert({ empresa_id: empresaId, padrao, conta_id: contaId, updated_at: new Date().toISOString() }, { onConflict: 'empresa_id,padrao' });
+  if (error) throw error;
+}
+
 export async function listarLancamentos(empresaId, { dataInicio, dataFim } = {}) {
   let query = supabase
     .from('lancamentos_contabeis')

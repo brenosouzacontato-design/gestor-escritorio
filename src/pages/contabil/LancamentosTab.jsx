@@ -1,19 +1,22 @@
 import React, { useEffect, useState, useCallback, useMemo } from 'react';
-import { listarContas, listarLancamentos, criarLancamento, excluirLancamento, reclassificarLancamento, reclassificarLancamentosEmLote } from './contabilApi';
+import { ArrowDownIcon, ArrowUpIcon } from 'lucide-react';
+import {
+  listarContas, listarLancamentos, excluirLancamento,
+  reclassificarLancamento, reclassificarLancamentosEmLote, salvarRegraClassificacao,
+} from './contabilApi';
+import ContaCombobox from './ContaCombobox';
+import NovoLancamentoModal from './NovoLancamentoModal';
 
 // mesma conta transitória usada em ImportarExtratoTab.jsx pra transações
 // que chegaram sem classificação (ver CODIGO_CONTA_PENDENTE lá)
 const CODIGO_CONTA_PENDENTE = '1.1.01.001.002'; // "Valores a Identificar"
-
-function linhaVazia() {
-  return { conta_id: '', tipo: 'debito', valor: '' };
-}
 
 export default function LancamentosTab({ empresaId, periodo }) {
   const [contas, setContas] = useState([]);
   const [lancamentos, setLancamentos] = useState([]);
   const [carregando, setCarregando] = useState(false);
   const [erro, setErro] = useState(null);
+  const [modalAberto, setModalAberto] = useState(false);
 
   // filtros nos cabeçalhos da tabela de lançamentos
   const [filtroHistorico, setFiltroHistorico] = useState('');
@@ -26,15 +29,8 @@ export default function LancamentosTab({ empresaId, periodo }) {
   const [contaLote, setContaLote] = useState('');
   const [aplicandoLote, setAplicandoLote] = useState(false);
 
-  // formulário simples: 1 débito + 1 crédito por padrão, com opção de
-  // virar lançamento composto (mais linhas) quando precisar
-  const [data, setData] = useState(periodo.dataFim);
-  const [historico, setHistorico] = useState('');
-  const [numeroDocumento, setNumeroDocumento] = useState('');
-  const [linhas, setLinhas] = useState([
-    { conta_id: '', tipo: 'debito', valor: '' },
-    { conta_id: '', tipo: 'credito', valor: '' },
-  ]);
+  // partida sendo editada agora (troca o pill por um combobox de busca)
+  const [editandoPartidaId, setEditandoPartidaId] = useState(null);
 
   const carregar = useCallback(async () => {
     setCarregando(true);
@@ -55,67 +51,29 @@ export default function LancamentosTab({ empresaId, periodo }) {
 
   useEffect(() => { carregar(); }, [carregar]);
 
-  function atualizarLinha(idx, campo, valor) {
-    setLinhas((prev) => prev.map((l, i) => (i === idx ? { ...l, [campo]: valor } : l)));
-  }
-
-  function adicionarLinha() {
-    setLinhas((prev) => [...prev, linhaVazia()]);
-  }
-
-  function removerLinha(idx) {
-    setLinhas((prev) => prev.filter((_, i) => i !== idx));
-  }
-
-  const totalDebito = linhas.filter(l => l.tipo === 'debito').reduce((s, l) => s + (Number(l.valor) || 0), 0);
-  const totalCredito = linhas.filter(l => l.tipo === 'credito').reduce((s, l) => s + (Number(l.valor) || 0), 0);
-  const bate = Math.abs(totalDebito - totalCredito) < 0.005 && totalDebito > 0;
-
-  async function salvar(e) {
-    e.preventDefault();
-    setErro(null);
-    try {
-      const partidas = linhas
-        .filter((l) => l.conta_id && Number(l.valor) > 0)
-        .map((l) => ({ conta_id: l.conta_id, tipo: l.tipo, valor: Number(l.valor) }));
-
-      await criarLancamento({
-        empresaId,
-        data,
-        historico,
-        numeroDocumento,
-        partidas,
-      });
-
-      setHistorico('');
-      setNumeroDocumento('');
-      setLinhas([{ conta_id: '', tipo: 'debito', valor: '' }, { conta_id: '', tipo: 'credito', valor: '' }]);
-      carregar();
-    } catch (e) {
-      setErro(e.message);
-    }
-  }
-
   async function apagar(id) {
     if (!window.confirm('Excluir este lançamento?')) return;
     await excluirLancamento(id);
     carregar();
   }
 
-  async function classificar(lancamento, partidaPendenteId, novaContaId) {
-    if (!novaContaId) return;
+  // edição de uma partida específica (D ou C) — funciona tanto pra
+  // classificar um lançamento pendente quanto pra corrigir um já conciliado
+  async function editarPartida(lancamento, partida, novaContaId) {
+    if (!novaContaId || novaContaId === partida.conta_id) { setEditandoPartidaId(null); return; }
     setErro(null);
     try {
-      await reclassificarLancamento(lancamento.id, partidaPendenteId, novaContaId);
+      await reclassificarLancamento(lancamento.id, partida.id, novaContaId);
+      await salvarRegraClassificacao(empresaId, lancamento.historico, novaContaId).catch(() => {});
+      setEditandoPartidaId(null);
       carregar();
     } catch (e) {
       setErro(e.message);
     }
   }
 
-  // enriquece cada lançamento com o valor total, o resumo de contas e a
-  // partida "Valores a Identificar" (se houver) — usado tanto pra exibir
-  // quanto pros filtros/seleção em lote
+  // enriquece cada lançamento com o valor total e as partidas separadas por
+  // tipo — usado tanto pra exibir quanto pros filtros/seleção em lote
   const lancamentosEnriquecidos = useMemo(() => lancamentos.map((l) => {
     const debitoPartidas = l.partidas_contabeis?.filter((p) => p.tipo === 'debito') ?? [];
     const creditoPartidas = l.partidas_contabeis?.filter((p) => p.tipo === 'credito') ?? [];
@@ -171,6 +129,9 @@ export default function LancamentosTab({ empresaId, periodo }) {
       const partidaIds = selecionadosClassificaveis.map((l) => l.partidaPendente.id);
       const lancamentoIds = selecionadosClassificaveis.map((l) => l.id);
       await reclassificarLancamentosEmLote(partidaIds, lancamentoIds, contaLote);
+      await Promise.all(
+        selecionadosClassificaveis.map((l) => salvarRegraClassificacao(empresaId, l.historico, contaLote).catch(() => {}))
+      );
       setSelecionados(new Set());
       setContaLote('');
       carregar();
@@ -183,74 +144,26 @@ export default function LancamentosTab({ empresaId, periodo }) {
 
   return (
     <div>
-      <form className="contabil-form" onSubmit={salvar}>
-        <div style={{ display: 'grid', gridTemplateColumns: '140px 1fr 160px', gap: 8, marginBottom: 12 }}>
-          <input type="date" value={data} onChange={(e) => setData(e.target.value)} required />
-          <input
-            type="text"
-            placeholder="Histórico (ex: Pagamento de fornecedor XYZ)"
-            value={historico}
-            onChange={(e) => setHistorico(e.target.value)}
-            required
-          />
-          <input
-            type="text"
-            placeholder="Nº documento (opcional)"
-            value={numeroDocumento}
-            onChange={(e) => setNumeroDocumento(e.target.value)}
-          />
-        </div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+        <button className="btn-navy" onClick={() => setModalAberto(true)}>+ Novo lançamento</button>
+        {erro && <p style={{ color: 'var(--danger)', margin: 0 }}>{erro}</p>}
+      </div>
 
-        {linhas.map((linha, idx) => (
-          <div className="contabil-form-linha" key={idx}>
-            <select value={linha.conta_id} onChange={(e) => atualizarLinha(idx, 'conta_id', e.target.value)} required>
-              <option value="">Selecione a conta...</option>
-              {contas.map((c) => (
-                <option key={c.id} value={c.id}>{c.codigo} - {c.nome}</option>
-              ))}
-            </select>
-            <select value={linha.tipo} onChange={(e) => atualizarLinha(idx, 'tipo', e.target.value)}>
-              <option value="debito">Débito</option>
-              <option value="credito">Crédito</option>
-            </select>
-            <input
-              type="number"
-              step="0.01"
-              placeholder="Valor"
-              value={linha.valor}
-              onChange={(e) => atualizarLinha(idx, 'valor', e.target.value)}
-              required
-            />
-            {linhas.length > 2 && (
-              <button type="button" className="btn-ghost" onClick={() => removerLinha(idx)}>Remover</button>
-            )}
-          </div>
-        ))}
-
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 8 }}>
-          <button type="button" className="btn-ghost" onClick={adicionarLinha}>+ Adicionar linha (lançamento composto)</button>
-          <div style={{ fontSize: '0.85rem', color: bate ? 'var(--ok)' : 'var(--danger)' }}>
-            Débito: R$ {totalDebito.toFixed(2)} &nbsp;|&nbsp; Crédito: R$ {totalCredito.toFixed(2)}
-            {!bate && ' — não bate ainda'}
-          </div>
-        </div>
-
-        {erro && <p style={{ color: 'var(--danger)', marginTop: 8 }}>{erro}</p>}
-
-        <button type="submit" className="btn-navy" style={{ marginTop: 12 }} disabled={!bate}>
-          Lançar
-        </button>
-      </form>
+      {modalAberto && (
+        <NovoLancamentoModal
+          empresaId={empresaId}
+          contas={contas}
+          dataInicial={periodo.dataFim}
+          onClose={() => setModalAberto(false)}
+          onSalvo={carregar}
+        />
+      )}
 
       {selecionados.size > 0 && (
         <div className="contabil-form" style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12, padding: '10px 16px' }}>
           <strong>{selecionados.size} lançamento{selecionados.size > 1 ? 's' : ''} selecionado{selecionados.size > 1 ? 's' : ''}</strong>
-          <select value={contaLote} onChange={(e) => setContaLote(e.target.value)}>
-            <option value="">Selecione a conta...</option>
-            {contas.filter((c) => c.codigo !== CODIGO_CONTA_PENDENTE).map((c) => (
-              <option key={c.id} value={c.id}>{c.codigo} - {c.nome}</option>
-            ))}
-          </select>
+          <ContaCombobox contas={contas} value={contaLote} onChange={setContaLote}
+            excluirCodigos={[CODIGO_CONTA_PENDENTE]} placeholder="Selecione a conta..." style={{ width: 280 }} />
           <button type="button" className="btn-navy" onClick={aplicarClassificacaoLote} disabled={aplicandoLote || !contaLote}>
             {aplicandoLote ? 'Aplicando...' : 'Classificar selecionados'}
           </button>
@@ -272,13 +185,13 @@ export default function LancamentosTab({ empresaId, periodo }) {
                     disabled={lancamentosClassificaveis.length === 0} title="Selecionar todos os pendentes" />
                 </th>
                 <th style={{ whiteSpace: 'nowrap' }}>Data</th>
-                <th style={{ minWidth: 200 }}>
+                <th style={{ minWidth: 260 }}>
                   Histórico
                   <input placeholder="filtrar..." value={filtroHistorico} onChange={(e) => setFiltroHistorico(e.target.value)}
                     style={{ display: 'block', marginTop: 4, width: '100%', fontSize: '0.75rem', fontWeight: 400, padding: '3px 6px', border: '1px solid var(--border)', borderRadius: 6 }} />
                 </th>
                 <th style={{ whiteSpace: 'nowrap' }}>Nº doc.</th>
-                <th style={{ whiteSpace: 'nowrap' }}>
+                <th style={{ whiteSpace: 'nowrap', minWidth: 220 }}>
                   Débito / Crédito
                   <input placeholder="filtrar conta..." value={filtroContas} onChange={(e) => setFiltroContas(e.target.value)}
                     style={{ display: 'block', marginTop: 4, width: '100%', fontSize: '0.75rem', fontWeight: 400, padding: '3px 6px', border: '1px solid var(--border)', borderRadius: 6 }} />
@@ -314,15 +227,30 @@ export default function LancamentosTab({ empresaId, periodo }) {
                     )}
                   </td>
                   <td style={{ whiteSpace: 'nowrap' }}>{new Date(l.data + 'T00:00:00').toLocaleDateString('pt-BR')}</td>
-                  <td><span className="truncar" title={l.historico}>{l.historico}</span></td>
+                  <td style={{ whiteSpace: 'nowrap' }}>{l.historico}</td>
                   <td style={{ fontSize: '0.8rem', color: 'var(--text2)', whiteSpace: 'nowrap' }}>{l.numero_documento || '—'}</td>
                   <td style={{ whiteSpace: 'nowrap' }}>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 3, alignItems: 'flex-start' }}>
-                      {l.debitoPartidas.map((p) => (
-                        <span key={p.id} className="pill-debito" title={p.contas_contabeis?.nome}>D {p.contas_contabeis?.codigo}</span>
-                      ))}
-                      {l.creditoPartidas.map((p) => (
-                        <span key={p.id} className="pill-credito" title={p.contas_contabeis?.nome}>C {p.contas_contabeis?.codigo}</span>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'flex-start' }}>
+                      {[...l.debitoPartidas, ...l.creditoPartidas].map((p) => (
+                        editandoPartidaId === p.id ? (
+                          <ContaCombobox
+                            key={p.id}
+                            contas={contas}
+                            value={p.conta_id}
+                            onChange={(novoId) => editarPartida(l, p, novoId)}
+                            excluirCodigos={[CODIGO_CONTA_PENDENTE]}
+                            style={{ width: 240 }}
+                          />
+                        ) : (
+                          <span key={p.id}
+                            className={p.tipo === 'debito' ? 'pill-debito' : 'pill-credito'}
+                            title={`${p.contas_contabeis?.nome ?? ''} — clique pra trocar`}
+                            style={{ cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 3 }}
+                            onClick={() => setEditandoPartidaId(p.id)}>
+                            {p.tipo === 'debito' ? <ArrowDownIcon size={11} /> : <ArrowUpIcon size={11} />}
+                            {p.tipo === 'debito' ? 'D' : 'C'} {p.contas_contabeis?.codigo}
+                          </span>
+                        )
                       ))}
                     </div>
                   </td>
@@ -332,17 +260,7 @@ export default function LancamentosTab({ empresaId, periodo }) {
                     {l.conciliado ? (
                       <span className="badge-origem" style={{ background: 'var(--ok-dim)', color: 'var(--ok)' }}>Conciliado</span>
                     ) : (
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                        <span className="badge-origem" style={{ background: 'var(--warn-dim)', color: 'var(--warn)' }}>A conciliar</span>
-                        {l.partidaPendente && (
-                          <select defaultValue="" onChange={(e) => classificar(l, l.partidaPendente.id, e.target.value)}>
-                            <option value="" disabled>Classificar...</option>
-                            {contas.filter((c) => c.codigo !== CODIGO_CONTA_PENDENTE).map((c) => (
-                              <option key={c.id} value={c.id}>{c.codigo} - {c.nome}</option>
-                            ))}
-                          </select>
-                        )}
-                      </div>
+                      <span className="badge-origem" style={{ background: 'var(--warn-dim)', color: 'var(--warn)' }}>A conciliar</span>
                     )}
                   </td>
                   <td style={{ whiteSpace: 'nowrap' }}><button className="btn-ghost" onClick={() => apagar(l.id)}>Excluir</button></td>

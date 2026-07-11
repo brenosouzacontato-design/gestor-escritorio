@@ -351,7 +351,8 @@ function ModalObrigacoesTipo({ tipo, meta, lista, compSel, onClose }) {
                 borderLeft:`4px solid ${cfg.cor}`, borderRadius:'var(--r-sm)', padding:'12px 14px',
                 display:'flex', alignItems:'center', gap:12 }}>
                 <div style={{ flex:1, minWidth:0 }}>
-                  <div style={{ fontSize:14, fontWeight:600, color:'var(--text1)', marginBottom:3 }}>
+                  <div style={{ fontSize:14, fontWeight:600, color:'var(--text1)', marginBottom:3,
+                    whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }} title={o.clienteNome}>
                     {o.clienteNome}
                   </div>
                   {o.vencimento && (
@@ -366,7 +367,7 @@ function ModalObrigacoesTipo({ tipo, meta, lista, compSel, onClose }) {
                   style={{ background:cfg.bg, border:`1px solid ${cfg.cor}55`, borderRadius:99,
                     padding:'5px 10px', fontSize:11, color:cfg.cor, fontWeight:700,
                     cursor:'pointer', outline:'none', opacity:busy?.5:1,
-                    appearance:'none', WebkitAppearance:'none', minWidth:100, textAlign:'center' }}>
+                    appearance:'none', WebkitAppearance:'none', width:120, flexShrink:0, textAlign:'center' }}>
                   <option value="pendente" style={{ background:'var(--surface)', color:'var(--warn)' }}>○ Pendente</option>
                   <option value="concluido" style={{ background:'var(--surface)', color:'var(--ok)' }}>✓ Concluído</option>
                   <option value="nao_aplica" style={{ background:'var(--surface)', color:'var(--info)' }}>— N/A</option>

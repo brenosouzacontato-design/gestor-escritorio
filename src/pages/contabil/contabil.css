@@ -175,11 +175,3 @@
 .contabil-tabela-scroll .contabil-tabela {
   min-width: 900px;
 }
-
-.contabil-tabela .truncar {
-  max-width: 260px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  display: block;
-}
