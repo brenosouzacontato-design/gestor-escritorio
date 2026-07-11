@@ -163,6 +163,22 @@ export async function reclassificarLancamento(lancamentoId, partidaId, novaConta
   return data;
 }
 
+// Mesma ideia que reclassificarLancamento, mas pra várias partidas
+// pendentes de uma vez, todas indo pra mesma conta escolhida.
+export async function reclassificarLancamentosEmLote(partidaIds, lancamentoIds, novaContaId) {
+  const { error: errPartidas } = await supabase
+    .from('partidas_contabeis')
+    .update({ conta_id: novaContaId })
+    .in('id', partidaIds);
+  if (errPartidas) throw errPartidas;
+
+  const { error: errLancs } = await supabase
+    .from('lancamentos_contabeis')
+    .update({ conciliado: true })
+    .in('id', lancamentoIds);
+  if (errLancs) throw errLancs;
+}
+
 export async function listarLancamentos(empresaId, { dataInicio, dataFim } = {}) {
   let query = supabase
     .from('lancamentos_contabeis')
