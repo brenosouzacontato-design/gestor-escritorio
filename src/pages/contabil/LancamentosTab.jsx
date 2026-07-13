@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback, useMemo } from 'react';
-import { ArrowDownIcon, ArrowUpIcon } from 'lucide-react';
+import { ArrowDownIcon, ArrowUpIcon, ArrowDownCircleIcon, ArrowUpCircleIcon } from 'lucide-react';
 import {
   listarContas, listarLancamentos, excluirLancamento,
   reclassificarLancamento, reclassificarLancamentosEmLote, salvarRegraClassificacao,
@@ -11,6 +11,11 @@ import NovoLancamentoModal from './NovoLancamentoModal';
 // que chegaram sem classificação (ver CODIGO_CONTA_PENDENTE lá)
 const CODIGO_CONTA_PENDENTE = '1.1.01.001.002'; // "Valores a Identificar"
 
+// grupo "Disponibilidades" (caixa, bancos, aplicações) no plano de contas
+// padrão — usado pra inferir a natureza (entrada/saída) de cada lançamento
+// olhando se é o lado debitado ou creditado, igual já é feito na importação
+const PREFIXO_DISPONIVEL = '1.1.01';
+
 export default function LancamentosTab({ empresaId, periodo }) {
   const [contas, setContas] = useState([]);
   const [lancamentos, setLancamentos] = useState([]);
@@ -21,7 +26,7 @@ export default function LancamentosTab({ empresaId, periodo }) {
   // filtros nos cabeçalhos da tabela de lançamentos
   const [filtroHistorico, setFiltroHistorico] = useState('');
   const [filtroContas, setFiltroContas] = useState('');
-  const [filtroOrigem, setFiltroOrigem] = useState('');
+  const [filtroNatureza, setFiltroNatureza] = useState('');
   const [filtroStatus, setFiltroStatus] = useState('');
 
   // seleção múltipla pra classificar vários lançamentos pendentes de uma vez
@@ -78,18 +83,29 @@ export default function LancamentosTab({ empresaId, periodo }) {
       ?.map((p) => `${p.tipo === 'debito' ? 'D' : 'C'} ${p.contas_contabeis?.codigo} ${p.contas_contabeis?.nome ?? ''}`)
       .join(' / ') ?? '';
     const partidaPendente = l.partidas_contabeis?.find((p) => p.contas_contabeis?.codigo === CODIGO_CONTA_PENDENTE);
-    return { ...l, valor, contasResumo, debitoPartidas, creditoPartidas, partidaPendente };
+    // natureza: entrou ou saiu dinheiro de caixa/banco? olha em qual lado
+    // (débito ou crédito) tem conta do grupo Disponibilidades — se os dois
+    // lados tocam disponibilidades (transferência entre contas) ou nenhum
+    // toca (reclassificação interna), não dá pra definir uma natureza única.
+    // "Valores a Identificar" também mora no grupo 1.1.01 mas é só uma conta
+    // transitória pra transação ainda não classificada — não conta como
+    // banco/caixa de verdade, senão toda transação pendente vira ambígua
+    const ehContaDisponivelReal = (codigo) => codigo?.startsWith(PREFIXO_DISPONIVEL) && codigo !== CODIGO_CONTA_PENDENTE;
+    const tocaDisponivelDebito = debitoPartidas.some((p) => ehContaDisponivelReal(p.contas_contabeis?.codigo));
+    const tocaDisponivelCredito = creditoPartidas.some((p) => ehContaDisponivelReal(p.contas_contabeis?.codigo));
+    const natureza = tocaDisponivelDebito === tocaDisponivelCredito ? null : (tocaDisponivelDebito ? 'entrada' : 'saida');
+    return { ...l, valor, contasResumo, debitoPartidas, creditoPartidas, partidaPendente, natureza };
   }), [lancamentos]);
 
   const lancamentosFiltrados = useMemo(() => lancamentosEnriquecidos.filter((l) => {
     if (filtroHistorico && !l.historico?.toLowerCase().includes(filtroHistorico.toLowerCase())) return false;
     if (filtroContas && !l.contasResumo.toLowerCase().includes(filtroContas.toLowerCase())
       && !l.numero_documento?.toLowerCase().includes(filtroContas.toLowerCase())) return false;
-    if (filtroOrigem && l.origem !== filtroOrigem) return false;
+    if (filtroNatureza && l.natureza !== filtroNatureza) return false;
     if (filtroStatus === 'conciliado' && !l.conciliado) return false;
     if (filtroStatus === 'a_conciliar' && l.conciliado) return false;
     return true;
-  }), [lancamentosEnriquecidos, filtroHistorico, filtroContas, filtroOrigem, filtroStatus]);
+  }), [lancamentosEnriquecidos, filtroHistorico, filtroContas, filtroNatureza, filtroStatus]);
 
   // só dá pra selecionar/classificar em lote quem ainda não foi conciliado
   const lancamentosClassificaveis = useMemo(
@@ -237,13 +253,13 @@ export default function LancamentosTab({ empresaId, periodo }) {
                   </div>
                 </th>
                 <th className="num" style={{ whiteSpace: 'nowrap', width: 110 }}>Valor</th>
-                <th style={{ whiteSpace: 'nowrap', width: 100 }}>
-                  Origem
-                  <select value={filtroOrigem} onChange={(e) => setFiltroOrigem(e.target.value)}
+                <th style={{ whiteSpace: 'nowrap', width: 110 }}>
+                  Natureza
+                  <select value={filtroNatureza} onChange={(e) => setFiltroNatureza(e.target.value)}
                     style={{ display: 'block', marginTop: 4, width: '100%', fontSize: '0.75rem', fontWeight: 400, padding: '3px 4px', border: '1px solid var(--border)', borderRadius: 6 }}>
                     <option value="">Todas</option>
-                    <option value="manual">Manual</option>
-                    <option value="importacao_extrato">Extrato</option>
+                    <option value="entrada">Entrada</option>
+                    <option value="saida">Saída</option>
                   </select>
                 </th>
                 <th style={{ whiteSpace: 'nowrap', width: 120 }}>
@@ -276,7 +292,20 @@ export default function LancamentosTab({ empresaId, periodo }) {
                     <PartidaCell partidas={l.creditoPartidas} contas={contas} onEditar={(p, id) => editarPartida(l, p, id)} />
                   </td>
                   <td className="num" style={{ whiteSpace: 'nowrap' }}>R$ {l.valor.toFixed(2)}</td>
-                  <td style={{ whiteSpace: 'nowrap' }}><span className="badge-origem">{l.origem === 'importacao_extrato' ? 'Extrato' : 'Manual'}</span></td>
+                  <td style={{ whiteSpace: 'nowrap' }}>
+                    {l.natureza ? (
+                      <span className="badge-origem" style={{
+                        display: 'inline-flex', alignItems: 'center', gap: 4,
+                        background: l.natureza === 'entrada' ? 'var(--ok-dim)' : 'var(--danger-dim)',
+                        color: l.natureza === 'entrada' ? 'var(--ok)' : 'var(--danger)',
+                      }}>
+                        {l.natureza === 'entrada' ? <ArrowDownCircleIcon size={13} /> : <ArrowUpCircleIcon size={13} />}
+                        {l.natureza === 'entrada' ? 'Entrada' : 'Saída'}
+                      </span>
+                    ) : (
+                      <span style={{ color: 'var(--text3)' }}>—</span>
+                    )}
+                  </td>
                   <td style={{ whiteSpace: 'nowrap' }}>
                     {l.conciliado ? (
                       <span className="badge-origem" style={{ background: 'var(--ok-dim)', color: 'var(--ok)' }}>Conciliado</span>
