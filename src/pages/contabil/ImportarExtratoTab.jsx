@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { ArrowDownCircleIcon, ArrowUpCircleIcon } from 'lucide-react';
+import { PDFDocument } from 'pdf-lib';
 import {
   listarContas, listarLancamentos, criarLancamentosEmLote,
   listarRegrasClassificacao, salvarRegraClassificacao, encontrarRegraAplicavel,
@@ -34,13 +35,13 @@ async function arquivoParaBase64(arquivo) {
   });
 }
 
-async function extrairTransacoesDoPDF(arquivo) {
+async function extrairTransacoesDoPDF(arquivo, nomeArquivo) {
   const pdfBase64 = await arquivoParaBase64(arquivo);
 
   const resp = await fetch('/.netlify/functions/extrair-extrato', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ pdfBase64, filename: arquivo.name }),
+    body: JSON.stringify({ pdfBase64, filename: nomeArquivo ?? arquivo.name }),
   });
 
   if (!resp.ok) {
@@ -48,6 +49,62 @@ async function extrairTransacoesDoPDF(arquivo) {
     throw new Error(erro.error || 'Falha ao extrair o extrato.');
   }
   return resp.json();
+}
+
+// Extratos longos (bancos com muita movimentação, 15+ páginas) demoram demais
+// pro Claude ler o PDF inteiro e gerar o JSON numa única chamada — a função
+// do Netlify estoura o tempo de execução e cai num 504 antes de responder.
+// Pra evitar isso, quebra o PDF em partes de poucas páginas e manda cada uma
+// numa chamada separada; as partes usam 1 página de sobreposição pra não
+// perder transação que atravesse a quebra de página, e eventuais duplicatas
+// resultantes disso são descartadas depois pelo índice único de
+// extrato_referencia no banco (ver criarLancamentosEmLote).
+const PAGINAS_POR_PARTE = 4;
+const PARTES_SIMULTANEAS = 3;
+
+async function extrairTransacoesComDivisao(arquivo) {
+  const bytes = await arquivo.arrayBuffer();
+  const doc = await PDFDocument.load(bytes);
+  const totalPaginas = doc.getPageCount();
+
+  if (totalPaginas <= PAGINAS_POR_PARTE) {
+    return extrairTransacoesDoPDF(arquivo);
+  }
+
+  const partes = [];
+  for (let inicio = 0; inicio < totalPaginas; inicio += PAGINAS_POR_PARTE) {
+    const fim = Math.min(inicio + PAGINAS_POR_PARTE, totalPaginas);
+    const inicioComSobreposicao = inicio === 0 ? 0 : inicio - 1;
+    const indices = Array.from({ length: fim - inicioComSobreposicao }, (_, i) => inicioComSobreposicao + i);
+    const parte = await PDFDocument.create();
+    const paginas = await parte.copyPages(doc, indices);
+    paginas.forEach((p) => parte.addPage(p));
+    partes.push(await parte.save());
+  }
+
+  const transacoes = [];
+  const falhas = [];
+  let truncado = false;
+  for (let i = 0; i < partes.length; i += PARTES_SIMULTANEAS) {
+    const lote = partes.slice(i, i + PARTES_SIMULTANEAS);
+    const resultados = await Promise.allSettled(
+      lote.map((bytesParte, j) => {
+        const blob = new Blob([bytesParte], { type: 'application/pdf' });
+        return extrairTransacoesDoPDF(blob, `${arquivo.name} (parte ${i + j + 1}/${partes.length})`);
+      })
+    );
+    resultados.forEach((r, j) => {
+      if (r.status === 'fulfilled') {
+        transacoes.push(...r.value.transacoes);
+        truncado = truncado || r.value.truncado;
+      } else {
+        falhas.push(`parte ${i + j + 1}/${partes.length}: ${r.reason?.message || 'falha desconhecida'}`);
+      }
+    });
+  }
+
+  if (falhas.length > 0) truncado = true;
+  return { transacoes, truncado, falhas: falhas.length > 0 ? falhas : undefined };
 }
 
 // Sugere uma conta pra transação olhando lançamentos anteriores com
@@ -108,7 +165,7 @@ export default function ImportarExtratoTab({ empresaId }) {
     setProcessando(true);
     try {
       const [extracao, historico, regras] = await Promise.all([
-        extrairTransacoesDoPDF(arquivo),
+        extrairTransacoesComDivisao(arquivo),
         listarLancamentos(empresaId, {}),
         // regras de classificação são só um bônus — se falhar (ex: tabela
         // ainda não migrada), a extração não pode travar por causa disso
@@ -128,7 +185,9 @@ export default function ImportarExtratoTab({ empresaId }) {
       });
       setTransacoes(comSugestao);
       const avisos = [];
-      if (extracao.truncado) {
+      if (extracao.falhas) {
+        avisos.push(`⚠ Não consegui processar ${extracao.falhas.length} trecho${extracao.falhas.length === 1 ? '' : 's'} do extrato (${extracao.falhas.join('; ')}). As transações desses trechos não vieram — tente reimportar o período correspondente separado.`);
+      } else if (extracao.truncado) {
         avisos.push(`⚠ O extrato tinha transações demais pra processar de uma vez — só ${extraidas.length} vieram completas. Confira o total no extrato original e importe o restante separado (outro período/arquivo).`);
       }
       if (autoClassificadas > 0) {
