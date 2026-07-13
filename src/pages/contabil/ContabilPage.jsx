@@ -6,6 +6,7 @@ import LancamentosTab from './LancamentosTab';
 import BalanceteTab from './BalanceteTab';
 import DRETab from './DRETab';
 import ImportarExtratoTab from './ImportarExtratoTab';
+import RegrasTab from './RegrasTab';
 
 const TABS = [
   { id: 'lancamentos', label: 'Lançamentos' },
@@ -13,6 +14,7 @@ const TABS = [
   { id: 'dre', label: 'DRE' },
   { id: 'extrato', label: 'Importar Extrato' },
   { id: 'plano', label: 'Plano de Contas' },
+  { id: 'regras', label: 'Regras' },
 ];
 
 function primeiroDiaDoMes() {
@@ -69,6 +71,7 @@ export default function ContabilPage() {
           {abaAtiva === 'dre' && <DRETab empresaId={empresaIdAtual} periodo={periodo} />}
           {abaAtiva === 'extrato' && <ImportarExtratoTab empresaId={empresaIdAtual} />}
           {abaAtiva === 'plano' && <PlanoContasTab empresaId={empresaIdAtual} />}
+          {abaAtiva === 'regras' && <RegrasTab empresaId={empresaIdAtual} />}
         </>
       )}
     </div>

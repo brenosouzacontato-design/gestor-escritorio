@@ -51,6 +51,9 @@ export default function ContaCombobox({ contas, value, onChange, placeholder = '
     else if (e.key === 'ArrowUp') { e.preventDefault(); setDestaque((i) => Math.max(i - 1, 0)); }
     else if (e.key === 'Enter') { e.preventDefault(); if (filtradas[destaque]) escolher(filtradas[destaque]); }
     else if (e.key === 'Escape') { setAberto(false); setBusca(''); }
+    // Tab: aceita o destaque atual (se o usuário digitou algo) e segue pro
+    // próximo campo normalmente, em vez de perder a busca no meio do caminho
+    else if (e.key === 'Tab' && busca && filtradas[destaque]) { escolher(filtradas[destaque]); }
   }
 
   return (

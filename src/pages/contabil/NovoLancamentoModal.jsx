@@ -12,6 +12,10 @@ export default function NovoLancamentoModal({ empresaId, contas, dataInicial, on
   const [historico, setHistorico] = useState('');
   const [salvando, setSalvando] = useState(false);
 
+  function onEnterSubmete(e) {
+    if (e.key === 'Enter') { e.preventDefault(); submit(); }
+  }
+
   async function submit() {
     if (!data || !debitoId || !creditoId || !valor || !historico.trim()) {
       show('Preencha todos os campos.');
@@ -63,12 +67,12 @@ export default function NovoLancamentoModal({ empresaId, contas, dataInicial, on
 
       <div className="form-field">
         <label className="form-label">Valor</label>
-        <input type="number" step="0.01" value={valor} onChange={(e) => setValor(e.target.value)} placeholder="0,00" />
+        <input type="number" step="0.01" value={valor} onChange={(e) => setValor(e.target.value)} onKeyDown={onEnterSubmete} placeholder="0,00" />
       </div>
 
       <div className="form-field">
         <label className="form-label">Histórico</label>
-        <input type="text" value={historico} onChange={(e) => setHistorico(e.target.value)}
+        <input type="text" value={historico} onChange={(e) => setHistorico(e.target.value)} onKeyDown={onEnterSubmete}
           placeholder="Ex: Pagamento de fornecedor XYZ" autoFocus />
       </div>
 

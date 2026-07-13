@@ -29,9 +29,6 @@ export default function LancamentosTab({ empresaId, periodo }) {
   const [contaLote, setContaLote] = useState('');
   const [aplicandoLote, setAplicandoLote] = useState(false);
 
-  // partida sendo editada agora (troca o pill por um combobox de busca)
-  const [editandoPartidaId, setEditandoPartidaId] = useState(null);
-
   const carregar = useCallback(async () => {
     setCarregando(true);
     setErro(null);
@@ -60,12 +57,11 @@ export default function LancamentosTab({ empresaId, periodo }) {
   // edição de uma partida específica (D ou C) — funciona tanto pra
   // classificar um lançamento pendente quanto pra corrigir um já conciliado
   async function editarPartida(lancamento, partida, novaContaId) {
-    if (!novaContaId || novaContaId === partida.conta_id) { setEditandoPartidaId(null); return; }
+    if (!novaContaId || novaContaId === partida.conta_id) return;
     setErro(null);
     try {
       await reclassificarLancamento(lancamento.id, partida.id, novaContaId);
       await salvarRegraClassificacao(empresaId, lancamento.historico, novaContaId).catch(() => {});
-      setEditandoPartidaId(null);
       carregar();
     } catch (e) {
       setErro(e.message);
@@ -142,10 +138,41 @@ export default function LancamentosTab({ empresaId, periodo }) {
     }
   }
 
+  // exporta os lançamentos filtrados/visíveis em CSV (abre direto no Excel)
+  function exportarCSV() {
+    const cabecalho = ['Data', 'Histórico', 'Nº documento', 'Débito', 'Crédito', 'Valor', 'Origem', 'Status'];
+    const nomeConta = (p) => p ? `${p.contas_contabeis?.codigo} - ${p.contas_contabeis?.nome}` : '';
+    const linhas = lancamentosFiltrados.map((l) => [
+      new Date(l.data + 'T00:00:00').toLocaleDateString('pt-BR'),
+      l.historico,
+      l.numero_documento || '',
+      l.debitoPartidas.map(nomeConta).join(' / '),
+      l.creditoPartidas.map(nomeConta).join(' / '),
+      l.valor.toFixed(2).replace('.', ','),
+      l.origem === 'importacao_extrato' ? 'Extrato' : 'Manual',
+      l.conciliado ? 'Conciliado' : 'A conciliar',
+    ]);
+    const escapar = (v) => `"${String(v).replace(/"/g, '""')}"`;
+    // ; como separador e vírgula decimal — é o que o Excel em pt-BR espera
+    const csv = [cabecalho, ...linhas].map((linha) => linha.map(escapar).join(';')).join('\r\n');
+    const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `lancamentos_${periodo.dataInicio}_a_${periodo.dataFim}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
   return (
     <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-        <button className="btn-navy" onClick={() => setModalAberto(true)}>+ Novo lançamento</button>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, gap: 8 }}>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button className="btn-navy" onClick={() => setModalAberto(true)}>+ Novo lançamento</button>
+          <button className="btn-ghost" onClick={exportarCSV} disabled={lancamentosFiltrados.length === 0}>
+            Exportar Excel
+          </button>
+        </div>
         {erro && <p style={{ color: 'var(--danger)', margin: 0 }}>{erro}</p>}
       </div>
 
@@ -180,24 +207,37 @@ export default function LancamentosTab({ empresaId, periodo }) {
           <table className="contabil-tabela">
             <thead>
               <tr>
-                <th style={{ width: 32 }}>
+                <th style={{ width: 28 }}>
                   <input type="checkbox" checked={todosSelecionados} onChange={toggleSelecionarTodos}
                     disabled={lancamentosClassificaveis.length === 0} title="Selecionar todos os pendentes" />
                 </th>
-                <th style={{ whiteSpace: 'nowrap' }}>Data</th>
-                <th style={{ minWidth: 260 }}>
-                  Histórico
-                  <input placeholder="filtrar..." value={filtroHistorico} onChange={(e) => setFiltroHistorico(e.target.value)}
-                    style={{ display: 'block', marginTop: 4, width: '100%', fontSize: '0.75rem', fontWeight: 400, padding: '3px 6px', border: '1px solid var(--border)', borderRadius: 6 }} />
+                <th style={{ whiteSpace: 'nowrap', width: 96 }}>Data</th>
+                <th>
+                  <div className="th-resizable">
+                    Histórico
+                    <input placeholder="filtrar..." value={filtroHistorico} onChange={(e) => setFiltroHistorico(e.target.value)}
+                      style={{ display: 'block', marginTop: 4, width: '100%', fontSize: '0.75rem', fontWeight: 400, padding: '3px 6px', border: '1px solid var(--border)', borderRadius: 6 }} />
+                  </div>
                 </th>
-                <th style={{ whiteSpace: 'nowrap' }}>Nº doc.</th>
-                <th style={{ whiteSpace: 'nowrap', minWidth: 220 }}>
-                  Débito / Crédito
-                  <input placeholder="filtrar conta..." value={filtroContas} onChange={(e) => setFiltroContas(e.target.value)}
-                    style={{ display: 'block', marginTop: 4, width: '100%', fontSize: '0.75rem', fontWeight: 400, padding: '3px 6px', border: '1px solid var(--border)', borderRadius: 6 }} />
+                <th style={{ whiteSpace: 'nowrap', width: 90 }}>Nº doc.</th>
+                <th>
+                  <div className="th-resizable">
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, color: 'var(--accent)' }}>
+                      <ArrowDownIcon size={12} /> Débito
+                    </span>
+                    <input placeholder="filtrar conta..." value={filtroContas} onChange={(e) => setFiltroContas(e.target.value)}
+                      style={{ display: 'block', marginTop: 4, width: '100%', fontSize: '0.75rem', fontWeight: 400, padding: '3px 6px', border: '1px solid var(--border)', borderRadius: 6 }} />
+                  </div>
                 </th>
-                <th className="num" style={{ whiteSpace: 'nowrap' }}>Valor</th>
-                <th style={{ whiteSpace: 'nowrap' }}>
+                <th>
+                  <div className="th-resizable">
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, color: 'var(--warn)' }}>
+                      <ArrowUpIcon size={12} /> Crédito
+                    </span>
+                  </div>
+                </th>
+                <th className="num" style={{ whiteSpace: 'nowrap', width: 110 }}>Valor</th>
+                <th style={{ whiteSpace: 'nowrap', width: 100 }}>
                   Origem
                   <select value={filtroOrigem} onChange={(e) => setFiltroOrigem(e.target.value)}
                     style={{ display: 'block', marginTop: 4, width: '100%', fontSize: '0.75rem', fontWeight: 400, padding: '3px 4px', border: '1px solid var(--border)', borderRadius: 6 }}>
@@ -206,7 +246,7 @@ export default function LancamentosTab({ empresaId, periodo }) {
                     <option value="importacao_extrato">Extrato</option>
                   </select>
                 </th>
-                <th style={{ whiteSpace: 'nowrap' }}>
+                <th style={{ whiteSpace: 'nowrap', width: 120 }}>
                   Status
                   <select value={filtroStatus} onChange={(e) => setFiltroStatus(e.target.value)}
                     style={{ display: 'block', marginTop: 4, width: '100%', fontSize: '0.75rem', fontWeight: 400, padding: '3px 4px', border: '1px solid var(--border)', borderRadius: 6 }}>
@@ -215,7 +255,7 @@ export default function LancamentosTab({ empresaId, periodo }) {
                     <option value="a_conciliar">A conciliar</option>
                   </select>
                 </th>
-                <th></th>
+                <th style={{ width: 70 }}></th>
               </tr>
             </thead>
             <tbody>
@@ -229,30 +269,11 @@ export default function LancamentosTab({ empresaId, periodo }) {
                   <td style={{ whiteSpace: 'nowrap' }}>{new Date(l.data + 'T00:00:00').toLocaleDateString('pt-BR')}</td>
                   <td style={{ whiteSpace: 'nowrap' }}>{l.historico}</td>
                   <td style={{ fontSize: '0.8rem', color: 'var(--text2)', whiteSpace: 'nowrap' }}>{l.numero_documento || '—'}</td>
-                  <td style={{ whiteSpace: 'nowrap' }}>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'flex-start' }}>
-                      {[...l.debitoPartidas, ...l.creditoPartidas].map((p) => (
-                        editandoPartidaId === p.id ? (
-                          <ContaCombobox
-                            key={p.id}
-                            contas={contas}
-                            value={p.conta_id}
-                            onChange={(novoId) => editarPartida(l, p, novoId)}
-                            excluirCodigos={[CODIGO_CONTA_PENDENTE]}
-                            style={{ width: 240 }}
-                          />
-                        ) : (
-                          <span key={p.id}
-                            className={p.tipo === 'debito' ? 'pill-debito' : 'pill-credito'}
-                            title={`${p.contas_contabeis?.nome ?? ''} — clique pra trocar`}
-                            style={{ cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 3 }}
-                            onClick={() => setEditandoPartidaId(p.id)}>
-                            {p.tipo === 'debito' ? <ArrowDownIcon size={11} /> : <ArrowUpIcon size={11} />}
-                            {p.tipo === 'debito' ? 'D' : 'C'} {p.contas_contabeis?.codigo}
-                          </span>
-                        )
-                      ))}
-                    </div>
+                  <td style={{ minWidth: 180 }}>
+                    <PartidaCell partidas={l.debitoPartidas} contas={contas} onEditar={(p, id) => editarPartida(l, p, id)} />
+                  </td>
+                  <td style={{ minWidth: 180 }}>
+                    <PartidaCell partidas={l.creditoPartidas} contas={contas} onEditar={(p, id) => editarPartida(l, p, id)} />
                   </td>
                   <td className="num" style={{ whiteSpace: 'nowrap' }}>R$ {l.valor.toFixed(2)}</td>
                   <td style={{ whiteSpace: 'nowrap' }}><span className="badge-origem">{l.origem === 'importacao_extrato' ? 'Extrato' : 'Manual'}</span></td>
@@ -267,11 +288,35 @@ export default function LancamentosTab({ empresaId, periodo }) {
                 </tr>
               ))}
               {lancamentosFiltrados.length === 0 && (
-                <tr><td colSpan={9} style={{ color: 'var(--text2)' }}>Nenhum lançamento no período{lancamentos.length > 0 ? ' com esses filtros' : ''}.</td></tr>
+                <tr><td colSpan={10} style={{ color: 'var(--text2)' }}>Nenhum lançamento no período{lancamentos.length > 0 ? ' com esses filtros' : ''}.</td></tr>
               )}
             </tbody>
           </table>
         </div>
+      )}
+    </div>
+  );
+}
+
+// campo de Débito ou Crédito de uma linha: mostra/edita a primeira partida
+// daquele tipo direto via combobox; lançamentos compostos (raros — mais de
+// uma partida do mesmo lado) mostram um badge "+N" com o resto em tooltip
+function PartidaCell({ partidas, contas, onEditar }) {
+  if (partidas.length === 0) return <span style={{ color: 'var(--text3)' }}>—</span>;
+  const [principal, ...extras] = partidas;
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+      <ContaCombobox
+        contas={contas}
+        value={principal.conta_id}
+        onChange={(novoId) => onEditar(principal, novoId)}
+        excluirCodigos={[CODIGO_CONTA_PENDENTE]}
+        style={{ flex: 1, minWidth: 160 }}
+      />
+      {extras.length > 0 && (
+        <span className="badge-origem" title={extras.map((p) => p.contas_contabeis?.nome).join(', ')}>
+          +{extras.length}
+        </span>
       )}
     </div>
   );

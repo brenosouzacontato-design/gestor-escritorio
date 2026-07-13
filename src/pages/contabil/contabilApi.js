@@ -194,10 +194,29 @@ export function extrairPadraoClassificacao(historico) {
 export async function listarRegrasClassificacao(empresaId) {
   const { data, error } = await supabase
     .from('regras_classificacao')
-    .select('*')
-    .eq('empresa_id', empresaId);
+    .select('*, contas_contabeis(codigo, nome)')
+    .eq('empresa_id', empresaId)
+    .order('updated_at', { ascending: false });
   if (error) throw error;
   return data;
+}
+
+// Acha a regra mais específica (padrão mais longo) cujo trecho aparece no
+// histórico da transação — permite cadastrar regras a partir de qualquer
+// trecho do texto, não só da contraparte inteira.
+export function encontrarRegraAplicavel(descricao, regras) {
+  const alvo = normalizarTexto(descricao);
+  let melhor = null;
+  for (const r of regras) {
+    if (r.padrao && alvo.includes(r.padrao) && (!melhor || r.padrao.length > melhor.padrao.length)) {
+      melhor = r;
+    }
+  }
+  return melhor;
+}
+
+function normalizarTexto(texto) {
+  return (texto ?? '').trim().toUpperCase();
 }
 
 // Grava/atualiza a regra "esse padrão sempre cai nessa conta" — chamado
@@ -209,6 +228,22 @@ export async function salvarRegraClassificacao(empresaId, historico, contaId) {
   const { error } = await supabase
     .from('regras_classificacao')
     .upsert({ empresa_id: empresaId, padrao, conta_id: contaId, updated_at: new Date().toISOString() }, { onConflict: 'empresa_id,padrao' });
+  if (error) throw error;
+}
+
+// Cadastro manual de regra: o usuário escolhe o trecho (não precisa ser a
+// contraparte inteira) e a conta, direto na tela de Regras.
+export async function salvarRegraManual(empresaId, padraoBruto, contaId) {
+  const padrao = normalizarTexto(padraoBruto);
+  if (!padrao) throw new Error('Informe um trecho do histórico pra regra.');
+  const { error } = await supabase
+    .from('regras_classificacao')
+    .upsert({ empresa_id: empresaId, padrao, conta_id: contaId, updated_at: new Date().toISOString() }, { onConflict: 'empresa_id,padrao' });
+  if (error) throw error;
+}
+
+export async function excluirRegraClassificacao(id) {
+  const { error } = await supabase.from('regras_classificacao').delete().eq('id', id);
   if (error) throw error;
 }
 

@@ -85,6 +85,9 @@ exports.handler = async (event) => {
     }
 
     const data = await anthropicResp.json();
+    // extrato com transações demais pode estourar max_tokens e cortar o JSON
+    // no meio -- detecta isso pra dar um erro claro em vez de "JSON inválido"
+    const truncado = data.stop_reason === 'max_tokens';
     const texto = (data.content ?? [])
       .filter((bloco) => bloco.type === 'text')
       .map((bloco) => bloco.text)
@@ -96,8 +99,16 @@ exports.handler = async (event) => {
     try {
       transacoes = JSON.parse(limpo);
     } catch {
+      if (truncado) {
+        const salvo = tentarSalvarJsonTruncado(limpo);
+        if (salvo && salvo.length > 0) {
+          return resposta(200, { transacoes: salvo, truncado: true });
+        }
+      }
       return resposta(502, {
-        error: 'Não consegui interpretar a resposta do modelo como JSON.',
+        error: truncado
+          ? 'O extrato tem transações demais pra processar de uma vez (resposta cortada pelo limite de tamanho). Tente dividir o PDF em partes menores.'
+          : 'Não consegui interpretar a resposta do modelo como JSON.',
         respostaBruta: texto.slice(0, 2000),
       });
     }
@@ -106,7 +117,7 @@ exports.handler = async (event) => {
       return resposta(502, { error: 'A resposta do modelo não veio como array.' });
     }
 
-    return resposta(200, transacoes);
+    return resposta(200, { transacoes, truncado });
   } catch (e) {
     return resposta(500, { error: e.message });
   }
@@ -118,4 +129,18 @@ function resposta(statusCode, body) {
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(body),
   };
+}
+
+// quando a resposta corta no meio de um objeto, fecha o array no último
+// item completo em vez de perder o extrato inteiro
+function tentarSalvarJsonTruncado(texto) {
+  const ultimoFechamento = texto.lastIndexOf('},');
+  const cortarEm = ultimoFechamento !== -1 ? ultimoFechamento + 1 : texto.lastIndexOf('}');
+  if (cortarEm === -1) return null;
+  try {
+    const arr = JSON.parse(texto.slice(0, cortarEm + 1) + ']');
+    return Array.isArray(arr) ? arr : null;
+  } catch {
+    return null;
+  }
 }

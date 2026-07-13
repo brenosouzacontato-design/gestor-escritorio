@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { ArrowDownCircleIcon, ArrowUpCircleIcon } from 'lucide-react';
 import {
   listarContas, listarLancamentos, criarLancamentosEmLote,
-  listarRegrasClassificacao, salvarRegraClassificacao, extrairPadraoClassificacao,
+  listarRegrasClassificacao, salvarRegraClassificacao, encontrarRegraAplicavel,
 } from './contabilApi';
 import ContaCombobox from './ContaCombobox';
 
@@ -15,11 +16,14 @@ const CODIGO_CONTA_PENDENTE = '1.1.01.001.002'; // "Valores a Identificar"
  * antes) e devolve as transações já estruturadas. A chave da Anthropic fica
  * só no servidor (env var ANTHROPIC_API_KEY no Netlify), nunca no client.
  *
- * Contrato de retorno: array de
+ * Contrato de retorno: { transacoes: [...], truncado: boolean }, onde cada
+ * transação é
  *   { data: 'YYYY-MM-DD', descricao: string, identificador: string|null, valor: number, tipo: 'entrada' | 'saida' }
  * "identificador" é o código de controle da transação no banco (nº do PIX,
  * nosso número de boleto etc), quando o extrato traz um — vai pro
- * numero_documento do lançamento.
+ * numero_documento do lançamento. "truncado" vem true quando o extrato tinha
+ * transações demais e a resposta do modelo foi cortada pelo limite de
+ * tamanho — nesse caso só as transações que vieram completas são devolvidas.
  */
 async function arquivoParaBase64(arquivo) {
   return new Promise((resolve, reject) => {
@@ -103,28 +107,34 @@ export default function ImportarExtratoTab({ empresaId }) {
     setInfo(null);
     setProcessando(true);
     try {
-      const [extraidas, historico, regras] = await Promise.all([
+      const [extracao, historico, regras] = await Promise.all([
         extrairTransacoesDoPDF(arquivo),
         listarLancamentos(empresaId, {}),
         // regras de classificação são só um bônus — se falhar (ex: tabela
         // ainda não migrada), a extração não pode travar por causa disso
         listarRegrasClassificacao(empresaId).catch(() => []),
       ]);
-      const regraPorPadrao = new Map(regras.map((r) => [r.padrao, r.conta_id]));
+      const extraidas = extracao.transacoes;
       const bancoIds = new Set([contaBancoId]);
       let autoClassificadas = 0;
       const comSugestao = extraidas.map((t) => {
-        // 1) regra aprendida com classificações anteriores (match exato) tem
-        // prioridade; 2) senão cai pra sugestão fraca por palavras em comum
-        const porRegra = regraPorPadrao.get(extrairPadraoClassificacao(t.descricao));
-        const contaId = porRegra ?? sugerirConta(t.descricao, historico, { bancoIds }) ?? '';
-        if (porRegra) autoClassificadas++;
+        // 1) regra aprendida (ou cadastrada manualmente) que apareça no
+        // histórico tem prioridade; 2) senão cai pra sugestão fraca por
+        // palavras em comum
+        const regra = encontrarRegraAplicavel(t.descricao, regras);
+        const contaId = regra?.conta_id ?? sugerirConta(t.descricao, historico, { bancoIds }) ?? '';
+        if (regra) autoClassificadas++;
         return { ...t, conta_id: contaId, ignorar: false };
       });
       setTransacoes(comSugestao);
-      if (autoClassificadas > 0) {
-        setInfo(`${autoClassificadas} transaç${autoClassificadas === 1 ? 'ão' : 'ões'} classificada${autoClassificadas === 1 ? '' : 's'} automaticamente com base em lançamentos anteriores.`);
+      const avisos = [];
+      if (extracao.truncado) {
+        avisos.push(`⚠ O extrato tinha transações demais pra processar de uma vez — só ${extraidas.length} vieram completas. Confira o total no extrato original e importe o restante separado (outro período/arquivo).`);
       }
+      if (autoClassificadas > 0) {
+        avisos.push(`${autoClassificadas} transaç${autoClassificadas === 1 ? 'ão' : 'ões'} classificada${autoClassificadas === 1 ? '' : 's'} automaticamente com base em lançamentos anteriores.`);
+      }
+      if (avisos.length > 0) setInfo(avisos.join(' '));
     } catch (e) {
       setErro(e.message);
     } finally {
@@ -236,6 +246,7 @@ export default function ImportarExtratoTab({ empresaId }) {
             <thead>
               <tr>
                 <th>Data</th>
+                <th style={{ whiteSpace: 'nowrap' }}>Natureza</th>
                 <th>Descrição</th>
                 <th>Identificador</th>
                 <th className="num">Valor</th>
@@ -247,6 +258,16 @@ export default function ImportarExtratoTab({ empresaId }) {
               {transacoes.map((t, idx) => (
                 <tr key={idx}>
                   <td style={{ whiteSpace: 'nowrap' }}>{new Date(t.data + 'T00:00:00').toLocaleDateString('pt-BR')}</td>
+                  <td style={{ whiteSpace: 'nowrap' }}>
+                    <span className="badge-origem" style={{
+                      display: 'inline-flex', alignItems: 'center', gap: 4,
+                      background: t.tipo === 'entrada' ? 'var(--ok-dim)' : 'var(--danger-dim)',
+                      color: t.tipo === 'entrada' ? 'var(--ok)' : 'var(--danger)',
+                    }}>
+                      {t.tipo === 'entrada' ? <ArrowDownCircleIcon size={13} /> : <ArrowUpCircleIcon size={13} />}
+                      {t.tipo === 'entrada' ? 'Entrada' : 'Saída'}
+                    </span>
+                  </td>
                   <td>{t.descricao}</td>
                   <td style={{ fontSize: '0.8rem', color: 'var(--text2)', whiteSpace: 'nowrap' }}>{t.identificador || '—'}</td>
                   <td className={`num ${t.tipo === 'saida' ? 'valor-negativo' : 'valor-positivo'}`} style={{ whiteSpace: 'nowrap' }}>

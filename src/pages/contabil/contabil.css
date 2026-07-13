@@ -47,6 +47,11 @@
   color: var(--text1);
 }
 
+.contabil-toolbar input[type="date"] {
+  width: 150px;
+  flex: 0 0 auto;
+}
+
 .contabil-tabela {
   width: 100%;
   border-collapse: collapse;
@@ -174,4 +179,13 @@
 
 .contabil-tabela-scroll .contabil-tabela {
   min-width: 900px;
+}
+
+/* arraste o canto inferior direito do cabeçalho pra ajustar a largura da coluna */
+.th-resizable {
+  resize: horizontal;
+  overflow: auto;
+  min-width: 120px;
+  max-width: 640px;
+  padding-bottom: 2px;
 }
