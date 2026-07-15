@@ -47,6 +47,59 @@ export async function listarEtapasTemplate(tipoObrigacaoId) {
   return data;
 }
 
+// Todos os tipos de obrigação (pra tela de gerenciamento — "personalização
+// de cada etapa"), com departamento e etapas já aninhados.
+export async function listarTodosTiposObrigacaoComEtapas() {
+  const { data, error } = await supabase
+    .from('tipos_obrigacao')
+    .select('*, departamentos(id, nome, icone), etapas_template(*)')
+    .eq('ativo', true)
+    .order('nome');
+  if (error) throw error;
+  return data.map((t) => ({ ...t, etapas_template: (t.etapas_template || []).sort((a, b) => a.ordem - b.ordem) }));
+}
+
+// Cria um tipo de obrigação novo já com as etapas do template (nome +
+// prazo em dias a partir do início de cada etapa, na ordem informada).
+export async function criarTipoObrigacaoComEtapas({ departamentoId, nome, descricao, recorrente, etapas }) {
+  const { data: tipo, error: errTipo } = await supabase
+    .from('tipos_obrigacao')
+    .insert({ departamento_id: departamentoId, nome, descricao: descricao || null, recorrente: !!recorrente })
+    .select()
+    .single();
+  if (errTipo) throw errTipo;
+
+  const linhas = etapas.map((et, i) => ({
+    tipo_obrigacao_id: tipo.id, nome: et.nome, ordem: i + 1, prazo_dias_relativo: et.prazoDias ?? 0,
+  }));
+  const { error: errEtapas } = await supabase.from('etapas_template').insert(linhas);
+  if (errEtapas) throw errEtapas;
+
+  return tipo;
+}
+
+// Adiciona uma etapa no fim do template de um tipo já existente.
+export async function adicionarEtapaTemplate(tipoObrigacaoId, nome, prazoDias) {
+  const existentes = await listarEtapasTemplate(tipoObrigacaoId);
+  const ordem = (existentes.at(-1)?.ordem || 0) + 1;
+  const { error } = await supabase.from('etapas_template').insert({
+    tipo_obrigacao_id: tipoObrigacaoId, nome, ordem, prazo_dias_relativo: prazoDias ?? 0,
+  });
+  if (error) throw error;
+}
+
+export async function excluirEtapaTemplate(id) {
+  const { error } = await supabase.from('etapas_template').delete().eq('id', id);
+  if (error) throw error;
+}
+
+// "Exclui" um tipo de obrigação — soft delete (ativo=false), preserva
+// histórico de obrigações já criadas com esse tipo.
+export async function arquivarTipoObrigacao(id) {
+  const { error } = await supabase.from('tipos_obrigacao').update({ ativo: false }).eq('id', id);
+  if (error) throw error;
+}
+
 // ---------- OBRIGAÇÕES COM ETAPAS ----------
 
 function hoje() {
@@ -116,6 +169,18 @@ export async function criarObrigacaoComEtapas({ clienteId, tipoObrigacaoId, depa
   });
 
   return obrigacao;
+}
+
+// Marca "entregue" / "a entregar" — independente do progresso das etapas
+// (o trabalho pode estar concluído mas ainda não ter sido entregue/
+// comunicado ao cliente).
+export async function marcarEntregaObrigacao(obrigacaoId, entregue) {
+  const { error } = await supabase.from('obrigacoes').update({ entregue }).eq('id', obrigacaoId);
+  if (error) throw error;
+  await supabase.from('historico_obrigacao').insert({
+    obrigacao_id: obrigacaoId,
+    descricao: entregue ? 'Marcada como entregue' : 'Marcada como a entregar',
+  });
 }
 
 // Obrigações "novas" (com tipo_obrigacao_id, i.e. processo com etapas) de um

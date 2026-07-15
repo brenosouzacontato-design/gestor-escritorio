@@ -1,5 +1,5 @@
 import { useState, useMemo, useRef, useEffect } from 'react'
-import { Trash2Icon, CheckIcon, XIcon, SaveIcon, MessageSquareIcon, PlusIcon, GripVerticalIcon, SendIcon } from 'lucide-react'
+import { Trash2Icon, CheckIcon, XIcon, SaveIcon, MessageSquareIcon, PlusIcon, GripVerticalIcon, SendIcon, TruckIcon } from 'lucide-react'
 import { useStore } from '../store'
 import { DeptChip, PriDot, fmtDate, isOverdue } from '../components/shared'
 import { supabase } from '../lib/supabase'
@@ -100,6 +100,13 @@ export default function Tarefas({ onAddTarefa, highlightTaskId, onHighlightConsu
     await fetchTarefas()
   }
 
+  // "Entregue" é independente do status do quadro — o trabalho pode estar
+  // concluído mas ainda não ter sido entregue/comunicado ao cliente.
+  const handleToggleEntrega = async (tarefa) => {
+    await supabase.from('tarefas').update({ entregue: !tarefa.entregue }).eq('id', tarefa.id)
+    await fetchTarefas()
+  }
+
   return (
     <div className="page" style={{ paddingBottom: 16 }}>
       {/* Filtros */}
@@ -180,6 +187,7 @@ export default function Tarefas({ onAddTarefa, highlightTaskId, onHighlightConsu
                   onOpen={() => setTarefaAberta(t)}
                   onDelete={() => deleteTarefa(t.id)}
                   onMove={novaCol => handleMoveCard(t.id, novaCol)}
+                  onToggleEntrega={() => handleToggleEntrega(t)}
                   onDragStart={e => handleDragStart(e, t)}
                   isDragging={dragging?.id === t.id}
                 />
@@ -202,7 +210,7 @@ export default function Tarefas({ onAddTarefa, highlightTaskId, onHighlightConsu
   )
 }
 
-function KanbanCard({ tarefa, colunas, colAtual, onOpen, onDelete, onMove, onDragStart, isDragging }) {
+function KanbanCard({ tarefa, colunas, colAtual, onOpen, onDelete, onMove, onToggleEntrega, onDragStart, isDragging }) {
   const overdue = isOverdue(tarefa.vencimento) && colAtual !== 'concluido'
   const [showMove, setShowMove] = useState(false)
 
@@ -279,6 +287,13 @@ function KanbanCard({ tarefa, colunas, colAtual, onOpen, onDelete, onMove, onDra
           <span style={{ fontSize:9, background:'var(--info-dim)', color:'var(--info)', borderRadius:99, padding:'1px 6px', fontWeight:700 }}>WA</span>
         )}
         {tarefa.observacao && <MessageSquareIcon size={10} style={{ color:'var(--text3)' }} />}
+        <button onClick={e => { e.stopPropagation(); onToggleEntrega() }}
+          title={tarefa.entregue ? 'Entregue — clique pra marcar como a entregar' : 'A entregar — clique pra marcar como entregue'}
+          style={{ marginLeft:'auto', display:'flex', alignItems:'center', gap:3, fontSize:9, fontWeight:700, border:'none', cursor:'pointer', borderRadius:99, padding:'2px 7px',
+            background: tarefa.entregue ? 'var(--ok-dim)' : 'var(--surface3)',
+            color: tarefa.entregue ? 'var(--ok)' : 'var(--text3)' }}>
+          <TruckIcon size={10} /> {tarefa.entregue ? 'Entregue' : 'A entregar'}
+        </button>
       </div>
     </div>
   )
@@ -292,6 +307,7 @@ function TarefaModal({ tarefa, clientes, onClose, onSaved }) {
   const [prioridade,   setPrioridade]   = useState(tarefa.prioridade || 'normal')
   const [departamento, setDepartamento] = useState(tarefa.departamento || 'geral')
   const [clienteId,    setClienteId]    = useState(tarefa.cliente_id || '')
+  const [entregue,     setEntregue]     = useState(!!tarefa.entregue)
   const [saving,       setSaving]       = useState(false)
 
   // Chat
@@ -339,6 +355,7 @@ function TarefaModal({ tarefa, clientes, onClose, onSaved }) {
       vencimento: vencimento || null,
       prioridade, departamento,
       cliente_id: clienteId || null,
+      entregue,
       updated_at: new Date().toISOString(),
     }).eq('id', tarefa.id)
     setSaving(false)
@@ -440,6 +457,17 @@ function TarefaModal({ tarefa, clientes, onClose, onSaved }) {
                 <textarea value={observacao} onChange={e => setObservacao(e.target.value)}
                   rows={4} placeholder="Adicione observações, detalhes ou anotações..."
                   style={{ width:'100%', padding:'8px 10px', border:'1px solid var(--border)', borderRadius:'var(--r-sm)', fontSize:14, background:'var(--surface)', color:'var(--text1)', resize:'vertical', fontFamily:'inherit' }} />
+              </div>
+              <div style={{ display:'flex', gap:6 }}>
+                {[[false,'A entregar'],[true,'Entregue']].map(([val,lbl]) => (
+                  <button key={lbl} type="button" onClick={() => setEntregue(val)}
+                    style={{ flex:1, display:'flex', alignItems:'center', justifyContent:'center', gap:6, padding:'8px', borderRadius:'var(--r-sm)', fontSize:12, fontWeight:600, cursor:'pointer',
+                      background: entregue===val ? (val ? 'var(--ok-dim)' : 'var(--warn-dim)') : 'var(--surface2)',
+                      border: `1px solid ${entregue===val ? (val ? 'var(--ok)' : 'var(--warn)') : 'var(--border)'}`,
+                      color: entregue===val ? (val ? 'var(--ok)' : 'var(--warn)') : 'var(--text3)' }}>
+                    <TruckIcon size={13} /> {lbl}
+                  </button>
+                ))}
               </div>
             </div>
             <button className="btn btn-accent" onClick={handleSave} disabled={saving}
