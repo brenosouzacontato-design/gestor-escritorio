@@ -30,6 +30,7 @@ export default function App() {
   const [showNewTask, setShowNewTask]         = useState(false)
   const [newTaskClienteId, setNewTaskClienteId] = useState('')
   const [showConfig, setShowConfig]           = useState(false)
+  const [highlightTaskId, setHighlightTaskId] = useState(null)
 
   const init       = useStore(s => s.init)
   const loading    = useStore(s => s.loading)
@@ -88,8 +89,8 @@ export default function App() {
         ) : (
           <>
             {page === 'overview'   && <Overview onAddTarefa={openNewTask} onOpenCliente={(id) => { setSelectedCliente(id); navigate('clientes') }} onOpenObrigacoes={() => navigate('empresas')} onOpenTarefas={() => navigate('tarefas')} onOpenContabil={() => navigate('contabil')} />}
-            {page === 'empresas'   && <Empresas onOpenTarefas={() => navigate('tarefas')} />}
-            {page === 'tarefas'    && <Tarefas onAddTarefa={openNewTask} />}
+            {page === 'empresas'   && <Empresas onOpenTarefas={() => navigate('tarefas')} onOpenTarefa={(taskId) => { setHighlightTaskId(taskId); navigate('tarefas') }} />}
+            {page === 'tarefas'    && <Tarefas onAddTarefa={openNewTask} highlightTaskId={highlightTaskId} onHighlightConsumed={() => setHighlightTaskId(null)} />}
             {page === 'clientes'   && <Clientes onAddTarefa={openNewTask} selectedId={selectedCliente} onSelect={setSelectedCliente} />}
             {page === 'prospectos' && <Prospectos />}
             {page === 'erp'        && <FechamentosERP onOpenConfig={() => setShowConfig(true)} />}

@@ -1,8 +1,14 @@
-import { useState, useMemo } from 'react'
-import { PlusIcon, XIcon, CheckCircleIcon, ClockIcon, AlertCircleIcon, MinusCircleIcon, ChevronRightIcon, CalendarIcon, CheckIcon, SaveIcon } from 'lucide-react'
+import { useState, useMemo, useEffect } from 'react'
+import { PlusIcon, XIcon, CheckCircleIcon, ClockIcon, AlertCircleIcon, MinusCircleIcon, ChevronRightIcon, CalendarIcon, CheckIcon, SaveIcon, EyeOffIcon } from 'lucide-react'
 import { useStore } from '../store'
 import { DeptChip, PriDot, fmtDate, isOverdue } from '../components/shared'
 import { supabase } from '../lib/supabase'
+import {
+  listarDepartamentos, criarDepartamento, listarTiposObrigacao,
+  criarObrigacaoComEtapas, listarObrigacoesComEtapas, etapaAtrasada,
+} from './andamento/andamentoApi'
+import DepartamentoTimeline from './andamento/DepartamentoTimeline'
+import HistoricoObrigacaoModal from './andamento/HistoricoObrigacaoModal'
 
 const DEPTS_DEFAULT = ['Fiscal', 'Folha', 'Societário', 'Contábil', 'Escritório']
 
@@ -32,18 +38,25 @@ function compMesAtras(n) {
   return String(d.getMonth()+1).padStart(2,'0') + '/' + d.getFullYear()
 }
 
-function getStatusDept(obsEmp, tarefasEmp, dept) {
+// "processos" são as obrigações novas (com etapas) desse cliente+departamento
+// — entram no mesmo cálculo de progresso pra coluna não ficar cega pra elas.
+function getStatusDept(obsEmp, tarefasEmp, dept, processos = []) {
   const tipos = DEPT_OBS_MAP[dept] || []
   const obs   = obsEmp.filter(o => tipos.includes(o.tipo))
   const tasks = tarefasEmp.filter(t => (t.departamento||'').toLowerCase() === dept.toLowerCase() && !t.concluida)
-  if (obs.length === 0 && tasks.length === 0) return { s:'empty', pct:0, val:'—' }
-  const ok   = obs.filter(o => o.status==='concluido'||o.status==='nao_aplica').length
-  const venc = obs.filter(o => o.status==='vencido').length
-  const naAll = obs.length > 0 && obs.every(o => o.status==='nao_aplica')
+  if (obs.length === 0 && tasks.length === 0 && processos.length === 0) return { s:'empty', pct:0, val:'—' }
+
+  const ok    = obs.filter(o => o.status==='concluido'||o.status==='nao_aplica').length
+              + processos.filter(p => p.status==='concluido').length
+  const venc  = obs.filter(o => o.status==='vencido').length
+              + processos.filter(p => (p.etapas_obrigacao||[]).some(etapaAtrasada)).length
+  const total = obs.length + processos.length
+  const naAll = obs.length > 0 && processos.length === 0 && obs.every(o => o.status==='nao_aplica')
   if (naAll) return { s:'na', pct:100, val:'N/A' }
-  const pct = obs.length > 0 ? Math.round((ok/obs.length)*100) : 0
-  const s   = venc > 0 ? 'danger' : pct===100 ? 'ok' : obs.filter(o=>o.status==='pendente').length > 0 ? 'warn' : 'empty'
-  return { s, pct, val: obs.length > 0 ? `${ok}/${obs.length}` : tasks.length > 0 ? `${tasks.length}t` : '—' }
+  const pct = total > 0 ? Math.round((ok/total)*100) : 0
+  const pend = obs.filter(o=>o.status==='pendente').length + processos.filter(p => p.status!=='concluido').length
+  const s   = venc > 0 ? 'danger' : (pct===100 && total>0) ? 'ok' : pend > 0 ? 'warn' : 'empty'
+  return { s, pct, val: total > 0 ? `${ok}/${total}` : tasks.length > 0 ? `${tasks.length}t` : '—' }
 }
 
 const S_COLOR = { ok:'#2A7A5A', warn:'#9A6B1A', danger:'#A83030', na:'#1E5FA0', empty:'#8A8F9E' }
@@ -79,7 +92,7 @@ function DeptPill({ data, onClick }) {
   )
 }
 
-export default function Empresas() {
+export default function Empresas({ onOpenTarefa } = {}) {
   const clientes        = useStore(s => s.clientes)
   const obrigacoes      = useStore(s => s.obrigacoes || [])
   const tarefas         = useStore(s => s.tarefas)
@@ -102,6 +115,33 @@ export default function Empresas() {
   const [showNovaObs,   setShowNovaObs]   = useState(false)
   const [showNovaTarefa,setShowNovaTarefa] = useState(false)
 
+  // Departamentos cadastráveis (tabela "departamentos") + obrigações novas
+  // (processos com etapas, tabela "obrigacoes" com tipo_obrigacao_id)
+  const [departamentosDb, setDepartamentosDb] = useState([])
+  const [processos,       setProcessos]       = useState([])
+  const [ocultarVazios,   setOcultarVazios]   = useState(false)
+  const [historicoModal,  setHistoricoModal]  = useState(null) // {obrigacao, etapa}
+
+  const carregarDepartamentos = async () => {
+    try {
+      const d = await listarDepartamentos()
+      if (d.length > 0) { setDepartamentosDb(d); setDepts(d.map(x => x.nome)) }
+    } catch { /* migration ainda não rodou — segue com DEPTS_DEFAULT */ }
+  }
+  const carregarProcessos = async () => {
+    if (clientes.length === 0) return
+    try { setProcessos(await listarObrigacoesComEtapas(clientes.map(c => c.id))) }
+    catch { /* idem */ }
+  }
+
+  useEffect(() => { carregarDepartamentos() }, [])
+  useEffect(() => { carregarProcessos() }, [clientes.length])
+
+  const deptIdPorNome = useMemo(
+    () => Object.fromEntries(departamentosDb.map(d => [d.nome, d.id])),
+    [departamentosDb]
+  )
+
   const carteiras = useMemo(() => {
     const s = new Set(clientes.map(c => c.carteira).filter(Boolean))
     return ['todas', ...Array.from(s).sort()]
@@ -118,8 +158,12 @@ export default function Empresas() {
       .map(c => {
         const obsEmp   = obrigacoes.filter(o => o.cliente_id===c.id && o.competencia===compSel)
         const tasksEmp = tarefas.filter(t => t.cliente_id===c.id)
+        const procEmp  = processos.filter(p => p.cliente_id===c.id)
         const deptData = {}
-        depts.forEach(d => { deptData[d] = getStatusDept(obsEmp, tasksEmp, d) })
+        depts.forEach(d => {
+          const procDept = procEmp.filter(p => p.departamento_id === deptIdPorNome[d])
+          deptData[d] = getStatusDept(obsEmp, tasksEmp, d, procDept)
+        })
         const hasDanger = Object.values(deptData).some(d => d.s==='danger')
         const hasPend   = Object.values(deptData).some(d => d.s==='warn')
         const allOk     = Object.values(deptData).every(d => d.s==='ok'||d.s==='na'||d.s==='empty')
@@ -131,7 +175,14 @@ export default function Empresas() {
         if (filtro==='ok')        return r.allOk
         return true
       })
-  }, [clientes, obrigacoes, tarefas, compSel, busca, depts, filtro, carteira])
+  }, [clientes, obrigacoes, tarefas, processos, compSel, busca, depts, deptIdPorNome, filtro, carteira])
+
+  // Departamentos visíveis nas colunas — com o toggle de ocultar, some a
+  // coluna inteira se nenhuma linha visível tiver pendência ali
+  const deptsVisiveis = useMemo(() => {
+    if (!ocultarVazios) return depts
+    return depts.filter(d => rows.some(r => r.deptData[d]?.s !== 'empty'))
+  }, [depts, rows, ocultarVazios])
 
   // Drawer: leitura direta do store (sem useMemo) para refletir mudanças imediatas
   const drawerObs = !drawer ? [] : obrigacoes.filter(o => {
@@ -141,6 +192,10 @@ export default function Empresas() {
   const drawerTasks = !drawer ? [] : tarefas.filter(t =>
     t.cliente_id===drawer.c.id &&
     (drawer.dept ? (t.departamento||'').toLowerCase()===drawer.dept.toLowerCase() : true)
+  )
+  const drawerProcessos = !drawer ? [] : processos.filter(p =>
+    p.cliente_id===drawer.c.id &&
+    (drawer.dept ? p.departamento_id === deptIdPorNome[drawer.dept] : true)
   )
 
   const openDrawer = (c, dept) => { setDrawer({c, dept}); setDrawerTab('obrig') }
@@ -171,9 +226,15 @@ export default function Empresas() {
     setUpdatingId(null)
   }
 
-  const handleAddDept = () => {
+  // Persiste o departamento novo (antes só ficava em memória e sumia ao
+  // recarregar a página)
+  const handleAddDept = async () => {
     const d = novoDept.trim()
-    if (d && !depts.includes(d)) setDepts(p => [...p, d])
+    if (d && !depts.includes(d)) {
+      try { await criarDepartamento(d) } catch { /* ignora — pode já existir */ }
+      await carregarDepartamentos()
+      setDepts(p => (p.includes(d) ? p : [...p, d]))
+    }
     setNovoDept(''); setShowAddDept(false)
   }
 
@@ -214,6 +275,13 @@ export default function Empresas() {
             {lbl}
           </button>
         ))}
+        <button onClick={() => setOcultarVazios(v => !v)}
+          title="Ocultar colunas de departamento sem pendência em nenhuma empresa visível"
+          style={{ marginLeft:'auto', display:'flex', alignItems:'center', gap:5,
+            background:ocultarVazios?'var(--accent-dim)':'var(--surface2)', border:`1px solid ${ocultarVazios?'var(--accent)':'var(--border)'}`,
+            borderRadius:99, padding:'3px 9px', fontSize:10, color:ocultarVazios?'var(--accent)':'var(--text3)', cursor:'pointer', fontWeight:500 }}>
+          <EyeOffIcon size={11} /> Ocultar sem pendência
+        </button>
       </div>
 
       {/* Área principal */}
@@ -222,12 +290,12 @@ export default function Empresas() {
         {/* Scroll container — sticky funciona aqui */}
         <div style={{ flex:1, overflow:'auto', padding:'12px 16px' }}>
           <table style={{ width:'100%', borderCollapse:'collapse', tableLayout:'fixed',
-            minWidth: nomeColW + 120 + depts.length*120 + 40,
+            minWidth: nomeColW + 120 + deptsVisiveis.length*120 + 40,
             background:'var(--surface)' }}>
             <colgroup>
               <col style={{ width:nomeColW }} />
               <col style={{ width:120 }} /> {/* Resumo */}
-              {depts.map(d => <col key={d} style={{ width:120 }} />)}
+              {deptsVisiveis.map(d => <col key={d} style={{ width:120 }} />)}
               <col style={{ width:38 }} />
             </colgroup>
 
@@ -247,7 +315,7 @@ export default function Empresas() {
                   <div>Resumo</div>
                   <div style={{ fontSize:10, color:'#6B80A8', marginTop:2, fontWeight:400 }}>geral</div>
                 </th>
-                {depts.map(d => {
+                {deptsVisiveis.map(d => {
                   const icons = { 'Fiscal':'🧾','Folha':'👥','Societário':'💼','Contábil':'🧮','Escritório':'🏠' }
                   return (
                     <th key={d} style={{ padding:'12px 8px', textAlign:'center', fontWeight:600, fontSize:12,
@@ -273,7 +341,7 @@ export default function Empresas() {
 
             <tbody>
               {rows.length === 0 && (
-                <tr><td colSpan={depts.length+3} style={{ padding:40, textAlign:'center', color:'var(--text3)', fontSize:13 }}>
+                <tr><td colSpan={deptsVisiveis.length+3} style={{ padding:40, textAlign:'center', color:'var(--text3)', fontSize:13 }}>
                   Nenhuma empresa encontrada
                 </td></tr>
               )}
@@ -284,13 +352,19 @@ export default function Empresas() {
                 const zebra = ri%2===0 ? 'var(--surface)' : 'var(--surface2)'
 
                 // Resumo: soma todas obrigações do cliente nesta competência
-                const obsTotal = obrigacoes.filter(o => o.cliente_id===c.id && o.competencia===compSel)
+                // (checklist legado + processos com etapas)
+                const obsTotal  = obrigacoes.filter(o => o.cliente_id===c.id && o.competencia===compSel)
+                const procTotal = processos.filter(p => p.cliente_id===c.id)
                 const resOk   = obsTotal.filter(o => o.status==='concluido'||o.status==='nao_aplica').length
+                              + procTotal.filter(p => p.status==='concluido').length
                 const resVenc = obsTotal.filter(o => o.status==='vencido').length
+                              + procTotal.filter(p => (p.etapas_obrigacao||[]).some(etapaAtrasada)).length
                 const resPend = obsTotal.filter(o => o.status==='pendente').length
-                const resPct  = obsTotal.length > 0 ? Math.round((resOk/obsTotal.length)*100) : 0
-                const resS    = resVenc > 0 ? 'danger' : resPct===100 ? 'ok' : resPend > 0 ? 'warn' : 'empty'
-                const resumo  = { s: resS, pct: resPct, val: obsTotal.length > 0 ? `${resOk}/${obsTotal.length}` : '—' }
+                              + procTotal.filter(p => p.status!=='concluido').length
+                const resCount = obsTotal.length + procTotal.length
+                const resPct  = resCount > 0 ? Math.round((resOk/resCount)*100) : 0
+                const resS    = resVenc > 0 ? 'danger' : (resPct===100 && resCount>0) ? 'ok' : resPend > 0 ? 'warn' : 'empty'
+                const resumo  = { s: resS, pct: resPct, val: resCount > 0 ? `${resOk}/${resCount}` : '—' }
 
                 return (
                   <tr key={c.id}
@@ -323,7 +397,7 @@ export default function Empresas() {
                     </td>
 
                     {/* Departamentos */}
-                    {depts.map(d => (
+                    {deptsVisiveis.map(d => (
                       <td key={d} style={{ padding:'6px 4px', textAlign:'center', borderRight:'1px solid var(--border)' }}>
                         <DeptPill data={deptData[d]} onClick={() => openDrawer(c, d)} />
                       </td>
@@ -339,7 +413,7 @@ export default function Empresas() {
 
             <tfoot style={{ position:'sticky', bottom:0, zIndex:4 }}>
               <tr style={{ background:'var(--surface2)', borderTop:'1px solid var(--border)' }}>
-                <td colSpan={depts.length+3} style={{ padding:'7px 14px' }}>
+                <td colSpan={deptsVisiveis.length+3} style={{ padding:'7px 14px' }}>
                   <div style={{ display:'flex', justifyContent:'space-between' }}>
                     <span style={{ fontSize:11, color:'var(--text3)' }}>{rows.length} empresas</span>
                     <span style={{ fontSize:11, color:'var(--accent)' }}>{compSel}</span>
@@ -377,7 +451,7 @@ export default function Empresas() {
 
               {/* Tabs */}
               <div style={{ display:'flex', borderBottom:'1px solid var(--border)', flexShrink:0, background:'var(--surface)' }}>
-                {[['obrig',`📋 Obrigações (${drawerObs.length})`],['tarefas',`✓ Tarefas (${drawerTasks.length})`]].map(([id,lbl]) => (
+                {[['obrig',`📋 Obrigações (${drawerObs.length + drawerProcessos.length})`],['tarefas',`✓ Tarefas (${drawerTasks.length})`]].map(([id,lbl]) => (
                   <button key={id} onClick={() => setDrawerTab(id)}
                     style={{ flex:1, padding:'8px', fontSize:11, fontWeight:500, border:'none', background:'none', cursor:'pointer',
                       borderBottom:`2px solid ${drawerTab===id?'var(--accent)':'transparent'}`,
@@ -392,9 +466,16 @@ export default function Empresas() {
 
                 {/* ── Obrigações ── */}
                 {drawerTab === 'obrig' && <>
-                  {drawerObs.length === 0 && (
+                  {drawerObs.length === 0 && drawerProcessos.length === 0 && (
                     <div style={{ textAlign:'center', color:'var(--text3)', fontSize:12, padding:'24px 0' }}>Sem obrigações registradas</div>
                   )}
+
+                  {/* Processos com etapas (novos) */}
+                  {drawerProcessos.map(p => (
+                    <DepartamentoTimeline key={p.id} obrigacao={p}
+                      onEtapaClick={(etapa) => setHistoricoModal({ obrigacao: p, etapa })} />
+                  ))}
+
                   {drawerObs.map(o => {
                     const cfg = STATUS_OBS_COLOR[o.status] || STATUS_OBS_COLOR.pendente
                     const busy = updatingId === o.id
@@ -484,6 +565,19 @@ export default function Empresas() {
         )}
       </div>
 
+      {/* Histórico/etapa da obrigação com processo (clicou num EtapaDot) */}
+      {historicoModal && (
+        <HistoricoObrigacaoModal
+          obrigacao={historicoModal.obrigacao}
+          etapa={historicoModal.etapa}
+          clienteNome={drawer?.c?.nome || ''}
+          departamentoNome={departamentosDb.find(d => d.id === historicoModal.obrigacao.departamento_id)?.nome || ''}
+          onClose={() => setHistoricoModal(null)}
+          onAtualizado={async () => { setHistoricoModal(null); await carregarProcessos() }}
+          onAbrirTarefa={(taskId) => { setHistoricoModal(null); setDrawer(null); onOpenTarefa?.(taskId) }}
+        />
+      )}
+
       {/* Modal add departamento */}
       {showAddDept && (
         <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,.6)', zIndex:1000, display:'flex', alignItems:'center', justifyContent:'center' }}
@@ -510,9 +604,10 @@ export default function Empresas() {
         <NovaObrigacaoModal
           cliente={drawer.c}
           dept={drawer.dept}
+          departamentoId={drawer.dept ? deptIdPorNome[drawer.dept] : null}
           competencia={compSel}
           onClose={() => setShowNovaObs(false)}
-          onSaved={async () => { setShowNovaObs(false); await fetchObrigacoes() }}
+          onSaved={async () => { setShowNovaObs(false); await fetchObrigacoes(); await carregarProcessos() }}
         />
       )}
 
@@ -530,53 +625,113 @@ export default function Empresas() {
 }
 
 // ── Modal Nova Obrigação ─────────────────────────────────────────────────────
-function NovaObrigacaoModal({ cliente, dept, competencia, onClose, onSaved }) {
+// Duas naturezas: "simples" (checklist mensal legado, tipo livre) ou
+// "processo" (tipo_obrigacao cadastrado com etapas — vira uma timeline).
+function NovaObrigacaoModal({ cliente, dept, departamentoId, competencia, onClose, onSaved }) {
   const tiposDisponiveis = dept ? (DEPT_OBS_MAP[dept] || ALL_TIPOS) : ALL_TIPOS
   const [tipo,       setTipo]       = useState(tiposDisponiveis[0] || '')
   const [status,     setStatus]     = useState('pendente')
   const [vencimento, setVencimento] = useState('')
   const [saving,     setSaving]     = useState(false)
 
+  const [tiposProcesso,   setTiposProcesso]   = useState([])
+  const [modo,             setModo]           = useState('simples') // simples | processo
+  const [tipoProcessoId,   setTipoProcessoId] = useState('')
+  const [titulo,           setTitulo]         = useState('')
+  const [responsavel,      setResponsavel]    = useState('')
+
+  useEffect(() => {
+    if (!departamentoId) return
+    listarTiposObrigacao(departamentoId).then(setTiposProcesso).catch(() => {})
+  }, [departamentoId])
+
   const handleSave = async () => {
-    if (!tipo) return
     setSaving(true)
-    await supabase.from('obrigacoes').upsert({
-      cliente_id: cliente.id, tipo, status, competencia,
-      vencimento: vencimento || null,
-      updated_at: new Date().toISOString(),
-    }, { onConflict: 'cliente_id,tipo,competencia' })
-    setSaving(false)
-    onSaved()
+    try {
+      if (modo === 'processo') {
+        if (!tipoProcessoId) return
+        const tipoObj = tiposProcesso.find(t => t.id === tipoProcessoId)
+        await criarObrigacaoComEtapas({
+          clienteId: cliente.id, tipoObrigacaoId: tipoProcessoId, departamentoId,
+          titulo: titulo.trim() || tipoObj?.nome || 'Obrigação', responsavel: responsavel.trim() || null,
+        })
+      } else {
+        if (!tipo) return
+        await supabase.from('obrigacoes').upsert({
+          cliente_id: cliente.id, tipo, status, competencia,
+          vencimento: vencimento || null,
+          updated_at: new Date().toISOString(),
+        }, { onConflict: 'cliente_id,tipo,competencia' })
+      }
+      onSaved()
+    } finally {
+      setSaving(false)
+    }
   }
 
   return (
     <ModalBase onClose={onClose} titulo={`Nova obrigação — ${cliente.nome.split(' ')[0]}`}>
       <div style={{ display:'flex', flexDirection:'column', gap:12 }}>
-        <div>
-          <label style={{ fontSize:11, color:'var(--text2)', display:'block', marginBottom:4 }}>Tipo</label>
-          <select value={tipo} onChange={e => setTipo(e.target.value)}
-            style={{ width:'100%', background:'var(--surface2)', border:'1px solid var(--border)', borderRadius:8, padding:'8px 10px', fontSize:13, color:'var(--text1)', outline:'none' }}>
-            {tiposDisponiveis.map(t => <option key={t} value={t}>{t}</option>)}
-          </select>
-        </div>
-        <div>
-          <label style={{ fontSize:11, color:'var(--text2)', display:'block', marginBottom:4 }}>Status inicial</label>
-          <select value={status} onChange={e => setStatus(e.target.value)}
-            style={{ width:'100%', background:'var(--surface2)', border:'1px solid var(--border)', borderRadius:8, padding:'8px 10px', fontSize:13, color:'var(--text1)', outline:'none' }}>
-            {STATUS_OBS.map(s => <option key={s} value={s}>{STATUS_OBS_LABEL[s]}</option>)}
-          </select>
-        </div>
-        <div>
-          <label style={{ fontSize:11, color:'var(--text2)', display:'block', marginBottom:4 }}>Vencimento</label>
-          <input type="date" value={vencimento} onChange={e => setVencimento(e.target.value)}
-            style={{ width:'100%', background:'var(--surface2)', border:'1px solid var(--border)', borderRadius:8, padding:'8px 10px', fontSize:13, color:'var(--text1)', outline:'none' }} />
-        </div>
-        <div style={{ fontSize:10, color:'var(--text3)' }}>Competência: <strong style={{ color:'var(--text2)' }}>{competencia}</strong></div>
+
+        {tiposProcesso.length > 0 && (
+          <div style={{ display:'flex', gap:6 }}>
+            {[['simples','Simples'],['processo','Processo c/ etapas']].map(([id,lbl]) => (
+              <button key={id} type="button" onClick={() => setModo(id)}
+                style={{ flex:1, background:modo===id?'var(--accent-dim)':'var(--surface2)', border:`1px solid ${modo===id?'var(--accent)':'var(--border)'}`,
+                  borderRadius:8, padding:'7px', fontSize:11, fontWeight:600, color:modo===id?'var(--accent)':'var(--text3)', cursor:'pointer' }}>
+                {lbl}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {modo === 'processo' ? <>
+          <div>
+            <label style={{ fontSize:11, color:'var(--text2)', display:'block', marginBottom:4 }}>Tipo de obrigação</label>
+            <select value={tipoProcessoId} onChange={e => setTipoProcessoId(e.target.value)}
+              style={{ width:'100%', background:'var(--surface2)', border:'1px solid var(--border)', borderRadius:8, padding:'8px 10px', fontSize:13, color:'var(--text1)', outline:'none' }}>
+              <option value="">Selecione...</option>
+              {tiposProcesso.map(t => <option key={t.id} value={t.id}>{t.nome}</option>)}
+            </select>
+          </div>
+          <div>
+            <label style={{ fontSize:11, color:'var(--text2)', display:'block', marginBottom:4 }}>Título (opcional)</label>
+            <input value={titulo} onChange={e => setTitulo(e.target.value)}
+              placeholder="Ex: Rescisão — João da Silva"
+              style={{ width:'100%', background:'var(--surface2)', border:'1px solid var(--border)', borderRadius:8, padding:'8px 10px', fontSize:13, color:'var(--text1)', outline:'none' }} />
+          </div>
+          <div>
+            <label style={{ fontSize:11, color:'var(--text2)', display:'block', marginBottom:4 }}>Responsável (opcional)</label>
+            <input value={responsavel} onChange={e => setResponsavel(e.target.value)}
+              style={{ width:'100%', background:'var(--surface2)', border:'1px solid var(--border)', borderRadius:8, padding:'8px 10px', fontSize:13, color:'var(--text1)', outline:'none' }} />
+          </div>
+        </> : <>
+          <div>
+            <label style={{ fontSize:11, color:'var(--text2)', display:'block', marginBottom:4 }}>Tipo</label>
+            <select value={tipo} onChange={e => setTipo(e.target.value)}
+              style={{ width:'100%', background:'var(--surface2)', border:'1px solid var(--border)', borderRadius:8, padding:'8px 10px', fontSize:13, color:'var(--text1)', outline:'none' }}>
+              {tiposDisponiveis.map(t => <option key={t} value={t}>{t}</option>)}
+            </select>
+          </div>
+          <div>
+            <label style={{ fontSize:11, color:'var(--text2)', display:'block', marginBottom:4 }}>Status inicial</label>
+            <select value={status} onChange={e => setStatus(e.target.value)}
+              style={{ width:'100%', background:'var(--surface2)', border:'1px solid var(--border)', borderRadius:8, padding:'8px 10px', fontSize:13, color:'var(--text1)', outline:'none' }}>
+              {STATUS_OBS.map(s => <option key={s} value={s}>{STATUS_OBS_LABEL[s]}</option>)}
+            </select>
+          </div>
+          <div>
+            <label style={{ fontSize:11, color:'var(--text2)', display:'block', marginBottom:4 }}>Vencimento</label>
+            <input type="date" value={vencimento} onChange={e => setVencimento(e.target.value)}
+              style={{ width:'100%', background:'var(--surface2)', border:'1px solid var(--border)', borderRadius:8, padding:'8px 10px', fontSize:13, color:'var(--text1)', outline:'none' }} />
+          </div>
+          <div style={{ fontSize:10, color:'var(--text3)' }}>Competência: <strong style={{ color:'var(--text2)' }}>{competencia}</strong></div>
+        </>}
       </div>
       <div style={{ display:'flex', gap:8, marginTop:16 }}>
         <button onClick={onClose}
           style={{ flex:1, background:'var(--surface2)', border:'1px solid #232840', borderRadius:8, padding:'9px', fontSize:12, color:'var(--text2)', cursor:'pointer' }}>Cancelar</button>
-        <button onClick={handleSave} disabled={saving||!tipo}
+        <button onClick={handleSave} disabled={saving || (modo==='processo' ? !tipoProcessoId : !tipo)}
           style={{ flex:1, background:'var(--accent)', border:'none', borderRadius:8, padding:'9px', fontSize:12, color:'#fff', fontWeight:500, cursor:'pointer', opacity:saving?.6:1 }}>
           <SaveIcon size={13} style={{ marginRight:5, verticalAlign:-2 }} />
           {saving?'Salvando...':'Salvar'}

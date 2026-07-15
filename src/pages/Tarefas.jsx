@@ -28,7 +28,7 @@ function getKanbanStatus(t) {
   return t.concluida ? 'concluido' : 'pendente'
 }
 
-export default function Tarefas({ onAddTarefa }) {
+export default function Tarefas({ onAddTarefa, highlightTaskId, onHighlightConsumed }) {
   const tarefas      = useStore(s => s.tarefas)
   const clientes     = useStore(s => s.clientes)
   const toggleTarefa = useStore(s => s.toggleTarefa)
@@ -40,6 +40,15 @@ export default function Tarefas({ onAddTarefa }) {
   const [tarefaAberta,  setTarefaAberta]  = useState(null)
   const [dragging,      setDragging]      = useState(null) // { id, fromCol }
   const [dragOver,      setDragOver]      = useState(null) // colId
+
+  // Veio de "Abrir tarefa no Kanban" (Andamento de Obrigações) — abre direto
+  // o detalhe da tarefa em questão.
+  useEffect(() => {
+    if (!highlightTaskId) return
+    const t = tarefas.find(x => x.id === highlightTaskId)
+    if (t) setTarefaAberta(t)
+    onHighlightConsumed?.()
+  }, [highlightTaskId, tarefas])
 
   const filtered = useMemo(() => {
     let t = tarefas
