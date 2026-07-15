@@ -1,37 +1,29 @@
-import { CheckIcon } from 'lucide-react';
-
-// 4 variações visuais: concluído (navy preenchido, ✓), em andamento (contorno
-// destacado accent), pendente (cinza), atrasado (terracota/danger).
+// Ponto individual de uma trilha: concluído (navy preenchido, ✓), em andamento
+// (contorno destacado + halo), pendente (cinza, numerado), atrasado
+// (terracota/danger, !). Puramente visual — quem decide se é clicável é o
+// componente pai (DepartamentoTimeline).
 const CFG = {
-  concluido:    { bg: 'var(--navy)',     border: 'var(--navy)',    fg: '#fff' },
-  em_andamento: { bg: 'var(--surface)',  border: 'var(--accent)',  fg: 'var(--accent)' },
-  pendente:     { bg: 'var(--surface2)', border: 'var(--border2)', fg: 'var(--text3)' },
-  atrasado:     { bg: 'var(--danger)',   border: 'var(--danger)',  fg: '#fff' },
+  concluido:    { bg: 'var(--navy)',     border: 'var(--navy)',    fg: '#fff',        borderWidth: 2 },
+  em_andamento: { bg: 'var(--bg)',       border: 'var(--navy)',    fg: 'var(--navy)', borderWidth: 3 },
+  pendente:     { bg: 'var(--surface2)', border: 'var(--border2)', fg: 'var(--text3)', borderWidth: 2 },
+  atrasado:     { bg: 'var(--danger)',   border: 'var(--danger)',  fg: '#fff',        borderWidth: 2 },
 };
 
-export default function EtapaDot({ etapa, statusVisual, onClick, size = 26 }) {
-  const cfg = CFG[statusVisual] || CFG.pendente;
+export default function EtapaDot({ stage, numero, size = 24 }) {
+  const cfg = CFG[stage.statusVisual] || CFG.pendente;
+  const content = stage.statusVisual === 'concluido' ? '✓'
+    : stage.statusVisual === 'atrasado' ? '!'
+    : numero;
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      title={etapa.nome}
-      style={{
-        width: size, height: size, borderRadius: '50%', flexShrink: 0, cursor: 'pointer',
-        background: cfg.bg, border: `2px solid ${cfg.border}`, padding: 0,
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        transition: 'transform .12s ease',
-      }}
-      onMouseEnter={(e) => { e.currentTarget.style.transform = 'scale(1.15)'; }}
-      onMouseLeave={(e) => { e.currentTarget.style.transform = 'scale(1)'; }}
-    >
-      {statusVisual === 'concluido' && <CheckIcon size={Math.round(size * 0.55)} color={cfg.fg} strokeWidth={3} />}
-      {statusVisual === 'em_andamento' && (
-        <div style={{ width: Math.round(size * 0.4), height: Math.round(size * 0.4), borderRadius: '50%', background: cfg.border }} />
-      )}
-      {statusVisual === 'atrasado' && (
-        <span style={{ fontSize: Math.round(size * 0.5), color: cfg.fg, fontWeight: 800, lineHeight: 1 }}>!</span>
-      )}
-    </button>
+    <div style={{
+      width: size, height: size, borderRadius: '50%', flexShrink: 0,
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      background: cfg.bg, border: `${cfg.borderWidth}px solid ${cfg.border}`,
+      color: cfg.fg, fontSize: 11, fontWeight: 700,
+      boxShadow: stage.statusVisual === 'em_andamento' ? '0 0 0 4px var(--accent-dim)' : 'none',
+      transition: 'transform .12s ease',
+    }}>
+      {content}
+    </div>
   );
 }
