@@ -22,7 +22,7 @@ const NAV = [
   { id: 'clientes',   label: 'Clientes',    Icon: UsersIcon },
   { id: 'prospectos', label: 'Prospectos',  Icon: TargetIcon },
   { id: 'erp',        label: 'ERP',         Icon: RefreshCwIcon },
-  { id: 'contabil',   label: 'Contábil',    Icon: CalculatorIcon },
+  { id: 'contabil',   label: 'Financeiro',  Icon: CalculatorIcon },
   { id: 'central',    label: 'Central',     Icon: AppWindowIcon },
 ]
 

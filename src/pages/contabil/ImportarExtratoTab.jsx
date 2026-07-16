@@ -1,10 +1,11 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { ArrowDownCircleIcon, ArrowUpCircleIcon } from 'lucide-react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { ArrowDownCircleIcon, ArrowUpCircleIcon, CheckCircle2Icon, CircleDashedIcon, ListIcon } from 'lucide-react';
 import { PDFDocument } from 'pdf-lib';
 import {
   listarContasBanco, listarContasReceitaDespesa, listarLancamentos, criarLancamentosEmLote,
   listarRegrasClassificacao, salvarRegraClassificacao, encontrarRegraAplicavel,
 } from './contabilApi';
+import { extrairTransacoesDeExcel } from './excelExtrato';
 import ContaCombobox from './ContaCombobox';
 
 // Contrapartida usada quando a transação é salva sem conta classificada ainda
@@ -170,8 +171,9 @@ export default function ImportarExtratoTab({ empresaId }) {
     setInfo(null);
     setProcessando(true);
     try {
+      const ehExcel = /\.(xlsx|xls)$/i.test(arquivo.name);
       const [extracao, historico, regras] = await Promise.all([
-        extrairTransacoesComDivisao(arquivo),
+        ehExcel ? extrairTransacoesDeExcel(arquivo) : extrairTransacoesComDivisao(arquivo),
         listarLancamentos(empresaId, {}),
         // regras de classificação são só um bônus — se falhar (ex: tabela
         // ainda não migrada), a extração não pode travar por causa disso
@@ -179,14 +181,21 @@ export default function ImportarExtratoTab({ empresaId }) {
       ]);
       const extraidas = extracao.transacoes;
       const bancoIds = new Set([contaBancoId]);
+      // só aceita sugestão (de regra ou por histórico) se apontar pra uma
+      // conta que realmente aparece no seletor — sem isso, um lançamento
+      // antigo ainda pendente em "Valores a Identificar" podia "sugerir"
+      // a própria conta transitória, marcando a transação como classificada
+      // sem nenhuma conta selecionável de verdade aparecer no combobox
+      const idsClassificaveis = new Set(contasClassificacao.map((c) => c.id));
       let autoClassificadas = 0;
       const comSugestao = extraidas.map((t) => {
         // 1) regra aprendida (ou cadastrada manualmente) que apareça no
         // histórico tem prioridade; 2) senão cai pra sugestão fraca por
         // palavras em comum
         const regra = encontrarRegraAplicavel(t.descricao, regras);
-        const contaId = regra?.conta_id ?? sugerirConta(t.descricao, historico, { bancoIds }) ?? '';
-        if (regra) autoClassificadas++;
+        let contaId = regra?.conta_id ?? sugerirConta(t.descricao, historico, { bancoIds }) ?? '';
+        if (contaId && !idsClassificaveis.has(contaId)) contaId = '';
+        if (regra && contaId) autoClassificadas++;
         return { ...t, conta_id: contaId, ignorar: false };
       });
       setTransacoes(comSugestao);
@@ -195,6 +204,9 @@ export default function ImportarExtratoTab({ empresaId }) {
         avisos.push(`⚠ Não consegui processar ${extracao.falhas.length} trecho${extracao.falhas.length === 1 ? '' : 's'} do extrato (${extracao.falhas.join('; ')}). As transações desses trechos não vieram — tente reimportar o período correspondente separado.`);
       } else if (extracao.truncado) {
         avisos.push(`⚠ O extrato tinha transações demais pra processar de uma vez — só ${extraidas.length} vieram completas. Confira o total no extrato original e importe o restante separado (outro período/arquivo).`);
+      }
+      if (extracao.linhasIgnoradas) {
+        avisos.push(`⚠ ${extracao.linhasIgnoradas} linha${extracao.linhasIgnoradas === 1 ? '' : 's'} da planilha não pôde${extracao.linhasIgnoradas === 1 ? '' : 'ram'} ser lida${extracao.linhasIgnoradas === 1 ? '' : 's'} (data ou valor ausente/ilegível) e foi${extracao.linhasIgnoradas === 1 ? '' : 'ram'} ignorada${extracao.linhasIgnoradas === 1 ? '' : 's'}.`);
       }
       if (autoClassificadas > 0) {
         avisos.push(`${autoClassificadas} transaç${autoClassificadas === 1 ? 'ão' : 'ões'} classificada${autoClassificadas === 1 ? '' : 's'} automaticamente com base em lançamentos anteriores.`);
@@ -210,6 +222,21 @@ export default function ImportarExtratoTab({ empresaId }) {
   function atualizarTransacao(idx, campo, valor) {
     setTransacoes((prev) => prev.map((t, i) => (i === idx ? { ...t, [campo]: valor } : t)));
   }
+
+  // resumo ao vivo pros cards acima da tabela — atualiza a cada classificação
+  const resumo = useMemo(() => {
+    const validas = transacoes.filter((t) => !t.ignorar);
+    const classificadas = validas.filter((t) => t.conta_id);
+    const totalEntrada = validas.filter((t) => t.tipo === 'entrada').reduce((s, t) => s + Math.abs(Number(t.valor)), 0);
+    const totalSaida = validas.filter((t) => t.tipo === 'saida').reduce((s, t) => s + Math.abs(Number(t.valor)), 0);
+    return {
+      total: validas.length,
+      classificadas: classificadas.length,
+      pendentes: validas.length - classificadas.length,
+      totalEntrada,
+      totalSaida,
+    };
+  }, [transacoes]);
 
   async function confirmarImportacao() {
     setSalvando(true);
@@ -289,9 +316,9 @@ export default function ImportarExtratoTab({ empresaId }) {
           {arquivo ? (
             <span>{arquivo.name}</span>
           ) : (
-            <span>Arraste o PDF do extrato aqui, ou <label style={{ color: 'var(--navy2)', cursor: 'pointer', textDecoration: 'underline' }}>
+            <span>Arraste o PDF ou Excel do extrato aqui, ou <label style={{ color: 'var(--navy2)', cursor: 'pointer', textDecoration: 'underline' }}>
               selecione um arquivo
-              <input type="file" accept="application/pdf" style={{ display: 'none' }}
+              <input type="file" accept=".pdf,.xlsx,.xls,application/pdf,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel" style={{ display: 'none' }}
                 onChange={(e) => setArquivo(e.target.files?.[0] ?? null)} />
             </label></span>
           )}
@@ -307,6 +334,14 @@ export default function ImportarExtratoTab({ empresaId }) {
 
       {transacoes.length > 0 && (
         <>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 10, marginBottom: 14 }}>
+            <ResumoCard icone={<ListIcon size={14} />} label="Transações" valor={resumo.total} cor="var(--navy2)" />
+            <ResumoCard icone={<CheckCircle2Icon size={14} />} label="Classificadas" valor={`${resumo.classificadas} (${resumo.total ? Math.round(resumo.classificadas / resumo.total * 100) : 0}%)`} cor="var(--ok)" />
+            <ResumoCard icone={<CircleDashedIcon size={14} />} label="Pendentes" valor={resumo.pendentes} cor={resumo.pendentes > 0 ? 'var(--warn)' : 'var(--ok)'} />
+            <ResumoCard icone={<ArrowDownCircleIcon size={14} />} label="Total entrada" valor={`R$ ${resumo.totalEntrada.toFixed(2)}`} cor="var(--ok)" />
+            <ResumoCard icone={<ArrowUpCircleIcon size={14} />} label="Total saída" valor={`R$ ${resumo.totalSaida.toFixed(2)}`} cor="var(--danger)" />
+          </div>
+
           <table className="contabil-tabela">
             <thead>
               <tr>
@@ -359,6 +394,17 @@ export default function ImportarExtratoTab({ empresaId }) {
           </button>
         </>
       )}
+    </div>
+  );
+}
+
+function ResumoCard({ icone, label, valor, cor }) {
+  return (
+    <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, padding: '10px 12px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 5, color: 'var(--text2)', fontSize: '0.72rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.02em' }}>
+        {icone} {label}
+      </div>
+      <div className="num" style={{ fontSize: '1.15rem', fontWeight: 700, color: cor, marginTop: 4 }}>{valor}</div>
     </div>
   );
 }
