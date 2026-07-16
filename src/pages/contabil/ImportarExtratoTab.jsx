@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { ArrowDownCircleIcon, ArrowUpCircleIcon } from 'lucide-react';
 import { PDFDocument } from 'pdf-lib';
 import {
-  listarContas, listarLancamentos, criarLancamentosEmLote,
+  listarContasBanco, listarContasReceitaDespesa, listarLancamentos, criarLancamentosEmLote,
   listarRegrasClassificacao, salvarRegraClassificacao, encontrarRegraAplicavel,
 } from './contabilApi';
 import ContaCombobox from './ContaCombobox';
@@ -134,7 +134,12 @@ function sugerirConta(descricao, lancamentosAnteriores, contas) {
 }
 
 export default function ImportarExtratoTab({ empresaId }) {
-  const [contas, setContas] = useState([]);
+  // contasBanco: só as contas de banco/caixa, pro seletor do topo.
+  // contasClassificacao: só Receita/Despesa, pro seletor de cada linha —
+  // é isso que faz a importação virar "conciliação que classifica em
+  // Receita/Despesa" em vez de escolher qualquer conta do plano.
+  const [contasBanco, setContasBanco] = useState([]);
+  const [contasClassificacao, setContasClassificacao] = useState([]);
   const [contaBancoId, setContaBancoId] = useState('');
   const [arquivo, setArquivo] = useState(null);
   const [arrastando, setArrastando] = useState(false);
@@ -145,7 +150,8 @@ export default function ImportarExtratoTab({ empresaId }) {
   const [salvando, setSalvando] = useState(false);
 
   useEffect(() => {
-    listarContas(empresaId).then((c) => setContas(c.filter((x) => x.aceita_lancamento)));
+    listarContasBanco(empresaId).then(setContasBanco);
+    listarContasReceitaDespesa(empresaId).then(setContasClassificacao);
   }, [empresaId]);
 
   function onDrop(e) {
@@ -210,7 +216,7 @@ export default function ImportarExtratoTab({ empresaId }) {
     setErro(null);
     setInfo(null);
     try {
-      const contaPendente = contas.find((c) => c.codigo === CODIGO_CONTA_PENDENTE);
+      const contaPendente = contasBanco.find((c) => c.codigo === CODIGO_CONTA_PENDENTE);
       const validas = transacoes.filter((t) => !t.ignorar);
 
       const itens = validas.map((t) => {
@@ -270,7 +276,7 @@ export default function ImportarExtratoTab({ empresaId }) {
     <div>
       <div className="contabil-form">
         <div style={{ display: 'grid', gridTemplateColumns: '260px 1fr', gap: 12, marginBottom: 12 }}>
-          <ContaCombobox contas={contas} value={contaBancoId} onChange={setContaBancoId} placeholder="Conta bancária do extrato..." />
+          <ContaCombobox contas={contasBanco} value={contaBancoId} onChange={setContaBancoId} placeholder="Conta bancária do extrato..." />
         </div>
 
         <div
@@ -333,9 +339,9 @@ export default function ImportarExtratoTab({ empresaId }) {
                     R$ {Math.abs(Number(t.valor)).toFixed(2)}
                   </td>
                   <td style={{ minWidth: 240 }}>
-                    <ContaCombobox contas={contas} value={t.conta_id}
+                    <ContaCombobox contas={contasClassificacao} value={t.conta_id}
                       onChange={(id) => atualizarTransacao(idx, 'conta_id', id)}
-                      placeholder="A classificar depois" style={{ width: '100%' }} />
+                      placeholder="Receita ou despesa..." style={{ width: '100%' }} />
                   </td>
                   <td>
                     <input type="checkbox" checked={t.ignorar}

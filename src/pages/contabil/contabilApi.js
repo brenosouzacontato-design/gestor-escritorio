@@ -16,6 +16,43 @@ export async function listarContas(empresaId) {
   return data;
 }
 
+// Grupo "Disponibilidades" (caixa, bancos, aplicações) no plano de contas
+// padrão — mesmo prefixo já usado em LancamentosTab.jsx pra inferir a
+// natureza (entrada/saída) de um lançamento.
+const PREFIXO_DISPONIVEL = '1.1.01';
+
+// Lista só as contas de banco/caixa — usada no seletor "conta bancária do
+// extrato" da importação. Não aparece na tela de Plano de Contas (que agora
+// só mostra Receita/Despesa), mas continua existindo pra sustentar a
+// partida dobrada por baixo dos panos.
+export async function listarContasBanco(empresaId) {
+  const { data, error } = await supabase
+    .from('contas_contabeis')
+    .select('*')
+    .eq('empresa_id', empresaId)
+    .eq('ativo', true)
+    .eq('aceita_lancamento', true)
+    .like('codigo', `${PREFIXO_DISPONIVEL}%`)
+    .order('codigo');
+  if (error) throw error;
+  return data;
+}
+
+// Lista plana (sem hierarquia) das contas de Receita e Despesa — é o que a
+// tela de Plano de Contas mostra agora, e o que alimenta os seletores de
+// classificação da importação de extrato e a DRE.
+export async function listarContasReceitaDespesa(empresaId) {
+  const { data, error } = await supabase
+    .from('contas_contabeis')
+    .select('*')
+    .eq('empresa_id', empresaId)
+    .eq('ativo', true)
+    .in('tipo', ['receita', 'despesa'])
+    .order('nome');
+  if (error) throw error;
+  return data;
+}
+
 export async function criarConta(conta) {
   const { data, error } = await supabase
     .from('contas_contabeis')
@@ -24,6 +61,47 @@ export async function criarConta(conta) {
     .single();
   if (error) throw error;
   return data;
+}
+
+// Cria uma conta de Receita ou Despesa pra tela simplificada de Plano de
+// Contas — nome + tipo é tudo que o usuário escolhe; código (só pra
+// satisfazer o unique(empresa_id, codigo) que já existe), natureza, nível
+// e "aceita_lancamento" são derivados automaticamente.
+export async function criarContaReceitaDespesa(empresaId, nome, tipo) {
+  const prefixo = tipo === 'receita' ? 'REC' : 'DESP';
+  const { count, error: errCount } = await supabase
+    .from('contas_contabeis')
+    .select('id', { count: 'exact', head: true })
+    .eq('empresa_id', empresaId)
+    .eq('tipo', tipo);
+  if (errCount) throw errCount;
+  const codigo = `${prefixo}-${String((count ?? 0) + 1).padStart(3, '0')}`;
+  return criarConta({
+    empresa_id: empresaId,
+    codigo,
+    nome,
+    tipo,
+    natureza: tipo === 'receita' ? 'credora' : 'devedora',
+    nivel: 1,
+    aceita_lancamento: true,
+  });
+}
+
+// Uma conta só pode ser excluída de vez se nunca teve lançamento (senão
+// quebraria o histórico) — nesse caso só desativa (soft delete via "ativo").
+export async function excluirOuDesativarConta(id) {
+  const { count, error: errCount } = await supabase
+    .from('partidas_contabeis')
+    .select('id', { count: 'exact', head: true })
+    .eq('conta_id', id);
+  if (errCount) throw errCount;
+  if (count > 0) {
+    await atualizarConta(id, { ativo: false });
+    return { desativada: true };
+  }
+  const { error } = await supabase.from('contas_contabeis').delete().eq('id', id);
+  if (error) throw error;
+  return { desativada: false };
 }
 
 export async function atualizarConta(id, patch) {
@@ -383,4 +461,64 @@ export async function calcularDRE(empresaId, { dataInicio, dataFim }) {
       resultadoLiquido,
     },
   };
+}
+
+// DRE simplificada: uma linha por conta de Receita/Despesa (sem os 9 grupos
+// fixos de antes) — cada conta já é a própria linha, "resultado" é só
+// receitas menos despesas do período. Mesma lógica de "movimento do
+// período" que calcularDRE já usa por grupo, só que por conta.
+export async function calcularDREPorConta(empresaId, { dataInicio, dataFim }) {
+  const [contas, { data: movimento, error: errMov }] = await Promise.all([
+    listarContasReceitaDespesa(empresaId),
+    supabase.from('vw_movimento_contas').select('*').eq('empresa_id', empresaId).gte('data', dataInicio).lte('data', dataFim),
+  ]);
+  if (errMov) throw errMov;
+
+  const movPorConta = {};
+  for (const m of movimento) {
+    if (!movPorConta[m.conta_id]) movPorConta[m.conta_id] = { debito: 0, credito: 0 };
+    movPorConta[m.conta_id].debito += Number(m.total_debito);
+    movPorConta[m.conta_id].credito += Number(m.total_credito);
+  }
+
+  const linhas = contas
+    .map((c) => {
+      const mov = movPorConta[c.id] || { debito: 0, credito: 0 };
+      const valor = c.natureza === 'credora' ? mov.credito - mov.debito : mov.debito - mov.credito;
+      return { conta: c, valor };
+    })
+    .filter((l) => l.valor !== 0);
+
+  const receitas = linhas.filter((l) => l.conta.tipo === 'receita').sort((a, b) => b.valor - a.valor);
+  const despesas = linhas.filter((l) => l.conta.tipo === 'despesa').sort((a, b) => b.valor - a.valor);
+  const totalReceitas = receitas.reduce((s, l) => s + l.valor, 0);
+  const totalDespesas = despesas.reduce((s, l) => s + l.valor, 0);
+
+  return { receitas, despesas, totalReceitas, totalDespesas, resultado: totalReceitas - totalDespesas };
+}
+
+// Lançamentos individuais que compõem o total de uma conta num período —
+// alimenta o sidebar de drill-down ao clicar numa linha da DRE.
+export async function listarLancamentosPorConta(empresaId, contaId, { dataInicio, dataFim }) {
+  let query = supabase
+    .from('partidas_contabeis')
+    .select('id, tipo, valor, lancamentos_contabeis!inner(data, historico, numero_documento, origem, empresa_id)')
+    .eq('conta_id', contaId)
+    .eq('lancamentos_contabeis.empresa_id', empresaId);
+  if (dataInicio) query = query.gte('lancamentos_contabeis.data', dataInicio);
+  if (dataFim) query = query.lte('lancamentos_contabeis.data', dataFim);
+
+  const { data, error } = await query;
+  if (error) throw error;
+  return data
+    .map((p) => ({
+      id: p.id,
+      tipo: p.tipo,
+      valor: Number(p.valor),
+      data: p.lancamentos_contabeis.data,
+      historico: p.lancamentos_contabeis.historico,
+      numeroDocumento: p.lancamentos_contabeis.numero_documento,
+      origem: p.lancamentos_contabeis.origem,
+    }))
+    .sort((a, b) => a.data.localeCompare(b.data));
 }

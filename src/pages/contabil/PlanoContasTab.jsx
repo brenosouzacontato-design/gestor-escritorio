@@ -1,224 +1,140 @@
-import React, { useEffect, useState, useCallback, useMemo } from 'react';
-import { listarContas, criarConta, atualizarConta, atualizarContasEmLote } from './contabilApi';
+import React, { useEffect, useState, useCallback } from 'react';
+import { listarContasReceitaDespesa, criarContaReceitaDespesa, atualizarConta, excluirOuDesativarConta } from './contabilApi';
 
-const TIPOS_COM_GRUPO_DRE = ['receita', 'despesa', 'custo'];
+const TIPO_LABEL = { receita: 'Receita', despesa: 'Despesa' };
+const TIPO_COLOR = {
+  receita: { bg: 'var(--ok-dim)', color: 'var(--ok)' },
+  despesa: { bg: 'var(--danger-dim)', color: 'var(--danger)' },
+};
 
-const GRUPOS_DRE = [
-  { value: '', label: '—' },
-  { value: 'receita_bruta', label: 'Receita Bruta' },
-  { value: 'deducao', label: 'Dedução' },
-  { value: 'custo', label: 'Custo' },
-  { value: 'despesa_administrativa', label: 'Despesa Administrativa' },
-  { value: 'despesa_comercial', label: 'Despesa Comercial' },
-  { value: 'despesa_financeira', label: 'Despesa Financeira' },
-  { value: 'outras_receitas', label: 'Outras Receitas' },
-  { value: 'outras_despesas', label: 'Outras Despesas' },
-  { value: 'ir_csll', label: 'IR / CSLL' },
-];
-
-function contaVazia() {
-  return { codigo: '', nome: '', tipo: 'ativo', natureza: 'devedora', aceita_lancamento: true, grupo_dre: '' };
-}
-
+// Plano de contas simplificado: só Receita e Despesa, lista plana (sem
+// hierarquia/código manual) — é a base da classificação do extrato e da
+// DRE. Contas de Ativo/Passivo/PL (banco, "Valores a Identificar") não
+// aparecem aqui — continuam existindo por baixo, sustentando a partida
+// dobrada da importação, mas não são gerenciadas nessa tela.
 export default function PlanoContasTab({ empresaId }) {
   const [contas, setContas] = useState([]);
   const [carregando, setCarregando] = useState(false);
-  const [novaConta, setNovaConta] = useState(contaVazia());
   const [filtro, setFiltro] = useState('');
-  const [selecionadas, setSelecionadas] = useState(() => new Set());
-  const [grupoDreLote, setGrupoDreLote] = useState('');
-  const [aplicandoLote, setAplicandoLote] = useState(false);
+  const [nome, setNome] = useState('');
+  const [tipo, setTipo] = useState('despesa');
+  const [salvando, setSalvando] = useState(false);
   const [erro, setErro] = useState(null);
 
   const carregar = useCallback(async () => {
     setCarregando(true);
-    const c = await listarContas(empresaId);
-    setContas(c);
-    setCarregando(false);
+    try { setContas(await listarContasReceitaDespesa(empresaId)); }
+    finally { setCarregando(false); }
   }, [empresaId]);
 
   useEffect(() => { carregar(); }, [carregar]);
 
   async function adicionar(e) {
     e.preventDefault();
+    if (!nome.trim()) return;
+    setSalvando(true);
     setErro(null);
     try {
-      await criarConta({
-        empresa_id: empresaId,
-        codigo: novaConta.codigo,
-        nome: novaConta.nome,
-        tipo: novaConta.tipo,
-        natureza: novaConta.natureza,
-        nivel: novaConta.codigo.split('.').length,
-        aceita_lancamento: novaConta.aceita_lancamento,
-        grupo_dre: novaConta.grupo_dre || null,
-      });
-      setNovaConta(contaVazia());
-      carregar();
+      await criarContaReceitaDespesa(empresaId, nome.trim(), tipo);
+      setNome('');
+      await carregar();
     } catch (e) {
-      setErro(e.code === '23505'
-        ? `Já existe uma conta com o código "${novaConta.codigo}" nesta empresa.`
-        : e.message);
+      setErro(e.message);
+    } finally {
+      setSalvando(false);
     }
   }
 
-  async function mudarGrupoDre(conta, grupo_dre) {
+  async function alternarAtiva(conta) {
     setErro(null);
     try {
-      await atualizarConta(conta.id, { grupo_dre: grupo_dre || null });
-      carregar();
+      await atualizarConta(conta.id, { ativo: !conta.ativo });
+      await carregar();
+    } catch (e) {
+      setErro(e.message);
+    }
+  }
+
+  async function excluir(conta) {
+    if (!window.confirm(`Excluir "${conta.nome}"? Se já tiver lançamento, só será desativada.`)) return;
+    setErro(null);
+    try {
+      const { desativada } = await excluirOuDesativarConta(conta.id);
+      if (desativada) await carregar();
+      else setContas((prev) => prev.filter((c) => c.id !== conta.id));
     } catch (e) {
       setErro(e.message);
     }
   }
 
   const contasFiltradas = contas.filter((c) =>
-    !filtro || c.codigo.includes(filtro) || c.nome.toLowerCase().includes(filtro.toLowerCase())
+    !filtro || c.nome.toLowerCase().includes(filtro.toLowerCase())
   );
-
-  // só contas de receita/despesa/custo têm Grupo DRE pra classificar
-  const contasClassificaveis = useMemo(
-    () => contasFiltradas.filter((c) => TIPOS_COM_GRUPO_DRE.includes(c.tipo)),
-    [contasFiltradas]
-  );
-  const todasSelecionadas = contasClassificaveis.length > 0
-    && contasClassificaveis.every((c) => selecionadas.has(c.id));
-
-  function toggleSelecionada(id) {
-    setSelecionadas((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id); else next.add(id);
-      return next;
-    });
-  }
-
-  function toggleSelecionarTodas() {
-    setSelecionadas((prev) => {
-      if (todasSelecionadas) {
-        const next = new Set(prev);
-        contasClassificaveis.forEach((c) => next.delete(c.id));
-        return next;
-      }
-      const next = new Set(prev);
-      contasClassificaveis.forEach((c) => next.add(c.id));
-      return next;
-    });
-  }
-
-  async function aplicarGrupoDreLote() {
-    setAplicandoLote(true);
-    setErro(null);
-    try {
-      await atualizarContasEmLote([...selecionadas], { grupo_dre: grupoDreLote || null });
-      setSelecionadas(new Set());
-      setGrupoDreLote('');
-      await carregar();
-    } catch (e) {
-      setErro(e.message);
-    } finally {
-      setAplicandoLote(false);
-    }
-  }
+  const receitas = contasFiltradas.filter((c) => c.tipo === 'receita');
+  const despesas = contasFiltradas.filter((c) => c.tipo === 'despesa');
 
   return (
     <div>
       <form className="contabil-form" onSubmit={adicionar}>
-        <div style={{ display: 'grid', gridTemplateColumns: '120px 1fr 160px 140px 100px 180px auto', gap: 8, alignItems: 'center' }}>
-          <input placeholder="Código (1.1.01.001)" value={novaConta.codigo}
-            onChange={(e) => setNovaConta({ ...novaConta, codigo: e.target.value })} required />
-          <input placeholder="Nome da conta" value={novaConta.nome}
-            onChange={(e) => setNovaConta({ ...novaConta, nome: e.target.value })} required />
-          <select value={novaConta.tipo} onChange={(e) => setNovaConta({ ...novaConta, tipo: e.target.value })}>
-            <option value="ativo">Ativo</option>
-            <option value="passivo">Passivo</option>
-            <option value="patrimonio_liquido">Patrimônio Líquido</option>
-            <option value="receita">Receita</option>
-            <option value="custo">Custo</option>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          <input placeholder="Nome da conta (ex: Aluguel, Venda de produtos...)" value={nome}
+            onChange={(e) => setNome(e.target.value)} style={{ flex: 1 }} required />
+          <select value={tipo} onChange={(e) => setTipo(e.target.value)} style={{ width: 140 }}>
             <option value="despesa">Despesa</option>
+            <option value="receita">Receita</option>
           </select>
-          <select value={novaConta.natureza} onChange={(e) => setNovaConta({ ...novaConta, natureza: e.target.value })}>
-            <option value="devedora">Devedora</option>
-            <option value="credora">Credora</option>
-          </select>
-          <label style={{ fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: 4 }}>
-            <input type="checkbox" checked={novaConta.aceita_lancamento}
-              onChange={(e) => setNovaConta({ ...novaConta, aceita_lancamento: e.target.checked })} />
-            Analítica
-          </label>
-          <select value={novaConta.grupo_dre} onChange={(e) => setNovaConta({ ...novaConta, grupo_dre: e.target.value })}>
-            {GRUPOS_DRE.map((g) => <option key={g.value} value={g.value}>{g.label}</option>)}
-          </select>
-          <button type="submit" className="btn-navy">Adicionar</button>
+          <button type="submit" className="btn-navy" disabled={salvando}>
+            {salvando ? 'Salvando...' : 'Adicionar'}
+          </button>
         </div>
         {erro && <p style={{ color: 'var(--danger)', marginTop: 8 }}>{erro}</p>}
       </form>
 
       <input
-        placeholder="Buscar por código ou nome..."
+        placeholder="Buscar conta..."
         value={filtro}
         onChange={(e) => setFiltro(e.target.value)}
-        style={{ marginBottom: 12, padding: '6px 10px', border: '1px solid var(--border)', borderRadius: 8, width: 280 }}
+        style={{ margin: '12px 0', padding: '6px 10px', border: '1px solid var(--border)', borderRadius: 8, width: 280 }}
       />
 
-      {selecionadas.size > 0 && (
-        <div className="contabil-form" style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12, padding: '10px 16px' }}>
-          <strong>{selecionadas.size} conta{selecionadas.size > 1 ? 's' : ''} selecionada{selecionadas.size > 1 ? 's' : ''}</strong>
-          <select value={grupoDreLote} onChange={(e) => setGrupoDreLote(e.target.value)}>
-            {GRUPOS_DRE.map((g) => <option key={g.value} value={g.value}>{g.label}</option>)}
-          </select>
-          <button type="button" className="btn-navy" onClick={aplicarGrupoDreLote} disabled={aplicandoLote}>
-            {aplicandoLote ? 'Aplicando...' : 'Aplicar Grupo DRE'}
-          </button>
-          <button type="button" className="btn-ghost" onClick={() => setSelecionadas(new Set())} disabled={aplicandoLote}>
-            Limpar seleção
-          </button>
+      {carregando ? <p>Carregando plano de contas...</p> : (
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
+          <ContaGrupo titulo="Receitas" contas={receitas} onToggle={alternarAtiva} onExcluir={excluir} />
+          <ContaGrupo titulo="Despesas" contas={despesas} onToggle={alternarAtiva} onExcluir={excluir} />
         </div>
       )}
+    </div>
+  );
+}
 
-      {carregando ? <p>Carregando plano de contas...</p> : (
-        <table className="contabil-tabela">
-          <thead>
-            <tr>
-              <th style={{ width: 32 }}>
-                <input type="checkbox" checked={todasSelecionadas} onChange={toggleSelecionarTodas}
-                  disabled={contasClassificaveis.length === 0} title="Selecionar todas (receita/despesa/custo)" />
-              </th>
-              <th>Código</th>
-              <th>Nome</th>
-              <th>Tipo</th>
-              <th>Natureza</th>
-              <th>Analítica</th>
-              <th>Grupo DRE</th>
-            </tr>
-          </thead>
-          <tbody>
-            {contasFiltradas.map((c) => {
-              const classificavel = TIPOS_COM_GRUPO_DRE.includes(c.tipo);
-              return (
-                <tr key={c.id}>
-                  <td>
-                    {classificavel && (
-                      <input type="checkbox" checked={selecionadas.has(c.id)} onChange={() => toggleSelecionada(c.id)} />
-                    )}
-                  </td>
-                  <td>{c.codigo}</td>
-                  <td>{c.nome}</td>
-                  <td>{c.tipo}</td>
-                  <td>{c.natureza}</td>
-                  <td>{c.aceita_lancamento ? 'Sim' : 'Não (sintética)'}</td>
-                  <td>
-                    {classificavel ? (
-                      <select value={c.grupo_dre ?? ''} onChange={(e) => mudarGrupoDre(c, e.target.value)}>
-                        {GRUPOS_DRE.map((g) => <option key={g.value} value={g.value}>{g.label}</option>)}
-                      </select>
-                    ) : '—'}
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      )}
+function ContaGrupo({ titulo, contas, onToggle, onExcluir }) {
+  const cfg = TIPO_COLOR[titulo === 'Receitas' ? 'receita' : 'despesa'];
+  return (
+    <div>
+      <div style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text2)', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '.03em' }}>
+        {titulo} ({contas.length})
+      </div>
+      {contas.length === 0 && <p style={{ color: 'var(--text3)', fontSize: '0.85rem' }}>Nenhuma conta cadastrada.</p>}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+        {contas.map((c) => (
+          <div key={c.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8,
+            background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, padding: '8px 12px',
+            opacity: c.ativo ? 1 : 0.5 }}>
+            <span style={{ fontSize: '0.88rem', color: 'var(--text1)' }}>{c.nome}</span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <span style={{ background: cfg.bg, color: cfg.color, borderRadius: 99, padding: '2px 8px', fontSize: '0.7rem', fontWeight: 600 }}>
+                {TIPO_LABEL[c.tipo]}
+              </span>
+              <button className="btn-ghost" onClick={() => onToggle(c)} style={{ fontSize: '0.75rem' }}>
+                {c.ativo ? 'Desativar' : 'Ativar'}
+              </button>
+              <button className="btn-ghost" onClick={() => onExcluir(c)} style={{ fontSize: '0.75rem' }}>
+                Excluir
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
