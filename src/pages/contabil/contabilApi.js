@@ -345,6 +345,11 @@ export async function excluirLancamento(id) {
   if (error) throw error;
 }
 
+export async function excluirLancamentosEmLote(ids) {
+  const { error } = await supabase.from('lancamentos_contabeis').delete().in('id', ids);
+  if (error) throw error;
+}
+
 // ---------- BALANCETE ----------
 
 // Retorna saldo por conta no período, já considerando a natureza da conta

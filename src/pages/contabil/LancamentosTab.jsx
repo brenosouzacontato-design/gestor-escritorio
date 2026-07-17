@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import { ArrowDownIcon, ArrowUpIcon, ArrowDownCircleIcon, ArrowUpCircleIcon } from 'lucide-react';
 import {
-  listarContas, listarLancamentos, excluirLancamento,
+  listarContas, listarLancamentos, excluirLancamento, excluirLancamentosEmLote,
   reclassificarLancamento, reclassificarLancamentosEmLote, salvarRegraClassificacao,
 } from './contabilApi';
 import ContaCombobox from './ContaCombobox';
@@ -29,10 +29,11 @@ export default function LancamentosTab({ empresaId, periodo }) {
   const [filtroNatureza, setFiltroNatureza] = useState('');
   const [filtroStatus, setFiltroStatus] = useState('');
 
-  // seleção múltipla pra classificar vários lançamentos pendentes de uma vez
+  // seleção múltipla pra classificar ou excluir vários lançamentos de uma vez
   const [selecionados, setSelecionados] = useState(() => new Set());
   const [contaLote, setContaLote] = useState('');
   const [aplicandoLote, setAplicandoLote] = useState(false);
+  const [excluindoLote, setExcluindoLote] = useState(false);
 
   const carregar = useCallback(async () => {
     setCarregando(true);
@@ -107,13 +108,14 @@ export default function LancamentosTab({ empresaId, periodo }) {
     return true;
   }), [lancamentosEnriquecidos, filtroHistorico, filtroContas, filtroNatureza, filtroStatus]);
 
-  // só dá pra selecionar/classificar em lote quem ainda não foi conciliado
+  // classificar em lote só vale pra quem ainda não foi conciliado — excluir
+  // em lote vale pra qualquer lançamento selecionado
   const lancamentosClassificaveis = useMemo(
     () => lancamentosFiltrados.filter((l) => !l.conciliado && l.partidaPendente),
     [lancamentosFiltrados]
   );
-  const todosSelecionados = lancamentosClassificaveis.length > 0
-    && lancamentosClassificaveis.every((l) => selecionados.has(l.id));
+  const todosSelecionados = lancamentosFiltrados.length > 0
+    && lancamentosFiltrados.every((l) => selecionados.has(l.id));
 
   function toggleSelecionado(id) {
     setSelecionados((prev) => {
@@ -126,8 +128,8 @@ export default function LancamentosTab({ empresaId, periodo }) {
   function toggleSelecionarTodos() {
     setSelecionados((prev) => {
       const next = new Set(prev);
-      if (todosSelecionados) lancamentosClassificaveis.forEach((l) => next.delete(l.id));
-      else lancamentosClassificaveis.forEach((l) => next.add(l.id));
+      if (todosSelecionados) lancamentosFiltrados.forEach((l) => next.delete(l.id));
+      else lancamentosFiltrados.forEach((l) => next.add(l.id));
       return next;
     });
   }
@@ -151,6 +153,23 @@ export default function LancamentosTab({ empresaId, periodo }) {
       setErro(e.message);
     } finally {
       setAplicandoLote(false);
+    }
+  }
+
+  async function excluirSelecionados() {
+    if (selecionados.size === 0) return;
+    if (!window.confirm(`Excluir ${selecionados.size} lançamento${selecionados.size > 1 ? 's' : ''}? Essa ação não pode ser desfeita.`)) return;
+    setExcluindoLote(true);
+    setErro(null);
+    try {
+      await excluirLancamentosEmLote([...selecionados]);
+      setSelecionados(new Set());
+      setContaLote('');
+      carregar();
+    } catch (e) {
+      setErro(e.message);
+    } finally {
+      setExcluindoLote(false);
     }
   }
 
@@ -203,14 +222,18 @@ export default function LancamentosTab({ empresaId, periodo }) {
       )}
 
       {selecionados.size > 0 && (
-        <div className="contabil-form" style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12, padding: '10px 16px' }}>
+        <div className="contabil-form" style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12, padding: '10px 16px', flexWrap: 'wrap' }}>
           <strong>{selecionados.size} lançamento{selecionados.size > 1 ? 's' : ''} selecionado{selecionados.size > 1 ? 's' : ''}</strong>
           <ContaCombobox contas={contas} value={contaLote} onChange={setContaLote}
             excluirCodigos={[CODIGO_CONTA_PENDENTE]} placeholder="Selecione a conta..." style={{ width: 280 }} />
-          <button type="button" className="btn-navy" onClick={aplicarClassificacaoLote} disabled={aplicandoLote || !contaLote}>
+          <button type="button" className="btn-navy" onClick={aplicarClassificacaoLote}
+            disabled={aplicandoLote || excluindoLote || !contaLote || lancamentosClassificaveis.every((l) => !selecionados.has(l.id))}>
             {aplicandoLote ? 'Aplicando...' : 'Classificar selecionados'}
           </button>
-          <button type="button" className="btn-ghost" onClick={() => setSelecionados(new Set())} disabled={aplicandoLote}>
+          <button type="button" className="btn-danger" onClick={excluirSelecionados} disabled={aplicandoLote || excluindoLote}>
+            {excluindoLote ? 'Excluindo...' : 'Excluir selecionados'}
+          </button>
+          <button type="button" className="btn-ghost" onClick={() => setSelecionados(new Set())} disabled={aplicandoLote || excluindoLote}>
             Limpar seleção
           </button>
         </div>
@@ -225,7 +248,7 @@ export default function LancamentosTab({ empresaId, periodo }) {
               <tr>
                 <th style={{ width: 28 }}>
                   <input type="checkbox" checked={todosSelecionados} onChange={toggleSelecionarTodos}
-                    disabled={lancamentosClassificaveis.length === 0} title="Selecionar todos os pendentes" />
+                    disabled={lancamentosFiltrados.length === 0} title="Selecionar todos" />
                 </th>
                 <th style={{ whiteSpace: 'nowrap', width: 96 }}>Data</th>
                 <th>
@@ -278,9 +301,7 @@ export default function LancamentosTab({ empresaId, periodo }) {
               {lancamentosFiltrados.map((l) => (
                 <tr key={l.id}>
                   <td>
-                    {!l.conciliado && l.partidaPendente && (
-                      <input type="checkbox" checked={selecionados.has(l.id)} onChange={() => toggleSelecionado(l.id)} />
-                    )}
+                    <input type="checkbox" checked={selecionados.has(l.id)} onChange={() => toggleSelecionado(l.id)} />
                   </td>
                   <td style={{ whiteSpace: 'nowrap' }}>{new Date(l.data + 'T00:00:00').toLocaleDateString('pt-BR')}</td>
                   <td style={{ whiteSpace: 'nowrap' }}>{l.historico}</td>

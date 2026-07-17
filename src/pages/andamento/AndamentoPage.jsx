@@ -213,20 +213,43 @@ function NovaAtividadeModal({ clientes, departamentos, onClose, onSaved }) {
   const [saving,        setSaving]        = useState(false)
   const [erro,          setErro]          = useState(null)
 
+  // quando o departamento escolhido ainda não tem nenhum tipo cadastrado,
+  // "Nova atividade" ficava sem saída (só um aviso pra ir em "Personalizar
+  // etapas" primeiro) — deixa criar um tipo mínimo aqui mesmo, sem trocar de tela
+  const [novoTipoNome,   setNovoTipoNome]   = useState('')
+  const [novoTipoEtapas, setNovoTipoEtapas] = useState([{ nome: 'Execução', prazoDias: 0 }])
+
   useEffect(() => {
     if (!departamentoId) { setTipos([]); setTipoId(''); return }
     listarTiposObrigacao(departamentoId).then(setTipos).catch(() => {})
   }, [departamentoId])
 
+  const precisaCriarTipo = departamentoId && tipos.length === 0
+  const atualizarNovaEtapa = (i, campo, valor) => setNovoTipoEtapas(prev => prev.map((e, idx) => idx === i ? { ...e, [campo]: valor } : e))
+  const addNovaEtapa = () => setNovoTipoEtapas(prev => [...prev, { nome: '', prazoDias: (prev.at(-1)?.prazoDias ?? 0) + 2 }])
+  const removerNovaEtapa = (i) => setNovoTipoEtapas(prev => prev.filter((_, idx) => idx !== i))
+
+  const podeSalvar = clienteId && departamentoId
+    && (precisaCriarTipo ? (novoTipoNome.trim() && novoTipoEtapas.every(e => e.nome.trim())) : tipoId)
+
   const handleSave = async () => {
-    if (!clienteId || !tipoId) return
+    if (!podeSalvar) return
     setSaving(true)
     setErro(null)
     try {
-      const tipoObj = tipos.find(t => t.id === tipoId)
+      let tipoObrigacaoId = tipoId
+      let nomeTipo = tipos.find(t => t.id === tipoId)?.nome
+      if (precisaCriarTipo) {
+        const novoTipo = await criarTipoObrigacaoComEtapas({
+          departamentoId, nome: novoTipoNome.trim(), recorrente: false,
+          etapas: novoTipoEtapas.map(e => ({ nome: e.nome.trim(), prazoDias: Number(e.prazoDias) || 0 })),
+        })
+        tipoObrigacaoId = novoTipo.id
+        nomeTipo = novoTipo.nome
+      }
       await criarObrigacaoComEtapas({
-        clienteId, tipoObrigacaoId: tipoId, departamentoId,
-        titulo: titulo.trim() || tipoObj?.nome || 'Atividade', responsavel: responsavel.trim() || null,
+        clienteId, tipoObrigacaoId, departamentoId,
+        titulo: titulo.trim() || nomeTipo || 'Atividade', responsavel: responsavel.trim() || null,
       })
       onSaved()
     } catch (e) {
@@ -255,17 +278,45 @@ function NovaAtividadeModal({ clientes, departamentos, onClose, onSaved }) {
             {departamentos.map(d => <option key={d.id} value={d.id}>{d.icone} {d.nome}</option>)}
           </select>
         </div>
-        <div>
-          <label style={{ fontSize:11, color:'var(--text2)', display:'block', marginBottom:4 }}>Tipo de atividade</label>
-          <select value={tipoId} onChange={e => setTipoId(e.target.value)} disabled={!departamentoId}
-            style={{ width:'100%', background:'var(--surface2)', border:'1px solid var(--border)', borderRadius:8, padding:'8px 10px', fontSize:13, color:'var(--text1)', outline:'none', opacity: departamentoId?1:.6 }}>
-            <option value="">{departamentoId ? 'Selecione...' : 'Escolha o departamento primeiro'}</option>
-            {tipos.map(t => <option key={t.id} value={t.id}>{t.nome}</option>)}
-          </select>
-          {departamentoId && tipos.length === 0 && (
-            <div style={{ fontSize:10, color:'var(--text3)', marginTop:4 }}>Esse departamento ainda não tem tipos cadastrados — use "Personalizar etapas".</div>
-          )}
-        </div>
+
+        {!precisaCriarTipo && (
+          <div>
+            <label style={{ fontSize:11, color:'var(--text2)', display:'block', marginBottom:4 }}>Tipo de atividade</label>
+            <select value={tipoId} onChange={e => setTipoId(e.target.value)} disabled={!departamentoId}
+              style={{ width:'100%', background:'var(--surface2)', border:'1px solid var(--border)', borderRadius:8, padding:'8px 10px', fontSize:13, color:'var(--text1)', outline:'none', opacity: departamentoId?1:.6 }}>
+              <option value="">{departamentoId ? 'Selecione...' : 'Escolha o departamento primeiro'}</option>
+              {tipos.map(t => <option key={t.id} value={t.id}>{t.nome}</option>)}
+            </select>
+          </div>
+        )}
+
+        {precisaCriarTipo && (
+          <div style={{ background:'var(--surface2)', border:'1px dashed var(--border2)', borderRadius:8, padding:10 }}>
+            <div style={{ fontSize:10.5, color:'var(--text3)', marginBottom:8 }}>
+              Esse departamento ainda não tem tipo de atividade cadastrado — defina um rapidamente aqui (dá pra ajustar depois em "Personalizar etapas").
+            </div>
+            <input value={novoTipoNome} onChange={e => setNovoTipoNome(e.target.value)} placeholder="Nome do tipo (ex: Rescisão Trabalhista)"
+              style={{ width:'100%', background:'var(--surface)', border:'1px solid var(--border)', borderRadius:8, padding:'7px 9px', fontSize:12, color:'var(--text1)', outline:'none', marginBottom:8 }} />
+            {novoTipoEtapas.map((et, i) => (
+              <div key={i} style={{ display:'flex', gap:6, marginBottom:6, alignItems:'center' }}>
+                <span style={{ fontSize:11, color:'var(--text3)', width:16 }}>{i+1}.</span>
+                <input value={et.nome} onChange={e => atualizarNovaEtapa(i, 'nome', e.target.value)} placeholder="Nome da etapa"
+                  style={{ flex:1, background:'var(--surface)', border:'1px solid var(--border)', borderRadius:8, padding:'6px 8px', fontSize:12, color:'var(--text1)', outline:'none' }} />
+                <input type="number" value={et.prazoDias} onChange={e => atualizarNovaEtapa(i, 'prazoDias', e.target.value)} title="Dias a partir do início"
+                  style={{ width:56, background:'var(--surface)', border:'1px solid var(--border)', borderRadius:8, padding:'6px 8px', fontSize:12, color:'var(--text1)', outline:'none' }} />
+                {novoTipoEtapas.length > 1 && (
+                  <button onClick={() => removerNovaEtapa(i)} style={{ background:'none', border:'none', cursor:'pointer', color:'var(--text3)' }}>
+                    <XIcon size={13} />
+                  </button>
+                )}
+              </div>
+            ))}
+            <button onClick={addNovaEtapa} style={{ background:'none', border:'1px dashed var(--border2)', borderRadius:6, padding:'4px 9px', fontSize:11, color:'var(--text3)', cursor:'pointer' }}>
+              <PlusIcon size={11} style={{ verticalAlign:-1, marginRight:4 }} /> Adicionar etapa
+            </button>
+          </div>
+        )}
+
         <div>
           <label style={{ fontSize:11, color:'var(--text2)', display:'block', marginBottom:4 }}>Título (opcional)</label>
           <input value={titulo} onChange={e => setTitulo(e.target.value)} placeholder="Ex: Rescisão — João da Silva"
@@ -281,8 +332,8 @@ function NovaAtividadeModal({ clientes, departamentos, onClose, onSaved }) {
       <div style={{ display:'flex', gap:8, marginTop:16 }}>
         <button onClick={onClose}
           style={{ flex:1, background:'var(--surface2)', border:'1px solid var(--border2)', borderRadius:8, padding:'9px', fontSize:12, color:'var(--text2)', cursor:'pointer' }}>Cancelar</button>
-        <button onClick={handleSave} disabled={saving || !clienteId || !tipoId}
-          style={{ flex:1, background:'var(--accent)', border:'none', borderRadius:8, padding:'9px', fontSize:12, color:'#fff', fontWeight:500, cursor:'pointer', opacity:(saving||!clienteId||!tipoId)?.6:1 }}>
+        <button onClick={handleSave} disabled={saving || !podeSalvar}
+          style={{ flex:1, background:'var(--accent)', border:'none', borderRadius:8, padding:'9px', fontSize:12, color:'#fff', fontWeight:500, cursor:'pointer', opacity:(saving||!podeSalvar)?.6:1 }}>
           <SaveIcon size={13} style={{ marginRight:5, verticalAlign:-2 }} />
           {saving ? 'Salvando...' : 'Criar atividade'}
         </button>
@@ -374,6 +425,7 @@ function NovoTipoForm({ departamentos, onCancel, onSaved }) {
   const [recorrente,    setRecorrente]    = useState(false)
   const [etapas,        setEtapas]        = useState([{ nome: '', prazoDias: 0 }])
   const [saving,        setSaving]        = useState(false)
+  const [erro,          setErro]          = useState(null)
 
   const atualizarEtapa = (i, campo, valor) => setEtapas(prev => prev.map((e, idx) => idx === i ? { ...e, [campo]: valor } : e))
   const addEtapa = () => setEtapas(prev => [...prev, { nome: '', prazoDias: (prev.at(-1)?.prazoDias ?? 0) + 2 }])
@@ -384,21 +436,28 @@ function NovoTipoForm({ departamentos, onCancel, onSaved }) {
   const handleSave = async () => {
     if (!podeSalvar) return
     setSaving(true)
+    setErro(null)
     try {
       await criarTipoObrigacaoComEtapas({
         departamentoId, nome: nome.trim(), recorrente,
         etapas: etapas.map(e => ({ nome: e.nome.trim(), prazoDias: Number(e.prazoDias) || 0 })),
       })
       onSaved()
+    } catch (e) {
+      setErro(e.message)
     } finally {
       setSaving(false)
     }
   }
 
+  const handleKeyDown = (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); handleSave() }
+  }
+
   return (
     <div style={{ background:'var(--surface)', border:'1px solid var(--accent)', borderRadius:8, padding:12, marginBottom:14 }}>
       <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:8, marginBottom:8 }}>
-        <input value={nome} onChange={e => setNome(e.target.value)} placeholder="Nome do tipo (ex: Rescisão Trabalhista)"
+        <input value={nome} onChange={e => setNome(e.target.value)} onKeyDown={handleKeyDown} placeholder="Nome do tipo (ex: Rescisão Trabalhista)"
           style={{ background:'var(--surface2)', border:'1px solid var(--border)', borderRadius:8, padding:'7px 9px', fontSize:12, color:'var(--text1)', outline:'none' }} />
         <select value={departamentoId} onChange={e => setDepartamentoId(e.target.value)}
           style={{ background:'var(--surface2)', border:'1px solid var(--border)', borderRadius:8, padding:'7px 9px', fontSize:12, color:'var(--text1)', outline:'none' }}>
@@ -413,9 +472,9 @@ function NovoTipoForm({ departamentos, onCancel, onSaved }) {
       {etapas.map((et, i) => (
         <div key={i} style={{ display:'flex', gap:6, marginBottom:6, alignItems:'center' }}>
           <span style={{ fontSize:11, color:'var(--text3)', width:16 }}>{i+1}.</span>
-          <input value={et.nome} onChange={e => atualizarEtapa(i, 'nome', e.target.value)} placeholder="Nome da etapa"
+          <input value={et.nome} onChange={e => atualizarEtapa(i, 'nome', e.target.value)} onKeyDown={handleKeyDown} placeholder="Nome da etapa"
             style={{ flex:1, background:'var(--surface2)', border:'1px solid var(--border)', borderRadius:8, padding:'6px 8px', fontSize:12, color:'var(--text1)', outline:'none' }} />
-          <input type="number" value={et.prazoDias} onChange={e => atualizarEtapa(i, 'prazoDias', e.target.value)} title="Dias a partir do início"
+          <input type="number" value={et.prazoDias} onChange={e => atualizarEtapa(i, 'prazoDias', e.target.value)} onKeyDown={handleKeyDown} title="Dias a partir do início"
             style={{ width:60, background:'var(--surface2)', border:'1px solid var(--border)', borderRadius:8, padding:'6px 8px', fontSize:12, color:'var(--text1)', outline:'none' }} />
           <span style={{ fontSize:10, color:'var(--text3)' }}>dias</span>
           {etapas.length > 1 && (
@@ -428,6 +487,8 @@ function NovoTipoForm({ departamentos, onCancel, onSaved }) {
       <button onClick={addEtapa} style={{ background:'none', border:'1px dashed var(--border2)', borderRadius:6, padding:'5px 10px', fontSize:11, color:'var(--text3)', cursor:'pointer', marginTop:2 }}>
         <PlusIcon size={11} style={{ verticalAlign:-1, marginRight:4 }} /> Adicionar etapa
       </button>
+
+      {erro && <p style={{ color:'var(--danger)', fontSize:11, marginTop:10 }}>{erro}</p>}
 
       <div style={{ display:'flex', gap:8, marginTop:14 }}>
         <button onClick={onCancel} style={{ flex:1, background:'var(--surface2)', border:'1px solid var(--border2)', borderRadius:8, padding:'8px', fontSize:12, color:'var(--text2)', cursor:'pointer' }}>Cancelar</button>
@@ -444,22 +505,35 @@ function EtapasDoTipo({ tipo, onChanged }) {
   const [novaEtapa, setNovaEtapa] = useState('')
   const [novoPrazo, setNovoPrazo] = useState(0)
   const [saving,    setSaving]    = useState(false)
+  const [erro,      setErro]      = useState(null)
 
   const handleAdd = async () => {
     if (!novaEtapa.trim()) return
     setSaving(true)
+    setErro(null)
     try {
       await adicionarEtapaTemplate(tipo.id, novaEtapa.trim(), Number(novoPrazo) || 0)
       setNovaEtapa(''); setNovoPrazo(0)
       await onChanged()
+    } catch (e) {
+      setErro(e.message)
     } finally {
       setSaving(false)
     }
   }
 
+  const handleKeyDown = (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); handleAdd() }
+  }
+
   const handleRemover = async (id) => {
-    await excluirEtapaTemplate(id)
-    await onChanged()
+    setErro(null)
+    try {
+      await excluirEtapaTemplate(id)
+      await onChanged()
+    } catch (e) {
+      setErro(e.message)
+    }
   }
 
   return (
@@ -473,15 +547,16 @@ function EtapasDoTipo({ tipo, onChanged }) {
         </div>
       ))}
       <div style={{ display:'flex', gap:6, marginTop:8 }}>
-        <input value={novaEtapa} onChange={e => setNovaEtapa(e.target.value)} placeholder="Nova etapa..."
+        <input value={novaEtapa} onChange={e => setNovaEtapa(e.target.value)} onKeyDown={handleKeyDown} placeholder="Nova etapa..."
           style={{ flex:1, background:'var(--surface2)', border:'1px solid var(--border)', borderRadius:8, padding:'6px 8px', fontSize:12, color:'var(--text1)', outline:'none' }} />
-        <input type="number" value={novoPrazo} onChange={e => setNovoPrazo(e.target.value)}
+        <input type="number" value={novoPrazo} onChange={e => setNovoPrazo(e.target.value)} onKeyDown={handleKeyDown}
           style={{ width:56, background:'var(--surface2)', border:'1px solid var(--border)', borderRadius:8, padding:'6px 8px', fontSize:12, color:'var(--text1)', outline:'none' }} />
         <button onClick={handleAdd} disabled={saving || !novaEtapa.trim()}
           style={{ background:'var(--navy)', border:'none', borderRadius:8, padding:'6px 10px', fontSize:11, color:'#fff', cursor:'pointer', opacity:(saving||!novaEtapa.trim())?.6:1 }}>
           <PlusIcon size={12} />
         </button>
       </div>
+      {erro && <p style={{ color:'var(--danger)', fontSize:11, marginTop:6 }}>{erro}</p>}
     </div>
   )
 }
