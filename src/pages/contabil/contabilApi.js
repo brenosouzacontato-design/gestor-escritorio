@@ -90,15 +90,15 @@ export async function listarContasReceitaDespesa(empresaId) {
   return data;
 }
 
-// Igual listarContasReceitaDespesa, mas inclui as desativadas — usada na
-// tela de Plano de Contas (gerenciamento), senão uma conta desativada some
-// da lista pra sempre e não tem como reativar pela tela.
-export async function listarContasReceitaDespesaGerenciamento(empresaId) {
+// Lista TODOS os tipos de conta (Ativo, Passivo, Patrimônio Líquido,
+// Receita, Custo, Despesa), ativas e desativadas — é o que a tela de Plano
+// de Contas mostra (versão completa, porém em lista plana/simples, sem a
+// hierarquia de código do plano padrão original).
+export async function listarContasTodasGerenciamento(empresaId) {
   const { data, error } = await supabase
     .from('contas_contabeis')
     .select('*')
     .eq('empresa_id', empresaId)
-    .in('tipo', ['receita', 'despesa'])
     .order('nome');
   if (error) throw error;
   return data;
@@ -114,12 +114,21 @@ export async function criarConta(conta) {
   return data;
 }
 
-// Cria uma conta de Receita ou Despesa pra tela simplificada de Plano de
-// Contas — nome + tipo é tudo que o usuário escolhe; código (só pra
-// satisfazer o unique(empresa_id, codigo) que já existe), natureza, nível
-// e "aceita_lancamento" são derivados automaticamente.
-export async function criarContaReceitaDespesa(empresaId, nome, tipo) {
-  const prefixo = tipo === 'receita' ? 'REC' : 'DESP';
+const PREFIXO_POR_TIPO = {
+  ativo: 'ATV', passivo: 'PAS', patrimonio_liquido: 'PL',
+  receita: 'REC', custo: 'CUS', despesa: 'DESP',
+};
+const NATUREZA_POR_TIPO = {
+  ativo: 'devedora', custo: 'devedora', despesa: 'devedora',
+  passivo: 'credora', patrimonio_liquido: 'credora', receita: 'credora',
+};
+
+// Cria uma conta de qualquer tipo pra tela de Plano de Contas — nome + tipo
+// é tudo que o usuário escolhe; código (só pra satisfazer o
+// unique(empresa_id, codigo) que já existe), natureza, nível e
+// "aceita_lancamento" são derivados automaticamente a partir do tipo.
+export async function criarContaQualquerTipo(empresaId, nome, tipo) {
+  const prefixo = PREFIXO_POR_TIPO[tipo];
   const { count, error: errCount } = await supabase
     .from('contas_contabeis')
     .select('id', { count: 'exact', head: true })
@@ -132,7 +141,7 @@ export async function criarContaReceitaDespesa(empresaId, nome, tipo) {
     codigo,
     nome,
     tipo,
-    natureza: tipo === 'receita' ? 'credora' : 'devedora',
+    natureza: NATUREZA_POR_TIPO[tipo],
     nivel: 1,
     aceita_lancamento: true,
   });

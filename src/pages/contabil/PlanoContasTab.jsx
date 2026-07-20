@@ -1,17 +1,27 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { listarContasReceitaDespesaGerenciamento, criarContaReceitaDespesa, atualizarConta, excluirOuDesativarConta } from './contabilApi';
+import { listarContasTodasGerenciamento, criarContaQualquerTipo, atualizarConta, excluirOuDesativarConta } from './contabilApi';
 
-const TIPO_LABEL = { receita: 'Receita', despesa: 'Despesa' };
+const TIPO_LABEL = {
+  ativo: 'Ativo', passivo: 'Passivo', patrimonio_liquido: 'Patrimônio Líquido',
+  receita: 'Receita', custo: 'Custo', despesa: 'Despesa',
+};
 const TIPO_COLOR = {
+  ativo: { bg: 'var(--accent-dim, var(--surface2))', color: 'var(--accent)' },
+  passivo: { bg: 'var(--warn-dim)', color: 'var(--warn)' },
+  patrimonio_liquido: { bg: 'var(--surface2)', color: 'var(--navy2)' },
   receita: { bg: 'var(--ok-dim)', color: 'var(--ok)' },
+  custo: { bg: 'var(--warn-dim)', color: 'var(--warn)' },
   despesa: { bg: 'var(--danger-dim)', color: 'var(--danger)' },
 };
+const GRUPOS = [
+  ['ativo', 'passivo', 'patrimonio_liquido'],
+  ['receita', 'custo', 'despesa'],
+];
 
-// Plano de contas simplificado: só Receita e Despesa, lista plana (sem
-// hierarquia/código manual) — é a base da classificação do extrato e da
-// DRE. Contas de Ativo/Passivo/PL (banco, "Valores a Identificar") não
-// aparecem aqui — continuam existindo por baixo, sustentando a partida
-// dobrada da importação, mas não são gerenciadas nessa tela.
+// Plano de contas completo, porém simples: mostra os 6 tipos de conta em
+// lista plana por tipo (sem hierarquia/código manual do plano padrão
+// original importado) — é aqui que se cadastra qualquer conta nova, de
+// qualquer tipo, pra empresa.
 export default function PlanoContasTab({ empresaId }) {
   const [contas, setContas] = useState([]);
   const [carregando, setCarregando] = useState(false);
@@ -23,7 +33,7 @@ export default function PlanoContasTab({ empresaId }) {
 
   const carregar = useCallback(async () => {
     setCarregando(true);
-    try { setContas(await listarContasReceitaDespesaGerenciamento(empresaId)); }
+    try { setContas(await listarContasTodasGerenciamento(empresaId)); }
     finally { setCarregando(false); }
   }, [empresaId]);
 
@@ -35,7 +45,7 @@ export default function PlanoContasTab({ empresaId }) {
     setSalvando(true);
     setErro(null);
     try {
-      await criarContaReceitaDespesa(empresaId, nome.trim(), tipo);
+      await criarContaQualquerTipo(empresaId, nome.trim(), tipo);
       setNome('');
       await carregar();
     } catch (e) {
@@ -70,18 +80,20 @@ export default function PlanoContasTab({ empresaId }) {
   const contasFiltradas = contas.filter((c) =>
     !filtro || c.nome.toLowerCase().includes(filtro.toLowerCase())
   );
-  const receitas = contasFiltradas.filter((c) => c.tipo === 'receita');
-  const despesas = contasFiltradas.filter((c) => c.tipo === 'despesa');
 
   return (
     <div>
       <form className="contabil-form" onSubmit={adicionar}>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-          <input placeholder="Nome da conta (ex: Aluguel, Venda de produtos...)" value={nome}
+          <input placeholder="Nome da conta (ex: Aluguel, Venda de produtos, Empréstimos...)" value={nome}
             onChange={(e) => setNome(e.target.value)} style={{ flex: 1 }} required />
-          <select value={tipo} onChange={(e) => setTipo(e.target.value)} style={{ width: 140 }}>
+          <select value={tipo} onChange={(e) => setTipo(e.target.value)} style={{ width: 180 }}>
             <option value="despesa">Despesa</option>
             <option value="receita">Receita</option>
+            <option value="custo">Custo</option>
+            <option value="ativo">Ativo</option>
+            <option value="passivo">Passivo</option>
+            <option value="patrimonio_liquido">Patrimônio Líquido</option>
           </select>
           <button type="submit" className="btn-navy" disabled={salvando}>
             {salvando ? 'Salvando...' : 'Adicionar'}
@@ -98,21 +110,27 @@ export default function PlanoContasTab({ empresaId }) {
       />
 
       {carregando ? <p>Carregando plano de contas...</p> : (
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
-          <ContaGrupo titulo="Receitas" contas={receitas} onToggle={alternarAtiva} onExcluir={excluir} />
-          <ContaGrupo titulo="Despesas" contas={despesas} onToggle={alternarAtiva} onExcluir={excluir} />
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+          {GRUPOS.map((linha, i) => (
+            <div key={i} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 20 }}>
+              {linha.map((t) => (
+                <ContaGrupo key={t} tipo={t} contas={contasFiltradas.filter((c) => c.tipo === t)}
+                  onToggle={alternarAtiva} onExcluir={excluir} />
+              ))}
+            </div>
+          ))}
         </div>
       )}
     </div>
   );
 }
 
-function ContaGrupo({ titulo, contas, onToggle, onExcluir }) {
-  const cfg = TIPO_COLOR[titulo === 'Receitas' ? 'receita' : 'despesa'];
+function ContaGrupo({ tipo, contas, onToggle, onExcluir }) {
+  const cfg = TIPO_COLOR[tipo];
   return (
     <div>
       <div style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text2)', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '.03em' }}>
-        {titulo} ({contas.length})
+        {TIPO_LABEL[tipo]} ({contas.length})
       </div>
       {contas.length === 0 && <p style={{ color: 'var(--text3)', fontSize: '0.85rem' }}>Nenhuma conta cadastrada.</p>}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
@@ -120,15 +138,15 @@ function ContaGrupo({ titulo, contas, onToggle, onExcluir }) {
           <div key={c.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8,
             background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, padding: '8px 12px',
             opacity: c.ativo ? 1 : 0.5 }}>
-            <span style={{ fontSize: '0.88rem', color: 'var(--text1)' }}>{c.nome}</span>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <span style={{ background: cfg.bg, color: cfg.color, borderRadius: 99, padding: '2px 8px', fontSize: '0.7rem', fontWeight: 600 }}>
-                {TIPO_LABEL[c.tipo]}
+            <span style={{ fontSize: '0.85rem', color: 'var(--text1)' }}>{c.nome}</span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+              <span style={{ background: cfg.bg, color: cfg.color, borderRadius: 99, padding: '2px 8px', fontSize: '0.68rem', fontWeight: 600, whiteSpace: 'nowrap' }}>
+                {TIPO_LABEL[tipo]}
               </span>
-              <button className="btn-ghost" onClick={() => onToggle(c)} style={{ fontSize: '0.75rem' }}>
+              <button className="btn-ghost" onClick={() => onToggle(c)} style={{ fontSize: '0.72rem' }}>
                 {c.ativo ? 'Desativar' : 'Ativar'}
               </button>
-              <button className="btn-ghost" onClick={() => onExcluir(c)} style={{ fontSize: '0.75rem' }}>
+              <button className="btn-ghost" onClick={() => onExcluir(c)} style={{ fontSize: '0.72rem' }}>
                 Excluir
               </button>
             </div>
