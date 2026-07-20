@@ -68,11 +68,18 @@ async function extrairTransacoesComDivisao(arquivo) {
   // muitos bancos exportam o extrato com permissões restritas (cópia/edição
   // bloqueada) via senha de dono, sem senha de abertura — o pdf-lib recusa
   // carregar esses arquivos por padrão mesmo sem pedir senha nenhuma, então
-  // ignora essa "criptografia" de permissão pra só ler o conteúdo
+  // ignora essa checagem só pra conseguir ler a contagem de páginas
   const doc = await PDFDocument.load(bytes, { ignoreEncryption: true });
   const totalPaginas = doc.getPageCount();
 
-  if (totalPaginas <= PAGINAS_POR_PARTE) {
+  // "ignoreEncryption" só pula o erro de carregamento — o pdf-lib não sabe
+  // descriptografar de verdade, então copiar/recompor páginas (como a
+  // divisão em partes faz) preserva o conteúdo ainda cifrado e vira um PDF
+  // corrompido, ilegível até pro Claude. Pra um arquivo criptografado, o
+  // jeito seguro é mandar o arquivo original inteiro numa única chamada —
+  // quem consegue descriptografar de verdade é o processamento de PDF da
+  // Anthropic do outro lado, não o nosso código aqui
+  if (totalPaginas <= PAGINAS_POR_PARTE || doc.isEncrypted) {
     return extrairTransacoesDoPDF(arquivo);
   }
 
