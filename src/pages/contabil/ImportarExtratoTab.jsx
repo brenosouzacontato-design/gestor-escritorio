@@ -1,6 +1,10 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { ArrowDownCircleIcon, ArrowUpCircleIcon, CheckCircle2Icon, CircleDashedIcon, ListIcon } from 'lucide-react';
-import { PDFDocument } from 'pdf-lib';
+// @cantoo/pdf-lib é um fork do pdf-lib com suporte real a descriptografia
+// (o pdf-lib original só tem a flag ignoreEncryption, que pula o erro de
+// carregamento mas não descriptografa o conteúdo de verdade — ver comentário
+// mais abaixo em extrairTransacoesComDivisao)
+import { PDFDocument } from '@cantoo/pdf-lib';
 import {
   listarContasBanco, listarContasReceitaDespesa, listarLancamentos, criarLancamentosEmLote,
   listarRegrasClassificacao, salvarRegraClassificacao, encontrarRegraAplicavel,
@@ -66,20 +70,15 @@ const PARTES_SIMULTANEAS = 3;
 async function extrairTransacoesComDivisao(arquivo) {
   const bytes = await arquivo.arrayBuffer();
   // muitos bancos exportam o extrato com permissões restritas (cópia/edição
-  // bloqueada) via senha de dono, sem senha de abertura — o pdf-lib recusa
-  // carregar esses arquivos por padrão mesmo sem pedir senha nenhuma, então
-  // ignora essa checagem só pra conseguir ler a contagem de páginas
-  const doc = await PDFDocument.load(bytes, { ignoreEncryption: true });
+  // bloqueada) via senha de dono, sem senha de abertura — uma string vazia é
+  // a senha certa pra esses casos. O pdf-lib original só tem uma flag
+  // "ignoreEncryption" que pula o erro de carregamento mas não descriptografa
+  // o conteúdo de verdade (copiar página assim gera um PDF corrompido) — por
+  // isso usamos o fork @cantoo/pdf-lib, que descriptografa de verdade.
+  const doc = await PDFDocument.load(bytes, { password: '' });
   const totalPaginas = doc.getPageCount();
 
-  // "ignoreEncryption" só pula o erro de carregamento — o pdf-lib não sabe
-  // descriptografar de verdade, então copiar/recompor páginas (como a
-  // divisão em partes faz) preserva o conteúdo ainda cifrado e vira um PDF
-  // corrompido, ilegível até pro Claude. Pra um arquivo criptografado, o
-  // jeito seguro é mandar o arquivo original inteiro numa única chamada —
-  // quem consegue descriptografar de verdade é o processamento de PDF da
-  // Anthropic do outro lado, não o nosso código aqui
-  if (totalPaginas <= PAGINAS_POR_PARTE || doc.isEncrypted) {
+  if (totalPaginas <= PAGINAS_POR_PARTE) {
     return extrairTransacoesDoPDF(arquivo);
   }
 
