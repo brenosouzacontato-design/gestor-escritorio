@@ -38,46 +38,9 @@ export async function listarContasBanco(empresaId) {
   return data;
 }
 
-// Igual listarContasBanco, mas inclui as desativadas também — usada na
-// tela de gerenciamento (Contas Bancárias), senão uma conta desativada
-// some da lista pra sempre e não tem como reativar pela tela.
-export async function listarContasBancoGerenciamento(empresaId) {
-  const { data, error } = await supabase
-    .from('contas_contabeis')
-    .select('*')
-    .eq('empresa_id', empresaId)
-    .eq('aceita_lancamento', true)
-    .like('codigo', `${PREFIXO_DISPONIVEL}%`)
-    .order('codigo');
-  if (error) throw error;
-  return data;
-}
-
-// Sub-grupo "Bancos - conta movimento" dentro de Disponibilidades — onde
-// entram as contas correntes de banco de verdade (Caixa e Aplicações ficam
-// em outros sub-grupos do mesmo prefixo, ver PREFIXO_DISPONIVEL).
-const PREFIXO_BANCO_MOVIMENTO = '1.1.01.003';
-
-// Cria uma conta bancária nova pra empresa (ex: "Bradesco", "Sicoob Ag 1234
-// CC 56789") — fica disponível na hora no seletor "conta bancária do
-// extrato" da importação, que já lista tudo que vem de listarContasBanco.
-export async function criarContaBanco(empresaId, nome) {
-  const { count, error: errCount } = await supabase
-    .from('contas_contabeis')
-    .select('id', { count: 'exact', head: true })
-    .eq('empresa_id', empresaId)
-    .like('codigo', `${PREFIXO_BANCO_MOVIMENTO}%`);
-  if (errCount) throw errCount;
-  const codigo = `${PREFIXO_BANCO_MOVIMENTO}.${String((count ?? 0) + 1).padStart(3, '0')}`;
-  return criarConta({
-    empresa_id: empresaId, codigo, nome, tipo: 'ativo',
-    natureza: 'devedora', nivel: 5, aceita_lancamento: true,
-  });
-}
-
-// Lista plana (sem hierarquia) das contas de Receita e Despesa — é o que a
-// tela de Plano de Contas mostra agora, e o que alimenta os seletores de
-// classificação da importação de extrato e a DRE.
+// Lista plana (sem hierarquia) das contas de Receita e Despesa — alimenta
+// os seletores de classificação da importação de extrato e a DRE (o Plano
+// de Contas em si mostra todos os tipos, ver listarContasTodasGerenciamento).
 export async function listarContasReceitaDespesa(empresaId) {
   const { data, error } = await supabase
     .from('contas_contabeis')
@@ -143,6 +106,40 @@ export async function criarContaQualquerTipo(empresaId, nome, tipo) {
     tipo,
     natureza: NATUREZA_POR_TIPO[tipo],
     nivel: 1,
+    aceita_lancamento: true,
+  });
+}
+
+// Cria uma conta como "filha" de uma conta já existente — modelo clássico
+// de plano de contas, onde você parte de uma conta de referência (ex:
+// "Itaú", "Aluguel") pra criar uma nova relacionada. Herda tipo e natureza
+// da conta-base, o código estende o dela (ex: "1.1.01.003.003.001") e
+// conta_pai_id fica de verdade preenchido — diferente das ~743 contas do
+// plano padrão importado, que só têm código hierárquico "visual" (sem
+// conta_pai_id real, nunca migradas por esse motivo).
+export async function criarContaFilha(empresaId, nome, contaPaiId) {
+  const { data: pai, error: errPai } = await supabase
+    .from('contas_contabeis')
+    .select('id, codigo, tipo, natureza, nivel')
+    .eq('id', contaPaiId)
+    .single();
+  if (errPai) throw errPai;
+
+  const { count, error: errCount } = await supabase
+    .from('contas_contabeis')
+    .select('id', { count: 'exact', head: true })
+    .eq('conta_pai_id', contaPaiId);
+  if (errCount) throw errCount;
+
+  const codigo = `${pai.codigo}.${String((count ?? 0) + 1).padStart(3, '0')}`;
+  return criarConta({
+    empresa_id: empresaId,
+    codigo,
+    nome,
+    tipo: pai.tipo,
+    natureza: pai.natureza,
+    conta_pai_id: pai.id,
+    nivel: (pai.nivel ?? 0) + 1,
     aceita_lancamento: true,
   });
 }

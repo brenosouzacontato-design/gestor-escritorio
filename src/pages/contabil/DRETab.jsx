@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { calcularDREPorConta, listarLancamentosPorConta } from './contabilApi';
 import ContaLancamentosSidebar from './ContaLancamentosSidebar';
+import CompartilharButton from './CompartilharButton';
 
 function fmt(v) {
   return v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
@@ -9,7 +10,7 @@ function fmt(v) {
 // DRE simplificada: uma linha por conta de Receita/Despesa (sem os grupos
 // fixos de antes) — clicar numa linha abre os lançamentos daquela conta no
 // período, pra conferir o que compõe o total.
-export default function DRETab({ empresaId, periodo }) {
+export default function DRETab({ empresaId, periodo, empresaNome }) {
   const [dre, setDre] = useState(null);
   const [carregando, setCarregando] = useState(false);
   const [erro, setErro] = useState(null);
@@ -48,6 +49,10 @@ export default function DRETab({ empresaId, periodo }) {
 
   return (
     <div>
+      <div style={{ maxWidth: 760, marginBottom: 12, display: 'flex', justifyContent: 'flex-end' }}>
+        <CompartilharButton tipo="dre" empresaId={empresaId} empresaNome={empresaNome} periodo={periodo} />
+      </div>
+
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 24, maxWidth: 760 }}>
         <LinhaGrupo titulo="Receitas" total={dre.totalReceitas} linhas={dre.receitas} cor="var(--ok)" onClick={abrirConta} />
         <LinhaGrupo titulo="Despesas" total={dre.totalDespesas} linhas={dre.despesas} cor="var(--danger)" onClick={abrirConta} />
