@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { listarContasReceitaDespesa, criarContaReceitaDespesa, atualizarConta, excluirOuDesativarConta } from './contabilApi';
+import { listarContasReceitaDespesaGerenciamento, criarContaReceitaDespesa, atualizarConta, excluirOuDesativarConta } from './contabilApi';
 
 const TIPO_LABEL = { receita: 'Receita', despesa: 'Despesa' };
 const TIPO_COLOR = {
@@ -23,7 +23,7 @@ export default function PlanoContasTab({ empresaId }) {
 
   const carregar = useCallback(async () => {
     setCarregando(true);
-    try { setContas(await listarContasReceitaDespesa(empresaId)); }
+    try { setContas(await listarContasReceitaDespesaGerenciamento(empresaId)); }
     finally { setCarregando(false); }
   }, [empresaId]);
 

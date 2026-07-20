@@ -8,12 +8,14 @@ import DRETab from './DRETab';
 import ImportarExtratoTab from './ImportarExtratoTab';
 import RegrasTab from './RegrasTab';
 import PrecificacaoTab from './PrecificacaoTab';
+import ContasBancariasTab from './ContasBancariasTab';
 
 const TABS = [
   { id: 'lancamentos', label: 'Lançamentos' },
   { id: 'balancete', label: 'Balancete' },
   { id: 'dre', label: 'DRE' },
   { id: 'extrato', label: 'Importar Extrato' },
+  { id: 'contas_bancarias', label: 'Contas Bancárias' },
   { id: 'plano', label: 'Plano de Contas' },
   { id: 'regras', label: 'Regras' },
   { id: 'precificacao', label: 'Precificação' },
@@ -72,6 +74,7 @@ export default function ContabilPage() {
           {abaAtiva === 'balancete' && <BalanceteTab empresaId={empresaIdAtual} periodo={periodo} />}
           {abaAtiva === 'dre' && <DRETab empresaId={empresaIdAtual} periodo={periodo} />}
           {abaAtiva === 'extrato' && <ImportarExtratoTab empresaId={empresaIdAtual} />}
+          {abaAtiva === 'contas_bancarias' && <ContasBancariasTab empresaId={empresaIdAtual} />}
           {abaAtiva === 'plano' && <PlanoContasTab empresaId={empresaIdAtual} />}
           {abaAtiva === 'regras' && <RegrasTab empresaId={empresaIdAtual} />}
           {abaAtiva === 'precificacao' && <PrecificacaoTab empresaId={empresaIdAtual} periodo={periodo} />}

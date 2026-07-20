@@ -38,6 +38,43 @@ export async function listarContasBanco(empresaId) {
   return data;
 }
 
+// Igual listarContasBanco, mas inclui as desativadas também — usada na
+// tela de gerenciamento (Contas Bancárias), senão uma conta desativada
+// some da lista pra sempre e não tem como reativar pela tela.
+export async function listarContasBancoGerenciamento(empresaId) {
+  const { data, error } = await supabase
+    .from('contas_contabeis')
+    .select('*')
+    .eq('empresa_id', empresaId)
+    .eq('aceita_lancamento', true)
+    .like('codigo', `${PREFIXO_DISPONIVEL}%`)
+    .order('codigo');
+  if (error) throw error;
+  return data;
+}
+
+// Sub-grupo "Bancos - conta movimento" dentro de Disponibilidades — onde
+// entram as contas correntes de banco de verdade (Caixa e Aplicações ficam
+// em outros sub-grupos do mesmo prefixo, ver PREFIXO_DISPONIVEL).
+const PREFIXO_BANCO_MOVIMENTO = '1.1.01.003';
+
+// Cria uma conta bancária nova pra empresa (ex: "Bradesco", "Sicoob Ag 1234
+// CC 56789") — fica disponível na hora no seletor "conta bancária do
+// extrato" da importação, que já lista tudo que vem de listarContasBanco.
+export async function criarContaBanco(empresaId, nome) {
+  const { count, error: errCount } = await supabase
+    .from('contas_contabeis')
+    .select('id', { count: 'exact', head: true })
+    .eq('empresa_id', empresaId)
+    .like('codigo', `${PREFIXO_BANCO_MOVIMENTO}%`);
+  if (errCount) throw errCount;
+  const codigo = `${PREFIXO_BANCO_MOVIMENTO}.${String((count ?? 0) + 1).padStart(3, '0')}`;
+  return criarConta({
+    empresa_id: empresaId, codigo, nome, tipo: 'ativo',
+    natureza: 'devedora', nivel: 5, aceita_lancamento: true,
+  });
+}
+
 // Lista plana (sem hierarquia) das contas de Receita e Despesa — é o que a
 // tela de Plano de Contas mostra agora, e o que alimenta os seletores de
 // classificação da importação de extrato e a DRE.
@@ -47,6 +84,20 @@ export async function listarContasReceitaDespesa(empresaId) {
     .select('*')
     .eq('empresa_id', empresaId)
     .eq('ativo', true)
+    .in('tipo', ['receita', 'despesa'])
+    .order('nome');
+  if (error) throw error;
+  return data;
+}
+
+// Igual listarContasReceitaDespesa, mas inclui as desativadas — usada na
+// tela de Plano de Contas (gerenciamento), senão uma conta desativada some
+// da lista pra sempre e não tem como reativar pela tela.
+export async function listarContasReceitaDespesaGerenciamento(empresaId) {
+  const { data, error } = await supabase
+    .from('contas_contabeis')
+    .select('*')
+    .eq('empresa_id', empresaId)
     .in('tipo', ['receita', 'despesa'])
     .order('nome');
   if (error) throw error;
