@@ -172,6 +172,22 @@ export async function atualizarConta(id, patch) {
   return data;
 }
 
+// Edição simples de nome/tipo pela tela de Plano de Contas ou pelo sidebar
+// de lançamentos — recalcula a natureza a partir do novo tipo (mesma regra
+// de criarContaQualquerTipo), pra não deixar tipo e natureza dessincronizados.
+export async function editarContaBasico(id, { nome, tipo }) {
+  return atualizarConta(id, { nome, tipo, natureza: NATUREZA_POR_TIPO[tipo] });
+}
+
+export async function contaTemLancamentos(id) {
+  const { count, error } = await supabase
+    .from('partidas_contabeis')
+    .select('id', { count: 'exact', head: true })
+    .eq('conta_id', id);
+  if (error) throw error;
+  return count > 0;
+}
+
 export async function atualizarContasEmLote(ids, patch) {
   const { data, error } = await supabase
     .from('contas_contabeis')
@@ -407,6 +423,57 @@ export async function excluirLancamentosEmLote(ids) {
   if (error) throw error;
 }
 
+// ---------- SOMAS POR HIERARQUIA (contas sintéticas x analíticas) ----------
+
+// Uma conta com filhas (via conta_pai_id — só as criadas pelo fluxo "criar
+// a partir de uma conta base" têm isso de verdade, ver criarContaFilha)
+// vira uma "sintética": a linha dela passa a mostrar a soma de tudo (ela +
+// filhas, recursivo), e as filhas continuam listadas logo abaixo,
+// indentadas, com seus valores próprios — servem pra detalhar o que compõe
+// a soma, não duplicam o total.
+// linhas: [{ conta, ...camposNumericos }]; campos: chaves numéricas a somar.
+export function comSomasDeFilhas(linhas, campos) {
+  const porId = new Map(linhas.map((l) => [l.conta.id, l]));
+  const filhosPorPai = new Map();
+  for (const l of linhas) {
+    const paiId = l.conta.conta_pai_id;
+    if (paiId && porId.has(paiId)) {
+      if (!filhosPorPai.has(paiId)) filhosPorPai.set(paiId, []);
+      filhosPorPai.get(paiId).push(l);
+    }
+  }
+
+  const cache = new Map();
+  function somaAgregada(l) {
+    if (cache.has(l.conta.id)) return cache.get(l.conta.id);
+    const filhos = filhosPorPai.get(l.conta.id) ?? [];
+    const total = {};
+    for (const campo of campos) total[campo] = l[campo] ?? 0;
+    for (const filho of filhos) {
+      const somaFilho = somaAgregada(filho);
+      for (const campo of campos) total[campo] += somaFilho[campo];
+    }
+    cache.set(l.conta.id, total);
+    return total;
+  }
+
+  function montar(l, nivel) {
+    const agregada = somaAgregada(l);
+    const filhos = (filhosPorPai.get(l.conta.id) ?? [])
+      .sort((a, b) => a.conta.codigo.localeCompare(b.conta.codigo, undefined, { numeric: true }));
+    return [
+      { ...l, ...agregada, nivelExibicao: nivel, temFilhas: filhos.length > 0 },
+      ...filhos.flatMap((f) => montar(f, nivel + 1)),
+    ];
+  }
+
+  const raizes = linhas
+    .filter((l) => !l.conta.conta_pai_id || !porId.has(l.conta.conta_pai_id))
+    .sort((a, b) => a.conta.codigo.localeCompare(b.conta.codigo, undefined, { numeric: true }));
+
+  return raizes.flatMap((l) => montar(l, 0));
+}
+
 // ---------- BALANCETE ----------
 
 // Retorna saldo por conta no período, já considerando a natureza da conta
@@ -543,16 +610,17 @@ export async function calcularDREPorConta(empresaId, { dataInicio, dataFim }) {
     movPorConta[m.conta_id].credito += Number(m.total_credito);
   }
 
-  const linhas = contas
-    .map((c) => {
-      const mov = movPorConta[c.id] || { debito: 0, credito: 0 };
-      const valor = c.natureza === 'credora' ? mov.credito - mov.debito : mov.debito - mov.credito;
-      return { conta: c, valor };
-    })
-    .filter((l) => l.valor !== 0);
+  // Não filtra valor!==0 aqui: uma conta-pai (sintética) pode não ter
+  // movimento próprio mas ter filhas com movimento — quem decide o que
+  // exibir é a agregação por hierarquia (comSomasDeFilhas), no chamador.
+  const linhas = contas.map((c) => {
+    const mov = movPorConta[c.id] || { debito: 0, credito: 0 };
+    const valor = c.natureza === 'credora' ? mov.credito - mov.debito : mov.debito - mov.credito;
+    return { conta: c, valor };
+  });
 
-  const receitas = linhas.filter((l) => l.conta.tipo === 'receita').sort((a, b) => b.valor - a.valor);
-  const despesas = linhas.filter((l) => l.conta.tipo === 'despesa').sort((a, b) => b.valor - a.valor);
+  const receitas = linhas.filter((l) => l.conta.tipo === 'receita');
+  const despesas = linhas.filter((l) => l.conta.tipo === 'despesa');
   const totalReceitas = receitas.reduce((s, l) => s + l.valor, 0);
   const totalDespesas = despesas.reduce((s, l) => s + l.valor, 0);
 

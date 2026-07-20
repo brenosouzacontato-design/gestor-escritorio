@@ -1,6 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { supabase } from '../../lib/supabase';
-import { calcularDREPorConta, calcularBalancete } from './contabilApi';
+import { calcularDREPorConta, calcularBalancete, comSomasDeFilhas } from './contabilApi';
+
+const CAMPOS_BALANCETE = ['saldoAnterior', 'debito', 'credito', 'saldoAtual'];
 
 function fmt(v) {
   return v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
@@ -68,8 +70,10 @@ export default function RelatorioCompartilhadoPage({ tipo, empresaId, dataInicio
           {!carregando && !erro && tipo === 'dre' && dre && (
             <>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 24 }}>
-                <GrupoDRE titulo="Receitas" total={dre.totalReceitas} linhas={dre.receitas} cor="var(--ok)" />
-                <GrupoDRE titulo="Despesas" total={dre.totalDespesas} linhas={dre.despesas} cor="var(--danger)" />
+                <GrupoDRE titulo="Receitas" total={dre.totalReceitas}
+                  linhas={comSomasDeFilhas(dre.receitas, ['valor']).filter((l) => l.valor !== 0)} cor="var(--ok)" />
+                <GrupoDRE titulo="Despesas" total={dre.totalDespesas}
+                  linhas={comSomasDeFilhas(dre.despesas, ['valor']).filter((l) => l.valor !== 0)} cor="var(--danger)" />
               </div>
               <div style={{ marginTop: 20, padding: '14px 18px', background: 'var(--bg)', border: '2px solid var(--navy)',
                 borderRadius: 10, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -94,15 +98,18 @@ export default function RelatorioCompartilhadoPage({ tipo, empresaId, dataInicio
               </thead>
               <tbody>
                 {ORDEM_TIPO_BALANCETE.map((t) => {
-                  const linhas = balancete.filter((l) => l.conta.tipo === t
-                    && (l.saldoAnterior !== 0 || l.debito !== 0 || l.credito !== 0 || l.saldoAtual !== 0));
+                  const doTipo = balancete.filter((l) => l.conta.tipo === t);
+                  const linhas = comSomasDeFilhas(doTipo, CAMPOS_BALANCETE)
+                    .filter((l) => l.saldoAnterior !== 0 || l.debito !== 0 || l.credito !== 0 || l.saldoAtual !== 0);
                   if (linhas.length === 0) return null;
                   return (
                     <React.Fragment key={t}>
                       <tr className="grupo-row"><td colSpan={5}>{LABEL_TIPO_BALANCETE[t]}</td></tr>
                       {linhas.map((l) => (
-                        <tr key={l.conta.id}>
-                          <td style={{ paddingLeft: 24 }}>{l.conta.codigo} - {l.conta.nome}</td>
+                        <tr key={l.conta.id} style={{ fontWeight: l.temFilhas ? 700 : 400 }}>
+                          <td style={{ paddingLeft: 24 + l.nivelExibicao * 18 }}>
+                            {l.nivelExibicao > 0 ? '↳ ' : ''}{l.conta.codigo} - {l.conta.nome}
+                          </td>
                           <td className="num">{fmt(l.saldoAnterior)}</td>
                           <td className="num">{fmt(l.debito)}</td>
                           <td className="num">{fmt(l.credito)}</td>
@@ -134,10 +141,13 @@ function GrupoDRE({ titulo, total, linhas, cor }) {
       </div>
       {linhas.length === 0 && <p style={{ color: 'var(--text3)', fontSize: '0.85rem' }}>Sem movimento no período.</p>}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-        {linhas.map(({ conta, valor }) => (
-          <div key={conta.id} style={{ display: 'flex', justifyContent: 'space-between', gap: 8, padding: '5px 2px', borderBottom: '1px solid var(--border)' }}>
-            <span style={{ fontSize: '0.85rem', color: 'var(--text2)' }}>{conta.nome}</span>
-            <span className="num" style={{ fontSize: '0.85rem', fontWeight: 500 }}>{fmt(valor)}</span>
+        {linhas.map(({ conta, valor, nivelExibicao, temFilhas }) => (
+          <div key={conta.id} style={{ display: 'flex', justifyContent: 'space-between', gap: 8, padding: '5px 2px',
+            paddingLeft: 2 + nivelExibicao * 16, borderBottom: '1px solid var(--border)' }}>
+            <span style={{ fontSize: '0.85rem', color: 'var(--text2)', fontWeight: temFilhas ? 700 : 400 }}>
+              {nivelExibicao > 0 ? '↳ ' : ''}{conta.nome}
+            </span>
+            <span className="num" style={{ fontSize: '0.85rem', fontWeight: temFilhas ? 700 : 500 }}>{fmt(valor)}</span>
           </div>
         ))}
       </div>

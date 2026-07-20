@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { calcularDREPorConta, listarLancamentosPorConta } from './contabilApi';
+import { calcularDREPorConta, listarLancamentosPorConta, comSomasDeFilhas } from './contabilApi';
 import ContaLancamentosSidebar from './ContaLancamentosSidebar';
 import CompartilharButton from './CompartilharButton';
 
@@ -47,6 +47,11 @@ export default function DRETab({ empresaId, periodo, empresaNome }) {
   if (erro) return <p style={{ color: 'var(--danger)' }}>{erro}</p>;
   if (!dre) return null;
 
+  // comSomasDeFilhas agrupa conta-pai (sintética, via conta_pai_id) com a
+  // soma dela + filhas; filhas seguem listadas indentadas com valor próprio.
+  const receitas = comSomasDeFilhas(dre.receitas, ['valor']).filter((l) => l.valor !== 0);
+  const despesas = comSomasDeFilhas(dre.despesas, ['valor']).filter((l) => l.valor !== 0);
+
   return (
     <div>
       <div style={{ maxWidth: 760, marginBottom: 12, display: 'flex', justifyContent: 'flex-end' }}>
@@ -54,8 +59,8 @@ export default function DRETab({ empresaId, periodo, empresaNome }) {
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 24, maxWidth: 760 }}>
-        <LinhaGrupo titulo="Receitas" total={dre.totalReceitas} linhas={dre.receitas} cor="var(--ok)" onClick={abrirConta} />
-        <LinhaGrupo titulo="Despesas" total={dre.totalDespesas} linhas={dre.despesas} cor="var(--danger)" onClick={abrirConta} />
+        <LinhaGrupo titulo="Receitas" total={dre.totalReceitas} linhas={receitas} cor="var(--ok)" onClick={abrirConta} />
+        <LinhaGrupo titulo="Despesas" total={dre.totalDespesas} linhas={despesas} cor="var(--danger)" onClick={abrirConta} />
       </div>
 
       <div style={{ maxWidth: 760, marginTop: 20, padding: '14px 18px', background: 'var(--surface)',
@@ -72,6 +77,12 @@ export default function DRETab({ empresaId, periodo, empresaNome }) {
           lancamentos={sidebar.lancamentos}
           carregando={sidebar.carregando}
           onClose={() => setSidebar(null)}
+          periodo={periodo}
+          empresaNome={empresaNome}
+          onContaAtualizada={(contaAtualizada) => {
+            setSidebar((prev) => (prev ? { ...prev, conta: { ...prev.conta, ...contaAtualizada } } : prev));
+            carregar();
+          }}
         />
       )}
     </div>
@@ -90,15 +101,18 @@ function LinhaGrupo({ titulo, total, linhas, cor, onClick }) {
       </div>
       {linhas.length === 0 && <p style={{ color: 'var(--text3)', fontSize: '0.85rem' }}>Sem movimento no período.</p>}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-        {linhas.map(({ conta, valor }) => (
+        {linhas.map(({ conta, valor, nivelExibicao, temFilhas }) => (
           <button key={conta.id} onClick={() => onClick(conta)}
             style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8,
               background: 'none', border: 'none', borderBottom: '1px solid var(--border)', padding: '7px 2px',
+              paddingLeft: 2 + nivelExibicao * 16,
               cursor: 'pointer', textAlign: 'left', width: '100%' }}
             onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--surface2)'; }}
             onMouseLeave={(e) => { e.currentTarget.style.background = 'none'; }}>
-            <span style={{ fontSize: '0.85rem', color: 'var(--text2)' }}>{conta.nome}</span>
-            <span className="num" style={{ fontSize: '0.85rem', color: 'var(--text1)', fontWeight: 500 }}>{fmt(valor)}</span>
+            <span style={{ fontSize: '0.85rem', color: 'var(--text2)', fontWeight: temFilhas ? 700 : 400 }}>
+              {nivelExibicao > 0 ? '↳ ' : ''}{conta.nome}
+            </span>
+            <span className="num" style={{ fontSize: '0.85rem', color: 'var(--text1)', fontWeight: temFilhas ? 700 : 500 }}>{fmt(valor)}</span>
           </button>
         ))}
       </div>

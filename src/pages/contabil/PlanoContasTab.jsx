@@ -1,7 +1,7 @@
-import React, { useEffect, useState, useCallback, useMemo } from 'react';
+import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import {
   listarContasTodasGerenciamento, criarContaQualquerTipo, criarContaFilha,
-  atualizarConta, excluirOuDesativarConta,
+  atualizarConta, excluirOuDesativarConta, editarContaBasico, contaTemLancamentos,
 } from './contabilApi';
 import ContaCombobox from './ContaCombobox';
 
@@ -34,6 +34,13 @@ export default function PlanoContasTab({ empresaId }) {
   const [tipo, setTipo] = useState('despesa');
   const [salvando, setSalvando] = useState(false);
   const [erro, setErro] = useState(null);
+  const nomeInputRef = useRef(null);
+
+  const [editandoId, setEditandoId] = useState(null);
+  const [editNome, setEditNome] = useState('');
+  const [editTipo, setEditTipo] = useState('despesa');
+  const [editSalvando, setEditSalvando] = useState(false);
+  const [editErro, setEditErro] = useState(null);
 
   const carregar = useCallback(async () => {
     setCarregando(true);
@@ -87,6 +94,45 @@ export default function PlanoContasTab({ empresaId }) {
     }
   }
 
+  function usarComoBase(conta) {
+    setContaBaseId(conta.id);
+    setNome('');
+    nomeInputRef.current?.focus();
+  }
+
+  function iniciarEdicao(conta) {
+    setEditandoId(conta.id);
+    setEditNome(conta.nome);
+    setEditTipo(conta.tipo);
+    setEditErro(null);
+  }
+
+  function cancelarEdicao() {
+    setEditandoId(null);
+    setEditErro(null);
+  }
+
+  async function salvarEdicao(conta) {
+    if (!editNome.trim()) return;
+    if (editTipo !== conta.tipo) {
+      const temLancamento = await contaTemLancamentos(conta.id);
+      if (temLancamento && !window.confirm(
+        `"${conta.nome}" já tem lançamento. Mudar o tipo pra "${TIPO_LABEL[editTipo]}" muda a natureza contábil e recalcula o sinal de todo o histórico dela no Balancete/DRE. Continuar?`
+      )) return;
+    }
+    setEditSalvando(true);
+    setEditErro(null);
+    try {
+      await editarContaBasico(conta.id, { nome: editNome.trim(), tipo: editTipo });
+      setEditandoId(null);
+      await carregar();
+    } catch (e) {
+      setEditErro(e.message);
+    } finally {
+      setEditSalvando(false);
+    }
+  }
+
   const contasFiltradas = contas
     .filter((c) => !filtro || c.nome.toLowerCase().includes(filtro.toLowerCase()))
     .sort((a, b) => a.codigo.localeCompare(b.codigo, undefined, { numeric: true }));
@@ -97,7 +143,7 @@ export default function PlanoContasTab({ empresaId }) {
         <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
           <ContaCombobox contas={contas} value={contaBaseId} onChange={setContaBaseId}
             placeholder="Conta base (opcional) — deixe em branco pra criar uma raiz nova" style={{ flex: '1 1 320px' }} />
-          <input placeholder="Nome da nova conta" value={nome}
+          <input ref={nomeInputRef} placeholder="Nome da nova conta" value={nome}
             onChange={(e) => setNome(e.target.value)} style={{ flex: '1 1 220px' }} required />
           {!contaBaseId && (
             <select value={tipo} onChange={(e) => setTipo(e.target.value)} style={{ width: 180 }}>
@@ -143,6 +189,39 @@ export default function PlanoContasTab({ empresaId }) {
               {contasFiltradas.map((c) => {
                 const cfg = TIPO_COLOR[c.tipo];
                 const pai = c.conta_pai_id ? contasPorId.get(c.conta_pai_id) : null;
+                const emEdicao = editandoId === c.id;
+
+                if (emEdicao) {
+                  return (
+                    <tr key={c.id} style={{ background: 'var(--surface2)' }}>
+                      <td style={{ whiteSpace: 'nowrap', fontSize: '0.8rem', color: 'var(--text2)' }}>{c.codigo}</td>
+                      <td colSpan={2}>
+                        <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+                          <input value={editNome} onChange={(e) => setEditNome(e.target.value)}
+                            style={{ flex: '1 1 180px', fontSize: '0.85rem' }} autoFocus />
+                          <select value={editTipo} onChange={(e) => setEditTipo(e.target.value)} style={{ width: 170 }}>
+                            <option value="despesa">Despesa</option>
+                            <option value="receita">Receita</option>
+                            <option value="custo">Custo</option>
+                            <option value="ativo">Ativo</option>
+                            <option value="passivo">Passivo</option>
+                            <option value="patrimonio_liquido">Patrimônio Líquido</option>
+                          </select>
+                        </div>
+                        {editErro && <p style={{ color: 'var(--danger)', fontSize: '0.75rem', marginTop: 4 }}>{editErro}</p>}
+                      </td>
+                      <td style={{ whiteSpace: 'nowrap' }}>
+                        <button className="btn-navy" onClick={() => salvarEdicao(c)} disabled={editSalvando} style={{ fontSize: '0.72rem' }}>
+                          {editSalvando ? 'Salvando...' : 'Salvar'}
+                        </button>
+                        <button className="btn-ghost" onClick={cancelarEdicao} style={{ fontSize: '0.72rem', marginLeft: 6 }}>
+                          Cancelar
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                }
+
                 return (
                   <tr key={c.id} style={{ opacity: c.ativo ? 1 : 0.5 }}>
                     <td style={{ whiteSpace: 'nowrap', fontSize: '0.8rem', color: 'var(--text2)' }}>{c.codigo}</td>
@@ -156,7 +235,13 @@ export default function PlanoContasTab({ empresaId }) {
                       </span>
                     </td>
                     <td style={{ whiteSpace: 'nowrap' }}>
-                      <button className="btn-ghost" onClick={() => alternarAtiva(c)} style={{ fontSize: '0.72rem' }}>
+                      <button className="btn-ghost" onClick={() => iniciarEdicao(c)} style={{ fontSize: '0.72rem' }}>
+                        Editar
+                      </button>
+                      <button className="btn-ghost" onClick={() => usarComoBase(c)} style={{ fontSize: '0.72rem', marginLeft: 6 }}>
+                        Nova a partir desta
+                      </button>
+                      <button className="btn-ghost" onClick={() => alternarAtiva(c)} style={{ fontSize: '0.72rem', marginLeft: 6 }}>
                         {c.ativo ? 'Desativar' : 'Ativar'}
                       </button>
                       <button className="btn-ghost" onClick={() => excluir(c)} style={{ fontSize: '0.72rem', marginLeft: 6 }}>

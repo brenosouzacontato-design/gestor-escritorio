@@ -1,7 +1,9 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { calcularBalancete, listarLancamentosPorConta } from './contabilApi';
+import { calcularBalancete, listarLancamentosPorConta, comSomasDeFilhas } from './contabilApi';
 import ContaLancamentosSidebar from './ContaLancamentosSidebar';
 import CompartilharButton from './CompartilharButton';
+
+const CAMPOS_BALANCETE = ['saldoAnterior', 'debito', 'credito', 'saldoAtual'];
 
 const LABEL_TIPO = {
   ativo: 'Ativo',
@@ -53,10 +55,15 @@ export default function BalanceteTab({ empresaId, periodo, empresaNome }) {
   if (carregando) return <p>Calculando balancete...</p>;
   if (erro) return <p style={{ color: 'var(--danger)' }}>{erro}</p>;
 
-  const porTipo = ORDEM_TIPO.map((tipo) => ({
-    tipo,
-    contas: linhas.filter((l) => l.conta.tipo === tipo && (l.saldoAnterior !== 0 || l.debito !== 0 || l.credito !== 0 || l.saldoAtual !== 0)),
-  })).filter((g) => g.contas.length > 0);
+  // comSomasDeFilhas agrupa a conta-pai (se tiver filhas via conta_pai_id —
+  // ver criarContaFilha) com a soma de tudo embaixo dela; filhas continuam
+  // listadas indentadas com o valor próprio delas.
+  const porTipo = ORDEM_TIPO.map((tipo) => {
+    const doTipo = linhas.filter((l) => l.conta.tipo === tipo);
+    const contas = comSomasDeFilhas(doTipo, CAMPOS_BALANCETE)
+      .filter((l) => l.saldoAnterior !== 0 || l.debito !== 0 || l.credito !== 0 || l.saldoAtual !== 0);
+    return { tipo, contas };
+  }).filter((g) => g.contas.length > 0);
 
   return (
     <>
@@ -81,10 +88,12 @@ export default function BalanceteTab({ empresaId, periodo, empresaNome }) {
                 <td colSpan={5}>{LABEL_TIPO[grupo.tipo]}</td>
               </tr>
               {grupo.contas.map((l) => (
-                <tr key={l.conta.id} onClick={() => abrirConta(l.conta)} style={{ cursor: 'pointer' }}
+                <tr key={l.conta.id} onClick={() => abrirConta(l.conta)} style={{ cursor: 'pointer', fontWeight: l.temFilhas ? 700 : 400 }}
                   onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--surface2)'; }}
                   onMouseLeave={(e) => { e.currentTarget.style.background = ''; }}>
-                  <td style={{ paddingLeft: 24 }}>{l.conta.codigo} - {l.conta.nome}</td>
+                  <td style={{ paddingLeft: 24 + l.nivelExibicao * 18 }}>
+                    {l.nivelExibicao > 0 ? '↳ ' : ''}{l.conta.codigo} - {l.conta.nome}
+                  </td>
                   <td className="num">{fmt(l.saldoAnterior)}</td>
                   <td className="num">{fmt(l.debito)}</td>
                   <td className="num">{fmt(l.credito)}</td>
@@ -105,6 +114,12 @@ export default function BalanceteTab({ empresaId, periodo, empresaNome }) {
           lancamentos={sidebar.lancamentos}
           carregando={sidebar.carregando}
           onClose={() => setSidebar(null)}
+          periodo={periodo}
+          empresaNome={empresaNome}
+          onContaAtualizada={(contaAtualizada) => {
+            setSidebar((prev) => (prev ? { ...prev, conta: { ...prev.conta, ...contaAtualizada } } : prev));
+            carregar();
+          }}
         />
       )}
     </>
