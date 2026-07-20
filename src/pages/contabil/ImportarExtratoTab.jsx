@@ -65,7 +65,11 @@ const PARTES_SIMULTANEAS = 3;
 
 async function extrairTransacoesComDivisao(arquivo) {
   const bytes = await arquivo.arrayBuffer();
-  const doc = await PDFDocument.load(bytes);
+  // muitos bancos exportam o extrato com permissões restritas (cópia/edição
+  // bloqueada) via senha de dono, sem senha de abertura — o pdf-lib recusa
+  // carregar esses arquivos por padrão mesmo sem pedir senha nenhuma, então
+  // ignora essa "criptografia" de permissão pra só ler o conteúdo
+  const doc = await PDFDocument.load(bytes, { ignoreEncryption: true });
   const totalPaginas = doc.getPageCount();
 
   if (totalPaginas <= PAGINAS_POR_PARTE) {
