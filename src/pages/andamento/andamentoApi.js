@@ -235,6 +235,36 @@ export async function gerarObrigacoesRecorrentesCompetencia(competencia, cliente
   return criadas;
 }
 
+// Cria uma obrigação (de um tipo_obrigacao específico, escolhido à mão) pra
+// vários clientes de uma vez, numa competência escolhida — o equivalente,
+// no modelo novo, do antigo "Lote" de Obrigacoes.jsx (que só cobre o
+// checklist legado). Diferente de gerarObrigacoesRecorrentesCompetencia:
+// aqui é uma escolha manual (quais empresas, qual tipo, qual competência),
+// não automática por periodicidade. Pula clientes que já têm essa
+// obrigação nessa competência (idempotente, mesmo índice parcial usado
+// pela geração automática).
+export async function criarObrigacoesLote({ clienteIds, tipoObrigacaoId, departamentoId, titulo, competencia }) {
+  if (!clienteIds || clienteIds.length === 0) return { criadas: 0, jaExistiam: 0 };
+
+  const { data: existentes, error: errExist } = await supabase
+    .from('obrigacoes')
+    .select('cliente_id')
+    .eq('tipo_obrigacao_id', tipoObrigacaoId)
+    .eq('competencia', competencia)
+    .in('cliente_id', clienteIds);
+  if (errExist) throw errExist;
+  const jaTem = new Set(existentes.map((o) => o.cliente_id));
+
+  const dataInicio = primeiroDiaCompetencia(competencia);
+  let criadas = 0;
+  for (const clienteId of clienteIds) {
+    if (jaTem.has(clienteId)) continue;
+    await criarObrigacaoComEtapas({ clienteId, tipoObrigacaoId, departamentoId, titulo, competencia, dataInicio });
+    criadas++;
+  }
+  return { criadas, jaExistiam: jaTem.size };
+}
+
 // Marca "entregue" / "a entregar" — independente do progresso das etapas
 // (o trabalho pode estar concluído mas ainda não ter sido entregue/
 // comunicado ao cliente).

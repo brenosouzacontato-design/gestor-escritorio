@@ -5,7 +5,7 @@ import { DeptChip, PriDot, fmtDate, isOverdue, useToast } from '../components/sh
 import { supabase } from '../lib/supabase'
 import {
   listarDepartamentos, criarDepartamento, listarTiposObrigacao, criarTipoObrigacaoComEtapas,
-  criarObrigacaoComEtapas, criarTarefasLote, gerarObrigacoesRecorrentesCompetencia,
+  criarObrigacaoComEtapas, criarTarefasLote, gerarObrigacoesRecorrentesCompetencia, criarObrigacoesLote,
 } from './andamento/andamentoApi'
 
 // Casamento histórico tipo-texto → departamento, só pra competências
@@ -109,7 +109,8 @@ export default function Empresas() {
   // Modal nova obrigação / nova tarefa / tarefas em lote
   const [showNovaObs,     setShowNovaObs]     = useState(false)
   const [showNovaTarefa,  setShowNovaTarefa]  = useState(false)
-  const [loteDept,         setLoteDept]       = useState(null) // dept aberto pro modal de lote
+  const [loteDept,         setLoteDept]       = useState(null) // dept aberto pro modal de tarefas em lote
+  const [showLoteObs,      setShowLoteObs]    = useState(false)
 
   const carregarDepartamentos = () => listarDepartamentos().then(setDepartamentos).catch(() => {})
   useEffect(() => { carregarDepartamentos() }, [])
@@ -229,9 +230,14 @@ export default function Empresas() {
         )}
         <div style={{ marginLeft:'auto', display:'flex', alignItems:'center', gap:8 }}>
           <button onClick={handleGerarCompetencia} disabled={gerando}
-            title="Gerar obrigações recorrentes desta competência"
+            title="Gerar obrigações recorrentes desta competência (automático, todas as empresas)"
             style={{ display:'flex', alignItems:'center', gap:5, background:'var(--surface2)', border:'1px solid #232840', borderRadius:8, padding:'5px 10px', fontSize:11, color:'var(--text2)', cursor:'pointer', fontWeight:500, opacity:gerando?.6:1 }}>
             <RefreshCwIcon size={12} /> {gerando ? 'Gerando...' : `Gerar ${compSel}`}
+          </button>
+          <button onClick={() => setShowLoteObs(true)}
+            title="Criar uma obrigação escolhida à mão pra várias empresas"
+            style={{ display:'flex', alignItems:'center', gap:5, background:'var(--surface2)', border:'1px solid #232840', borderRadius:8, padding:'5px 10px', fontSize:11, color:'var(--text2)', cursor:'pointer', fontWeight:500 }}>
+            <ZapIcon size={12} /> Obrigações em lote
           </button>
           <select value={compSel} onChange={e => setCompSel(e.target.value)}
             style={{ background:'var(--surface2)', border:'1px solid #232840', borderRadius:8, padding:'5px 8px', fontSize:11, color:'var(--text2)' }}>
@@ -570,6 +576,21 @@ export default function Empresas() {
           onSaved={async () => { setLoteDept(null); await fetchTarefas(); show?.('Tarefas criadas') }}
         />
       )}
+
+      {/* Modal obrigações em lote (escolha manual de empresas + tipo) */}
+      {showLoteObs && (
+        <ModalObrigacoesLote
+          departamentos={departamentos}
+          clientes={clientes}
+          competenciaInicial={compSel}
+          onClose={() => setShowLoteObs(false)}
+          onSaved={async (resultado) => {
+            setShowLoteObs(false)
+            await fetchObrigacoes()
+            show?.(`${resultado.criadas} criada${resultado.criadas!==1?'s':''}${resultado.jaExistiam ? `, ${resultado.jaExistiam} já existia${resultado.jaExistiam!==1?'m':''}` : ''}`)
+          }}
+        />
+      )}
     </div>
   )
 }
@@ -845,6 +866,154 @@ function ModalTarefasLote({ dept, clientes, onClose, onSaved }) {
           style={{ flex:1, background:'var(--surface2)', border:'1px solid #232840', borderRadius:8, padding:'9px', fontSize:12, color:'var(--text2)', cursor:'pointer' }}>Cancelar</button>
         <button onClick={handleSave} disabled={saving||!titulo.trim()||clientesSel.length===0}
           style={{ flex:1, background:'var(--accent)', border:'none', borderRadius:8, padding:'9px', fontSize:12, color:'#fff', fontWeight:500, cursor:'pointer', opacity:(saving||!titulo.trim()||clientesSel.length===0)?.6:1 }}>
+          {saving?'Criando...':`Criar para ${clientesSel.length} empresa${clientesSel.length!==1?'s':''}`}
+        </button>
+      </div>
+    </ModalBase>
+  )
+}
+
+// ── Modal Obrigações em Lote (escolha manual de empresas + tipo) ────────────
+function ModalObrigacoesLote({ departamentos, clientes, competenciaInicial, onClose, onSaved }) {
+  const [departamentoId, setDepartamentoId] = useState(departamentos[0]?.id || '')
+  const [tipos,          setTipos]          = useState([])
+  const [tipoId,         setTipoId]         = useState('')
+  const [criandoNovo,    setCriandoNovo]    = useState(false)
+  const [novoNome,       setNovoNome]       = useState('')
+  const [novaPeriodicidade, setNovaPeriodicidade] = useState('mensal')
+  const [recorrente,     setRecorrente]     = useState(true)
+  const [prazoDias,      setPrazoDias]      = useState(15)
+  const [competencia,    setCompetencia]    = useState(competenciaInicial)
+  const [busca,          setBusca]          = useState('')
+  const [clientesSel,    setClientesSel]    = useState([])
+  const [saving,         setSaving]         = useState(false)
+  const [erro,           setErro]           = useState(null)
+
+  useEffect(() => {
+    if (!departamentoId) { setTipos([]); setTipoId(''); return }
+    listarTiposObrigacao(departamentoId).then(setTipos).catch(() => {})
+  }, [departamentoId])
+
+  const clientesFiltrados = clientes.filter(c => c.nome.toLowerCase().includes(busca.toLowerCase()))
+  const toggleCliente = id => setClientesSel(s => s.includes(id) ? s.filter(x => x !== id) : [...s, id])
+
+  const podeSalvar = departamentoId && clientesSel.length > 0 && (criandoNovo ? novoNome.trim() : tipoId)
+
+  const handleSave = async () => {
+    if (!podeSalvar) return
+    setSaving(true)
+    setErro(null)
+    try {
+      let tipoObrigacaoId = tipoId
+      let nomeTipo = tipos.find(t => t.id === tipoId)?.nome
+      if (criandoNovo) {
+        const novoTipo = await criarTipoObrigacaoComEtapas({
+          departamentoId, nome: novoNome.trim(), recorrente,
+          periodicidade: recorrente ? novaPeriodicidade : null,
+          etapas: [{ nome: 'Concluir', prazoDias: Number(prazoDias) || 0 }],
+        })
+        tipoObrigacaoId = novoTipo.id
+        nomeTipo = novoTipo.nome
+      }
+      const resultado = await criarObrigacoesLote({
+        clienteIds: clientesSel, tipoObrigacaoId, departamentoId,
+        titulo: nomeTipo || 'Obrigação', competencia,
+      })
+      onSaved(resultado)
+    } catch (e) { setErro(e.message) }
+    setSaving(false)
+  }
+
+  return (
+    <ModalBase onClose={onClose} titulo="Obrigações em lote">
+      <div style={{ display:'flex', flexDirection:'column', gap:12 }}>
+        <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10 }}>
+          <div>
+            <label style={{ fontSize:11, color:'var(--text2)', display:'block', marginBottom:4 }}>Módulo</label>
+            <select value={departamentoId} onChange={e => { setDepartamentoId(e.target.value); setTipoId('') }}
+              style={{ width:'100%', background:'var(--surface2)', border:'1px solid var(--border)', borderRadius:8, padding:'8px 10px', fontSize:13, color:'var(--text1)', outline:'none' }}>
+              {departamentos.map(d => <option key={d.id} value={d.id}>{d.icone} {d.nome}</option>)}
+            </select>
+          </div>
+          <div>
+            <label style={{ fontSize:11, color:'var(--text2)', display:'block', marginBottom:4 }}>Competência</label>
+            <input value={competencia} onChange={e => setCompetencia(e.target.value)} placeholder="MM/AAAA"
+              style={{ width:'100%', background:'var(--surface2)', border:'1px solid var(--border)', borderRadius:8, padding:'8px 10px', fontSize:13, color:'var(--text1)', outline:'none' }} />
+          </div>
+        </div>
+
+        {!criandoNovo && (
+          <div>
+            <label style={{ fontSize:11, color:'var(--text2)', display:'block', marginBottom:4 }}>Tipo de obrigação</label>
+            <select value={tipoId} onChange={e => setTipoId(e.target.value)} disabled={!departamentoId}
+              style={{ width:'100%', background:'var(--surface2)', border:'1px solid var(--border)', borderRadius:8, padding:'8px 10px', fontSize:13, color:'var(--text1)', outline:'none' }}>
+              <option value="">{tipos.length ? 'Selecione...' : 'Nenhum tipo cadastrado ainda'}</option>
+              {tipos.map(t => <option key={t.id} value={t.id}>{t.nome}{t.periodicidade ? ` (${t.periodicidade})` : ''}</option>)}
+            </select>
+            <button onClick={() => setCriandoNovo(true)}
+              style={{ marginTop:8, background:'none', border:'1px dashed var(--border2)', borderRadius:6, padding:'5px 10px', fontSize:11, color:'var(--text3)', cursor:'pointer' }}>
+              <PlusIcon size={11} style={{ verticalAlign:-1, marginRight:4 }} /> Criar tipo novo
+            </button>
+          </div>
+        )}
+
+        {criandoNovo && (
+          <div style={{ background:'var(--surface2)', border:'1px dashed var(--border2)', borderRadius:8, padding:10 }}>
+            <input value={novoNome} onChange={e => setNovoNome(e.target.value)} placeholder="Nome do tipo (ex: PGDAS)"
+              style={{ width:'100%', background:'var(--surface)', border:'1px solid var(--border)', borderRadius:8, padding:'7px 9px', fontSize:12, color:'var(--text1)', outline:'none', marginBottom:8 }} />
+            <label style={{ display:'flex', alignItems:'center', gap:6, fontSize:11, color:'var(--text2)', marginBottom:8 }}>
+              <input type="checkbox" checked={recorrente} onChange={e => setRecorrente(e.target.checked)} /> Recorrente
+            </label>
+            {recorrente && (
+              <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:8, marginBottom:4 }}>
+                <div>
+                  <label style={{ fontSize:10, color:'var(--text3)', display:'block', marginBottom:3 }}>Periodicidade</label>
+                  <select value={novaPeriodicidade} onChange={e => setNovaPeriodicidade(e.target.value)}
+                    style={{ width:'100%', background:'var(--surface)', border:'1px solid var(--border)', borderRadius:8, padding:'6px 8px', fontSize:12, color:'var(--text1)', outline:'none' }}>
+                    <option value="mensal">Mensal</option>
+                    <option value="trimestral">Trimestral</option>
+                    <option value="semestral">Semestral</option>
+                    <option value="anual">Anual</option>
+                  </select>
+                </div>
+                <div>
+                  <label style={{ fontSize:10, color:'var(--text3)', display:'block', marginBottom:3 }}>Vencimento (dias)</label>
+                  <input type="number" value={prazoDias} onChange={e => setPrazoDias(e.target.value)}
+                    style={{ width:'100%', background:'var(--surface)', border:'1px solid var(--border)', borderRadius:8, padding:'6px 8px', fontSize:12, color:'var(--text1)', outline:'none' }} />
+                </div>
+              </div>
+            )}
+            <button onClick={() => setCriandoNovo(false)}
+              style={{ marginTop:6, background:'none', border:'none', fontSize:11, color:'var(--text3)', cursor:'pointer' }}>← usar tipo existente</button>
+          </div>
+        )}
+
+        <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+          <span style={{ fontSize:11, fontWeight:700, color:'var(--text3)', textTransform:'uppercase', letterSpacing:'.5px' }}>
+            Empresas ({clientesSel.length}/{clientes.length})
+          </span>
+          <button onClick={() => setClientesSel(clientesSel.length === clientes.length ? [] : clientes.map(c => c.id))}
+            style={{ background:'none', border:'none', fontSize:11, color:'var(--accent)', cursor:'pointer' }}>
+            {clientesSel.length === clientes.length ? 'Desmarcar' : 'Todos'}
+          </button>
+        </div>
+        <input placeholder="Buscar..." value={busca} onChange={e => setBusca(e.target.value)}
+          style={{ background:'var(--surface2)', border:'1px solid var(--border)', borderRadius:8, padding:'7px 9px', fontSize:12, color:'var(--text1)', outline:'none' }} />
+        <div style={{ maxHeight:180, overflowY:'auto', border:'1px solid var(--border)', borderRadius:8 }}>
+          {clientesFiltrados.map(c => (
+            <label key={c.id} style={{ display:'flex', alignItems:'center', gap:8, padding:'7px 12px', cursor:'pointer', borderBottom:'1px solid var(--border)', background: clientesSel.includes(c.id) ? 'var(--accent-dim)' : 'transparent' }}>
+              <input type="checkbox" checked={clientesSel.includes(c.id)} onChange={() => toggleCliente(c.id)} />
+              <span style={{ fontSize:12, flex:1, color:'var(--text1)' }}>{c.nome}</span>
+            </label>
+          ))}
+        </div>
+        {erro && <p style={{ color:'var(--danger)', fontSize:12, margin:0 }}>{erro}</p>}
+      </div>
+      <div style={{ display:'flex', gap:8, marginTop:16 }}>
+        <button onClick={onClose}
+          style={{ flex:1, background:'var(--surface2)', border:'1px solid #232840', borderRadius:8, padding:'9px', fontSize:12, color:'var(--text2)', cursor:'pointer' }}>Cancelar</button>
+        <button onClick={handleSave} disabled={saving||!podeSalvar}
+          style={{ flex:1, background:'var(--accent)', border:'none', borderRadius:8, padding:'9px', fontSize:12, color:'#fff', fontWeight:500, cursor:'pointer', opacity:(saving||!podeSalvar)?.6:1 }}>
           {saving?'Criando...':`Criar para ${clientesSel.length} empresa${clientesSel.length!==1?'s':''}`}
         </button>
       </div>
