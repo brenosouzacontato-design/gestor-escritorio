@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useStore } from '../../store';
+import EmpresaCombobox from '../../components/EmpresaCombobox';
 import './contabil.css';
 import PlanoContasTab from './PlanoContasTab';
 import LancamentosTab from './LancamentosTab';
@@ -41,11 +42,7 @@ export default function ContabilPage() {
   return (
     <div className="contabil-modulo">
       <div className="contabil-toolbar">
-        <select value={empresaIdAtual ?? ''} onChange={(e) => setEmpresaId(e.target.value)}>
-          {clientes.map((c) => (
-            <option key={c.id} value={c.id}>{c.nome}</option>
-          ))}
-        </select>
+        <EmpresaCombobox empresas={clientes} value={empresaIdAtual} onChange={setEmpresaId} style={{ minWidth: 260 }} />
         <input type="date" value={dataInicio} onChange={(e) => setDataInicio(e.target.value)} />
         <span style={{ color: 'var(--text2)' }}>até</span>
         <input type="date" value={dataFim} onChange={(e) => setDataFim(e.target.value)} />

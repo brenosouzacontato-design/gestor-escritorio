@@ -1,14 +1,16 @@
 import { useState, useEffect, useMemo } from 'react'
-import { PlusIcon, SettingsIcon, TruckIcon, XIcon, SaveIcon, Trash2Icon } from 'lucide-react'
+import { PlusIcon, SettingsIcon, TruckIcon, XIcon, SaveIcon, Trash2Icon, CalendarIcon, CheckSquareIcon } from 'lucide-react'
 import { useStore } from '../../store'
 import {
   listarDepartamentos, listarTiposObrigacao, listarTodosTiposObrigacaoComEtapas,
   criarObrigacaoComEtapas, criarTipoObrigacaoComEtapas, adicionarEtapaTemplate,
   excluirEtapaTemplate, arquivarTipoObrigacao,
   listarObrigacoesComEtapas, marcarEntregaObrigacao, statusVisualEtapa, etapaAtrasada,
+  listarTarefasComData,
 } from './andamentoApi'
 import DepartamentoTimeline from './DepartamentoTimeline'
 import HistoricoObrigacaoModal from './HistoricoObrigacaoModal'
+import { isOverdue, fmtDate, PriDot } from '../../components/shared'
 
 const AVATAR_COLORS = [
   ['#1a2e22','#34d399'],['#2a1f10','#fbbf24'],['#18203a','var(--accent)'],
@@ -24,6 +26,7 @@ export default function AndamentoPage({ onOpenTarefa }) {
 
   const [departamentos, setDepartamentos] = useState([])
   const [obrigacoes,    setObrigacoes]    = useState([])
+  const [tarefasData,   setTarefasData]   = useState([])
   const [carregando,    setCarregando]    = useState(true)
   const [busca,         setBusca]         = useState('')
   const [filtroDept,    setFiltroDept]    = useState('todos')
@@ -36,8 +39,12 @@ export default function AndamentoPage({ onOpenTarefa }) {
   const carregarObrigacoes = async () => {
     if (clientes.length === 0) return
     setCarregando(true)
-    try { setObrigacoes(await listarObrigacoesComEtapas(clientes.map(c => c.id))) }
-    finally { setCarregando(false) }
+    try {
+      const clienteIds = clientes.map(c => c.id)
+      const [obs, tars] = await Promise.all([listarObrigacoesComEtapas(clienteIds), listarTarefasComData(clienteIds)])
+      setObrigacoes(obs)
+      setTarefasData(tars)
+    } finally { setCarregando(false) }
   }
 
   useEffect(() => { listarDepartamentos().then(setDepartamentos).catch(() => {}) }, [])
@@ -65,6 +72,28 @@ export default function AndamentoPage({ onOpenTarefa }) {
       .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
   }, [obrigacoes, filtroDept, filtroStatus, busca, clientePorId])
 
+  // Tarefas com módulo + vencimento, na mesma tela — controle de datas
+  // unificado com os processos acima. "entregues"/"atrasadas" aqui viram
+  // "concluída"/"vencida e não concluída", o equivalente mais próximo pra
+  // uma tarefa (que não tem etapas).
+  const listaTarefas = useMemo(() => {
+    const termo = busca.toLowerCase()
+    return tarefasData
+      .filter(t => {
+        if (filtroDept !== 'todos' && t.departamento_id !== filtroDept) return false
+        if (filtroStatus === 'ativas'    && t.concluida) return false
+        if (filtroStatus === 'entregues' && !t.concluida) return false
+        if (filtroStatus === 'atrasadas' && !(isOverdue(t.vencimento) && !t.concluida)) return false
+        if (termo) {
+          const cli = clientePorId[t.cliente_id]
+          const alvo = `${cli?.nome || ''} ${t.titulo || ''}`.toLowerCase()
+          if (!alvo.includes(termo)) return false
+        }
+        return true
+      })
+      .sort((a, b) => new Date(a.vencimento) - new Date(b.vencimento))
+  }, [tarefasData, filtroDept, filtroStatus, busca, clientePorId])
+
   const handleToggleEntrega = async (o) => {
     await marcarEntregaObrigacao(o.id, !o.entregue)
     await carregarObrigacoes()
@@ -77,7 +106,7 @@ export default function AndamentoPage({ onOpenTarefa }) {
       <div style={{ display:'flex', alignItems:'center', gap:8, padding:'10px 16px', background:'var(--surface)', borderBottom:'1px solid var(--border)', flexShrink:0, flexWrap:'wrap', rowGap:6 }}>
         <div>
           <h2 style={{ fontSize:14, fontWeight:500, color:'var(--text1)', margin:0 }}>Andamento das Atividades</h2>
-          <p style={{ fontSize:10, color:'var(--text3)', margin:0 }}>Da execução à entrega · {lista.length} atividades</p>
+          <p style={{ fontSize:10, color:'var(--text3)', margin:0 }}>Da execução à entrega · {lista.length + listaTarefas.length} itens</p>
         </div>
         <div style={{ display:'flex', alignItems:'center', gap:5, background:'var(--surface2)', border:'1px solid var(--border2)', borderRadius:8, padding:'5px 9px', marginLeft:12 }}>
           <span style={{ fontSize:12, color:'var(--text3)' }}>🔍</span>
@@ -124,11 +153,40 @@ export default function AndamentoPage({ onOpenTarefa }) {
 
       {/* Lista de atividades */}
       <div style={{ flex:1, overflow:'auto', padding:'4px 16px 16px' }}>
-        {!carregando && lista.length === 0 && (
+        {!carregando && lista.length === 0 && listaTarefas.length === 0 && (
           <div style={{ padding:40, textAlign:'center', color:'var(--text3)', fontSize:13 }}>
             Nenhuma atividade encontrada. Clique em "Nova atividade" pra começar.
           </div>
         )}
+        {listaTarefas.map(t => {
+          const cli = clientePorId[t.cliente_id]
+          const dept = deptPorId[t.departamento_id]
+          const overdue = isOverdue(t.vencimento) && !t.concluida
+          return (
+            <div key={`tarefa-${t.id}`} style={{ background:'var(--surface)', borderRadius:12, padding:'14px 20px', marginBottom:14, boxShadow:'var(--shadow-sm)', display:'flex', alignItems:'center', gap:14 }}>
+              <div style={{ width:34, height:34, borderRadius:9, background:'var(--surface2)', color:'var(--accent)', flexShrink:0,
+                display:'flex', alignItems:'center', justifyContent:'center' }}>
+                <CheckSquareIcon size={16} />
+              </div>
+              <div style={{ flex:1, minWidth:0 }}>
+                <div style={{ fontSize:13.5, fontWeight:700, color:'var(--text1)', display:'flex', alignItems:'center', gap:6 }}>
+                  <span style={{ fontSize:9, fontWeight:700, color:'var(--text3)', background:'var(--surface2)', borderRadius:99, padding:'1px 7px', textTransform:'uppercase', letterSpacing:.4 }}>Tarefa</span>
+                  <PriDot pri={t.prioridade} /> {t.titulo}
+                </div>
+                <div style={{ fontSize:11.5, color:'var(--text3)', marginTop:2, display:'flex', gap:6, alignItems:'center', flexWrap:'wrap' }}>
+                  {cli?.nome || '—'}
+                  {dept && <span style={{ background:'var(--accent-dim)', color:'var(--accent)', borderRadius:99, padding:'0 6px', fontSize:10, fontWeight:600 }}>{dept.icone} {dept.nome}</span>}
+                  <span style={{ color: overdue ? 'var(--danger)' : 'var(--text3)', display:'flex', alignItems:'center', gap:3 }}>
+                    <CalendarIcon size={11} />{overdue?'⚠ ':''}{fmtDate(t.vencimento)}
+                  </span>
+                </div>
+              </div>
+              {t.concluida && (
+                <span style={{ fontSize:11, fontWeight:700, color:'var(--ok)', background:'var(--ok-dim)', borderRadius:99, padding:'4px 10px' }}>Concluída</span>
+              )}
+            </div>
+          )
+        })}
         {lista.map((o, i) => {
           const cli = clientePorId[o.cliente_id]
           const dept = deptPorId[o.departamento_id]

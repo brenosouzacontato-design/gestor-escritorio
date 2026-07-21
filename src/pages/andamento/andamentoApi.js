@@ -61,10 +61,13 @@ export async function listarTodosTiposObrigacaoComEtapas() {
 
 // Cria um tipo de obrigação novo já com as etapas do template (nome +
 // prazo em dias a partir do início de cada etapa, na ordem informada).
-export async function criarTipoObrigacaoComEtapas({ departamentoId, nome, descricao, recorrente, etapas }) {
+export async function criarTipoObrigacaoComEtapas({ departamentoId, nome, descricao, recorrente, periodicidade, etapas }) {
   const { data: tipo, error: errTipo } = await supabase
     .from('tipos_obrigacao')
-    .insert({ departamento_id: departamentoId, nome, descricao: descricao || null, recorrente: !!recorrente })
+    .insert({
+      departamento_id: departamentoId, nome, descricao: descricao || null,
+      recorrente: !!recorrente, periodicidade: recorrente ? (periodicidade || 'mensal') : null,
+    })
     .select()
     .single();
   if (errTipo) throw errTipo;
@@ -125,17 +128,17 @@ function somarDias(dataISO, dias) {
 // pendente. "tipo"/"competencia" da tabela legada são NOT NULL sem default
 // (constraint que só existe em produção, não documentada em .sql) — nenhum
 // dos dois é usado pelo fluxo novo, só preenchidos pra satisfazer a tabela.
-export async function criarObrigacaoComEtapas({ clienteId, tipoObrigacaoId, departamentoId, titulo, responsavel, taskId }) {
+export async function criarObrigacaoComEtapas({ clienteId, tipoObrigacaoId, departamentoId, titulo, responsavel, taskId, competencia, dataInicio: dataInicioParam }) {
   const template = await listarEtapasTemplate(tipoObrigacaoId);
   if (template.length === 0) throw new Error('Esse tipo de obrigação não tem etapas cadastradas.');
 
-  const dataInicio = hoje();
+  const dataInicio = dataInicioParam || hoje();
   const { data: obrigacao, error: errObrig } = await supabase
     .from('obrigacoes')
     .insert({
       cliente_id: clienteId,
       tipo: titulo,
-      competencia: competenciaAtual(),
+      competencia: competencia || competenciaAtual(),
       tipo_obrigacao_id: tipoObrigacaoId,
       departamento_id: departamentoId,
       titulo,
@@ -169,6 +172,67 @@ export async function criarObrigacaoComEtapas({ clienteId, tipoObrigacaoId, depa
   });
 
   return obrigacao;
+}
+
+const JANELA_MESES_POR_PERIODICIDADE = { mensal: 1, trimestral: 3, semestral: 6, anual: 12 };
+
+function competenciaParaOrdinal(comp) {
+  const [mes, ano] = comp.split('/').map(Number);
+  return ano * 12 + (mes - 1);
+}
+
+function primeiroDiaCompetencia(comp) {
+  const [mes, ano] = comp.split('/').map(Number);
+  return `${ano}-${String(mes).padStart(2, '0')}-01`;
+}
+
+// Gera obrigações recorrentes (tipos_obrigacao com recorrente=true) pra uma
+// competência (MM/YYYY), uma por cliente ativo — reaproveita o mesmo
+// snapshot de etapas de criarObrigacaoComEtapas. "mensal" gera toda
+// competência; periodicidades maiores pulam quando já existe uma instância
+// desse tipo dentro da janela esperada (trimestral=3 meses, semestral=6,
+// anual=12) — não tenta alinhar em trimestres de calendário fixo, só evita
+// gerar de novo perto demais da última. Idempotente: rodar de novo pra
+// mesma competência não recria o que já existe.
+export async function gerarObrigacoesRecorrentesCompetencia(competencia, clienteIds) {
+  if (!clienteIds || clienteIds.length === 0) return 0;
+
+  const { data: tipos, error: errTipos } = await supabase
+    .from('tipos_obrigacao')
+    .select('*')
+    .eq('recorrente', true)
+    .eq('ativo', true);
+  if (errTipos) throw errTipos;
+  if (tipos.length === 0) return 0;
+
+  const { data: existentes, error: errExist } = await supabase
+    .from('obrigacoes')
+    .select('cliente_id, tipo_obrigacao_id, competencia')
+    .in('tipo_obrigacao_id', tipos.map((t) => t.id))
+    .in('cliente_id', clienteIds);
+  if (errExist) throw errExist;
+
+  const alvo = competenciaParaOrdinal(competencia);
+  const dataInicio = primeiroDiaCompetencia(competencia);
+  let criadas = 0;
+
+  for (const tipo of tipos) {
+    const janela = JANELA_MESES_POR_PERIODICIDADE[tipo.periodicidade] ?? 1;
+    for (const clienteId of clienteIds) {
+      const jaTemNaJanela = existentes.some((o) => {
+        if (o.tipo_obrigacao_id !== tipo.id || o.cliente_id !== clienteId) return false;
+        const diff = alvo - competenciaParaOrdinal(o.competencia);
+        return diff >= 0 && diff < janela;
+      });
+      if (jaTemNaJanela) continue;
+      await criarObrigacaoComEtapas({
+        clienteId, tipoObrigacaoId: tipo.id, departamentoId: tipo.departamento_id,
+        titulo: tipo.nome, competencia, dataInicio,
+      });
+      criadas++;
+    }
+  }
+  return criadas;
 }
 
 // Marca "entregue" / "a entregar" — independente do progresso das etapas
@@ -276,4 +340,44 @@ export function statusVisualEtapa(etapa) {
   if (etapaAtrasada(etapa)) return 'atrasado';
   if (etapa.status === 'em_andamento') return 'em_andamento';
   return 'pendente';
+}
+
+// ---------- TAREFAS POR MÓDULO ----------
+
+// Cria uma tarefa idêntica pra cada cliente selecionado, já com
+// departamento_id (módulo) preenchido — usado pelo "+ Tarefas em lote" de
+// cada coluna em Empresas.jsx. A coluna texto legada "departamento" fica
+// null aqui (não é lida por nada além do Kanban/DeptChip visual, que já
+// tolera ausência); quem precisar do módulo daqui pra frente usa
+// departamento_id.
+export async function criarTarefasLote({ clienteIds, departamentoId, titulo, prioridade, vencimento, observacao }) {
+  if (!clienteIds || clienteIds.length === 0) return [];
+  const linhas = clienteIds.map((clienteId) => ({
+    cliente_id: clienteId,
+    departamento_id: departamentoId,
+    departamento: 'geral',
+    titulo,
+    prioridade: prioridade || 'normal',
+    vencimento: vencimento || null,
+    observacao: observacao || null,
+    concluida: false,
+  }));
+  const { data, error } = await supabase.from('tarefas').insert(linhas).select();
+  if (error) throw error;
+  return data;
+}
+
+// Tarefas com módulo + vencimento definidos, pra alimentar a aba Andamento
+// ao lado dos processos com etapas (mesmo conjunto de clientes).
+export async function listarTarefasComData(clienteIds) {
+  if (!clienteIds || clienteIds.length === 0) return [];
+  const { data, error } = await supabase
+    .from('tarefas')
+    .select('*')
+    .in('cliente_id', clienteIds)
+    .not('departamento_id', 'is', null)
+    .not('vencimento', 'is', null)
+    .order('vencimento');
+  if (error) throw error;
+  return data;
 }

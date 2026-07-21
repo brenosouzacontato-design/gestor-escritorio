@@ -1,20 +1,26 @@
-import { useState, useMemo } from 'react'
-import { PlusIcon, XIcon, CheckCircleIcon, ClockIcon, AlertCircleIcon, MinusCircleIcon, ChevronRightIcon, CalendarIcon, CheckIcon, SaveIcon } from 'lucide-react'
+import { useState, useMemo, useEffect } from 'react'
+import { PlusIcon, XIcon, CheckCircleIcon, ClockIcon, AlertCircleIcon, MinusCircleIcon, ChevronRightIcon, CalendarIcon, CheckIcon, SaveIcon, ZapIcon, RefreshCwIcon } from 'lucide-react'
 import { useStore } from '../store'
-import { DeptChip, PriDot, fmtDate, isOverdue } from '../components/shared'
+import { DeptChip, PriDot, fmtDate, isOverdue, useToast } from '../components/shared'
 import { supabase } from '../lib/supabase'
+import {
+  listarDepartamentos, criarDepartamento, listarTiposObrigacao, criarTipoObrigacaoComEtapas,
+  criarObrigacaoComEtapas, criarTarefasLote, gerarObrigacoesRecorrentesCompetencia,
+} from './andamento/andamentoApi'
 
-const DEPTS_DEFAULT = ['Fiscal', 'Folha', 'Societário', 'Contábil', 'Escritório']
-
-const DEPT_OBS_MAP = {
-  'Fiscal':     ['PGDAS', 'DCTFWeb', 'NFS-e'],
-  'Folha':      ['eSocial', 'Folha'],
-  'Societário': ['Documentos'],
-  'Contábil':   ['Extrato Bancário'],
-  'Escritório': ['Parcelamento'],
+// Casamento histórico tipo-texto → departamento, só pra competências
+// anteriores à adoção do modelo novo (departamento_id em obrigacoes, ver
+// supabase-schema-andamento-recorrencia.sql). "Legalização" é o nome novo
+// de "Societário" (mesmo registro, renomeado no banco), por isso a chave
+// aqui já é o nome atual. "Escritório" não entra mais — deixou de ser
+// módulo; "Parcelamento" (única obrigação que só existia lá) vira tarefa
+// avulsa sem módulo se precisar.
+const LEGACY_DEPT_TIPOS = {
+  'Fiscal':      ['PGDAS', 'DCTFWeb', 'NFS-e'],
+  'Folha':       ['eSocial', 'Folha'],
+  'Legalização': ['Documentos'],
+  'Contábil':    ['Extrato Bancário'],
 }
-
-const ALL_TIPOS = ['PGDAS','DCTFWeb','NFS-e','eSocial','Folha','Documentos','Extrato Bancário','Parcelamento']
 
 const STATUS_OBS       = ['pendente','concluido','nao_aplica','vencido']
 const STATUS_OBS_LABEL = { pendente:'Pendente', concluido:'Concluído', nao_aplica:'N/A', vencido:'Vencido' }
@@ -25,17 +31,18 @@ const STATUS_OBS_COLOR = {
   vencido:    { bg:'rgba(168,48,48,.12)',   color:'#A83030' },
 }
 
-const DEPTS_LABELS = ['fiscal','folha','societario','contabil','escritorio','geral','pessoal']
-
 function compMesAtras(n) {
   const d = new Date(); d.setMonth(d.getMonth() - n)
   return String(d.getMonth()+1).padStart(2,'0') + '/' + d.getFullYear()
 }
 
+// dept: linha da tabela "departamentos" ({id, nome, icone}). Une as duas
+// fontes de obrigação pra essa competência — modelo novo (departamento_id)
+// e modelo legado (tipo-texto, só existe em competências antigas).
 function getStatusDept(obsEmp, tarefasEmp, dept) {
-  const tipos = DEPT_OBS_MAP[dept] || []
-  const obs   = obsEmp.filter(o => tipos.includes(o.tipo))
-  const tasks = tarefasEmp.filter(t => (t.departamento||'').toLowerCase() === dept.toLowerCase() && !t.concluida)
+  const tiposLegado = LEGACY_DEPT_TIPOS[dept.nome] || []
+  const obs   = obsEmp.filter(o => o.departamento_id === dept.id || tiposLegado.includes(o.tipo))
+  const tasks = tarefasEmp.filter(t => (t.departamento_id === dept.id || (t.departamento||'').toLowerCase() === dept.nome.toLowerCase()) && !t.concluida)
   if (obs.length === 0 && tasks.length === 0) return { s:'empty', pct:0, val:'—' }
   const ok   = obs.filter(o => o.status==='concluido'||o.status==='nao_aplica').length
   const venc = obs.filter(o => o.status==='vencido').length
@@ -85,22 +92,27 @@ export default function Empresas() {
   const tarefas         = useStore(s => s.tarefas)
   const fetchObrigacoes = useStore(s => s.fetchObrigacoes)
   const fetchTarefas    = useStore(s => s.fetchTarefas)
-  const addTarefa       = useStore(s => s.addTarefa)
+  const { show }        = useToast()
 
   const [compSel,     setCompSel]     = useState(compMesAtras(1))
   const [busca,       setBusca]       = useState('')
   const [filtro,      setFiltro]      = useState('todos')
   const [carteira,    setCarteira]    = useState('todas')
-  const [depts,       setDepts]       = useState(DEPTS_DEFAULT)
+  const [departamentos,setDepartamentos] = useState([])
   const [showAddDept, setShowAddDept] = useState(false)
   const [novoDept,    setNovoDept]    = useState('')
   const [drawer,      setDrawer]      = useState(null) // {c, dept}
   const [drawerTab,   setDrawerTab]   = useState('obrig')
   const [updatingId,  setUpdatingId]  = useState(null)
   const [nomeColW,    setNomeColW]    = useState(200)
-  // Modal nova obrigação / nova tarefa
-  const [showNovaObs,   setShowNovaObs]   = useState(false)
-  const [showNovaTarefa,setShowNovaTarefa] = useState(false)
+  const [gerando,     setGerando]     = useState(false)
+  // Modal nova obrigação / nova tarefa / tarefas em lote
+  const [showNovaObs,     setShowNovaObs]     = useState(false)
+  const [showNovaTarefa,  setShowNovaTarefa]  = useState(false)
+  const [loteDept,         setLoteDept]       = useState(null) // dept aberto pro modal de lote
+
+  const carregarDepartamentos = () => listarDepartamentos().then(setDepartamentos).catch(() => {})
+  useEffect(() => { carregarDepartamentos() }, [])
 
   const carteiras = useMemo(() => {
     const s = new Set(clientes.map(c => c.carteira).filter(Boolean))
@@ -119,7 +131,7 @@ export default function Empresas() {
         const obsEmp   = obrigacoes.filter(o => o.cliente_id===c.id && o.competencia===compSel)
         const tasksEmp = tarefas.filter(t => t.cliente_id===c.id)
         const deptData = {}
-        depts.forEach(d => { deptData[d] = getStatusDept(obsEmp, tasksEmp, d) })
+        departamentos.forEach(d => { deptData[d.id] = getStatusDept(obsEmp, tasksEmp, d) })
         const hasDanger = Object.values(deptData).some(d => d.s==='danger')
         const hasPend   = Object.values(deptData).some(d => d.s==='warn')
         const allOk     = Object.values(deptData).every(d => d.s==='ok'||d.s==='na'||d.s==='empty')
@@ -131,17 +143,20 @@ export default function Empresas() {
         if (filtro==='ok')        return r.allOk
         return true
       })
-  }, [clientes, obrigacoes, tarefas, compSel, busca, depts, filtro, carteira])
+  }, [clientes, obrigacoes, tarefas, compSel, busca, departamentos, filtro, carteira])
 
   // Drawer: leitura direta do store (sem useMemo) para refletir mudanças imediatas
   const drawerObs = !drawer ? [] : obrigacoes.filter(o => {
-    const tipos = drawer.dept ? (DEPT_OBS_MAP[drawer.dept]||[]) : Object.values(DEPT_OBS_MAP).flat()
-    return o.cliente_id===drawer.c.id && o.competencia===compSel && tipos.includes(o.tipo)
+    if (o.cliente_id !== drawer.c.id || o.competencia !== compSel) return false
+    if (!drawer.dept) return true
+    const tiposLegado = LEGACY_DEPT_TIPOS[drawer.dept.nome] || []
+    return o.departamento_id === drawer.dept.id || tiposLegado.includes(o.tipo)
   })
-  const drawerTasks = !drawer ? [] : tarefas.filter(t =>
-    t.cliente_id===drawer.c.id &&
-    (drawer.dept ? (t.departamento||'').toLowerCase()===drawer.dept.toLowerCase() : true)
-  )
+  const drawerTasks = !drawer ? [] : tarefas.filter(t => {
+    if (t.cliente_id !== drawer.c.id) return false
+    if (!drawer.dept) return true
+    return t.departamento_id === drawer.dept.id || (t.departamento||'').toLowerCase() === drawer.dept.nome.toLowerCase()
+  })
 
   const openDrawer = (c, dept) => { setDrawer({c, dept}); setDrawerTab('obrig') }
 
@@ -171,10 +186,25 @@ export default function Empresas() {
     setUpdatingId(null)
   }
 
-  const handleAddDept = () => {
-    const d = novoDept.trim()
-    if (d && !depts.includes(d)) setDepts(p => [...p, d])
+  const handleAddDept = async () => {
+    const nome = novoDept.trim()
+    if (!nome) return
+    try {
+      await criarDepartamento(nome)
+      await carregarDepartamentos()
+      show?.(`Módulo "${nome}" criado`)
+    } catch (e) { show?.('Erro: ' + e.message) }
     setNovoDept(''); setShowAddDept(false)
+  }
+
+  const handleGerarCompetencia = async () => {
+    setGerando(true)
+    try {
+      const n = await gerarObrigacoesRecorrentesCompetencia(compSel, clientes.map(c => c.id))
+      await fetchObrigacoes()
+      show?.(n > 0 ? `${n} obrigação${n!==1?'ões':''} gerada${n!==1?'s':''} para ${compSel}` : `Nada novo pra gerar em ${compSel}`)
+    } catch (e) { show?.('Erro: ' + e.message) }
+    setGerando(false)
   }
 
   return (
@@ -184,7 +214,7 @@ export default function Empresas() {
       <div style={{ display:'flex', alignItems:'center', gap:8, padding:'10px 16px', background:'var(--surface)', borderBottom:'1px solid var(--border)', flexShrink:0, flexWrap:'wrap', rowGap:6 }}>
         <div>
           <h2 style={{ fontSize:14, fontWeight:500, color:'var(--text1)', margin:0 }}>Empresas</h2>
-          <p style={{ fontSize:10, color:'var(--text3)', margin:0 }}>Status por departamento · {rows.length} empresas</p>
+          <p style={{ fontSize:10, color:'var(--text3)', margin:0 }}>Status por módulo · {rows.length} empresas</p>
         </div>
         <div style={{ display:'flex', alignItems:'center', gap:5, background:'var(--surface2)', border:'1px solid #232840', borderRadius:8, padding:'5px 9px', marginLeft:12 }}>
           <span style={{ fontSize:12, color:'var(--text3)' }}>🔍</span>
@@ -197,7 +227,12 @@ export default function Empresas() {
             {carteiras.map(c => <option key={c} value={c}>{c==='todas'?'Todas as carteiras':c}</option>)}
           </select>
         )}
-        <div style={{ marginLeft:'auto' }}>
+        <div style={{ marginLeft:'auto', display:'flex', alignItems:'center', gap:8 }}>
+          <button onClick={handleGerarCompetencia} disabled={gerando}
+            title="Gerar obrigações recorrentes desta competência"
+            style={{ display:'flex', alignItems:'center', gap:5, background:'var(--surface2)', border:'1px solid #232840', borderRadius:8, padding:'5px 10px', fontSize:11, color:'var(--text2)', cursor:'pointer', fontWeight:500, opacity:gerando?.6:1 }}>
+            <RefreshCwIcon size={12} /> {gerando ? 'Gerando...' : `Gerar ${compSel}`}
+          </button>
           <select value={compSel} onChange={e => setCompSel(e.target.value)}
             style={{ background:'var(--surface2)', border:'1px solid #232840', borderRadius:8, padding:'5px 8px', fontSize:11, color:'var(--text2)' }}>
             {[0,1,2,3].map(i => { const c=compMesAtras(i); return <option key={c} value={c}>{i===0?`Atual (${c})`:i===1?`Anterior (${c})`:c}</option> })}
@@ -222,12 +257,12 @@ export default function Empresas() {
         {/* Scroll container — sticky funciona aqui */}
         <div style={{ flex:1, overflow:'auto', padding:'12px 16px' }}>
           <table style={{ width:'100%', borderCollapse:'collapse', tableLayout:'fixed',
-            minWidth: nomeColW + 120 + depts.length*120 + 40,
+            minWidth: nomeColW + 120 + departamentos.length*120 + 40,
             background:'var(--surface)' }}>
             <colgroup>
               <col style={{ width:nomeColW }} />
               <col style={{ width:120 }} /> {/* Resumo */}
-              {depts.map(d => <col key={d} style={{ width:120 }} />)}
+              {departamentos.map(d => <col key={d.id} style={{ width:120 }} />)}
               <col style={{ width:38 }} />
             </colgroup>
 
@@ -247,22 +282,21 @@ export default function Empresas() {
                   <div>Resumo</div>
                   <div style={{ fontSize:10, color:'#6B80A8', marginTop:2, fontWeight:400 }}>geral</div>
                 </th>
-                {depts.map(d => {
-                  const icons = { 'Fiscal':'🧾','Folha':'👥','Societário':'💼','Contábil':'🧮','Escritório':'🏠' }
-                  return (
-                    <th key={d} style={{ padding:'12px 8px', textAlign:'center', fontWeight:600, fontSize:12,
-                      color:'#8fadd4', textTransform:'uppercase', letterSpacing:.5,
-                      borderBottom:'2px solid #243660', borderRight:'1px solid #243660' }}>
-                      <div style={{ fontSize:18, marginBottom:4 }}>{icons[d]||'📋'}</div>
-                      <div>{d}</div>
-                      <div style={{ fontSize:10, color:'#6B80A8', marginTop:2, fontWeight:400 }}>
-                        {DEPT_OBS_MAP[d]?.length||0} obrig.
-                      </div>
-                    </th>
-                  )
-                })}
+                {departamentos.map(d => (
+                  <th key={d.id} style={{ padding:'12px 8px', textAlign:'center', fontWeight:600, fontSize:12,
+                    color:'#8fadd4', textTransform:'uppercase', letterSpacing:.5,
+                    borderBottom:'2px solid #243660', borderRight:'1px solid #243660' }}>
+                    <div style={{ fontSize:18, marginBottom:4 }}>{d.icone||'📋'}</div>
+                    <div>{d.nome}</div>
+                    <button onClick={() => setLoteDept(d)} title={`Tarefas em lote — ${d.nome}`}
+                      style={{ marginTop:4, background:'none', border:'1px dashed #3b5280', borderRadius:4,
+                        padding:'1px 6px', fontSize:9, color:'#6B80A8', cursor:'pointer', fontWeight:400 }}>
+                      <ZapIcon size={9} style={{ verticalAlign:-1, marginRight:2 }} />lote
+                    </button>
+                  </th>
+                ))}
                 <th style={{ padding:'12px 4px', textAlign:'center', borderBottom:'2px solid #243660' }}>
-                  <button onClick={() => setShowAddDept(true)}
+                  <button onClick={() => setShowAddDept(true)} title="Novo módulo"
                     style={{ background:'none', border:'1px dashed #3b5280', borderRadius:4, width:22, height:22,
                       color:'#6B80A8', cursor:'pointer', display:'inline-flex', alignItems:'center', justifyContent:'center' }}>
                     <PlusIcon size={12} />
@@ -273,7 +307,7 @@ export default function Empresas() {
 
             <tbody>
               {rows.length === 0 && (
-                <tr><td colSpan={depts.length+3} style={{ padding:40, textAlign:'center', color:'var(--text3)', fontSize:13 }}>
+                <tr><td colSpan={departamentos.length+3} style={{ padding:40, textAlign:'center', color:'var(--text3)', fontSize:13 }}>
                   Nenhuma empresa encontrada
                 </td></tr>
               )}
@@ -322,10 +356,10 @@ export default function Empresas() {
                       <DeptPill data={resumo} onClick={() => openDrawer(c, null)} />
                     </td>
 
-                    {/* Departamentos */}
-                    {depts.map(d => (
-                      <td key={d} style={{ padding:'6px 4px', textAlign:'center', borderRight:'1px solid var(--border)' }}>
-                        <DeptPill data={deptData[d]} onClick={() => openDrawer(c, d)} />
+                    {/* Módulos */}
+                    {departamentos.map(d => (
+                      <td key={d.id} style={{ padding:'6px 4px', textAlign:'center', borderRight:'1px solid var(--border)' }}>
+                        <DeptPill data={deptData[d.id]} onClick={() => openDrawer(c, d)} />
                       </td>
                     ))}
 
@@ -339,7 +373,7 @@ export default function Empresas() {
 
             <tfoot style={{ position:'sticky', bottom:0, zIndex:4 }}>
               <tr style={{ background:'var(--surface2)', borderTop:'1px solid var(--border)' }}>
-                <td colSpan={depts.length+3} style={{ padding:'7px 14px' }}>
+                <td colSpan={departamentos.length+3} style={{ padding:'7px 14px' }}>
                   <div style={{ display:'flex', justifyContent:'space-between' }}>
                     <span style={{ fontSize:11, color:'var(--text3)' }}>{rows.length} empresas</span>
                     <span style={{ fontSize:11, color:'var(--accent)' }}>{compSel}</span>
@@ -366,7 +400,7 @@ export default function Empresas() {
                   <div style={{ fontSize:13, fontWeight:500, color:'#fff', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>
                     {drawer.c.nome}
                   </div>
-                  <div style={{ fontSize:10, color:'#8fadd4', marginTop:2 }}>{drawer.dept||'Todos os departamentos'} · {compSel}</div>
+                  <div style={{ fontSize:10, color:'#8fadd4', marginTop:2 }}>{drawer.dept?.nome||'Todos os módulos'} · {compSel}</div>
                 </div>
                 <button onClick={() => setDrawer(null)}
                   style={{ background:'rgba(255,255,255,.1)', border:'1px solid rgba(255,255,255,.15)', borderRadius:6, width:24, height:24,
@@ -401,7 +435,7 @@ export default function Empresas() {
                     return (
                       <div key={o.id} style={{ background:'var(--surface)', border:'1px solid var(--border)', borderRadius:8, padding:'10px 12px' }}>
                         <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:6, marginBottom: o.vencimento ? 6 : 0 }}>
-                          <span style={{ fontSize:12, fontWeight:500, color:'var(--text1)' }}>{o.tipo}</span>
+                          <span style={{ fontSize:12, fontWeight:500, color:'var(--text1)' }}>{o.titulo || o.tipo}</span>
                           <select
                             value={o.status || 'pendente'}
                             disabled={busy}
@@ -484,16 +518,16 @@ export default function Empresas() {
         )}
       </div>
 
-      {/* Modal add departamento */}
+      {/* Modal novo módulo (departamento) */}
       {showAddDept && (
         <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,.6)', zIndex:1000, display:'flex', alignItems:'center', justifyContent:'center' }}
           onClick={() => setShowAddDept(false)}>
           <div style={{ background:'var(--surface)', border:'1px solid var(--border)', borderRadius:12, padding:20, width:300 }}
             onClick={e => e.stopPropagation()}>
-            <div style={{ fontSize:13, fontWeight:500, color:'var(--text1)', marginBottom:12 }}>🏢 Novo departamento</div>
+            <div style={{ fontSize:13, fontWeight:500, color:'var(--text1)', marginBottom:12 }}>🏢 Novo módulo</div>
             <input value={novoDept} onChange={e => setNovoDept(e.target.value)}
               onKeyDown={e => e.key==='Enter' && handleAddDept()} autoFocus
-              placeholder="Ex: Pessoal, Fiscal Estadual..."
+              placeholder="Ex: Trabalhista, Pessoal..."
               style={{ width:'100%', background:'var(--surface2)', border:'1px solid var(--border)', borderRadius:8, padding:'8px 10px', fontSize:13, color:'var(--text1)', marginBottom:12, outline:'none' }} />
             <div style={{ display:'flex', gap:8 }}>
               <button onClick={() => setShowAddDept(false)}
@@ -505,11 +539,12 @@ export default function Empresas() {
         </div>
       )}
 
-      {/* Modal nova obrigação */}
+      {/* Modal nova obrigação (modelo novo: departamentos/tipos_obrigacao) */}
       {showNovaObs && drawer && (
         <NovaObrigacaoModal
           cliente={drawer.c}
           dept={drawer.dept}
+          departamentos={departamentos}
           competencia={compSel}
           onClose={() => setShowNovaObs(false)}
           onSaved={async () => { setShowNovaObs(false); await fetchObrigacoes() }}
@@ -525,59 +560,130 @@ export default function Empresas() {
           onSaved={async () => { setShowNovaTarefa(false); await fetchTarefas() }}
         />
       )}
+
+      {/* Modal tarefas em lote por módulo */}
+      {loteDept && (
+        <ModalTarefasLote
+          dept={loteDept}
+          clientes={clientes}
+          onClose={() => setLoteDept(null)}
+          onSaved={async () => { setLoteDept(null); await fetchTarefas(); show?.('Tarefas criadas') }}
+        />
+      )}
     </div>
   )
 }
 
-// ── Modal Nova Obrigação ─────────────────────────────────────────────────────
-function NovaObrigacaoModal({ cliente, dept, competencia, onClose, onSaved }) {
-  const tiposDisponiveis = dept ? (DEPT_OBS_MAP[dept] || ALL_TIPOS) : ALL_TIPOS
-  const [tipo,       setTipo]       = useState(tiposDisponiveis[0] || '')
-  const [status,     setStatus]     = useState('pendente')
-  const [vencimento, setVencimento] = useState('')
-  const [saving,     setSaving]     = useState(false)
+// ── Modal Nova Obrigação (modelo novo) ───────────────────────────────────────
+function NovaObrigacaoModal({ cliente, dept, departamentos, competencia, onClose, onSaved }) {
+  const [departamentoId, setDepartamentoId] = useState(dept?.id || departamentos[0]?.id || '')
+  const [tipos,          setTipos]          = useState([])
+  const [tipoId,         setTipoId]         = useState('')
+  const [criandoNovo,    setCriandoNovo]    = useState(false)
+  const [novoNome,       setNovoNome]       = useState('')
+  const [novaPeriodicidade, setNovaPeriodicidade] = useState('mensal')
+  const [recorrente,     setRecorrente]     = useState(true)
+  const [prazoDias,      setPrazoDias]      = useState(15)
+  const [saving,         setSaving]         = useState(false)
+  const [erro,           setErro]           = useState(null)
+
+  useEffect(() => {
+    if (!departamentoId) { setTipos([]); setTipoId(''); return }
+    listarTiposObrigacao(departamentoId).then(setTipos).catch(() => {})
+  }, [departamentoId])
+
+  const podeSalvar = departamentoId && (criandoNovo ? novoNome.trim() : tipoId)
 
   const handleSave = async () => {
-    if (!tipo) return
+    if (!podeSalvar) return
     setSaving(true)
-    await supabase.from('obrigacoes').upsert({
-      cliente_id: cliente.id, tipo, status, competencia,
-      vencimento: vencimento || null,
-      updated_at: new Date().toISOString(),
-    }, { onConflict: 'cliente_id,tipo,competencia' })
+    setErro(null)
+    try {
+      let tipoObrigacaoId = tipoId
+      let nomeTipo = tipos.find(t => t.id === tipoId)?.nome
+      if (criandoNovo) {
+        const novoTipo = await criarTipoObrigacaoComEtapas({
+          departamentoId, nome: novoNome.trim(), recorrente,
+          periodicidade: recorrente ? novaPeriodicidade : null,
+          etapas: [{ nome: 'Concluir', prazoDias: Number(prazoDias) || 0 }],
+        })
+        tipoObrigacaoId = novoTipo.id
+        nomeTipo = novoTipo.nome
+      }
+      await criarObrigacaoComEtapas({
+        clienteId: cliente.id, tipoObrigacaoId, departamentoId,
+        titulo: nomeTipo || 'Obrigação', competencia,
+      })
+      onSaved()
+    } catch (e) { setErro(e.message) }
     setSaving(false)
-    onSaved()
   }
 
   return (
     <ModalBase onClose={onClose} titulo={`Nova obrigação — ${cliente.nome.split(' ')[0]}`}>
       <div style={{ display:'flex', flexDirection:'column', gap:12 }}>
         <div>
-          <label style={{ fontSize:11, color:'var(--text2)', display:'block', marginBottom:4 }}>Tipo</label>
-          <select value={tipo} onChange={e => setTipo(e.target.value)}
+          <label style={{ fontSize:11, color:'var(--text2)', display:'block', marginBottom:4 }}>Módulo</label>
+          <select value={departamentoId} onChange={e => setDepartamentoId(e.target.value)}
             style={{ width:'100%', background:'var(--surface2)', border:'1px solid var(--border)', borderRadius:8, padding:'8px 10px', fontSize:13, color:'var(--text1)', outline:'none' }}>
-            {tiposDisponiveis.map(t => <option key={t} value={t}>{t}</option>)}
+            {departamentos.map(d => <option key={d.id} value={d.id}>{d.icone} {d.nome}</option>)}
           </select>
         </div>
-        <div>
-          <label style={{ fontSize:11, color:'var(--text2)', display:'block', marginBottom:4 }}>Status inicial</label>
-          <select value={status} onChange={e => setStatus(e.target.value)}
-            style={{ width:'100%', background:'var(--surface2)', border:'1px solid var(--border)', borderRadius:8, padding:'8px 10px', fontSize:13, color:'var(--text1)', outline:'none' }}>
-            {STATUS_OBS.map(s => <option key={s} value={s}>{STATUS_OBS_LABEL[s]}</option>)}
-          </select>
-        </div>
-        <div>
-          <label style={{ fontSize:11, color:'var(--text2)', display:'block', marginBottom:4 }}>Vencimento</label>
-          <input type="date" value={vencimento} onChange={e => setVencimento(e.target.value)}
-            style={{ width:'100%', background:'var(--surface2)', border:'1px solid var(--border)', borderRadius:8, padding:'8px 10px', fontSize:13, color:'var(--text1)', outline:'none' }} />
-        </div>
+
+        {!criandoNovo && (
+          <div>
+            <label style={{ fontSize:11, color:'var(--text2)', display:'block', marginBottom:4 }}>Tipo de obrigação</label>
+            <select value={tipoId} onChange={e => setTipoId(e.target.value)} disabled={!departamentoId}
+              style={{ width:'100%', background:'var(--surface2)', border:'1px solid var(--border)', borderRadius:8, padding:'8px 10px', fontSize:13, color:'var(--text1)', outline:'none' }}>
+              <option value="">{tipos.length ? 'Selecione...' : 'Nenhum tipo cadastrado ainda'}</option>
+              {tipos.map(t => <option key={t.id} value={t.id}>{t.nome}{t.periodicidade ? ` (${t.periodicidade})` : ''}</option>)}
+            </select>
+            <button onClick={() => setCriandoNovo(true)}
+              style={{ marginTop:8, background:'none', border:'1px dashed var(--border2)', borderRadius:6, padding:'5px 10px', fontSize:11, color:'var(--text3)', cursor:'pointer' }}>
+              <PlusIcon size={11} style={{ verticalAlign:-1, marginRight:4 }} /> Criar tipo novo
+            </button>
+          </div>
+        )}
+
+        {criandoNovo && (
+          <div style={{ background:'var(--surface2)', border:'1px dashed var(--border2)', borderRadius:8, padding:10 }}>
+            <input value={novoNome} onChange={e => setNovoNome(e.target.value)} placeholder="Nome do tipo (ex: PGDAS)"
+              style={{ width:'100%', background:'var(--surface)', border:'1px solid var(--border)', borderRadius:8, padding:'7px 9px', fontSize:12, color:'var(--text1)', outline:'none', marginBottom:8 }} />
+            <label style={{ display:'flex', alignItems:'center', gap:6, fontSize:11, color:'var(--text2)', marginBottom:8 }}>
+              <input type="checkbox" checked={recorrente} onChange={e => setRecorrente(e.target.checked)} /> Recorrente
+            </label>
+            {recorrente && (
+              <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:8, marginBottom:4 }}>
+                <div>
+                  <label style={{ fontSize:10, color:'var(--text3)', display:'block', marginBottom:3 }}>Periodicidade</label>
+                  <select value={novaPeriodicidade} onChange={e => setNovaPeriodicidade(e.target.value)}
+                    style={{ width:'100%', background:'var(--surface)', border:'1px solid var(--border)', borderRadius:8, padding:'6px 8px', fontSize:12, color:'var(--text1)', outline:'none' }}>
+                    <option value="mensal">Mensal</option>
+                    <option value="trimestral">Trimestral</option>
+                    <option value="semestral">Semestral</option>
+                    <option value="anual">Anual</option>
+                  </select>
+                </div>
+                <div>
+                  <label style={{ fontSize:10, color:'var(--text3)', display:'block', marginBottom:3 }}>Vencimento (dias)</label>
+                  <input type="number" value={prazoDias} onChange={e => setPrazoDias(e.target.value)}
+                    style={{ width:'100%', background:'var(--surface)', border:'1px solid var(--border)', borderRadius:8, padding:'6px 8px', fontSize:12, color:'var(--text1)', outline:'none' }} />
+                </div>
+              </div>
+            )}
+            <button onClick={() => setCriandoNovo(false)}
+              style={{ marginTop:6, background:'none', border:'none', fontSize:11, color:'var(--text3)', cursor:'pointer' }}>← usar tipo existente</button>
+          </div>
+        )}
+
         <div style={{ fontSize:10, color:'var(--text3)' }}>Competência: <strong style={{ color:'var(--text2)' }}>{competencia}</strong></div>
+        {erro && <p style={{ color:'var(--danger)', fontSize:12, margin:0 }}>{erro}</p>}
       </div>
       <div style={{ display:'flex', gap:8, marginTop:16 }}>
         <button onClick={onClose}
           style={{ flex:1, background:'var(--surface2)', border:'1px solid #232840', borderRadius:8, padding:'9px', fontSize:12, color:'var(--text2)', cursor:'pointer' }}>Cancelar</button>
-        <button onClick={handleSave} disabled={saving||!tipo}
-          style={{ flex:1, background:'var(--accent)', border:'none', borderRadius:8, padding:'9px', fontSize:12, color:'#fff', fontWeight:500, cursor:'pointer', opacity:saving?.6:1 }}>
+        <button onClick={handleSave} disabled={saving||!podeSalvar}
+          style={{ flex:1, background:'var(--accent)', border:'none', borderRadius:8, padding:'9px', fontSize:12, color:'#fff', fontWeight:500, cursor:'pointer', opacity:(saving||!podeSalvar)?.6:1 }}>
           <SaveIcon size={13} style={{ marginRight:5, verticalAlign:-2 }} />
           {saving?'Salvando...':'Salvar'}
         </button>
@@ -589,7 +695,7 @@ function NovaObrigacaoModal({ cliente, dept, competencia, onClose, onSaved }) {
 // ── Modal Nova Tarefa ────────────────────────────────────────────────────────
 function NovaTarefaModal({ cliente, dept, onClose, onSaved }) {
   const [titulo,       setTitulo]       = useState('')
-  const [departamento, setDepartamento] = useState(dept?.toLowerCase() || 'geral')
+  const [departamento, setDepartamento] = useState(dept?.nome?.toLowerCase() || 'geral')
   const [prioridade,   setPrioridade]   = useState('normal')
   const [vencimento,   setVencimento]   = useState('')
   const [observacao,   setObservacao]   = useState('')
@@ -599,7 +705,7 @@ function NovaTarefaModal({ cliente, dept, onClose, onSaved }) {
     if (!titulo.trim()) return
     setSaving(true)
     await supabase.from('tarefas').insert({
-      titulo: titulo.trim(), departamento, prioridade,
+      titulo: titulo.trim(), departamento, departamento_id: dept?.id || null, prioridade,
       vencimento: vencimento || null, observacao: observacao || null,
       cliente_id: cliente.id, concluida: false,
       updated_at: new Date().toISOString(),
@@ -655,6 +761,91 @@ function NovaTarefaModal({ cliente, dept, onClose, onSaved }) {
           style={{ flex:1, background:'var(--accent)', border:'none', borderRadius:8, padding:'9px', fontSize:12, color:'#fff', fontWeight:500, cursor:'pointer', opacity:(saving||!titulo.trim())?.6:1 }}>
           <SaveIcon size={13} style={{ marginRight:5, verticalAlign:-2 }} />
           {saving?'Salvando...':'Criar tarefa'}
+        </button>
+      </div>
+    </ModalBase>
+  )
+}
+
+// ── Modal Tarefas em Lote (por módulo) ───────────────────────────────────────
+function ModalTarefasLote({ dept, clientes, onClose, onSaved }) {
+  const [titulo,       setTitulo]       = useState('')
+  const [prioridade,   setPrioridade]   = useState('normal')
+  const [vencimento,   setVencimento]   = useState('')
+  const [busca,        setBusca]        = useState('')
+  const [clientesSel,  setClientesSel]  = useState([])
+  const [saving,       setSaving]       = useState(false)
+  const [erro,         setErro]         = useState(null)
+
+  const clientesFiltrados = clientes.filter(c => c.nome.toLowerCase().includes(busca.toLowerCase()))
+  const toggleCliente = id => setClientesSel(s => s.includes(id) ? s.filter(x => x !== id) : [...s, id])
+
+  const handleSave = async () => {
+    if (!titulo.trim() || clientesSel.length === 0) return
+    setSaving(true)
+    setErro(null)
+    try {
+      await criarTarefasLote({
+        clienteIds: clientesSel, departamentoId: dept.id,
+        titulo: titulo.trim(), prioridade, vencimento: vencimento || null,
+      })
+      onSaved()
+    } catch (e) { setErro(e.message) }
+    setSaving(false)
+  }
+
+  return (
+    <ModalBase onClose={onClose} titulo={`Tarefas em lote — ${dept.icone||''} ${dept.nome}`}>
+      <div style={{ display:'flex', flexDirection:'column', gap:12 }}>
+        <div>
+          <label style={{ fontSize:11, color:'var(--text2)', display:'block', marginBottom:4 }}>Título *</label>
+          <input value={titulo} onChange={e => setTitulo(e.target.value)} autoFocus
+            placeholder="Ex: Solicitar documentos do mês"
+            style={{ width:'100%', background:'var(--surface2)', border:'1px solid var(--border)', borderRadius:8, padding:'8px 10px', fontSize:13, color:'var(--text1)', outline:'none' }} />
+        </div>
+        <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10 }}>
+          <div>
+            <label style={{ fontSize:11, color:'var(--text2)', display:'block', marginBottom:4 }}>Prioridade</label>
+            <select value={prioridade} onChange={e => setPrioridade(e.target.value)}
+              style={{ width:'100%', background:'var(--surface2)', border:'1px solid var(--border)', borderRadius:8, padding:'8px 10px', fontSize:13, color:'var(--text1)', outline:'none' }}>
+              <option value="normal">Normal</option>
+              <option value="alta">Alta</option>
+            </select>
+          </div>
+          <div>
+            <label style={{ fontSize:11, color:'var(--text2)', display:'block', marginBottom:4 }}>Vencimento</label>
+            <input type="date" value={vencimento} onChange={e => setVencimento(e.target.value)}
+              style={{ width:'100%', background:'var(--surface2)', border:'1px solid var(--border)', borderRadius:8, padding:'8px 10px', fontSize:13, color:'var(--text1)', outline:'none' }} />
+          </div>
+        </div>
+
+        <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+          <span style={{ fontSize:11, fontWeight:700, color:'var(--text3)', textTransform:'uppercase', letterSpacing:'.5px' }}>
+            Empresas ({clientesSel.length}/{clientes.length})
+          </span>
+          <button onClick={() => setClientesSel(clientesSel.length === clientes.length ? [] : clientes.map(c => c.id))}
+            style={{ background:'none', border:'none', fontSize:11, color:'var(--accent)', cursor:'pointer' }}>
+            {clientesSel.length === clientes.length ? 'Desmarcar' : 'Todos'}
+          </button>
+        </div>
+        <input placeholder="Buscar..." value={busca} onChange={e => setBusca(e.target.value)}
+          style={{ background:'var(--surface2)', border:'1px solid var(--border)', borderRadius:8, padding:'7px 9px', fontSize:12, color:'var(--text1)', outline:'none' }} />
+        <div style={{ maxHeight:180, overflowY:'auto', border:'1px solid var(--border)', borderRadius:8 }}>
+          {clientesFiltrados.map(c => (
+            <label key={c.id} style={{ display:'flex', alignItems:'center', gap:8, padding:'7px 12px', cursor:'pointer', borderBottom:'1px solid var(--border)', background: clientesSel.includes(c.id) ? 'var(--accent-dim)' : 'transparent' }}>
+              <input type="checkbox" checked={clientesSel.includes(c.id)} onChange={() => toggleCliente(c.id)} />
+              <span style={{ fontSize:12, flex:1, color:'var(--text1)' }}>{c.nome}</span>
+            </label>
+          ))}
+        </div>
+        {erro && <p style={{ color:'var(--danger)', fontSize:12, margin:0 }}>{erro}</p>}
+      </div>
+      <div style={{ display:'flex', gap:8, marginTop:16 }}>
+        <button onClick={onClose}
+          style={{ flex:1, background:'var(--surface2)', border:'1px solid #232840', borderRadius:8, padding:'9px', fontSize:12, color:'var(--text2)', cursor:'pointer' }}>Cancelar</button>
+        <button onClick={handleSave} disabled={saving||!titulo.trim()||clientesSel.length===0}
+          style={{ flex:1, background:'var(--accent)', border:'none', borderRadius:8, padding:'9px', fontSize:12, color:'#fff', fontWeight:500, cursor:'pointer', opacity:(saving||!titulo.trim()||clientesSel.length===0)?.6:1 }}>
+          {saving?'Criando...':`Criar para ${clientesSel.length} empresa${clientesSel.length!==1?'s':''}`}
         </button>
       </div>
     </ModalBase>
