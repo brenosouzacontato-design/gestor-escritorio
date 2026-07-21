@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { supabase } from '../../lib/supabase';
 import { calcularDREPorConta, calcularBalancete, comSomasDeFilhas, somarRaizes } from './contabilApi';
+import BalanceteLista from './BalanceteLista';
 
 const CAMPOS_BALANCETE = ['saldoAnterior', 'debito', 'credito', 'saldoAtual'];
 
@@ -11,10 +12,6 @@ function fmtData(iso) {
   return new Date(iso + 'T00:00:00').toLocaleDateString('pt-BR');
 }
 
-const LABEL_TIPO_BALANCETE = {
-  ativo: 'Ativo', passivo: 'Passivo', patrimonio_liquido: 'Patrimônio Líquido',
-  receita: 'Receitas', custo: 'Custos', despesa: 'Despesas',
-};
 const ORDEM_TIPO_BALANCETE = ['ativo', 'passivo', 'patrimonio_liquido', 'receita', 'custo', 'despesa'];
 
 // Página pública (sem login) pra compartilhar Balancete ou DRE com o
@@ -69,7 +66,7 @@ export default function RelatorioCompartilhadoPage({ tipo, empresaId, dataInicio
 
           {!carregando && !erro && tipo === 'dre' && dre && (
             <>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 24 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 24 }}>
                 <GrupoDRE titulo="Receitas" total={dre.totalReceitas}
                   linhas={comSomasDeFilhas(dre.receitas, ['valor']).filter((l) => l.valor !== 0)} cor="var(--ok)" />
                 <GrupoDRE titulo="Custos" total={dre.totalCustos}
@@ -91,66 +88,12 @@ export default function RelatorioCompartilhadoPage({ tipo, empresaId, dataInicio
             const porTipo = ORDEM_TIPO_BALANCETE.map((t) => {
               const doTipo = balancete.filter((l) => l.conta.tipo === t);
               const comSomas = comSomasDeFilhas(doTipo, CAMPOS_BALANCETE);
-              const linhas = comSomas.filter((l) => l.saldoAnterior !== 0 || l.debito !== 0 || l.credito !== 0 || l.saldoAtual !== 0);
+              const contas = comSomas.filter((l) => l.saldoAnterior !== 0 || l.debito !== 0 || l.credito !== 0 || l.saldoAtual !== 0);
               const total = somarRaizes(comSomas, CAMPOS_BALANCETE);
-              return { t, linhas, total };
-            }).filter((g) => g.linhas.length > 0);
+              return { tipo: t, contas, total };
+            }).filter((g) => g.contas.length > 0);
 
-            return (
-              <>
-                {porTipo.length > 0 && (
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, marginBottom: 16 }}>
-                    {porTipo.map((grupo) => (
-                      <div key={grupo.t} style={{ background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 10,
-                        padding: '8px 14px', minWidth: 150 }}>
-                        <div style={{ fontSize: 10.5, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.03em', fontWeight: 600 }}>
-                          Total {LABEL_TIPO_BALANCETE[grupo.t]}
-                        </div>
-                        <div className={`num ${grupo.total.saldoAtual < 0 ? 'valor-negativo' : ''}`} style={{ fontSize: 15, fontWeight: 800, marginTop: 2 }}>
-                          {fmt(grupo.total.saldoAtual)}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-                <table className="contabil-tabela">
-                  <thead>
-                    <tr>
-                      <th>Conta</th>
-                      <th className="num">Saldo Anterior</th>
-                      <th className="num">Débito</th>
-                      <th className="num">Crédito</th>
-                      <th className="num">Saldo Atual</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {porTipo.map((grupo) => (
-                      <React.Fragment key={grupo.t}>
-                        <tr className="grupo-row"><td colSpan={5}>{LABEL_TIPO_BALANCETE[grupo.t]}</td></tr>
-                        {grupo.linhas.map((l) => (
-                          <tr key={l.conta.id} style={{ fontWeight: l.temFilhas ? 700 : 400 }}>
-                            <td style={{ paddingLeft: 24 + l.nivelExibicao * 18 }}>
-                              {l.nivelExibicao > 0 ? '↳ ' : ''}{l.conta.codigo} - {l.conta.nome}
-                            </td>
-                            <td className="num">{fmt(l.saldoAnterior)}</td>
-                            <td className="num">{fmt(l.debito)}</td>
-                            <td className="num">{fmt(l.credito)}</td>
-                            <td className={`num ${l.saldoAtual < 0 ? 'valor-negativo' : ''}`}>{fmt(l.saldoAtual)}</td>
-                          </tr>
-                        ))}
-                        <tr style={{ fontWeight: 700, borderTop: '1px solid var(--border)' }}>
-                          <td>Total {LABEL_TIPO_BALANCETE[grupo.t]}</td>
-                          <td className="num">{fmt(grupo.total.saldoAnterior)}</td>
-                          <td className="num">{fmt(grupo.total.debito)}</td>
-                          <td className="num">{fmt(grupo.total.credito)}</td>
-                          <td className={`num ${grupo.total.saldoAtual < 0 ? 'valor-negativo' : ''}`}>{fmt(grupo.total.saldoAtual)}</td>
-                        </tr>
-                      </React.Fragment>
-                    ))}
-                  </tbody>
-                </table>
-              </>
-            );
+            return <BalanceteLista porTipo={porTipo} />;
           })()}
         </div>
 

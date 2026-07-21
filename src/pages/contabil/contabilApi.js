@@ -91,21 +91,57 @@ const NATUREZA_POR_TIPO = {
   passivo: 'credora', patrimonio_liquido: 'credora', receita: 'credora',
 };
 
-// Cria uma conta de qualquer tipo pra tela de Plano de Contas — nome + tipo
-// é tudo que o usuário escolhe; código (só pra satisfazer o
-// unique(empresa_id, codigo) que já existe), natureza e nível são
-// derivados automaticamente a partir do tipo. "sintetica" marca a conta
-// como agrupadora pura (aceita_lancamento=false) — não recebe lançamento
-// direto, só existe pra somar as contas analíticas (filhas) por baixo dela.
-export async function criarContaQualquerTipo(empresaId, nome, tipo, sintetica = false) {
-  const prefixo = PREFIXO_POR_TIPO[tipo];
+// Acha o código pra uma conta raiz nova (sem base) do tipo escolhido —
+// ancora no branch numérico real do plano importado (ex: despesa nasce em
+// "5.1.01...", então uma raiz nova vira "5.1.99.NNN"), usando ".99." como
+// branch reservado pra conta criada pelo usuário — não colide com os
+// branches ("01", "02"...) do plano padrão. Sem isso, o código antigo
+// ("DESP-001") não tem nada a ver com a numeração real e a conta acaba
+// ordenada fora de lugar (o dígito "D" vem depois de todo número no
+// código), quebrando a hierarquia visual do Plano de Contas. Se a empresa
+// ainda não tiver nenhuma conta numérica desse tipo (plano não importado),
+// cai no esquema antigo — não tem em cima do que ancorar.
+async function proximoCodigoRaiz(empresaId, tipo) {
+  const { data: menor, error: errMenor } = await supabase
+    .from('contas_contabeis')
+    .select('codigo')
+    .eq('empresa_id', empresaId)
+    .eq('tipo', tipo)
+    .order('codigo')
+    .limit(1)
+    .maybeSingle();
+  if (errMenor) throw errMenor;
+
+  const partes = menor?.codigo?.split('.') ?? [];
+  if (partes.length < 2 || !/^\d+$/.test(partes[0])) {
+    const prefixo = PREFIXO_POR_TIPO[tipo];
+    const { count, error: errCount } = await supabase
+      .from('contas_contabeis')
+      .select('id', { count: 'exact', head: true })
+      .eq('empresa_id', empresaId)
+      .eq('tipo', tipo);
+    if (errCount) throw errCount;
+    return `${prefixo}-${String((count ?? 0) + 1).padStart(3, '0')}`;
+  }
+
+  const prefixoRaiz = `${partes[0]}.${partes[1]}.99`;
   const { count, error: errCount } = await supabase
     .from('contas_contabeis')
     .select('id', { count: 'exact', head: true })
     .eq('empresa_id', empresaId)
-    .eq('tipo', tipo);
+    .like('codigo', `${prefixoRaiz}.%`);
   if (errCount) throw errCount;
-  const codigo = `${prefixo}-${String((count ?? 0) + 1).padStart(3, '0')}`;
+  return `${prefixoRaiz}.${String((count ?? 0) + 1).padStart(3, '0')}`;
+}
+
+// Cria uma conta de qualquer tipo pra tela de Plano de Contas — nome + tipo
+// é tudo que o usuário escolhe; código (ver proximoCodigoRaiz), natureza e
+// nível são derivados automaticamente a partir do tipo. "sintetica" marca a
+// conta como agrupadora pura (aceita_lancamento=false) — não recebe
+// lançamento direto, só existe pra somar as contas analíticas (filhas) por
+// baixo dela.
+export async function criarContaQualquerTipo(empresaId, nome, tipo, sintetica = false) {
+  const codigo = await proximoCodigoRaiz(empresaId, tipo);
   return criarConta({
     empresa_id: empresaId,
     codigo,
@@ -483,9 +519,9 @@ export async function excluirLancamentosEmLote(ids) {
 // Uma conta com filhas (via conta_pai_id — só as criadas pelo fluxo "criar
 // a partir de uma conta base" têm isso de verdade, ver criarContaFilha)
 // vira uma "sintética": a linha dela passa a mostrar a soma de tudo (ela +
-// filhas, recursivo), e as filhas continuam listadas logo abaixo,
-// indentadas, com seus valores próprios — servem pra detalhar o que compõe
-// a soma, não duplicam o total.
+// filhas, recursivo). As filhas aparecem primeiro, indentadas, com seus
+// valores próprios, e a soma sintética fecha o grupo por último — estilo
+// subtotal de rodapé, não duplica o total, só resume o que veio antes.
 // linhas: [{ conta, ...camposNumericos }]; campos: chaves numéricas a somar.
 export function comSomasDeFilhas(linhas, campos) {
   const porId = new Map(linhas.map((l) => [l.conta.id, l]));
@@ -512,13 +548,16 @@ export function comSomasDeFilhas(linhas, campos) {
     return total;
   }
 
+  // Filhas primeiro, soma sintética depois — como um subtotal de rodapé
+  // (estilo clássico de razão contábil), não como cabeçalho antes do
+  // detalhe. Mais fácil de ler: primeiro vê o que compõe, depois o total.
   function montar(l, nivel) {
     const agregada = somaAgregada(l);
     const filhos = (filhosPorPai.get(l.conta.id) ?? [])
       .sort((a, b) => a.conta.codigo.localeCompare(b.conta.codigo, undefined, { numeric: true }));
     return [
-      { ...l, ...agregada, nivelExibicao: nivel, temFilhas: filhos.length > 0 },
       ...filhos.flatMap((f) => montar(f, nivel + 1)),
+      { ...l, ...agregada, nivelExibicao: nivel, temFilhas: filhos.length > 0 },
     ];
   }
 

@@ -189,13 +189,13 @@ export default function ContaLancamentosSidebar({
           )}
         </div>
 
-        <div style={{ flex: 1, overflowY: 'auto', background: 'var(--bg)' }}>
+        <div style={{ flex: 1, overflowY: 'auto', overflowX: 'auto', background: 'var(--bg)' }}>
           {carregando && <p style={{ fontSize: 12, color: 'var(--text3)', padding: '14px 20px' }}>Carregando...</p>}
           {!carregando && lancamentos.length === 0 && (
             <p style={{ fontSize: 12, color: 'var(--text3)', textAlign: 'center', padding: '28px 0' }}>Nenhum lançamento nesse período.</p>
           )}
           {!carregando && lancamentos.length > 0 && (
-            <table className="contabil-tabela" style={{ width: '100%' }}>
+            <table className="contabil-tabela" style={{ width: '100%', minWidth: 640 }}>
               <thead>
                 <tr>
                   <th style={{ width: 120 }}>Data</th>

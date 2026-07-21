@@ -74,7 +74,7 @@ export default function DRETab({ empresaId, periodo, empresaNome }) {
         <CompartilharButton tipo="dre" empresaId={empresaId} empresaNome={empresaNome} periodo={periodo} />
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 24, maxWidth: 900 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 24, maxWidth: 900 }}>
         <LinhaGrupo titulo="Receitas" total={dre.totalReceitas} linhas={receitas} cor="var(--ok)" onClick={abrirConta} />
         <LinhaGrupo titulo="Custos" total={dre.totalCustos} linhas={custos} cor="var(--warn)" onClick={abrirConta} />
         <LinhaGrupo titulo="Despesas" total={dre.totalDespesas} linhas={despesas} cor="var(--danger)" onClick={abrirConta} />

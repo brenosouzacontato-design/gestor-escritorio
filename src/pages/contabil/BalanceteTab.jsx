@@ -2,23 +2,11 @@ import React, { useEffect, useState, useCallback } from 'react';
 import { calcularBalancete, listarLancamentosPorConta, listarContasTodasGerenciamento, comSomasDeFilhas, somarRaizes } from './contabilApi';
 import ContaLancamentosSidebar from './ContaLancamentosSidebar';
 import CompartilharButton from './CompartilharButton';
+import BalanceteLista from './BalanceteLista';
 
 const CAMPOS_BALANCETE = ['saldoAnterior', 'debito', 'credito', 'saldoAtual'];
 
-const LABEL_TIPO = {
-  ativo: 'Ativo',
-  passivo: 'Passivo',
-  patrimonio_liquido: 'Patrimônio Líquido',
-  receita: 'Receitas',
-  despesa: 'Despesas',
-  custo: 'Custos',
-};
-
 const ORDEM_TIPO = ['ativo', 'passivo', 'patrimonio_liquido', 'receita', 'custo', 'despesa'];
-
-function fmt(v) {
-  return v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-}
 
 export default function BalanceteTab({ empresaId, periodo, empresaNome }) {
   const [linhas, setLinhas] = useState([]);
@@ -71,10 +59,11 @@ export default function BalanceteTab({ empresaId, periodo, empresaNome }) {
   if (erro) return <p style={{ color: 'var(--danger)' }}>{erro}</p>;
 
   // comSomasDeFilhas agrupa a conta-pai (se tiver filhas via conta_pai_id —
-  // ver criarContaFilha) com a soma de tudo embaixo dela; filhas continuam
-  // listadas indentadas com o valor próprio delas. O total do grupo (conta
-  // sintética "Total Ativo" etc) soma só as raízes — cada uma já carrega a
-  // soma dela + filhas, então somar tudo contaria filha duas vezes.
+  // ver criarContaFilha) com a soma de tudo embaixo dela; filhas aparecem
+  // primeiro, indentadas, com o valor próprio delas, e a soma sintética
+  // fecha o grupo por último. O total do grupo (conta sintética "Total
+  // Ativo" etc) soma só as raízes — cada uma já carrega a soma dela +
+  // filhas, então somar tudo contaria filha duas vezes.
   const porTipo = ORDEM_TIPO.map((tipo) => {
     const doTipo = linhas.filter((l) => l.conta.tipo === tipo);
     const comSomas = comSomasDeFilhas(doTipo, CAMPOS_BALANCETE);
@@ -89,65 +78,7 @@ export default function BalanceteTab({ empresaId, periodo, empresaNome }) {
         <CompartilharButton tipo="balancete" empresaId={empresaId} empresaNome={empresaNome} periodo={periodo} />
       </div>
 
-      {porTipo.length > 0 && (
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, marginBottom: 16 }}>
-          {porTipo.map((grupo) => (
-            <div key={grupo.tipo} style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10,
-              padding: '8px 14px', minWidth: 150 }}>
-              <div style={{ fontSize: 10.5, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.03em', fontWeight: 600 }}>
-                Total {LABEL_TIPO[grupo.tipo]}
-              </div>
-              <div className={`num ${grupo.total.saldoAtual < 0 ? 'valor-negativo' : ''}`} style={{ fontSize: 15, fontWeight: 800, marginTop: 2 }}>
-                {fmt(grupo.total.saldoAtual)}
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-
-      <table className="contabil-tabela">
-        <thead>
-          <tr>
-            <th>Conta</th>
-            <th className="num">Saldo Anterior</th>
-            <th className="num">Débito</th>
-            <th className="num">Crédito</th>
-            <th className="num">Saldo Atual</th>
-          </tr>
-        </thead>
-        <tbody>
-          {porTipo.map((grupo) => (
-            <React.Fragment key={grupo.tipo}>
-              <tr className="grupo-row">
-                <td colSpan={5}>{LABEL_TIPO[grupo.tipo]}</td>
-              </tr>
-              {grupo.contas.map((l) => (
-                <tr key={l.conta.id} onClick={() => abrirConta(l.conta, l.saldoAnterior)} style={{ cursor: 'pointer', fontWeight: l.temFilhas ? 700 : 400 }}
-                  onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--surface2)'; }}
-                  onMouseLeave={(e) => { e.currentTarget.style.background = ''; }}>
-                  <td style={{ paddingLeft: 24 + l.nivelExibicao * 18 }}>
-                    {l.nivelExibicao > 0 ? '↳ ' : ''}{l.conta.codigo} - {l.conta.nome}
-                  </td>
-                  <td className="num">{fmt(l.saldoAnterior)}</td>
-                  <td className="num">{fmt(l.debito)}</td>
-                  <td className="num">{fmt(l.credito)}</td>
-                  <td className={`num ${l.saldoAtual < 0 ? 'valor-negativo' : ''}`}>{fmt(l.saldoAtual)}</td>
-                </tr>
-              ))}
-              <tr style={{ fontWeight: 700, borderTop: '1px solid var(--border)' }}>
-                <td>Total {LABEL_TIPO[grupo.tipo]}</td>
-                <td className="num">{fmt(grupo.total.saldoAnterior)}</td>
-                <td className="num">{fmt(grupo.total.debito)}</td>
-                <td className="num">{fmt(grupo.total.credito)}</td>
-                <td className={`num ${grupo.total.saldoAtual < 0 ? 'valor-negativo' : ''}`}>{fmt(grupo.total.saldoAtual)}</td>
-              </tr>
-            </React.Fragment>
-          ))}
-          {porTipo.length === 0 && (
-            <tr><td colSpan={5} style={{ color: 'var(--text2)' }}>Nenhuma movimentação no período.</td></tr>
-          )}
-        </tbody>
-      </table>
+      <BalanceteLista porTipo={porTipo} onClickConta={abrirConta} />
 
       {sidebar && (
         <ContaLancamentosSidebar
