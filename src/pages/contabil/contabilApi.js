@@ -21,6 +21,11 @@ export async function listarContas(empresaId) {
 // natureza (entrada/saída) de um lançamento.
 const PREFIXO_DISPONIVEL = '1.1.01';
 
+// Conta transitória "Valores a Identificar" — mesmo código usado em
+// LancamentosTab.jsx e ImportarExtratoTab.jsx pra transação ainda não
+// classificada.
+const CODIGO_CONTA_PENDENTE = '1.1.01.001.002';
+
 // Lista só as contas de banco/caixa — usada no seletor "conta bancária do
 // extrato" da importação. Não aparece na tela de Plano de Contas (que agora
 // só mostra Receita/Despesa), mas continua existindo pra sustentar a
@@ -413,6 +418,51 @@ export async function listarLancamentos(empresaId, { dataInicio, dataFim } = {})
   return data;
 }
 
+// Lançamentos ainda não conciliados de um período — base do "enviar pro
+// cliente pra identificação": ele recebe essa lista (sem precisar logar,
+// mesmo modelo do link de compartilhamento do Balancete/DRE) e preenche o
+// que foi cada um; a resposta fica em observacao_cliente pra ajudar a
+// classificar depois.
+export async function listarLancamentosAIdentificar(empresaId, { dataInicio, dataFim }) {
+  let query = supabase
+    .from('lancamentos_contabeis')
+    .select('id, data, historico, numero_documento, observacao_cliente, partidas_contabeis(tipo, valor, contas_contabeis(codigo))')
+    .eq('empresa_id', empresaId)
+    .eq('conciliado', false)
+    .order('data');
+  if (dataInicio) query = query.gte('data', dataInicio);
+  if (dataFim) query = query.lte('data', dataFim);
+
+  const { data, error } = await query;
+  if (error) throw error;
+  return data.map((l) => {
+    const debitoPartidas = l.partidas_contabeis?.filter((p) => p.tipo === 'debito') ?? [];
+    const creditoPartidas = l.partidas_contabeis?.filter((p) => p.tipo === 'credito') ?? [];
+    const valor = debitoPartidas.reduce((s, p) => s + Number(p.valor), 0);
+    const ehContaDisponivelReal = (codigo) => codigo?.startsWith(PREFIXO_DISPONIVEL) && codigo !== CODIGO_CONTA_PENDENTE;
+    const tocaDisponivelDebito = debitoPartidas.some((p) => ehContaDisponivelReal(p.contas_contabeis?.codigo));
+    const tocaDisponivelCredito = creditoPartidas.some((p) => ehContaDisponivelReal(p.contas_contabeis?.codigo));
+    const natureza = tocaDisponivelDebito === tocaDisponivelCredito ? null : (tocaDisponivelDebito ? 'entrada' : 'saida');
+    return {
+      id: l.id,
+      data: l.data,
+      historico: l.historico,
+      numeroDocumento: l.numero_documento,
+      observacaoCliente: l.observacao_cliente ?? '',
+      valor,
+      natureza,
+    };
+  });
+}
+
+export async function salvarObservacaoCliente(lancamentoId, observacao) {
+  const { error } = await supabase
+    .from('lancamentos_contabeis')
+    .update({ observacao_cliente: observacao })
+    .eq('id', lancamentoId);
+  if (error) throw error;
+}
+
 export async function excluirLancamento(id) {
   const { error } = await supabase.from('lancamentos_contabeis').delete().eq('id', id);
   if (error) throw error;
@@ -628,11 +678,18 @@ export async function calcularDREPorConta(empresaId, { dataInicio, dataFim }) {
 }
 
 // Lançamentos individuais que compõem o total de uma conta num período —
-// alimenta o sidebar de drill-down ao clicar numa linha da DRE.
+// alimenta o razão contábil (sidebar de drill-down ao clicar numa conta na
+// DRE/Balancete). Traz também a contrapartida (o outro lado da partida
+// dobrada) pra dar pra reclassificar ela direto do razão, sem precisar ir
+// até Lançamentos — em lançamento composto (mais de 2 partidas), pega só a
+// primeira contrapartida encontrada, mesma simplificação já usada em
+// LancamentosTab.jsx (PartidaCell).
 export async function listarLancamentosPorConta(empresaId, contaId, { dataInicio, dataFim }) {
   let query = supabase
     .from('partidas_contabeis')
-    .select('id, tipo, valor, lancamentos_contabeis!inner(data, historico, numero_documento, origem, empresa_id)')
+    .select(`id, tipo, valor, lancamento_id,
+      lancamentos_contabeis!inner(id, data, historico, numero_documento, origem, empresa_id, conciliado,
+        partidas_contabeis(id, tipo, valor, conta_id, contas_contabeis(id, codigo, nome)))`)
     .eq('conta_id', contaId)
     .eq('lancamentos_contabeis.empresa_id', empresaId);
   if (dataInicio) query = query.gte('lancamentos_contabeis.data', dataInicio);
@@ -641,14 +698,40 @@ export async function listarLancamentosPorConta(empresaId, contaId, { dataInicio
   const { data, error } = await query;
   if (error) throw error;
   return data
-    .map((p) => ({
-      id: p.id,
-      tipo: p.tipo,
-      valor: Number(p.valor),
-      data: p.lancamentos_contabeis.data,
-      historico: p.lancamentos_contabeis.historico,
-      numeroDocumento: p.lancamentos_contabeis.numero_documento,
-      origem: p.lancamentos_contabeis.origem,
-    }))
+    .map((p) => {
+      const contrapartida = (p.lancamentos_contabeis.partidas_contabeis ?? []).find((x) => x.id !== p.id) ?? null;
+      return {
+        id: p.id,
+        lancamentoId: p.lancamento_id,
+        tipo: p.tipo,
+        valor: Number(p.valor),
+        data: p.lancamentos_contabeis.data,
+        historico: p.lancamentos_contabeis.historico,
+        numeroDocumento: p.lancamentos_contabeis.numero_documento,
+        origem: p.lancamentos_contabeis.origem,
+        conciliado: p.lancamentos_contabeis.conciliado,
+        contrapartida: contrapartida ? {
+          partidaId: contrapartida.id,
+          contaId: contrapartida.conta_id,
+          tipo: contrapartida.tipo,
+          codigo: contrapartida.contas_contabeis?.codigo,
+          nome: contrapartida.contas_contabeis?.nome,
+        } : null,
+      };
+    })
     .sort((a, b) => a.data.localeCompare(b.data));
+}
+
+// Edita metadados de um lançamento (histórico, data, nº documento) — usado
+// pelo razão contábil editável. Não mexe em valor/partidas, pra não quebrar
+// o balanceamento débito=crédito.
+export async function atualizarLancamento(id, patch) {
+  const { data, error } = await supabase
+    .from('lancamentos_contabeis')
+    .update(patch)
+    .eq('id', id)
+    .select()
+    .single();
+  if (error) throw error;
+  return data;
 }

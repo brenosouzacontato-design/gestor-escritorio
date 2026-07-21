@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { calcularDREPorConta, listarLancamentosPorConta, comSomasDeFilhas } from './contabilApi';
+import { calcularDREPorConta, listarLancamentosPorConta, listarContasTodasGerenciamento, comSomasDeFilhas } from './contabilApi';
 import ContaLancamentosSidebar from './ContaLancamentosSidebar';
 import CompartilharButton from './CompartilharButton';
 
@@ -12,6 +12,7 @@ function fmt(v) {
 // período, pra conferir o que compõe o total.
 export default function DRETab({ empresaId, periodo, empresaNome }) {
   const [dre, setDre] = useState(null);
+  const [contas, setContas] = useState([]);
   const [carregando, setCarregando] = useState(false);
   const [erro, setErro] = useState(null);
 
@@ -31,6 +32,7 @@ export default function DRETab({ empresaId, periodo, empresaNome }) {
   }, [empresaId, periodo.dataInicio, periodo.dataFim]);
 
   useEffect(() => { carregar(); }, [carregar]);
+  useEffect(() => { listarContasTodasGerenciamento(empresaId).then(setContas).catch(() => {}); }, [empresaId]);
 
   async function abrirConta(conta) {
     setSidebar({ conta, lancamentos: [], carregando: true });
@@ -41,6 +43,17 @@ export default function DRETab({ empresaId, periodo, empresaNome }) {
       setErro(e.message);
       setSidebar(null);
     }
+  }
+
+  async function recarregarSidebar() {
+    if (!sidebar) return;
+    try {
+      const lancamentos = await listarLancamentosPorConta(empresaId, sidebar.conta.id, periodo);
+      setSidebar((prev) => (prev ? { ...prev, lancamentos } : prev));
+    } catch (e) {
+      setErro(e.message);
+    }
+    carregar();
   }
 
   if (carregando) return <p>Calculando DRE...</p>;
@@ -76,9 +89,11 @@ export default function DRETab({ empresaId, periodo, empresaNome }) {
           conta={sidebar.conta}
           lancamentos={sidebar.lancamentos}
           carregando={sidebar.carregando}
+          contas={contas}
           onClose={() => setSidebar(null)}
           periodo={periodo}
           empresaNome={empresaNome}
+          onAlterado={recarregarSidebar}
           onContaAtualizada={(contaAtualizada) => {
             setSidebar((prev) => (prev ? { ...prev, conta: { ...prev.conta, ...contaAtualizada } } : prev));
             carregar();

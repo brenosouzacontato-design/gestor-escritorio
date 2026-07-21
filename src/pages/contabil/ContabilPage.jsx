@@ -68,7 +68,7 @@ export default function ContabilPage() {
         <p style={{ color: 'var(--text2)' }}>Selecione uma empresa para começar.</p>
       ) : (
         <>
-          {abaAtiva === 'lancamentos' && <LancamentosTab empresaId={empresaIdAtual} periodo={periodo} />}
+          {abaAtiva === 'lancamentos' && <LancamentosTab empresaId={empresaIdAtual} periodo={periodo} empresaNome={clientes.find((c) => c.id === empresaIdAtual)?.nome} />}
           {abaAtiva === 'balancete' && <BalanceteTab empresaId={empresaIdAtual} periodo={periodo} empresaNome={clientes.find((c) => c.id === empresaIdAtual)?.nome} />}
           {abaAtiva === 'dre' && <DRETab empresaId={empresaIdAtual} periodo={periodo} empresaNome={clientes.find((c) => c.id === empresaIdAtual)?.nome} />}
           {abaAtiva === 'extrato' && <ImportarExtratoTab empresaId={empresaIdAtual} />}

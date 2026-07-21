@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { calcularBalancete, listarLancamentosPorConta, comSomasDeFilhas } from './contabilApi';
+import { calcularBalancete, listarLancamentosPorConta, listarContasTodasGerenciamento, comSomasDeFilhas } from './contabilApi';
 import ContaLancamentosSidebar from './ContaLancamentosSidebar';
 import CompartilharButton from './CompartilharButton';
 
@@ -22,9 +22,10 @@ function fmt(v) {
 
 export default function BalanceteTab({ empresaId, periodo, empresaNome }) {
   const [linhas, setLinhas] = useState([]);
+  const [contas, setContas] = useState([]);
   const [carregando, setCarregando] = useState(false);
   const [erro, setErro] = useState(null);
-  const [sidebar, setSidebar] = useState(null); // { conta, lancamentos, carregando }
+  const [sidebar, setSidebar] = useState(null); // { conta, lancamentos, carregando, saldoAnterior }
 
   const carregar = useCallback(async () => {
     setCarregando(true);
@@ -40,16 +41,28 @@ export default function BalanceteTab({ empresaId, periodo, empresaNome }) {
   }, [empresaId, periodo.dataInicio, periodo.dataFim]);
 
   useEffect(() => { carregar(); }, [carregar]);
+  useEffect(() => { listarContasTodasGerenciamento(empresaId).then(setContas).catch(() => {}); }, [empresaId]);
 
-  async function abrirConta(conta) {
-    setSidebar({ conta, lancamentos: [], carregando: true });
+  async function abrirConta(conta, saldoAnterior = 0) {
+    setSidebar({ conta, lancamentos: [], carregando: true, saldoAnterior });
     try {
       const lancamentos = await listarLancamentosPorConta(empresaId, conta.id, periodo);
-      setSidebar({ conta, lancamentos, carregando: false });
+      setSidebar({ conta, lancamentos, carregando: false, saldoAnterior });
     } catch (e) {
       setErro(e.message);
       setSidebar(null);
     }
+  }
+
+  async function recarregarSidebar() {
+    if (!sidebar) return;
+    try {
+      const lancamentos = await listarLancamentosPorConta(empresaId, sidebar.conta.id, periodo);
+      setSidebar((prev) => (prev ? { ...prev, lancamentos } : prev));
+    } catch (e) {
+      setErro(e.message);
+    }
+    carregar();
   }
 
   if (carregando) return <p>Calculando balancete...</p>;
@@ -88,7 +101,7 @@ export default function BalanceteTab({ empresaId, periodo, empresaNome }) {
                 <td colSpan={5}>{LABEL_TIPO[grupo.tipo]}</td>
               </tr>
               {grupo.contas.map((l) => (
-                <tr key={l.conta.id} onClick={() => abrirConta(l.conta)} style={{ cursor: 'pointer', fontWeight: l.temFilhas ? 700 : 400 }}
+                <tr key={l.conta.id} onClick={() => abrirConta(l.conta, l.saldoAnterior)} style={{ cursor: 'pointer', fontWeight: l.temFilhas ? 700 : 400 }}
                   onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--surface2)'; }}
                   onMouseLeave={(e) => { e.currentTarget.style.background = ''; }}>
                   <td style={{ paddingLeft: 24 + l.nivelExibicao * 18 }}>
@@ -113,9 +126,12 @@ export default function BalanceteTab({ empresaId, periodo, empresaNome }) {
           conta={sidebar.conta}
           lancamentos={sidebar.lancamentos}
           carregando={sidebar.carregando}
+          saldoAnterior={sidebar.saldoAnterior}
+          contas={contas}
           onClose={() => setSidebar(null)}
           periodo={periodo}
           empresaNome={empresaNome}
+          onAlterado={recarregarSidebar}
           onContaAtualizada={(contaAtualizada) => {
             setSidebar((prev) => (prev ? { ...prev, conta: { ...prev.conta, ...contaAtualizada } } : prev));
             carregar();

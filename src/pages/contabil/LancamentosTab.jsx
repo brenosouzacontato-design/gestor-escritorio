@@ -1,11 +1,12 @@
 import React, { useEffect, useState, useCallback, useMemo } from 'react';
-import { ArrowDownIcon, ArrowUpIcon, ArrowDownCircleIcon, ArrowUpCircleIcon } from 'lucide-react';
+import { ArrowDownIcon, ArrowUpIcon, ArrowDownCircleIcon, ArrowUpCircleIcon, MessageSquareIcon } from 'lucide-react';
 import {
   listarContas, listarLancamentos, excluirLancamento, excluirLancamentosEmLote,
   reclassificarLancamento, reclassificarLancamentosEmLote, salvarRegraClassificacao,
 } from './contabilApi';
 import ContaCombobox from './ContaCombobox';
 import NovoLancamentoModal from './NovoLancamentoModal';
+import EnviarIdentificacaoButton from './EnviarIdentificacaoButton';
 
 // mesma conta transitória usada em ImportarExtratoTab.jsx pra transações
 // que chegaram sem classificação (ver CODIGO_CONTA_PENDENTE lá)
@@ -16,7 +17,7 @@ const CODIGO_CONTA_PENDENTE = '1.1.01.001.002'; // "Valores a Identificar"
 // olhando se é o lado debitado ou creditado, igual já é feito na importação
 const PREFIXO_DISPONIVEL = '1.1.01';
 
-export default function LancamentosTab({ empresaId, periodo }) {
+export default function LancamentosTab({ empresaId, periodo, empresaNome }) {
   const [contas, setContas] = useState([]);
   const [lancamentos, setLancamentos] = useState([]);
   const [carregando, setCarregando] = useState(false);
@@ -83,7 +84,6 @@ export default function LancamentosTab({ empresaId, periodo }) {
     const contasResumo = l.partidas_contabeis
       ?.map((p) => `${p.tipo === 'debito' ? 'D' : 'C'} ${p.contas_contabeis?.codigo} ${p.contas_contabeis?.nome ?? ''}`)
       .join(' / ') ?? '';
-    const partidaPendente = l.partidas_contabeis?.find((p) => p.contas_contabeis?.codigo === CODIGO_CONTA_PENDENTE);
     // natureza: entrou ou saiu dinheiro de caixa/banco? olha em qual lado
     // (débito ou crédito) tem conta do grupo Disponibilidades — se os dois
     // lados tocam disponibilidades (transferência entre contas) ou nenhum
@@ -95,7 +95,17 @@ export default function LancamentosTab({ empresaId, periodo }) {
     const tocaDisponivelDebito = debitoPartidas.some((p) => ehContaDisponivelReal(p.contas_contabeis?.codigo));
     const tocaDisponivelCredito = creditoPartidas.some((p) => ehContaDisponivelReal(p.contas_contabeis?.codigo));
     const natureza = tocaDisponivelDebito === tocaDisponivelCredito ? null : (tocaDisponivelDebito ? 'entrada' : 'saida');
-    return { ...l, valor, contasResumo, debitoPartidas, creditoPartidas, partidaPendente, natureza };
+    // partida "de classificação" — o lado que NÃO é banco/caixa, ou seja, a
+    // categoria (receita/despesa/etc) do lançamento. É essa que a
+    // classificação em lote reclassifica, esteja o lançamento ainda pendente
+    // ("Valores a Identificar") ou já conciliado — reclassificar em lote
+    // precisa continuar funcionando depois que já foi classificado uma vez,
+    // pra corrigir erro de classificação sem precisar editar linha por linha.
+    // Só é definível quando exatamente um dos dois lados toca disponibilidade.
+    const partidaClassificacao = tocaDisponivelDebito === tocaDisponivelCredito
+      ? undefined
+      : (tocaDisponivelDebito ? creditoPartidas[0] : debitoPartidas[0]);
+    return { ...l, valor, contasResumo, debitoPartidas, creditoPartidas, partidaClassificacao, natureza };
   }), [lancamentos]);
 
   const lancamentosFiltrados = useMemo(() => lancamentosEnriquecidos.filter((l) => {
@@ -108,10 +118,11 @@ export default function LancamentosTab({ empresaId, periodo }) {
     return true;
   }), [lancamentosEnriquecidos, filtroHistorico, filtroContas, filtroNatureza, filtroStatus]);
 
-  // classificar em lote só vale pra quem ainda não foi conciliado — excluir
-  // em lote vale pra qualquer lançamento selecionado
+  // classificar em lote vale pra qualquer lançamento com uma partida de
+  // classificação identificável (pendente ou já classificada antes — ver
+  // partidaClassificacao) — excluir em lote vale pra qualquer selecionado
   const lancamentosClassificaveis = useMemo(
-    () => lancamentosFiltrados.filter((l) => !l.conciliado && l.partidaPendente),
+    () => lancamentosFiltrados.filter((l) => l.partidaClassificacao),
     [lancamentosFiltrados]
   );
   const todosSelecionados = lancamentosFiltrados.length > 0
@@ -140,7 +151,7 @@ export default function LancamentosTab({ empresaId, periodo }) {
     setErro(null);
     try {
       const selecionadosClassificaveis = lancamentosClassificaveis.filter((l) => selecionados.has(l.id));
-      const partidaIds = selecionadosClassificaveis.map((l) => l.partidaPendente.id);
+      const partidaIds = selecionadosClassificaveis.map((l) => l.partidaClassificacao.id);
       const lancamentoIds = selecionadosClassificaveis.map((l) => l.id);
       await reclassificarLancamentosEmLote(partidaIds, lancamentoIds, contaLote);
       await Promise.all(
@@ -207,6 +218,7 @@ export default function LancamentosTab({ empresaId, periodo }) {
           <button className="btn-ghost" onClick={exportarCSV} disabled={lancamentosFiltrados.length === 0}>
             Exportar Excel
           </button>
+          <EnviarIdentificacaoButton empresaId={empresaId} empresaNome={empresaNome} periodo={periodo} />
         </div>
         {erro && <p style={{ color: 'var(--danger)', margin: 0 }}>{erro}</p>}
       </div>
@@ -304,7 +316,16 @@ export default function LancamentosTab({ empresaId, periodo }) {
                     <input type="checkbox" checked={selecionados.has(l.id)} onChange={() => toggleSelecionado(l.id)} />
                   </td>
                   <td style={{ whiteSpace: 'nowrap' }}>{new Date(l.data + 'T00:00:00').toLocaleDateString('pt-BR')}</td>
-                  <td style={{ whiteSpace: 'nowrap' }}>{l.historico}</td>
+                  <td style={{ whiteSpace: 'nowrap' }}>
+                    {l.historico}
+                    {l.observacao_cliente && (
+                      <div style={{ fontSize: '0.72rem', color: 'var(--accent)', marginTop: 2, whiteSpace: 'normal',
+                        display: 'flex', alignItems: 'flex-start', gap: 3 }}
+                        title="Observação do cliente">
+                        <MessageSquareIcon size={11} style={{ flexShrink: 0, marginTop: 1 }} /> {l.observacao_cliente}
+                      </div>
+                    )}
+                  </td>
                   <td style={{ fontSize: '0.8rem', color: 'var(--text2)', whiteSpace: 'nowrap' }}>{l.numero_documento || '—'}</td>
                   <td style={{ minWidth: 180 }}>
                     <PartidaCell partidas={l.debitoPartidas} contas={contas} onEditar={(p, id) => editarPartida(l, p, id)} />
