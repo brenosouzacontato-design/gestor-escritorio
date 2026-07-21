@@ -35,6 +35,7 @@ export default function LancamentosTab({ empresaId, periodo, empresaNome }) {
   const [contaLote, setContaLote] = useState('');
   const [aplicandoLote, setAplicandoLote] = useState(false);
   const [excluindoLote, setExcluindoLote] = useState(false);
+  const [avisoLote, setAvisoLote] = useState(null);
 
   const carregar = useCallback(async () => {
     setCarregando(true);
@@ -149,6 +150,7 @@ export default function LancamentosTab({ empresaId, periodo, empresaNome }) {
     if (!contaLote) return;
     setAplicandoLote(true);
     setErro(null);
+    setAvisoLote(null);
     try {
       const selecionadosClassificaveis = lancamentosClassificaveis.filter((l) => selecionados.has(l.id));
       const partidaIds = selecionadosClassificaveis.map((l) => l.partidaClassificacao.id);
@@ -157,6 +159,14 @@ export default function LancamentosTab({ empresaId, periodo, empresaNome }) {
       await Promise.all(
         selecionadosClassificaveis.map((l) => salvarRegraClassificacao(empresaId, l.historico, contaLote).catch(() => {}))
       );
+      // lançamento que toca duas contas bancárias dos dois lados (ou nenhuma)
+      // fica ambíguo — não dá pra saber qual partida reclassificar em lote,
+      // então é pulado silenciosamente; avisa aqui pra não parecer que
+      // "não funcionou" — precisa editar a linha direto (Lançamentos ou razão).
+      const pulados = selecionados.size - selecionadosClassificaveis.length;
+      if (pulados > 0) {
+        setAvisoLote(`${pulados} lançamento${pulados > 1 ? 's' : ''} não ${pulados > 1 ? 'foram classificados' : 'foi classificado'} — envolve duas contas bancárias (ou nenhuma), ambíguo pra classificar em lote. Edite direto na linha.`);
+      }
       setSelecionados(new Set());
       setContaLote('');
       carregar();
@@ -249,6 +259,13 @@ export default function LancamentosTab({ empresaId, periodo, empresaNome }) {
             Limpar seleção
           </button>
         </div>
+      )}
+
+      {avisoLote && (
+        <p style={{ color: 'var(--warn)', background: 'var(--warn-dim)', border: '1px solid var(--warn)',
+          borderRadius: 8, padding: '8px 12px', fontSize: '0.85rem', marginBottom: 12 }}>
+          {avisoLote}
+        </p>
       )}
 
       {carregando ? (

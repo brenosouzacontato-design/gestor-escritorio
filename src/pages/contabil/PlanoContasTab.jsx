@@ -32,6 +32,7 @@ export default function PlanoContasTab({ empresaId }) {
   const [nome, setNome] = useState('');
   const [contaBaseId, setContaBaseId] = useState('');
   const [tipo, setTipo] = useState('despesa');
+  const [sintetica, setSintetica] = useState(false);
   const [salvando, setSalvando] = useState(false);
   const [erro, setErro] = useState(null);
   const nomeInputRef = useRef(null);
@@ -39,6 +40,7 @@ export default function PlanoContasTab({ empresaId }) {
   const [editandoId, setEditandoId] = useState(null);
   const [editNome, setEditNome] = useState('');
   const [editTipo, setEditTipo] = useState('despesa');
+  const [editSintetica, setEditSintetica] = useState(false);
   const [editSalvando, setEditSalvando] = useState(false);
   const [editErro, setEditErro] = useState(null);
 
@@ -51,6 +53,11 @@ export default function PlanoContasTab({ empresaId }) {
   useEffect(() => { carregar(); }, [carregar]);
 
   const contasPorId = useMemo(() => new Map(contas.map((c) => [c.id, c])), [contas]);
+  const idsComFilhos = useMemo(() => {
+    const s = new Set();
+    for (const c of contas) if (c.conta_pai_id) s.add(c.conta_pai_id);
+    return s;
+  }, [contas]);
 
   async function adicionar(e) {
     e.preventDefault();
@@ -59,11 +66,12 @@ export default function PlanoContasTab({ empresaId }) {
     setErro(null);
     try {
       if (contaBaseId) {
-        await criarContaFilha(empresaId, nome.trim(), contaBaseId);
+        await criarContaFilha(empresaId, nome.trim(), contaBaseId, sintetica);
       } else {
-        await criarContaQualquerTipo(empresaId, nome.trim(), tipo);
+        await criarContaQualquerTipo(empresaId, nome.trim(), tipo, sintetica);
       }
       setNome('');
+      setSintetica(false);
       await carregar();
     } catch (e) {
       setErro(e.message);
@@ -104,6 +112,7 @@ export default function PlanoContasTab({ empresaId }) {
     setEditandoId(conta.id);
     setEditNome(conta.nome);
     setEditTipo(conta.tipo);
+    setEditSintetica(!conta.aceita_lancamento);
     setEditErro(null);
   }
 
@@ -123,7 +132,7 @@ export default function PlanoContasTab({ empresaId }) {
     setEditSalvando(true);
     setEditErro(null);
     try {
-      await editarContaBasico(conta.id, { nome: editNome.trim(), tipo: editTipo });
+      await editarContaBasico(conta.id, { nome: editNome.trim(), tipo: editTipo, aceitaLancamento: !editSintetica });
       setEditandoId(null);
       await carregar();
     } catch (e) {
@@ -155,6 +164,10 @@ export default function PlanoContasTab({ empresaId }) {
               <option value="patrimonio_liquido">Patrimônio Líquido</option>
             </select>
           )}
+          <label style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: '0.78rem', color: 'var(--text2)', whiteSpace: 'nowrap' }}>
+            <input type="checkbox" checked={sintetica} onChange={(e) => setSintetica(e.target.checked)} />
+            Conta sintética
+          </label>
           <button type="submit" className="btn-navy" disabled={salvando}>
             {salvando ? 'Salvando...' : 'Adicionar'}
           </button>
@@ -162,6 +175,11 @@ export default function PlanoContasTab({ empresaId }) {
         {contaBaseId && (
           <p style={{ fontSize: '0.78rem', color: 'var(--text3)', marginTop: 6, marginBottom: 0 }}>
             A nova conta nasce como filha de "{contasPorId.get(contaBaseId)?.nome}" — mesmo tipo e natureza, código estendido.
+          </p>
+        )}
+        {sintetica && (
+          <p style={{ fontSize: '0.78rem', color: 'var(--text3)', marginTop: 6, marginBottom: 0 }}>
+            Conta sintética não recebe lançamento direto — só agrupa e soma as contas criadas a partir dela.
           </p>
         )}
         {erro && <p style={{ color: 'var(--danger)', marginTop: 8 }}>{erro}</p>}
@@ -207,6 +225,10 @@ export default function PlanoContasTab({ empresaId }) {
                             <option value="passivo">Passivo</option>
                             <option value="patrimonio_liquido">Patrimônio Líquido</option>
                           </select>
+                          <label style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: '0.78rem', color: 'var(--text2)', whiteSpace: 'nowrap' }}>
+                            <input type="checkbox" checked={editSintetica} onChange={(e) => setEditSintetica(e.target.checked)} />
+                            Sintética
+                          </label>
                         </div>
                         {editErro && <p style={{ color: 'var(--danger)', fontSize: '0.75rem', marginTop: 4 }}>{editErro}</p>}
                       </td>
@@ -222,17 +244,24 @@ export default function PlanoContasTab({ empresaId }) {
                   );
                 }
 
+                const temFilhos = idsComFilhos.has(c.id);
                 return (
-                  <tr key={c.id} style={{ opacity: c.ativo ? 1 : 0.5 }}>
+                  <tr key={c.id} style={{ opacity: c.ativo ? 1 : 0.5, fontWeight: temFilhos ? 700 : 400 }}>
                     <td style={{ whiteSpace: 'nowrap', fontSize: '0.8rem', color: 'var(--text2)' }}>{c.codigo}</td>
                     <td style={{ paddingLeft: pai ? 24 : undefined }}>
                       <span style={{ fontSize: '0.88rem', color: 'var(--text1)' }}>{pai ? '↳ ' : ''}{c.nome}</span>
-                      {pai && <span style={{ fontSize: '0.72rem', color: 'var(--text3)' }}> — de {pai.nome}</span>}
+                      {pai && <span style={{ fontSize: '0.72rem', color: 'var(--text3)', fontWeight: 400 }}> — de {pai.nome}</span>}
                     </td>
                     <td>
                       <span style={{ background: cfg.bg, color: cfg.color, borderRadius: 99, padding: '2px 8px', fontSize: '0.68rem', fontWeight: 600, whiteSpace: 'nowrap' }}>
                         {TIPO_LABEL[c.tipo]}
                       </span>
+                      {!c.aceita_lancamento && (
+                        <span style={{ background: 'var(--surface2)', color: 'var(--text3)', border: '1px solid var(--border)',
+                          borderRadius: 99, padding: '2px 8px', fontSize: '0.68rem', fontWeight: 600, whiteSpace: 'nowrap', marginLeft: 5 }}>
+                          Sintética
+                        </span>
+                      )}
                     </td>
                     <td style={{ whiteSpace: 'nowrap' }}>
                       <button className="btn-ghost" onClick={() => iniciarEdicao(c)} style={{ fontSize: '0.72rem' }}>

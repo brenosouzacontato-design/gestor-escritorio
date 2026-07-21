@@ -46,13 +46,13 @@ export async function listarContasBanco(empresaId) {
 // Lista plana (sem hierarquia) das contas de Receita e Despesa — alimenta
 // os seletores de classificação da importação de extrato e a DRE (o Plano
 // de Contas em si mostra todos os tipos, ver listarContasTodasGerenciamento).
-export async function listarContasReceitaDespesa(empresaId) {
+export async function listarContasReceitaDespesa(empresaId, tipos = ['receita', 'despesa']) {
   const { data, error } = await supabase
     .from('contas_contabeis')
     .select('*')
     .eq('empresa_id', empresaId)
     .eq('ativo', true)
-    .in('tipo', ['receita', 'despesa'])
+    .in('tipo', tipos)
     .order('nome');
   if (error) throw error;
   return data;
@@ -93,9 +93,11 @@ const NATUREZA_POR_TIPO = {
 
 // Cria uma conta de qualquer tipo pra tela de Plano de Contas — nome + tipo
 // é tudo que o usuário escolhe; código (só pra satisfazer o
-// unique(empresa_id, codigo) que já existe), natureza, nível e
-// "aceita_lancamento" são derivados automaticamente a partir do tipo.
-export async function criarContaQualquerTipo(empresaId, nome, tipo) {
+// unique(empresa_id, codigo) que já existe), natureza e nível são
+// derivados automaticamente a partir do tipo. "sintetica" marca a conta
+// como agrupadora pura (aceita_lancamento=false) — não recebe lançamento
+// direto, só existe pra somar as contas analíticas (filhas) por baixo dela.
+export async function criarContaQualquerTipo(empresaId, nome, tipo, sintetica = false) {
   const prefixo = PREFIXO_POR_TIPO[tipo];
   const { count, error: errCount } = await supabase
     .from('contas_contabeis')
@@ -111,7 +113,7 @@ export async function criarContaQualquerTipo(empresaId, nome, tipo) {
     tipo,
     natureza: NATUREZA_POR_TIPO[tipo],
     nivel: 1,
-    aceita_lancamento: true,
+    aceita_lancamento: !sintetica,
   });
 }
 
@@ -121,8 +123,9 @@ export async function criarContaQualquerTipo(empresaId, nome, tipo) {
 // da conta-base, o código estende o dela (ex: "1.1.01.003.003.001") e
 // conta_pai_id fica de verdade preenchido — diferente das ~743 contas do
 // plano padrão importado, que só têm código hierárquico "visual" (sem
-// conta_pai_id real, nunca migradas por esse motivo).
-export async function criarContaFilha(empresaId, nome, contaPaiId) {
+// conta_pai_id real, nunca migradas por esse motivo). "sintetica" — ver
+// criarContaQualquerTipo.
+export async function criarContaFilha(empresaId, nome, contaPaiId, sintetica = false) {
   const { data: pai, error: errPai } = await supabase
     .from('contas_contabeis')
     .select('id, codigo, tipo, natureza, nivel')
@@ -145,7 +148,7 @@ export async function criarContaFilha(empresaId, nome, contaPaiId) {
     natureza: pai.natureza,
     conta_pai_id: pai.id,
     nivel: (pai.nivel ?? 0) + 1,
-    aceita_lancamento: true,
+    aceita_lancamento: !sintetica,
   });
 }
 
@@ -180,8 +183,10 @@ export async function atualizarConta(id, patch) {
 // Edição simples de nome/tipo pela tela de Plano de Contas ou pelo sidebar
 // de lançamentos — recalcula a natureza a partir do novo tipo (mesma regra
 // de criarContaQualquerTipo), pra não deixar tipo e natureza dessincronizados.
-export async function editarContaBasico(id, { nome, tipo }) {
-  return atualizarConta(id, { nome, tipo, natureza: NATUREZA_POR_TIPO[tipo] });
+export async function editarContaBasico(id, { nome, tipo, aceitaLancamento }) {
+  const patch = { nome, tipo, natureza: NATUREZA_POR_TIPO[tipo] };
+  if (aceitaLancamento !== undefined) patch.aceita_lancamento = aceitaLancamento;
+  return atualizarConta(id, patch);
 }
 
 export async function contaTemLancamentos(id) {
@@ -524,6 +529,17 @@ export function comSomasDeFilhas(linhas, campos) {
   return raizes.flatMap((l) => montar(l, 0));
 }
 
+// Soma só as linhas-raiz (nivelExibicao === 0) de um resultado já passado
+// por comSomasDeFilhas — usado pra totais de grupo/resumo (Total Ativo,
+// Total Passivo...): como cada raiz já carrega a soma agregada dela +
+// filhas, somar todo mundo contaria a filha duas vezes.
+export function somarRaizes(linhasComSoma, campos) {
+  const raizes = linhasComSoma.filter((l) => l.nivelExibicao === 0);
+  const total = {};
+  for (const campo of campos) total[campo] = raizes.reduce((s, l) => s + (l[campo] ?? 0), 0);
+  return total;
+}
+
 // ---------- BALANCETE ----------
 
 // Retorna saldo por conta no período, já considerando a natureza da conta
@@ -642,13 +658,16 @@ export async function calcularDRE(empresaId, { dataInicio, dataFim }) {
   };
 }
 
-// DRE simplificada: uma linha por conta de Receita/Despesa (sem os 9 grupos
-// fixos de antes) — cada conta já é a própria linha, "resultado" é só
-// receitas menos despesas do período. Mesma lógica de "movimento do
-// período" que calcularDRE já usa por grupo, só que por conta.
+// DRE simplificada: uma linha por conta de Receita/Despesa/Custo (sem os 9
+// grupos fixos de antes) — cada conta já é a própria linha, "resultado" é
+// receitas menos despesas menos custos. Mesma lógica de "movimento do
+// período" que calcularDRE já usa por grupo, só que por conta. Custo entra
+// aqui igual despesa (natureza devedora, reduz o resultado) — sem isso,
+// contas de custo (ex: Telecomunicações, Energia Elétrica) ficam de fora da
+// DRE mesmo tendo movimento, já que só apareciam no Balancete.
 export async function calcularDREPorConta(empresaId, { dataInicio, dataFim }) {
   const [contas, { data: movimento, error: errMov }] = await Promise.all([
-    listarContasReceitaDespesa(empresaId),
+    listarContasReceitaDespesa(empresaId, ['receita', 'despesa', 'custo']),
     supabase.from('vw_movimento_contas').select('*').eq('empresa_id', empresaId).gte('data', dataInicio).lte('data', dataFim),
   ]);
   if (errMov) throw errMov;
@@ -671,10 +690,15 @@ export async function calcularDREPorConta(empresaId, { dataInicio, dataFim }) {
 
   const receitas = linhas.filter((l) => l.conta.tipo === 'receita');
   const despesas = linhas.filter((l) => l.conta.tipo === 'despesa');
+  const custos = linhas.filter((l) => l.conta.tipo === 'custo');
   const totalReceitas = receitas.reduce((s, l) => s + l.valor, 0);
   const totalDespesas = despesas.reduce((s, l) => s + l.valor, 0);
+  const totalCustos = custos.reduce((s, l) => s + l.valor, 0);
 
-  return { receitas, despesas, totalReceitas, totalDespesas, resultado: totalReceitas - totalDespesas };
+  return {
+    receitas, despesas, custos, totalReceitas, totalDespesas, totalCustos,
+    resultado: totalReceitas - totalDespesas - totalCustos,
+  };
 }
 
 // Lançamentos individuais que compõem o total de uma conta num período —

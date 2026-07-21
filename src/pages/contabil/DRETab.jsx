@@ -32,7 +32,9 @@ export default function DRETab({ empresaId, periodo, empresaNome }) {
   }, [empresaId, periodo.dataInicio, periodo.dataFim]);
 
   useEffect(() => { carregar(); }, [carregar]);
-  useEffect(() => { listarContasTodasGerenciamento(empresaId).then(setContas).catch(() => {}); }, [empresaId]);
+  // só contas analíticas (aceita_lancamento) entram como opção de
+  // contrapartida no razão — contas sintéticas não recebem lançamento direto
+  useEffect(() => { listarContasTodasGerenciamento(empresaId).then((c) => setContas(c.filter((x) => x.aceita_lancamento))).catch(() => {}); }, [empresaId]);
 
   async function abrirConta(conta) {
     setSidebar({ conta, lancamentos: [], carregando: true });
@@ -64,19 +66,21 @@ export default function DRETab({ empresaId, periodo, empresaNome }) {
   // soma dela + filhas; filhas seguem listadas indentadas com valor próprio.
   const receitas = comSomasDeFilhas(dre.receitas, ['valor']).filter((l) => l.valor !== 0);
   const despesas = comSomasDeFilhas(dre.despesas, ['valor']).filter((l) => l.valor !== 0);
+  const custos = comSomasDeFilhas(dre.custos, ['valor']).filter((l) => l.valor !== 0);
 
   return (
     <div>
-      <div style={{ maxWidth: 760, marginBottom: 12, display: 'flex', justifyContent: 'flex-end' }}>
+      <div style={{ maxWidth: 900, marginBottom: 12, display: 'flex', justifyContent: 'flex-end' }}>
         <CompartilharButton tipo="dre" empresaId={empresaId} empresaNome={empresaNome} periodo={periodo} />
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 24, maxWidth: 760 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 24, maxWidth: 900 }}>
         <LinhaGrupo titulo="Receitas" total={dre.totalReceitas} linhas={receitas} cor="var(--ok)" onClick={abrirConta} />
+        <LinhaGrupo titulo="Custos" total={dre.totalCustos} linhas={custos} cor="var(--warn)" onClick={abrirConta} />
         <LinhaGrupo titulo="Despesas" total={dre.totalDespesas} linhas={despesas} cor="var(--danger)" onClick={abrirConta} />
       </div>
 
-      <div style={{ maxWidth: 760, marginTop: 20, padding: '14px 18px', background: 'var(--surface)',
+      <div style={{ maxWidth: 900, marginTop: 20, padding: '14px 18px', background: 'var(--surface)',
         border: '2px solid var(--navy)', borderRadius: 10, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <span style={{ fontSize: '0.95rem', fontWeight: 700, color: 'var(--text1)' }}>Resultado do período</span>
         <span className={`num ${dre.resultado < 0 ? 'valor-negativo' : 'valor-positivo'}`} style={{ fontSize: '1.1rem', fontWeight: 800 }}>

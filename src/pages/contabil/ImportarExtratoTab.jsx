@@ -162,7 +162,9 @@ export default function ImportarExtratoTab({ empresaId }) {
 
   useEffect(() => {
     listarContasBanco(empresaId).then(setContasBanco);
-    listarContasReceitaDespesa(empresaId).then(setContasClassificacao);
+    // contas sintéticas (aceita_lancamento=false) não recebem lançamento
+    // direto — não fazem sentido como opção nesse seletor.
+    listarContasReceitaDespesa(empresaId).then((c) => setContasClassificacao(c.filter((x) => x.aceita_lancamento)));
   }, [empresaId]);
 
   function onDrop(e) {
