@@ -30,8 +30,11 @@ export default function Overview({ onAddTarefa, onOpenCliente, onOpenObrigacoes,
   const obrigacoes   = useStore(s => s.obrigacoes || [])
   const toggleTarefa = useStore(s => s.toggleTarefa)
   const lancamentosContabeisResumo = useStore(s => s.lancamentosContabeisResumo)
+  // Competência única do app — só o Painel tem o seletor; Empresas e
+  // Obrigações leem esse mesmo valor do store, sem controle próprio.
+  const compSel    = useStore(s => s.competenciaSelecionada)
+  const setCompSel = useStore(s => s.setCompetenciaSelecionada)
 
-  const [compSel, setCompSel]       = useState(compMesAtras(1))
   const [modalTipo, setModalTipo]   = useState(null) // { tipo, lista, meta }
 
   const stats = useMemo(() => {

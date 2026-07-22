@@ -6,6 +6,7 @@ import { supabase } from '../lib/supabase'
 import {
   listarDepartamentos, criarDepartamento, listarTiposObrigacao, criarTipoObrigacaoComEtapas,
   criarObrigacaoComEtapas, criarTarefasLote, gerarObrigacoesRecorrentesCompetencia, criarObrigacoesLote,
+  calcularVencimento,
 } from './andamento/andamentoApi'
 
 // Casamento histórico tipo-texto → departamento, só pra competências
@@ -31,9 +32,17 @@ const STATUS_OBS_COLOR = {
   vencido:    { bg:'rgba(168,48,48,.12)',   color:'#A83030' },
 }
 
-function compMesAtras(n) {
-  const d = new Date(); d.setMonth(d.getMonth() - n)
-  return String(d.getMonth()+1).padStart(2,'0') + '/' + d.getFullYear()
+// Obrigação pendente cujo vencimento está dentro da janela de lembrete do
+// seu tipo (dias_lembrete, embutido via fetchObrigacoes's nested select em
+// store/index.js) — "vence em breve", distinto de "vencido" (já passou).
+function isVencendo(o) {
+  if (o.status !== 'pendente' || !o.vencimento) return false
+  const dias = o.tipos_obrigacao?.dias_lembrete
+  if (dias == null) return false
+  const hoje = new Date(new Date().toDateString())
+  const venc = new Date(o.vencimento + 'T00:00:00')
+  const diff = Math.round((venc - hoje) / 86400000)
+  return diff >= 0 && diff <= dias
 }
 
 // dept: linha da tabela "departamentos" ({id, nome, icone}). Une as duas
@@ -44,18 +53,19 @@ function getStatusDept(obsEmp, tarefasEmp, dept) {
   const obs   = obsEmp.filter(o => o.departamento_id === dept.id || tiposLegado.includes(o.tipo))
   const tasks = tarefasEmp.filter(t => (t.departamento_id === dept.id || (t.departamento||'').toLowerCase() === dept.nome.toLowerCase()) && !t.concluida)
   if (obs.length === 0 && tasks.length === 0) return { s:'empty', pct:0, val:'—' }
-  const ok   = obs.filter(o => o.status==='concluido'||o.status==='nao_aplica').length
-  const venc = obs.filter(o => o.status==='vencido').length
+  const ok       = obs.filter(o => o.status==='concluido'||o.status==='nao_aplica').length
+  const venc     = obs.filter(o => o.status==='vencido').length
+  const vencendo = obs.some(isVencendo)
   const naAll = obs.length > 0 && obs.every(o => o.status==='nao_aplica')
   if (naAll) return { s:'na', pct:100, val:'N/A' }
   const pct = obs.length > 0 ? Math.round((ok/obs.length)*100) : 0
-  const s   = venc > 0 ? 'danger' : pct===100 ? 'ok' : obs.filter(o=>o.status==='pendente').length > 0 ? 'warn' : 'empty'
+  const s   = venc > 0 ? 'danger' : vencendo ? 'venc_breve' : pct===100 ? 'ok' : obs.filter(o=>o.status==='pendente').length > 0 ? 'warn' : 'empty'
   return { s, pct, val: obs.length > 0 ? `${ok}/${obs.length}` : tasks.length > 0 ? `${tasks.length}t` : '—' }
 }
 
-const S_COLOR = { ok:'#2A7A5A', warn:'#9A6B1A', danger:'#A83030', na:'#1E5FA0', empty:'#8A8F9E' }
-const S_BG    = { ok:'rgba(42,122,90,.10)', warn:'rgba(154,107,26,.10)', danger:'rgba(168,48,48,.10)', na:'rgba(30,95,160,.10)', empty:'var(--surface2)' }
-const S_ICON  = { ok:CheckCircleIcon, warn:ClockIcon, danger:AlertCircleIcon, na:MinusCircleIcon, empty:null }
+const S_COLOR = { ok:'#2A7A5A', warn:'#9A6B1A', venc_breve:'#C2540A', danger:'#A83030', na:'#1E5FA0', empty:'#8A8F9E' }
+const S_BG    = { ok:'rgba(42,122,90,.10)', warn:'rgba(154,107,26,.10)', venc_breve:'rgba(194,84,10,.12)', danger:'rgba(168,48,48,.10)', na:'rgba(30,95,160,.10)', empty:'var(--surface2)' }
+const S_ICON  = { ok:CheckCircleIcon, warn:ClockIcon, venc_breve:AlertCircleIcon, danger:AlertCircleIcon, na:MinusCircleIcon, empty:null }
 
 const AVATAR_COLORS = [
   ['#1a2e22','#34d399'],['#2a1f10','#fbbf24'],['#18203a','var(--accent)'],
@@ -94,7 +104,9 @@ export default function Empresas() {
   const fetchTarefas    = useStore(s => s.fetchTarefas)
   const { show }        = useToast()
 
-  const [compSel,     setCompSel]     = useState(compMesAtras(1))
+  // Competência única do app — só o Painel tem o seletor; essa tela lê o
+  // mesmo valor do store, sem controle próprio.
+  const compSel = useStore(s => s.competenciaSelecionada)
   const [busca,       setBusca]       = useState('')
   const [filtro,      setFiltro]      = useState('todos')
   const [carteira,    setCarteira]    = useState('todas')
@@ -239,10 +251,10 @@ export default function Empresas() {
             style={{ display:'flex', alignItems:'center', gap:5, background:'var(--surface2)', border:'1px solid #232840', borderRadius:8, padding:'5px 10px', fontSize:11, color:'var(--text2)', cursor:'pointer', fontWeight:500 }}>
             <ZapIcon size={12} /> Obrigações em lote
           </button>
-          <select value={compSel} onChange={e => setCompSel(e.target.value)}
-            style={{ background:'var(--surface2)', border:'1px solid #232840', borderRadius:8, padding:'5px 8px', fontSize:11, color:'var(--text2)' }}>
-            {[0,1,2,3].map(i => { const c=compMesAtras(i); return <option key={c} value={c}>{i===0?`Atual (${c})`:i===1?`Anterior (${c})`:c}</option> })}
-          </select>
+          <span style={{ background:'var(--surface2)', border:'1px solid #232840', borderRadius:8, padding:'5px 8px', fontSize:11, color:'var(--text2)' }}
+            title="Competência escolhida no Painel">
+            {compSel}
+          </span>
         </div>
       </div>
 
@@ -325,11 +337,12 @@ export default function Empresas() {
 
                 // Resumo: soma todas obrigações do cliente nesta competência
                 const obsTotal = obrigacoes.filter(o => o.cliente_id===c.id && o.competencia===compSel)
-                const resOk   = obsTotal.filter(o => o.status==='concluido'||o.status==='nao_aplica').length
-                const resVenc = obsTotal.filter(o => o.status==='vencido').length
-                const resPend = obsTotal.filter(o => o.status==='pendente').length
+                const resOk       = obsTotal.filter(o => o.status==='concluido'||o.status==='nao_aplica').length
+                const resVenc     = obsTotal.filter(o => o.status==='vencido').length
+                const resPend     = obsTotal.filter(o => o.status==='pendente').length
+                const resVencendo = obsTotal.some(isVencendo)
                 const resPct  = obsTotal.length > 0 ? Math.round((resOk/obsTotal.length)*100) : 0
-                const resS    = resVenc > 0 ? 'danger' : resPct===100 ? 'ok' : resPend > 0 ? 'warn' : 'empty'
+                const resS    = resVenc > 0 ? 'danger' : resVencendo ? 'venc_breve' : resPct===100 ? 'ok' : resPend > 0 ? 'warn' : 'empty'
                 const resumo  = { s: resS, pct: resPct, val: obsTotal.length > 0 ? `${resOk}/${obsTotal.length}` : '—' }
 
                 return (
@@ -438,8 +451,10 @@ export default function Empresas() {
                   {drawerObs.map(o => {
                     const cfg = STATUS_OBS_COLOR[o.status] || STATUS_OBS_COLOR.pendente
                     const busy = updatingId === o.id
+                    const vencendo = isVencendo(o)
                     return (
-                      <div key={o.id} style={{ background:'var(--surface)', border:'1px solid var(--border)', borderRadius:8, padding:'10px 12px' }}>
+                      <div key={o.id} style={{ background:'var(--surface)', border:'1px solid var(--border)',
+                        borderLeft: vencendo ? '3px solid #C2540A' : '1px solid var(--border)', borderRadius:8, padding:'10px 12px' }}>
                         <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:6, marginBottom: o.vencimento ? 6 : 0 }}>
                           <span style={{ fontSize:12, fontWeight:500, color:'var(--text1)' }}>{o.titulo || o.tipo}</span>
                           <select
@@ -458,9 +473,9 @@ export default function Empresas() {
                           </select>
                         </div>
                         {o.vencimento && (
-                          <div style={{ fontSize:10, color:o.status==='vencido'?'#f87171':'var(--text3)', display:'flex', alignItems:'center', gap:4 }}>
+                          <div style={{ fontSize:10, color:o.status==='vencido'?'#f87171':vencendo?'#C2540A':'var(--text3)', display:'flex', alignItems:'center', gap:4, fontWeight:vencendo?600:400 }}>
                             <CalendarIcon size={9} />
-                            {o.status==='vencido'?'⚠ ':''}Venc. {new Date(o.vencimento+'T12:00:00').toLocaleDateString('pt-BR')}
+                            {o.status==='vencido'?'⚠ ':vencendo?'⏰ vence em breve · ':''}Venc. {new Date(o.vencimento+'T12:00:00').toLocaleDateString('pt-BR')}
                           </div>
                         )}
                       </div>
@@ -604,7 +619,10 @@ function NovaObrigacaoModal({ cliente, dept, departamentos, competencia, onClose
   const [novoNome,       setNovoNome]       = useState('')
   const [novaPeriodicidade, setNovaPeriodicidade] = useState('mensal')
   const [recorrente,     setRecorrente]     = useState(true)
-  const [prazoDias,      setPrazoDias]      = useState(15)
+  const [mesVencimento,  setMesVencimento]  = useState('mesmo')
+  const [diaVencimento,  setDiaVencimento]  = useState('')
+  const [diasLembrete,   setDiasLembrete]   = useState(3)
+  const [prazoDias,      setPrazoDias]      = useState(15) // usado só quando não é recorrente (vencimento fixo dia/mês não se aplica)
   const [saving,         setSaving]         = useState(false)
   const [erro,           setErro]           = useState(null)
 
@@ -622,18 +640,28 @@ function NovaObrigacaoModal({ cliente, dept, departamentos, competencia, onClose
     try {
       let tipoObrigacaoId = tipoId
       let nomeTipo = tipos.find(t => t.id === tipoId)?.nome
+      let vencimentoUnico = null
       if (criandoNovo) {
         const novoTipo = await criarTipoObrigacaoComEtapas({
           departamentoId, nome: novoNome.trim(), recorrente,
           periodicidade: recorrente ? novaPeriodicidade : null,
-          etapas: [{ nome: 'Concluir', prazoDias: Number(prazoDias) || 0 }],
+          mesVencimento: recorrente ? mesVencimento : null,
+          diaVencimento: recorrente ? diaVencimento : null,
+          diasLembrete: recorrente ? diasLembrete : null,
+          etapas: [{ nome: 'Concluir', prazoDias: recorrente ? 0 : (Number(prazoDias) || 0) }],
         })
         tipoObrigacaoId = novoTipo.id
         nomeTipo = novoTipo.nome
+        if (recorrente && diaVencimento) vencimentoUnico = calcularVencimento(competencia, mesVencimento, Number(diaVencimento))
+      } else {
+        const tipoEscolhido = tipos.find(t => t.id === tipoId)
+        if (tipoEscolhido?.dia_vencimento) {
+          vencimentoUnico = calcularVencimento(competencia, tipoEscolhido.mes_vencimento || 'mesmo', tipoEscolhido.dia_vencimento)
+        }
       }
       await criarObrigacaoComEtapas({
         clienteId: cliente.id, tipoObrigacaoId, departamentoId,
-        titulo: nomeTipo || 'Obrigação', competencia,
+        titulo: nomeTipo || 'Obrigação', competencia, vencimentoUnico,
       })
       onSaved()
     } catch (e) { setErro(e.message) }
@@ -674,22 +702,41 @@ function NovaObrigacaoModal({ cliente, dept, departamentos, competencia, onClose
               <input type="checkbox" checked={recorrente} onChange={e => setRecorrente(e.target.checked)} /> Recorrente
             </label>
             {recorrente && (
-              <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:8, marginBottom:4 }}>
-                <div>
-                  <label style={{ fontSize:10, color:'var(--text3)', display:'block', marginBottom:3 }}>Periodicidade</label>
-                  <select value={novaPeriodicidade} onChange={e => setNovaPeriodicidade(e.target.value)}
-                    style={{ width:'100%', background:'var(--surface)', border:'1px solid var(--border)', borderRadius:8, padding:'6px 8px', fontSize:12, color:'var(--text1)', outline:'none' }}>
-                    <option value="mensal">Mensal</option>
-                    <option value="trimestral">Trimestral</option>
-                    <option value="semestral">Semestral</option>
-                    <option value="anual">Anual</option>
-                  </select>
+              <>
+                <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:8, marginBottom:8 }}>
+                  <div>
+                    <label style={{ fontSize:10, color:'var(--text3)', display:'block', marginBottom:3 }}>Periodicidade</label>
+                    <select value={novaPeriodicidade} onChange={e => setNovaPeriodicidade(e.target.value)}
+                      style={{ width:'100%', background:'var(--surface)', border:'1px solid var(--border)', borderRadius:8, padding:'6px 8px', fontSize:12, color:'var(--text1)', outline:'none' }}>
+                      <option value="mensal">Mensal</option>
+                      <option value="trimestral">Trimestral</option>
+                      <option value="semestral">Semestral</option>
+                      <option value="anual">Anual</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label style={{ fontSize:10, color:'var(--text3)', display:'block', marginBottom:3 }}>Lembrete (dias antes)</label>
+                    <input type="number" value={diasLembrete} onChange={e => setDiasLembrete(e.target.value)}
+                      style={{ width:'100%', background:'var(--surface)', border:'1px solid var(--border)', borderRadius:8, padding:'6px 8px', fontSize:12, color:'var(--text1)', outline:'none' }} />
+                  </div>
                 </div>
-                <div>
-                  <label style={{ fontSize:10, color:'var(--text3)', display:'block', marginBottom:3 }}>Vencimento (dias)</label>
-                  <input type="number" value={prazoDias} onChange={e => setPrazoDias(e.target.value)}
+                <label style={{ fontSize:10, color:'var(--text3)', display:'block', marginBottom:3 }}>Vencimento</label>
+                <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:8, marginBottom:4 }}>
+                  <select value={mesVencimento} onChange={e => setMesVencimento(e.target.value)}
+                    style={{ width:'100%', background:'var(--surface)', border:'1px solid var(--border)', borderRadius:8, padding:'6px 8px', fontSize:12, color:'var(--text1)', outline:'none' }}>
+                    <option value="mesmo">Mês da competência</option>
+                    <option value="seguinte">Mês seguinte</option>
+                  </select>
+                  <input type="number" min={1} max={31} value={diaVencimento} onChange={e => setDiaVencimento(e.target.value)} placeholder="Dia"
                     style={{ width:'100%', background:'var(--surface)', border:'1px solid var(--border)', borderRadius:8, padding:'6px 8px', fontSize:12, color:'var(--text1)', outline:'none' }} />
                 </div>
+              </>
+            )}
+            {!recorrente && (
+              <div>
+                <label style={{ fontSize:10, color:'var(--text3)', display:'block', marginBottom:3 }}>Vencimento (dias após início)</label>
+                <input type="number" value={prazoDias} onChange={e => setPrazoDias(e.target.value)}
+                  style={{ width:'100%', background:'var(--surface)', border:'1px solid var(--border)', borderRadius:8, padding:'6px 8px', fontSize:12, color:'var(--text1)', outline:'none' }} />
               </div>
             )}
             <button onClick={() => setCriandoNovo(false)}
@@ -882,7 +929,10 @@ function ModalObrigacoesLote({ departamentos, clientes, competenciaInicial, onCl
   const [novoNome,       setNovoNome]       = useState('')
   const [novaPeriodicidade, setNovaPeriodicidade] = useState('mensal')
   const [recorrente,     setRecorrente]     = useState(true)
-  const [prazoDias,      setPrazoDias]      = useState(15)
+  const [mesVencimento,  setMesVencimento]  = useState('mesmo')
+  const [diaVencimento,  setDiaVencimento]  = useState('')
+  const [diasLembrete,   setDiasLembrete]   = useState(3)
+  const [prazoDias,      setPrazoDias]      = useState(15) // usado só quando não é recorrente
   const [competencia,    setCompetencia]    = useState(competenciaInicial)
   const [busca,          setBusca]          = useState('')
   const [clientesSel,    setClientesSel]    = useState([])
@@ -906,18 +956,27 @@ function ModalObrigacoesLote({ departamentos, clientes, competenciaInicial, onCl
     try {
       let tipoObrigacaoId = tipoId
       let nomeTipo = tipos.find(t => t.id === tipoId)?.nome
+      let mesVencimentoFinal = null, diaVencimentoFinal = null
       if (criandoNovo) {
         const novoTipo = await criarTipoObrigacaoComEtapas({
           departamentoId, nome: novoNome.trim(), recorrente,
           periodicidade: recorrente ? novaPeriodicidade : null,
-          etapas: [{ nome: 'Concluir', prazoDias: Number(prazoDias) || 0 }],
+          mesVencimento: recorrente ? mesVencimento : null,
+          diaVencimento: recorrente ? diaVencimento : null,
+          diasLembrete: recorrente ? diasLembrete : null,
+          etapas: [{ nome: 'Concluir', prazoDias: recorrente ? 0 : (Number(prazoDias) || 0) }],
         })
         tipoObrigacaoId = novoTipo.id
         nomeTipo = novoTipo.nome
+        if (recorrente && diaVencimento) { mesVencimentoFinal = mesVencimento; diaVencimentoFinal = Number(diaVencimento) }
+      } else {
+        const tipoEscolhido = tipos.find(t => t.id === tipoId)
+        if (tipoEscolhido?.dia_vencimento) { mesVencimentoFinal = tipoEscolhido.mes_vencimento || 'mesmo'; diaVencimentoFinal = tipoEscolhido.dia_vencimento }
       }
       const resultado = await criarObrigacoesLote({
         clienteIds: clientesSel, tipoObrigacaoId, departamentoId,
         titulo: nomeTipo || 'Obrigação', competencia,
+        mesVencimento: mesVencimentoFinal, diaVencimento: diaVencimentoFinal,
       })
       onSaved(resultado)
     } catch (e) { setErro(e.message) }
@@ -965,22 +1024,41 @@ function ModalObrigacoesLote({ departamentos, clientes, competenciaInicial, onCl
               <input type="checkbox" checked={recorrente} onChange={e => setRecorrente(e.target.checked)} /> Recorrente
             </label>
             {recorrente && (
-              <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:8, marginBottom:4 }}>
-                <div>
-                  <label style={{ fontSize:10, color:'var(--text3)', display:'block', marginBottom:3 }}>Periodicidade</label>
-                  <select value={novaPeriodicidade} onChange={e => setNovaPeriodicidade(e.target.value)}
-                    style={{ width:'100%', background:'var(--surface)', border:'1px solid var(--border)', borderRadius:8, padding:'6px 8px', fontSize:12, color:'var(--text1)', outline:'none' }}>
-                    <option value="mensal">Mensal</option>
-                    <option value="trimestral">Trimestral</option>
-                    <option value="semestral">Semestral</option>
-                    <option value="anual">Anual</option>
-                  </select>
+              <>
+                <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:8, marginBottom:8 }}>
+                  <div>
+                    <label style={{ fontSize:10, color:'var(--text3)', display:'block', marginBottom:3 }}>Periodicidade</label>
+                    <select value={novaPeriodicidade} onChange={e => setNovaPeriodicidade(e.target.value)}
+                      style={{ width:'100%', background:'var(--surface)', border:'1px solid var(--border)', borderRadius:8, padding:'6px 8px', fontSize:12, color:'var(--text1)', outline:'none' }}>
+                      <option value="mensal">Mensal</option>
+                      <option value="trimestral">Trimestral</option>
+                      <option value="semestral">Semestral</option>
+                      <option value="anual">Anual</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label style={{ fontSize:10, color:'var(--text3)', display:'block', marginBottom:3 }}>Lembrete (dias antes)</label>
+                    <input type="number" value={diasLembrete} onChange={e => setDiasLembrete(e.target.value)}
+                      style={{ width:'100%', background:'var(--surface)', border:'1px solid var(--border)', borderRadius:8, padding:'6px 8px', fontSize:12, color:'var(--text1)', outline:'none' }} />
+                  </div>
                 </div>
-                <div>
-                  <label style={{ fontSize:10, color:'var(--text3)', display:'block', marginBottom:3 }}>Vencimento (dias)</label>
-                  <input type="number" value={prazoDias} onChange={e => setPrazoDias(e.target.value)}
+                <label style={{ fontSize:10, color:'var(--text3)', display:'block', marginBottom:3 }}>Vencimento</label>
+                <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:8, marginBottom:4 }}>
+                  <select value={mesVencimento} onChange={e => setMesVencimento(e.target.value)}
+                    style={{ width:'100%', background:'var(--surface)', border:'1px solid var(--border)', borderRadius:8, padding:'6px 8px', fontSize:12, color:'var(--text1)', outline:'none' }}>
+                    <option value="mesmo">Mês da competência</option>
+                    <option value="seguinte">Mês seguinte</option>
+                  </select>
+                  <input type="number" min={1} max={31} value={diaVencimento} onChange={e => setDiaVencimento(e.target.value)} placeholder="Dia"
                     style={{ width:'100%', background:'var(--surface)', border:'1px solid var(--border)', borderRadius:8, padding:'6px 8px', fontSize:12, color:'var(--text1)', outline:'none' }} />
                 </div>
+              </>
+            )}
+            {!recorrente && (
+              <div>
+                <label style={{ fontSize:10, color:'var(--text3)', display:'block', marginBottom:3 }}>Vencimento (dias após início)</label>
+                <input type="number" value={prazoDias} onChange={e => setPrazoDias(e.target.value)}
+                  style={{ width:'100%', background:'var(--surface)', border:'1px solid var(--border)', borderRadius:8, padding:'6px 8px', fontSize:12, color:'var(--text1)', outline:'none' }} />
               </div>
             )}
             <button onClick={() => setCriandoNovo(false)}

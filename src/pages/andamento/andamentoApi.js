@@ -61,12 +61,18 @@ export async function listarTodosTiposObrigacaoComEtapas() {
 
 // Cria um tipo de obrigação novo já com as etapas do template (nome +
 // prazo em dias a partir do início de cada etapa, na ordem informada).
-export async function criarTipoObrigacaoComEtapas({ departamentoId, nome, descricao, recorrente, periodicidade, etapas }) {
+export async function criarTipoObrigacaoComEtapas({
+  departamentoId, nome, descricao, recorrente, periodicidade,
+  mesVencimento, diaVencimento, diasLembrete, etapas,
+}) {
   const { data: tipo, error: errTipo } = await supabase
     .from('tipos_obrigacao')
     .insert({
       departamento_id: departamentoId, nome, descricao: descricao || null,
       recorrente: !!recorrente, periodicidade: recorrente ? (periodicidade || 'mensal') : null,
+      mes_vencimento: mesVencimento || 'mesmo',
+      dia_vencimento: diaVencimento ? Number(diaVencimento) : null,
+      dias_lembrete: diasLembrete === '' || diasLembrete == null ? null : Number(diasLembrete),
     })
     .select()
     .single();
@@ -79,6 +85,21 @@ export async function criarTipoObrigacaoComEtapas({ departamentoId, nome, descri
   if (errEtapas) throw errEtapas;
 
   return tipo;
+}
+
+// Edita um tipo já existente — usado pra ajustar vencimento/lembrete dos 7
+// tipos recorrentes seedados (ou qualquer outro) sem precisar recriar.
+export async function atualizarTipoObrigacao(id, { nome, descricao, recorrente, periodicidade, mesVencimento, diaVencimento, diasLembrete } = {}) {
+  const patch = {};
+  if (nome !== undefined) patch.nome = nome;
+  if (descricao !== undefined) patch.descricao = descricao || null;
+  if (recorrente !== undefined) patch.recorrente = !!recorrente;
+  if (periodicidade !== undefined) patch.periodicidade = periodicidade || null;
+  if (mesVencimento !== undefined) patch.mes_vencimento = mesVencimento;
+  if (diaVencimento !== undefined) patch.dia_vencimento = diaVencimento === '' || diaVencimento == null ? null : Number(diaVencimento);
+  if (diasLembrete !== undefined) patch.dias_lembrete = diasLembrete === '' || diasLembrete == null ? null : Number(diasLembrete);
+  const { error } = await supabase.from('tipos_obrigacao').update(patch).eq('id', id);
+  if (error) throw error;
 }
 
 // Adiciona uma etapa no fim do template de um tipo já existente.
@@ -123,12 +144,28 @@ function somarDias(dataISO, dias) {
   return d.toISOString().slice(0, 10);
 }
 
+// Data de vencimento de um tipo simples (uma etapa "Concluir") a partir da
+// competência (MM/YYYY) + mês/dia configurados no tipo — "seguinte" soma um
+// mês à competência antes de aplicar o dia. Clampa o dia ao último dia do
+// mês-alvo (ex: dia 31 configurado, mês-alvo com 30 dias → cai no dia 30).
+export function calcularVencimento(competencia, mesVencimento, diaVencimento) {
+  const [mes, ano] = competencia.split('/').map(Number);
+  let anoAlvo = ano, mesAlvo = mes; // mesAlvo fica 1-indexed
+  if (mesVencimento === 'seguinte') {
+    mesAlvo += 1;
+    if (mesAlvo > 12) { mesAlvo = 1; anoAlvo += 1; }
+  }
+  const ultimoDia = new Date(anoAlvo, mesAlvo, 0).getDate(); // mesAlvo 1-indexed vira "mês seguinte" 0-indexed; dia 0 = último dia do mês-alvo
+  const dia = Math.min(diaVencimento, ultimoDia);
+  return `${anoAlvo}-${String(mesAlvo).padStart(2, '0')}-${String(dia).padStart(2, '0')}`;
+}
+
 // Cria a obrigação (linha em "obrigacoes") e já faz o snapshot das etapas do
 // template em "etapas_obrigacao" — a 1ª etapa nasce em_andamento, o resto
 // pendente. "tipo"/"competencia" da tabela legada são NOT NULL sem default
 // (constraint que só existe em produção, não documentada em .sql) — nenhum
 // dos dois é usado pelo fluxo novo, só preenchidos pra satisfazer a tabela.
-export async function criarObrigacaoComEtapas({ clienteId, tipoObrigacaoId, departamentoId, titulo, responsavel, taskId, competencia, dataInicio: dataInicioParam }) {
+export async function criarObrigacaoComEtapas({ clienteId, tipoObrigacaoId, departamentoId, titulo, responsavel, taskId, competencia, dataInicio: dataInicioParam, vencimentoUnico }) {
   const template = await listarEtapasTemplate(tipoObrigacaoId);
   if (template.length === 0) throw new Error('Esse tipo de obrigação não tem etapas cadastradas.');
 
@@ -149,18 +186,27 @@ export async function criarObrigacaoComEtapas({ clienteId, tipoObrigacaoId, depa
       // não concluído"; quem mostra o progresso real são as etapas.
       status: 'pendente',
       data_inicio: dataInicio,
+      // Só populada pro caso simples (tipo com mes_vencimento/dia_vencimento
+      // configurados, ver vencimentoUnico abaixo) — processos com várias
+      // etapas não têm "um" vencimento, cada etapa tem o seu.
+      vencimento: vencimentoUnico || null,
     })
     .select()
     .single();
   if (errObrig) throw errObrig;
 
+  // Quando o tipo tem vencimento explícito (mes_vencimento/dia_vencimento) e
+  // só existe uma etapa (o caso "Concluir" das obrigações recorrentes
+  // simples), a data prevista dessa etapa é a data calculada, não o
+  // dataInicio+prazo_dias_relativo — que continua valendo pra processos de
+  // várias etapas (ex: Rescisão), onde não existe um "vencimento único".
   const etapas = template.map((et, i) => ({
     obrigacao_id: obrigacao.id,
     etapas_template_id: et.id,
     nome: et.nome,
     ordem: et.ordem,
     status: i === 0 ? 'em_andamento' : 'pendente',
-    data_prevista: somarDias(dataInicio, et.prazo_dias_relativo),
+    data_prevista: (vencimentoUnico && template.length === 1) ? vencimentoUnico : somarDias(dataInicio, et.prazo_dias_relativo),
   }));
   const { error: errEtapas } = await supabase.from('etapas_obrigacao').insert(etapas);
   if (errEtapas) throw errEtapas;
@@ -218,6 +264,9 @@ export async function gerarObrigacoesRecorrentesCompetencia(competencia, cliente
 
   for (const tipo of tipos) {
     const janela = JANELA_MESES_POR_PERIODICIDADE[tipo.periodicidade] ?? 1;
+    const vencimentoUnico = tipo.dia_vencimento
+      ? calcularVencimento(competencia, tipo.mes_vencimento || 'mesmo', tipo.dia_vencimento)
+      : null;
     for (const clienteId of clienteIds) {
       const jaTemNaJanela = existentes.some((o) => {
         if (o.tipo_obrigacao_id !== tipo.id || o.cliente_id !== clienteId) return false;
@@ -227,7 +276,7 @@ export async function gerarObrigacoesRecorrentesCompetencia(competencia, cliente
       if (jaTemNaJanela) continue;
       await criarObrigacaoComEtapas({
         clienteId, tipoObrigacaoId: tipo.id, departamentoId: tipo.departamento_id,
-        titulo: tipo.nome, competencia, dataInicio,
+        titulo: tipo.nome, competencia, dataInicio, vencimentoUnico,
       });
       criadas++;
     }
@@ -243,7 +292,7 @@ export async function gerarObrigacoesRecorrentesCompetencia(competencia, cliente
 // não automática por periodicidade. Pula clientes que já têm essa
 // obrigação nessa competência (idempotente, mesmo índice parcial usado
 // pela geração automática).
-export async function criarObrigacoesLote({ clienteIds, tipoObrigacaoId, departamentoId, titulo, competencia }) {
+export async function criarObrigacoesLote({ clienteIds, tipoObrigacaoId, departamentoId, titulo, competencia, mesVencimento, diaVencimento }) {
   if (!clienteIds || clienteIds.length === 0) return { criadas: 0, jaExistiam: 0 };
 
   const { data: existentes, error: errExist } = await supabase
@@ -256,10 +305,11 @@ export async function criarObrigacoesLote({ clienteIds, tipoObrigacaoId, departa
   const jaTem = new Set(existentes.map((o) => o.cliente_id));
 
   const dataInicio = primeiroDiaCompetencia(competencia);
+  const vencimentoUnico = diaVencimento ? calcularVencimento(competencia, mesVencimento || 'mesmo', diaVencimento) : null;
   let criadas = 0;
   for (const clienteId of clienteIds) {
     if (jaTem.has(clienteId)) continue;
-    await criarObrigacaoComEtapas({ clienteId, tipoObrigacaoId, departamentoId, titulo, competencia, dataInicio });
+    await criarObrigacaoComEtapas({ clienteId, tipoObrigacaoId, departamentoId, titulo, competencia, dataInicio, vencimentoUnico });
     criadas++;
   }
   return { criadas, jaExistiam: jaTem.size };

@@ -3,7 +3,7 @@ import { PlusIcon, SettingsIcon, TruckIcon, XIcon, SaveIcon, Trash2Icon, Calenda
 import { useStore } from '../../store'
 import {
   listarDepartamentos, listarTiposObrigacao, listarTodosTiposObrigacaoComEtapas,
-  criarObrigacaoComEtapas, criarTipoObrigacaoComEtapas, adicionarEtapaTemplate,
+  criarObrigacaoComEtapas, criarTipoObrigacaoComEtapas, atualizarTipoObrigacao, adicionarEtapaTemplate,
   excluirEtapaTemplate, arquivarTipoObrigacao,
   listarObrigacoesComEtapas, marcarEntregaObrigacao, statusVisualEtapa, etapaAtrasada,
   listarTarefasComData,
@@ -457,7 +457,10 @@ function GerenciarTiposModal({ departamentos, onClose }) {
                 <div>
                   <div style={{ fontSize:13, fontWeight:600, color:'var(--text1)' }}>{t.nome}</div>
                   <div style={{ fontSize:10.5, color:'var(--text3)', marginTop:2 }}>
-                    {t.departamentos?.icone} {t.departamentos?.nome} · {t.etapas_template.length} etapas{t.recorrente ? ' · recorrente' : ''}
+                    {t.departamentos?.icone} {t.departamentos?.nome} · {t.etapas_template.length} etapas
+                    {t.recorrente ? ` · ${t.periodicidade || 'recorrente'}` : ''}
+                    {t.dia_vencimento ? ` · vence dia ${t.dia_vencimento} (${t.mes_vencimento === 'seguinte' ? 'mês seguinte' : 'mesmo mês'})` : ''}
+                    {t.dias_lembrete != null ? ` · lembrete ${t.dias_lembrete}d` : ''}
                   </div>
                 </div>
                 <button onClick={e => { e.stopPropagation(); handleArquivar(t.id) }}
@@ -481,6 +484,10 @@ function NovoTipoForm({ departamentos, onCancel, onSaved }) {
   const [nome,          setNome]          = useState('')
   const [departamentoId,setDepartamentoId]= useState(departamentos[0]?.id || '')
   const [recorrente,    setRecorrente]    = useState(false)
+  const [periodicidade, setPeriodicidade] = useState('mensal')
+  const [mesVencimento, setMesVencimento] = useState('mesmo')
+  const [diaVencimento, setDiaVencimento] = useState('')
+  const [diasLembrete,  setDiasLembrete]  = useState(3)
   const [etapas,        setEtapas]        = useState([{ nome: '', prazoDias: 0 }])
   const [saving,        setSaving]        = useState(false)
   const [erro,          setErro]          = useState(null)
@@ -498,6 +505,10 @@ function NovoTipoForm({ departamentos, onCancel, onSaved }) {
     try {
       await criarTipoObrigacaoComEtapas({
         departamentoId, nome: nome.trim(), recorrente,
+        periodicidade: recorrente ? periodicidade : null,
+        mesVencimento: recorrente ? mesVencimento : null,
+        diaVencimento: recorrente ? diaVencimento : null,
+        diasLembrete: recorrente ? diasLembrete : null,
         etapas: etapas.map(e => ({ nome: e.nome.trim(), prazoDias: Number(e.prazoDias) || 0 })),
       })
       onSaved()
@@ -522,9 +533,41 @@ function NovoTipoForm({ departamentos, onCancel, onSaved }) {
           {departamentos.map(d => <option key={d.id} value={d.id}>{d.icone} {d.nome}</option>)}
         </select>
       </div>
-      <label style={{ display:'flex', alignItems:'center', gap:6, fontSize:11, color:'var(--text2)', marginBottom:10 }}>
-        <input type="checkbox" checked={recorrente} onChange={e => setRecorrente(e.target.checked)} /> Recorrente (mensal)
+      <label style={{ display:'flex', alignItems:'center', gap:6, fontSize:11, color:'var(--text2)', marginBottom:8 }}>
+        <input type="checkbox" checked={recorrente} onChange={e => setRecorrente(e.target.checked)} /> Recorrente
       </label>
+
+      {recorrente && (
+        <div style={{ background:'var(--bg)', border:'1px dashed var(--border2)', borderRadius:8, padding:9, marginBottom:12 }}>
+          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:8, marginBottom:8 }}>
+            <div>
+              <label style={{ fontSize:10, color:'var(--text3)', display:'block', marginBottom:3 }}>Periodicidade</label>
+              <select value={periodicidade} onChange={e => setPeriodicidade(e.target.value)}
+                style={{ width:'100%', background:'var(--surface2)', border:'1px solid var(--border)', borderRadius:8, padding:'6px 8px', fontSize:12, color:'var(--text1)', outline:'none' }}>
+                <option value="mensal">Mensal</option>
+                <option value="trimestral">Trimestral</option>
+                <option value="semestral">Semestral</option>
+                <option value="anual">Anual</option>
+              </select>
+            </div>
+            <div>
+              <label style={{ fontSize:10, color:'var(--text3)', display:'block', marginBottom:3 }}>Lembrete (dias antes)</label>
+              <input type="number" value={diasLembrete} onChange={e => setDiasLembrete(e.target.value)}
+                style={{ width:'100%', background:'var(--surface2)', border:'1px solid var(--border)', borderRadius:8, padding:'6px 8px', fontSize:12, color:'var(--text1)', outline:'none' }} />
+            </div>
+          </div>
+          <label style={{ fontSize:10, color:'var(--text3)', display:'block', marginBottom:3 }}>Vencimento (só se a obrigação tiver uma única etapa)</label>
+          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:8 }}>
+            <select value={mesVencimento} onChange={e => setMesVencimento(e.target.value)}
+              style={{ width:'100%', background:'var(--surface2)', border:'1px solid var(--border)', borderRadius:8, padding:'6px 8px', fontSize:12, color:'var(--text1)', outline:'none' }}>
+              <option value="mesmo">Mês da competência</option>
+              <option value="seguinte">Mês seguinte</option>
+            </select>
+            <input type="number" min={1} max={31} value={diaVencimento} onChange={e => setDiaVencimento(e.target.value)} placeholder="Dia"
+              style={{ width:'100%', background:'var(--surface2)', border:'1px solid var(--border)', borderRadius:8, padding:'6px 8px', fontSize:12, color:'var(--text1)', outline:'none' }} />
+          </div>
+        </div>
+      )}
 
       <div style={{ fontSize:11, fontWeight:600, color:'var(--text2)', marginBottom:6, textTransform:'uppercase', letterSpacing:.4 }}>Etapas (execução → entrega)</div>
       {etapas.map((et, i) => (
@@ -565,6 +608,25 @@ function EtapasDoTipo({ tipo, onChanged }) {
   const [saving,    setSaving]    = useState(false)
   const [erro,      setErro]      = useState(null)
 
+  const [periodicidade, setPeriodicidade] = useState(tipo.periodicidade || 'mensal')
+  const [mesVencimento, setMesVencimento] = useState(tipo.mes_vencimento || 'mesmo')
+  const [diaVencimento, setDiaVencimento] = useState(tipo.dia_vencimento ?? '')
+  const [diasLembrete,  setDiasLembrete]  = useState(tipo.dias_lembrete ?? '')
+  const [savingVenc,    setSavingVenc]    = useState(false)
+
+  const handleSalvarVencimento = async () => {
+    setSavingVenc(true)
+    setErro(null)
+    try {
+      await atualizarTipoObrigacao(tipo.id, { periodicidade, mesVencimento, diaVencimento, diasLembrete })
+      await onChanged()
+    } catch (e) {
+      setErro(e.message)
+    } finally {
+      setSavingVenc(false)
+    }
+  }
+
   const handleAdd = async () => {
     if (!novaEtapa.trim()) return
     setSaving(true)
@@ -596,6 +658,41 @@ function EtapasDoTipo({ tipo, onChanged }) {
 
   return (
     <div style={{ marginTop:10, paddingTop:10, borderTop:'1px solid var(--border)' }}>
+      {tipo.recorrente && (
+        <div style={{ background:'var(--bg)', border:'1px dashed var(--border2)', borderRadius:8, padding:9, marginBottom:12 }}>
+          <div style={{ fontSize:10, fontWeight:600, color:'var(--text3)', textTransform:'uppercase', letterSpacing:.4, marginBottom:6 }}>Vencimento & lembrete</div>
+          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:6, marginBottom:6 }}>
+            <select value={periodicidade} onChange={e => setPeriodicidade(e.target.value)}
+              style={{ width:'100%', background:'var(--surface2)', border:'1px solid var(--border)', borderRadius:8, padding:'5px 7px', fontSize:11, color:'var(--text1)', outline:'none' }}>
+              <option value="mensal">Mensal</option>
+              <option value="trimestral">Trimestral</option>
+              <option value="semestral">Semestral</option>
+              <option value="anual">Anual</option>
+            </select>
+            <select value={mesVencimento} onChange={e => setMesVencimento(e.target.value)}
+              style={{ width:'100%', background:'var(--surface2)', border:'1px solid var(--border)', borderRadius:8, padding:'5px 7px', fontSize:11, color:'var(--text1)', outline:'none' }}>
+              <option value="mesmo">Mês da competência</option>
+              <option value="seguinte">Mês seguinte</option>
+            </select>
+          </div>
+          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:6, marginBottom:8 }}>
+            <div style={{ display:'flex', alignItems:'center', gap:5 }}>
+              <span style={{ fontSize:10, color:'var(--text3)' }}>Dia venc.</span>
+              <input type="number" min={1} max={31} value={diaVencimento} onChange={e => setDiaVencimento(e.target.value)}
+                style={{ width:'100%', background:'var(--surface2)', border:'1px solid var(--border)', borderRadius:8, padding:'5px 7px', fontSize:11, color:'var(--text1)', outline:'none' }} />
+            </div>
+            <div style={{ display:'flex', alignItems:'center', gap:5 }}>
+              <span style={{ fontSize:10, color:'var(--text3)' }}>Lembrete</span>
+              <input type="number" min={0} value={diasLembrete} onChange={e => setDiasLembrete(e.target.value)} placeholder="dias"
+                style={{ width:'100%', background:'var(--surface2)', border:'1px solid var(--border)', borderRadius:8, padding:'5px 7px', fontSize:11, color:'var(--text1)', outline:'none' }} />
+            </div>
+          </div>
+          <button onClick={handleSalvarVencimento} disabled={savingVenc}
+            style={{ background:'var(--navy)', border:'none', borderRadius:8, padding:'5px 10px', fontSize:11, color:'#fff', cursor:'pointer', opacity:savingVenc?.6:1 }}>
+            {savingVenc ? 'Salvando...' : 'Salvar vencimento/lembrete'}
+          </button>
+        </div>
+      )}
       {tipo.etapas_template.map((et, i) => (
         <div key={et.id} style={{ display:'flex', justifyContent:'space-between', alignItems:'center', padding:'4px 0', fontSize:12 }}>
           <span style={{ color:'var(--text1)' }}>{i+1}. {et.nome} <span style={{ color:'var(--text3)', fontSize:10.5 }}>({et.prazo_dias_relativo}d)</span></span>

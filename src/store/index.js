@@ -1,6 +1,13 @@
 import { create } from 'zustand'
 import { supabase } from '../lib/supabase'
 
+// Competência padrão = mês anterior (mesmo default que Painel/Empresas/
+// Obrigações já usavam cada um com seu próprio estado local).
+function competenciaPadrao() {
+  const d = new Date(); d.setMonth(d.getMonth() - 1)
+  return String(d.getMonth() + 1).padStart(2, '0') + '/' + d.getFullYear()
+}
+
 export const useStore = create((set, get) => ({
   // ── Estado ──────────────────────────────────────────────────────────────────
   clientes: [],
@@ -11,6 +18,10 @@ export const useStore = create((set, get) => ({
   lancamentosContabeisResumo: { conciliados: 0, aConciliar: 0 },
   loading: false,
   syncingErp: false,
+  // Competência única — só o Painel tem o seletor (Overview.jsx); Empresas
+  // e Obrigações só leem esse valor, sem controle próprio (ver plano).
+  competenciaSelecionada: competenciaPadrao(),
+  setCompetenciaSelecionada: (c) => set({ competenciaSelecionada: c }),
   oneflowConfig: {
     userToken: '',
     refreshToken: '',
@@ -135,7 +146,7 @@ export const useStore = create((set, get) => ({
   fetchObrigacoes: async () => {
     const { data, error } = await supabase
       .from('obrigacoes')
-      .select('*, clientes(nome)')
+      .select('*, clientes(nome), tipos_obrigacao(dias_lembrete)')
       .order('competencia', { ascending: false })
     if (error) console.error('fetchObrigacoes error:', error)
     if (!error) set({ obrigacoes: data || [] })

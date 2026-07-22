@@ -4,6 +4,7 @@ import { useStore } from './store'
 import { ToastContainer } from './components/shared'
 import NovaTarefaModal from './components/NovaTarefaModal'
 import OneflowConfigModal from './components/OneflowConfigModal'
+import { NotificacoesBell, NotificacoesPanel } from './components/Notificacoes'
 import Overview from './pages/Overview'
 import Tarefas from './pages/Tarefas'
 import Clientes from './pages/Clientes'
@@ -33,6 +34,7 @@ export default function App() {
   const [newTaskClienteId, setNewTaskClienteId] = useState('')
   const [showConfig, setShowConfig]           = useState(false)
   const [highlightTaskId, setHighlightTaskId] = useState(null)
+  const [showNotifs, setShowNotifs]           = useState(false)
 
   const init       = useStore(s => s.init)
   const loading    = useStore(s => s.loading)
@@ -53,11 +55,7 @@ export default function App() {
       <div className="topbar">
         <span className="topbar-title"><span style={{ fontSize:20 }}>⬡</span> Gestor</span>
         <div style={{ display:'flex', gap:6, alignItems:'center' }}>
-          {(obrigVencidas > 0 || pendingCount > 0) && (
-            <span style={{ background:'var(--danger)', color:'#fff', fontSize:10, fontWeight:800, padding:'2px 7px', borderRadius:99 }}>
-              {obrigVencidas + (pendingCount > 0 ? 1 : 0)}
-            </span>
-          )}
+          <NotificacoesBell onClick={() => setShowNotifs(true)} />
           <button className="btn btn-icon btn-ghost" onClick={() => setShowConfig(true)}><SettingsIcon size={18} /></button>
         </div>
       </div>
@@ -115,6 +113,7 @@ export default function App() {
 
       {showNewTask && <NovaTarefaModal clienteIdInicial={newTaskClienteId} onClose={() => setShowNewTask(false)} />}
       {showConfig  && <OneflowConfigModal onClose={() => setShowConfig(false)} />}
+      {showNotifs  && <NotificacoesPanel onClose={() => setShowNotifs(false)} />}
       <ToastContainer />
     </div>
   )

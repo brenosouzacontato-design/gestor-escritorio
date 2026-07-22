@@ -39,7 +39,9 @@ export default function Obrigacoes() {
   const fetchTarefas       = useStore(s => s.fetchTarefas)
   const { show } = useToast()
 
-  const [comp, setComp]             = useState(compMesAtras(1))
+  // Competência única do app — só o Painel tem o seletor; essa tela lê o
+  // mesmo valor do store, sem controle próprio.
+  const comp = useStore(s => s.competenciaSelecionada)
   const [filtroGrupo, setFiltroGrupo] = useState('todos')
   const [filtroStatus, setFiltroStatus] = useState('todos')
   const [editando, setEditando]     = useState(null)
@@ -175,10 +177,10 @@ export default function Obrigacoes() {
 
       {/* Filtros */}
       <div style={{ display:'flex', gap:8, flexWrap:'wrap', marginBottom:12, alignItems:'center' }}>
-        <select value={comp} onChange={e => setComp(e.target.value)}
-          style={{ padding:'7px 10px', borderRadius:'var(--r-sm)', border:'1px solid var(--border)', background:'var(--surface2)', color:'var(--text1)', fontSize:12 }}>
-          {[0,1,2,3].map(i => { const c = compMesAtras(i); return <option key={c} value={c}>{c}</option> })}
-        </select>
+        <span style={{ padding:'7px 10px', borderRadius:'var(--r-sm)', border:'1px solid var(--border)', background:'var(--surface2)', color:'var(--text2)', fontSize:12 }}
+          title="Competência escolhida no Painel">
+          {comp}
+        </span>
 
         <div className="tabs" style={{ marginBottom:0 }}>
           {['todos', ...GRUPOS.map(g => g.label)].map(g => (

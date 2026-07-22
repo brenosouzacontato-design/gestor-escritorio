@@ -15,9 +15,41 @@ export function useNotificacoes() {
   const tarefas = useStore(s => s.tarefas)
   const clientes = useStore(s => s.clientes)
   const fechamentos = useStore(s => s.fechamentos)
+  const obrigacoes = useStore(s => s.obrigacoes || [])
 
   return useMemo(() => {
     const notifs = []
+
+    // 0. Obrigações (modelo novo) vencidas/vencem hoje/vencem em breve — a
+    // janela de "breve" é o dias_lembrete do próprio tipo (embutido via
+    // fetchObrigacoes's nested select em store/index.js), não um número
+    // fixo como nas tarefas abaixo — cada tipo decide o próprio aviso.
+    obrigacoes
+      .filter(o => o.status === 'pendente' && o.vencimento)
+      .forEach(o => {
+        const dias = diasPara(o.vencimento)
+        const cliente = clientes.find(c => c.id === o.cliente_id)
+        const nomeObs = o.titulo || o.tipo
+        if (dias < 0) {
+          notifs.push({
+            id: `obs-venc-${o.id}`, tipo: 'vencida', prioridade: 1,
+            titulo: nomeObs, sub: `${cliente?.nome || ''} · venceu há ${Math.abs(dias)} dia${Math.abs(dias) !== 1 ? 's' : ''}`,
+          })
+        } else if (dias === 0) {
+          notifs.push({
+            id: `obs-hoje-${o.id}`, tipo: 'hoje', prioridade: 2,
+            titulo: nomeObs, sub: `${cliente?.nome || ''} · vence hoje`,
+          })
+        } else {
+          const janela = o.tipos_obrigacao?.dias_lembrete
+          if (janela != null && dias <= janela) {
+            notifs.push({
+              id: `obs-breve-${o.id}`, tipo: 'breve', prioridade: 3,
+              titulo: nomeObs, sub: `${cliente?.nome || ''} · vence em ${dias} dia${dias !== 1 ? 's' : ''}`,
+            })
+          }
+        }
+      })
 
     // 1. Tarefas vencidas
     tarefas
@@ -107,7 +139,7 @@ export function useNotificacoes() {
       })
 
     return notifs.sort((a, b) => a.prioridade - b.prioridade)
-  }, [tarefas, fechamentos, clientes])
+  }, [tarefas, fechamentos, clientes, obrigacoes])
 }
 
 // ── Painel de notificações ────────────────────────────────────────────────────
@@ -238,7 +270,7 @@ function GrupoNotif({ label, icon, cor, bgCor, items, onConcluir }) {
             <div style={{ fontSize:13, fontWeight:500 }}>{n.titulo}</div>
             <div style={{ fontSize:11, color:'var(--text2)', marginTop:3, display:'flex', gap:6, flexWrap:'wrap', alignItems:'center' }}>
               <span>{n.sub}</span>
-              <DeptChip dept={n.dept} />
+              {n.dept && <DeptChip dept={n.dept} />}
             </div>
           </div>
           {onConcluir && n.tarefaId && (
