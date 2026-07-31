@@ -1,0 +1,12 @@
+-- ============================================================
+-- FIX: prospectos não salvava — RLS ativado sem nenhuma política
+-- ============================================================
+-- Toda tabela nova no Supabase nasce com RLS ativado por padrão. Todas as
+-- outras tabelas deste projeto tiveram isso desligado explicitamente (o
+-- app não tem autenticação, usa a anon key direto) — "prospectos" ficou de
+-- fora porque foi criada direto no painel do Supabase, sem passar pelas
+-- migrations do repo. Resultado: toda tentativa de insert/update pela anon
+-- key era bloqueada silenciosamente pela policy default (nenhuma linha
+-- liberada), sem erro visível pro usuário porque o app não checava o
+-- retorno de erro dessas chamadas.
+alter table prospectos disable row level security;

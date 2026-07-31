@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react'
 import { PlusIcon, XIcon, SaveIcon, Trash2Icon, PhoneIcon, CalendarIcon, DollarSignIcon, TagIcon, CheckCircleIcon, GripVerticalIcon } from 'lucide-react'
 import { useStore } from '../store'
+import { useToast } from '../components/shared'
 
 const STATUS_COLS = [
   { id: 'negociacao',      label: 'Negociação',      color: 'var(--text3)',  bg: 'var(--surface2)' },
@@ -28,6 +29,7 @@ export default function Prospectos() {
   const updateProspecto     = useStore(s => s.updateProspecto)
   const deleteProspecto     = useStore(s => s.deleteProspecto)
   const converterProspectoEmCliente = useStore(s => s.converterProspectoEmCliente)
+  const { show } = useToast()
 
   const [showNovo, setShowNovo]       = useState(false)
   const [editando, setEditando]       = useState(null)
@@ -55,7 +57,8 @@ export default function Prospectos() {
   const handleDrop = async (e, colId) => {
     e.preventDefault()
     if (!dragging || dragging.fromCol === colId) { setDragging(null); setDragOver(null); return }
-    await updateProspecto(dragging.id, { status: colId })
+    const { error } = await updateProspecto(dragging.id, { status: colId })
+    if (error) show?.('Erro ao mover: ' + error.message)
     setDragging(null)
     setDragOver(null)
   }
@@ -130,7 +133,10 @@ export default function Prospectos() {
                   colAtual={col.id}
                   onOpen={() => setEditando(p)}
                   onDelete={() => setConfirmExcluir(p)}
-                  onMove={novaCol => updateProspecto(p.id, { status: novaCol })}
+                  onMove={async novaCol => {
+                    const { error } = await updateProspecto(p.id, { status: novaCol })
+                    if (error) show?.('Erro ao mover: ' + error.message)
+                  }}
                   onConverter={() => setConfirmConverter(p)}
                   onDragStart={e => { setDragging({ id: p.id, fromCol: col.id }); e.dataTransfer.effectAllowed = 'move' }}
                   isDragging={dragging?.id === p.id}
@@ -147,8 +153,8 @@ export default function Prospectos() {
           prospecto={editando}
           onClose={() => { setShowNovo(false); setEditando(null) }}
           onSave={async (dados) => {
-            if (editando) await updateProspecto(editando.id, dados)
-            else await addProspecto(dados)
+            const { error } = editando ? await updateProspecto(editando.id, dados) : await addProspecto(dados)
+            if (error) { show?.('Erro ao salvar: ' + error.message); return { error } }
             setShowNovo(false); setEditando(null)
           }}
         />
@@ -160,7 +166,8 @@ export default function Prospectos() {
           prospecto={confirmConverter}
           onClose={() => setConfirmConverter(null)}
           onConfirm={async (dadosCliente) => {
-            await converterProspectoEmCliente(confirmConverter, dadosCliente)
+            const { error } = await converterProspectoEmCliente(confirmConverter, dadosCliente)
+            if (error) { show?.('Erro ao converter: ' + error.message); return { error } }
             setConfirmConverter(null)
           }}
         />
@@ -181,7 +188,11 @@ export default function Prospectos() {
             </p>
             <div style={{ display:'flex', gap:8 }}>
               <button className="btn" onClick={() => setConfirmExcluir(null)} style={{ flex:1 }}>Cancelar</button>
-              <button onClick={async () => { await deleteProspecto(confirmExcluir.id); setConfirmExcluir(null) }}
+              <button onClick={async () => {
+                const { error } = await deleteProspecto(confirmExcluir.id)
+                if (error) show?.('Erro ao excluir: ' + error.message)
+                setConfirmExcluir(null)
+              }}
                 style={{ flex:1, background:'var(--danger)', color:'white', border:'none', borderRadius:'var(--r-sm)', padding:'10px', fontWeight:700, cursor:'pointer', fontSize:13 }}>
                 Excluir
               </button>
