@@ -1,0 +1,126 @@
+// netlify/functions/extrair-declaracao-simples.js
+//
+// Recebe a Declaração do Simples Nacional (PDF, em base64) e devolve os
+// números gerenciais principais dela, usando o suporte nativo da API da
+// Anthropic pra ler PDF (mesmo padrão de extrair-extrato.js). Alimenta o
+// painel consolidado do cliente (src/pages/painel/PainelClientePage.jsx).
+//
+// Variável de ambiente necessária no Netlify: ANTHROPIC_API_KEY
+//
+// Contrato de retorno (o que painelApi.js espera):
+//   { competencia: "MM/YYYY"|null, faturamentoPeriodo: number|null, rbt12: number|null,
+//     aliquotaEfetiva: number|null, valorDas: number|null, anexo: string|null, observacao: string }
+
+const ANTHROPIC_API_URL = 'https://api.anthropic.com/v1/messages';
+const MODELO = 'claude-haiku-4-5-20251001';
+
+const SYSTEM_PROMPT = `Você é um assistente contábil brasileiro. Recebe uma Declaração do Simples Nacional (PGDAS-D ou extrato/relatório de apuração) e extrai os números gerenciais principais dela.
+
+Devolva APENAS um JSON, sem texto antes ou depois, sem markdown e sem crases, no formato exato:
+{"competencia":"MM/YYYY ou null","faturamentoPeriodo":number|null,"rbt12":number|null,"aliquotaEfetiva":number|null,"valorDas":number|null,"anexo":"string ou null","observacao":"string curta"}
+
+Regras:
+- "competencia": o período de apuração do documento, formato MM/YYYY.
+- "faturamentoPeriodo": receita bruta apurada naquela competência (só o número, sem "R$" nem separador de milhar — use ponto como separador decimal).
+- "rbt12": receita bruta acumulada dos últimos 12 meses (RBT12), mesmo formato numérico.
+- "aliquotaEfetiva": alíquota efetiva resultante, em percentual (ex: 6.5 pra 6,5%).
+- "valorDas": valor total do DAS apurado/devido naquela competência.
+- "anexo": o anexo do Simples Nacional em que a atividade está enquadrada (ex: "I", "II", "III", "IV", "V"), se identificável.
+- "observacao": uma frase curta com qualquer ressalva (ex: "documento parece ser só um resumo, RBT12 não veio explícito").
+- Se não conseguir identificar um valor com confiança, use null pra ele — não invente números.
+- Se o PDF não parecer uma declaração/apuração do Simples Nacional, devolva todos os campos numéricos como null e explique em "observacao".`;
+
+exports.handler = async (event) => {
+  if (event.httpMethod !== 'POST') {
+    return resposta(405, { error: 'Método não permitido, use POST.' });
+  }
+
+  let pdfBase64, filename;
+  try {
+    const body = JSON.parse(event.body);
+    pdfBase64 = body.pdfBase64;
+    filename = body.filename ?? 'declaracao.pdf';
+  } catch {
+    return resposta(400, { error: 'Body inválido: esperado JSON com { pdfBase64, filename }.' });
+  }
+
+  if (!pdfBase64) {
+    return resposta(400, { error: 'pdfBase64 não informado.' });
+  }
+
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) {
+    return resposta(500, { error: 'ANTHROPIC_API_KEY não configurada nas variáveis de ambiente do Netlify.' });
+  }
+
+  try {
+    const anthropicResp = await fetch(ANTHROPIC_API_URL, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01',
+      },
+      body: JSON.stringify({
+        model: MODELO,
+        max_tokens: 1024,
+        system: SYSTEM_PROMPT,
+        messages: [
+          {
+            role: 'user',
+            content: [
+              {
+                type: 'document',
+                source: { type: 'base64', media_type: 'application/pdf', data: pdfBase64 },
+              },
+              { type: 'text', text: `Extraia os dados gerenciais da declaração "${filename}".` },
+            ],
+          },
+        ],
+      }),
+    });
+
+    if (!anthropicResp.ok) {
+      const errText = await anthropicResp.text();
+      return resposta(502, { error: `Erro na API da Anthropic (${anthropicResp.status}): ${errText}` });
+    }
+
+    const data = await anthropicResp.json();
+    const texto = (data.content ?? [])
+      .filter((bloco) => bloco.type === 'text')
+      .map((bloco) => bloco.text)
+      .join('');
+
+    const limpo = texto.replace(/```json|```/g, '').trim();
+
+    let extraido;
+    try {
+      extraido = JSON.parse(limpo);
+    } catch {
+      return resposta(502, {
+        error: 'Não consegui interpretar a resposta do modelo como JSON.',
+        respostaBruta: texto.slice(0, 2000),
+      });
+    }
+
+    return resposta(200, {
+      competencia: extraido.competencia || null,
+      faturamentoPeriodo: extraido.faturamentoPeriodo ?? null,
+      rbt12: extraido.rbt12 ?? null,
+      aliquotaEfetiva: extraido.aliquotaEfetiva ?? null,
+      valorDas: extraido.valorDas ?? null,
+      anexo: extraido.anexo || null,
+      observacao: extraido.observacao || '',
+    });
+  } catch (e) {
+    return resposta(500, { error: e.message });
+  }
+};
+
+function resposta(statusCode, body) {
+  return {
+    statusCode,
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(body),
+  };
+}

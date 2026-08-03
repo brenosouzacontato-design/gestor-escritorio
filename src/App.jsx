@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { LayoutDashboardIcon, CheckSquareIcon, UsersIcon, RefreshCwIcon, SettingsIcon, PlusIcon, TargetIcon, BuildingIcon, AppWindowIcon, CalculatorIcon, TrendingUpIcon, ChevronsLeftIcon, ChevronsRightIcon, SunIcon, MoonIcon, PaperclipIcon } from 'lucide-react'
+import { LayoutDashboardIcon, CheckSquareIcon, UsersIcon, RefreshCwIcon, SettingsIcon, PlusIcon, TargetIcon, BuildingIcon, AppWindowIcon, CalculatorIcon, ChevronsLeftIcon, ChevronsRightIcon, SunIcon, MoonIcon, PaperclipIcon } from 'lucide-react'
 import { useStore } from './store'
 import { ToastContainer } from './components/shared'
 import NovaTarefaModal from './components/NovaTarefaModal'
@@ -13,13 +13,11 @@ import Prospectos from './pages/Prospectos'
 import Empresas from './pages/Empresas'
 import Central from './pages/Central'
 import ContabilPage from './pages/contabil/ContabilPage'
-import AndamentoPage from './pages/andamento/AndamentoPage'
 import DocumentosPage from './pages/documentos/DocumentosPage'
 
 const NAV = [
   { id: 'overview',   label: 'Painel',      Icon: LayoutDashboardIcon },
   { id: 'empresas',   label: 'Empresas',    Icon: BuildingIcon },
-  { id: 'andamento',  label: 'Andamento',   Icon: TrendingUpIcon },
   { id: 'documentos', label: 'Documentos',  Icon: PaperclipIcon },
   { id: 'tarefas',    label: 'Tarefas',     Icon: CheckSquareIcon },
   { id: 'clientes',   label: 'Clientes',    Icon: UsersIcon },
@@ -113,7 +111,6 @@ export default function App() {
           <>
             {page === 'overview'   && <Overview onAddTarefa={openNewTask} onOpenCliente={(id) => { setSelectedCliente(id); navigate('clientes') }} onOpenObrigacoes={() => navigate('empresas')} onOpenTarefas={() => navigate('tarefas')} onOpenContabil={() => navigate('contabil')} />}
             {page === 'empresas'   && <Empresas onOpenTarefas={() => navigate('tarefas')} />}
-            {page === 'andamento'  && <AndamentoPage onOpenTarefa={(taskId) => { setHighlightTaskId(taskId); navigate('tarefas') }} />}
             {page === 'documentos' && <DocumentosPage />}
             {page === 'tarefas'    && <Tarefas onAddTarefa={openNewTask} highlightTaskId={highlightTaskId} onHighlightConsumed={() => setHighlightTaskId(null)} />}
             {page === 'clientes'   && <Clientes onAddTarefa={openNewTask} selectedId={selectedCliente} onSelect={setSelectedCliente} />}

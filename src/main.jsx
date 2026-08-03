@@ -4,6 +4,7 @@ import App from './App.jsx'
 import RelatorioCompartilhadoPage from './pages/contabil/RelatorioCompartilhadoPage.jsx'
 import IdentificarLancamentosPage from './pages/contabil/IdentificarLancamentosPage.jsx'
 import DocumentoCompartilhadoPage from './pages/documentos/DocumentoCompartilhadoPage.jsx'
+import PainelClientePage from './pages/painel/PainelClientePage.jsx'
 import './styles.css'
 
 // Links compartilhados (Balancete/DRE e identificação de lançamentos via
@@ -14,6 +15,7 @@ const params = new URLSearchParams(window.location.search)
 const share = params.get('share')
 const identificar = params.get('identificar')
 const doc = params.get('doc')
+const painel = params.get('painel')
 
 let raiz = <App />
 if (share === 'dre' || share === 'balancete') {
@@ -31,6 +33,8 @@ if (share === 'dre' || share === 'balancete') {
   />
 } else if (doc) {
   raiz = <DocumentoCompartilhadoPage documentoId={doc} />
+} else if (painel) {
+  raiz = <PainelClientePage clienteId={painel} competencia={params.get('competencia')} />
 }
 
 ReactDOM.createRoot(document.getElementById('root')).render(

@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect } from 'react'
-import { PlusIcon, XIcon, CheckCircleIcon, ClockIcon, AlertCircleIcon, MinusCircleIcon, ChevronRightIcon, CalendarIcon, CheckIcon, SaveIcon, ZapIcon, RefreshCwIcon, Trash2Icon } from 'lucide-react'
+import { PlusIcon, XIcon, CheckCircleIcon, ClockIcon, AlertCircleIcon, MinusCircleIcon, ChevronRightIcon, CalendarIcon, CheckIcon, SaveIcon, ZapIcon, RefreshCwIcon, Trash2Icon, ListIcon, LayoutGridIcon, BarChart3Icon, Share2Icon } from 'lucide-react'
 import { useStore } from '../store'
 import { DeptChip, PriDot, fmtDate, isOverdue, useToast } from '../components/shared'
 import { supabase } from '../lib/supabase'
@@ -8,6 +8,7 @@ import {
   criarObrigacaoComEtapas, criarTarefasLote, gerarObrigacoesRecorrentesCompetencia, criarObrigacoesLote,
   calcularVencimento,
 } from './andamento/andamentoApi'
+import { uploadDeclaracaoSimples } from './painel/painelApi'
 
 // Casamento histórico tipo-texto → departamento, só pra competências
 // anteriores à adoção do modelo novo (departamento_id em obrigacoes, ver
@@ -112,6 +113,7 @@ export default function Empresas() {
   const [busca,       setBusca]       = useState('')
   const [filtro,      setFiltro]      = useState('todos')
   const [carteira,    setCarteira]    = useState('todas')
+  const [visualizacao, setVisualizacao] = useState(() => localStorage.getItem('empresas-visualizacao') || 'tabela')
   const [departamentos,setDepartamentos] = useState([])
   const [showAddDept, setShowAddDept] = useState(false)
   const [novoDept,    setNovoDept]    = useState('')
@@ -174,6 +176,31 @@ export default function Empresas() {
   })
 
   const openDrawer = (c, dept) => { setDrawer({c, dept}); setDrawerTab('obrig') }
+
+  const escolherVisualizacao = (v) => { setVisualizacao(v); localStorage.setItem('empresas-visualizacao', v) }
+
+  // Upload da Declaração do Simples — sobe pro Storage, IA extrai os
+  // números gerenciais (faturamento, RBT12, alíquota, DAS) e grava em
+  // dados_gerenciais_simples pra aparecer no painel compartilhável.
+  const [enviandoDeclaracao, setEnviandoDeclaracao] = useState(false)
+  const handleUploadDeclaracao = async (cliente, arquivo) => {
+    if (!arquivo) return
+    setEnviandoDeclaracao(true)
+    try {
+      const salvo = await uploadDeclaracaoSimples(cliente.id, arquivo, compSel)
+      show?.(`Declaração processada — competência ${salvo.competencia}${salvo.faturamento_periodo ? `, faturamento R$ ${Number(salvo.faturamento_periodo).toLocaleString('pt-BR')}` : ''}`)
+    } catch (e) {
+      show?.('Erro ao processar declaração: ' + e.message)
+    }
+    setEnviandoDeclaracao(false)
+  }
+
+  // Link público do painel consolidado (PainelClientePage.jsx via main.jsx)
+  const handleCompartilharPainel = (cliente) => {
+    const url = `${window.location.origin}${window.location.pathname}?painel=${cliente.id}&competencia=${encodeURIComponent(compSel)}`
+    const mensagem = `Olá! Segue o painel de ${cliente.nome} — competência ${compSel} — com obrigações, financeiro e demais informações:\n${url}`
+    window.open(`https://wa.me/?text=${encodeURIComponent(mensagem)}`, '_blank')
+  }
 
   // Soft-delete (marca ativo=false) — obrigações/tarefas/lançamentos já
   // gerados continuam existindo, só a empresa some das listagens.
@@ -240,29 +267,41 @@ export default function Empresas() {
           <h2 style={{ fontSize:14, fontWeight:500, color:'var(--text1)', margin:0 }}>Empresas</h2>
           <p style={{ fontSize:10, color:'var(--text3)', margin:0 }}>Status por módulo · {rows.length} empresas</p>
         </div>
-        <div style={{ display:'flex', alignItems:'center', gap:5, background:'var(--surface2)', border:'1px solid var(--navy2)', borderRadius:8, padding:'5px 9px', marginLeft:12 }}>
+        <div style={{ display:'flex', alignItems:'center', gap:5, background:'var(--surface2)', border:'1px solid var(--border)', borderRadius:8, padding:'5px 9px', marginLeft:12 }}>
           <span style={{ fontSize:12, color:'var(--text3)' }}>🔍</span>
           <input value={busca} onChange={e => setBusca(e.target.value)} placeholder="Buscar empresa..."
             style={{ background:'none', border:'none', outline:'none', fontSize:11, color:'var(--text2)', width:160 }} />
         </div>
         {carteiras.length > 1 && (
           <select value={carteira} onChange={e => setCarteira(e.target.value)}
-            style={{ background:'var(--surface2)', border:'1px solid var(--navy2)', borderRadius:8, padding:'5px 8px', fontSize:11, color:'var(--text2)' }}>
+            style={{ background:'var(--surface2)', border:'1px solid var(--border)', borderRadius:8, padding:'5px 8px', fontSize:11, color:'var(--text2)' }}>
             {carteiras.map(c => <option key={c} value={c}>{c==='todas'?'Todas as carteiras':c}</option>)}
           </select>
         )}
+        <div style={{ display:'flex', alignItems:'center', gap:2, background:'var(--surface2)', border:'1px solid var(--border)', borderRadius:8, padding:2 }}>
+          <button onClick={() => escolherVisualizacao('tabela')} title="Ver como tabela"
+            style={{ display:'flex', alignItems:'center', gap:4, background:visualizacao==='tabela'?'var(--surface)':'none', boxShadow:visualizacao==='tabela'?'var(--shadow-sm)':'none',
+              border:'none', borderRadius:6, padding:'5px 9px', fontSize:11, color:visualizacao==='tabela'?'var(--text1)':'var(--text3)', cursor:'pointer', fontWeight:500 }}>
+            <ListIcon size={12} /> Tabela
+          </button>
+          <button onClick={() => escolherVisualizacao('cards')} title="Ver como cards"
+            style={{ display:'flex', alignItems:'center', gap:4, background:visualizacao==='cards'?'var(--surface)':'none', boxShadow:visualizacao==='cards'?'var(--shadow-sm)':'none',
+              border:'none', borderRadius:6, padding:'5px 9px', fontSize:11, color:visualizacao==='cards'?'var(--text1)':'var(--text3)', cursor:'pointer', fontWeight:500 }}>
+            <LayoutGridIcon size={12} /> Cards
+          </button>
+        </div>
         <div style={{ marginLeft:'auto', display:'flex', alignItems:'center', gap:8 }}>
           <button onClick={handleGerarCompetencia} disabled={gerando}
             title="Gerar obrigações recorrentes desta competência (automático, todas as empresas)"
-            style={{ display:'flex', alignItems:'center', gap:5, background:'var(--surface2)', border:'1px solid var(--navy2)', borderRadius:8, padding:'5px 10px', fontSize:11, color:'var(--text2)', cursor:'pointer', fontWeight:500, opacity:gerando?.6:1 }}>
+            style={{ display:'flex', alignItems:'center', gap:5, background:'var(--surface2)', border:'1px solid var(--border)', borderRadius:8, padding:'5px 10px', fontSize:11, color:'var(--text2)', cursor:'pointer', fontWeight:500, opacity:gerando?.6:1 }}>
             <RefreshCwIcon size={12} /> {gerando ? 'Gerando...' : `Gerar ${compSel}`}
           </button>
           <button onClick={() => setShowLoteObs(true)}
             title="Criar uma obrigação escolhida à mão pra várias empresas"
-            style={{ display:'flex', alignItems:'center', gap:5, background:'var(--surface2)', border:'1px solid var(--navy2)', borderRadius:8, padding:'5px 10px', fontSize:11, color:'var(--text2)', cursor:'pointer', fontWeight:500 }}>
+            style={{ display:'flex', alignItems:'center', gap:5, background:'var(--surface2)', border:'1px solid var(--border)', borderRadius:8, padding:'5px 10px', fontSize:11, color:'var(--text2)', cursor:'pointer', fontWeight:500 }}>
             <ZapIcon size={12} /> Obrigações em lote
           </button>
-          <span style={{ background:'var(--surface2)', border:'1px solid var(--navy2)', borderRadius:8, padding:'5px 8px', fontSize:11, color:'var(--text2)' }}
+          <span style={{ background:'var(--surface2)', border:'1px solid var(--border)', borderRadius:8, padding:'5px 8px', fontSize:11, color:'var(--text2)' }}
             title="Competência escolhida no Painel">
             {compSel}
           </span>
@@ -270,7 +309,7 @@ export default function Empresas() {
       </div>
 
       {/* Filtros */}
-      <div style={{ display:'flex', gap:5, padding:'7px 16px', borderBottom:'1px solid var(--navy2)', flexShrink:0, background:'var(--surface2)', alignItems:'center' }}>
+      <div style={{ display:'flex', gap:5, padding:'7px 16px', borderBottom:'1px solid var(--border)', flexShrink:0, background:'var(--surface2)', alignItems:'center' }}>
         {[['todos','Todos'],['pendentes','Pendentes'],['criticos','Críticos'],['ok','100% ok']].map(([id,lbl]) => (
           <button key={id} onClick={() => setFiltro(id)}
             style={{ background:filtro===id?'var(--accent-dim)':'var(--surface2)', border:`1px solid ${filtro===id?'var(--accent)':'var(--border)'}`,
@@ -284,6 +323,7 @@ export default function Empresas() {
       <div style={{ flex:1, overflow:'hidden', position:'relative', display:'flex' }}>
 
         {/* Scroll container — sticky funciona aqui */}
+        {visualizacao === 'tabela' && (
         <div style={{ flex:1, overflow:'auto', padding:'12px 16px' }}>
           <table style={{ width:'100%', borderCollapse:'collapse', tableLayout:'fixed',
             minWidth: nomeColW + 120 + departamentos.length*120 + 40,
@@ -413,6 +453,63 @@ export default function Empresas() {
             </tfoot>
           </table>
         </div>
+        )}
+
+        {visualizacao === 'cards' && (
+          <div style={{ flex:1, overflow:'auto', padding:'16px' }}>
+            {rows.length === 0 && (
+              <div style={{ padding:40, textAlign:'center', color:'var(--text3)', fontSize:13 }}>Nenhuma empresa encontrada</div>
+            )}
+            <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(230px, 1fr))', gap:12 }}>
+              {rows.map(({ c, deptData }, ri) => {
+                const [bg, tc] = AVATAR_COLORS[ri % AVATAR_COLORS.length]
+                const initials = c.nome.split(' ').slice(0,2).map(w=>w[0]).join('').toUpperCase()
+                const obsTotal = obrigacoes.filter(o => o.cliente_id===c.id && o.competencia===compSel)
+                const resOk   = obsTotal.filter(o => o.status==='concluido'||o.status==='nao_aplica').length
+                const resVenc = obsTotal.filter(o => o.status==='vencido').length
+                const resVencendo = obsTotal.some(isVencendo)
+                const resPct  = obsTotal.length > 0 ? Math.round((resOk/obsTotal.length)*100) : 0
+                const resS    = resVenc > 0 ? 'danger' : resVencendo ? 'venc_breve' : resPct===100 ? 'ok' : obsTotal.filter(o=>o.status==='pendente').length > 0 ? 'warn' : 'empty'
+                return (
+                  <div key={c.id} onClick={() => openDrawer(c, null)}
+                    style={{ background:'var(--surface)', border:`1px solid ${resS==='danger'?'var(--danger)':'var(--border)'}`, borderRadius:'var(--r-lg)',
+                      padding:14, cursor:'pointer', transition:'transform .1s, box-shadow .1s', boxShadow:'var(--shadow-sm)' }}
+                    onMouseEnter={e => { e.currentTarget.style.transform='translateY(-2px)'; e.currentTarget.style.boxShadow='var(--shadow-md)' }}
+                    onMouseLeave={e => { e.currentTarget.style.transform='none'; e.currentTarget.style.boxShadow='var(--shadow-sm)' }}>
+                    <div style={{ display:'flex', alignItems:'center', gap:9, marginBottom:12 }}>
+                      <div style={{ width:34, height:34, borderRadius:8, background:bg, color:tc, flexShrink:0,
+                        display:'flex', alignItems:'center', justifyContent:'center', fontSize:12, fontWeight:700 }}>
+                        {initials}
+                      </div>
+                      <div style={{ minWidth:0, flex:1 }}>
+                        <div style={{ fontSize:13, fontWeight:600, color:'var(--text1)', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{c.nome}</div>
+                        <div style={{ fontSize:10, color:'var(--text3)' }}>{c.regime||'SN'}</div>
+                      </div>
+                      {S_ICON[resS] && (() => { const Icon = S_ICON[resS]; return <Icon size={16} color={S_COLOR[resS]} /> })()}
+                    </div>
+
+                    <div style={{ display:'flex', alignItems:'center', gap:6, marginBottom:10 }}>
+                      <div style={{ flex:1, height:5, background:'var(--surface2)', borderRadius:99, overflow:'hidden' }}>
+                        <div style={{ height:'100%', width:`${resPct}%`, background:S_COLOR[resS], borderRadius:99 }} />
+                      </div>
+                      <span style={{ fontSize:11, fontWeight:700, color:S_COLOR[resS] }}>{resPct}%</span>
+                    </div>
+
+                    <div style={{ display:'flex', gap:5, flexWrap:'wrap' }}>
+                      {departamentos.map(d => (
+                        <span key={d.id} title={`${d.nome}: ${deptData[d.id]?.val || '—'}`}
+                          style={{ width:22, height:22, borderRadius:6, display:'flex', alignItems:'center', justifyContent:'center',
+                            fontSize:11, background:S_BG[deptData[d.id]?.s || 'empty'], flexShrink:0 }}>
+                          {d.icone || '📋'}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        )}
 
         {/* Drawer */}
         {drawer && (
@@ -508,7 +605,7 @@ export default function Empresas() {
                     const overdue = isOverdue(t.vencimento) && !t.concluida
                     const busy = updatingId === t.id
                     return (
-                      <div key={t.id} style={{ background:'var(--surface2)', border:'1px solid var(--navy2)', borderRadius:8, padding:'10px 12px' }}>
+                      <div key={t.id} style={{ background:'var(--surface2)', border:'1px solid var(--border)', borderRadius:8, padding:'10px 12px' }}>
                         <div style={{ display:'flex', alignItems:'flex-start', gap:8, marginBottom:5 }}>
                           <button onClick={() => handleToggleTask(t)} disabled={busy}
                             style={{ width:16, height:16, borderRadius:4, flexShrink:0, marginTop:1, cursor:'pointer',
@@ -540,15 +637,28 @@ export default function Empresas() {
               </div>
 
               {/* Footer drawer */}
-              <div style={{ padding:'10px 14px', borderTop:'1px solid var(--border)', flexShrink:0, display:'flex', gap:7, background:'var(--surface)' }}>
-                <button onClick={() => { setShowNovaObs(true) }}
-                  style={{ flex:1, background:'var(--surface2)', border:'1px solid var(--border)', borderRadius:8, padding:'7px', fontSize:11, color:'var(--text2)', fontWeight:500, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', gap:4 }}>
-                  🧾 + Obrigação
-                </button>
-                <button onClick={() => { setShowNovaTarefa(true) }}
-                  style={{ flex:1, background:'var(--navy)', border:'none', borderRadius:8, padding:'7px', fontSize:11, color:'#fff', fontWeight:500, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', gap:4 }}>
-                  ✓ + Tarefa
-                </button>
+              <div style={{ padding:'10px 14px', borderTop:'1px solid var(--border)', flexShrink:0, display:'flex', flexDirection:'column', gap:7, background:'var(--surface)' }}>
+                <div style={{ display:'flex', gap:7 }}>
+                  <button onClick={() => { setShowNovaObs(true) }}
+                    style={{ flex:1, background:'var(--surface2)', border:'1px solid var(--border)', borderRadius:8, padding:'7px', fontSize:11, color:'var(--text2)', fontWeight:500, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', gap:4 }}>
+                    🧾 + Obrigação
+                  </button>
+                  <button onClick={() => { setShowNovaTarefa(true) }}
+                    style={{ flex:1, background:'var(--navy)', border:'none', borderRadius:8, padding:'7px', fontSize:11, color:'#fff', fontWeight:500, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', gap:4 }}>
+                    ✓ + Tarefa
+                  </button>
+                </div>
+                <div style={{ display:'flex', gap:7 }}>
+                  <label style={{ flex:1, background:'var(--surface2)', border:'1px solid var(--border)', borderRadius:8, padding:'7px', fontSize:11, color:'var(--text2)', fontWeight:500, cursor:enviandoDeclaracao?'default':'pointer', display:'flex', alignItems:'center', justifyContent:'center', gap:4, opacity:enviandoDeclaracao?.6:1 }}>
+                    <BarChart3Icon size={12} /> {enviandoDeclaracao ? 'Processando...' : 'Declaração do Simples'}
+                    <input type="file" accept=".pdf,application/pdf" style={{ display:'none' }} disabled={enviandoDeclaracao}
+                      onChange={(e) => { handleUploadDeclaracao(drawer.c, e.target.files?.[0]); e.target.value = '' }} />
+                  </label>
+                  <button onClick={() => handleCompartilharPainel(drawer.c)}
+                    style={{ flex:1, background:'var(--accent)', border:'none', borderRadius:8, padding:'7px', fontSize:11, color:'#fff', fontWeight:500, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', gap:4 }}>
+                    <Share2Icon size={12} /> Compartilhar painel
+                  </button>
+                </div>
               </div>
             </div>
           </>
@@ -765,7 +875,7 @@ function NovaObrigacaoModal({ cliente, dept, departamentos, competencia, onClose
       </div>
       <div style={{ display:'flex', gap:8, marginTop:16 }}>
         <button onClick={onClose}
-          style={{ flex:1, background:'var(--surface2)', border:'1px solid var(--navy2)', borderRadius:8, padding:'9px', fontSize:12, color:'var(--text2)', cursor:'pointer' }}>Cancelar</button>
+          style={{ flex:1, background:'var(--surface2)', border:'1px solid var(--border)', borderRadius:8, padding:'9px', fontSize:12, color:'var(--text2)', cursor:'pointer' }}>Cancelar</button>
         <button onClick={handleSave} disabled={saving||!podeSalvar}
           style={{ flex:1, background:'var(--accent)', border:'none', borderRadius:8, padding:'9px', fontSize:12, color:'#fff', fontWeight:500, cursor:'pointer', opacity:(saving||!podeSalvar)?.6:1 }}>
           <SaveIcon size={13} style={{ marginRight:5, verticalAlign:-2 }} />
@@ -840,7 +950,7 @@ function NovaTarefaModal({ cliente, dept, onClose, onSaved }) {
       </div>
       <div style={{ display:'flex', gap:8, marginTop:16 }}>
         <button onClick={onClose}
-          style={{ flex:1, background:'var(--surface2)', border:'1px solid var(--navy2)', borderRadius:8, padding:'9px', fontSize:12, color:'var(--text2)', cursor:'pointer' }}>Cancelar</button>
+          style={{ flex:1, background:'var(--surface2)', border:'1px solid var(--border)', borderRadius:8, padding:'9px', fontSize:12, color:'var(--text2)', cursor:'pointer' }}>Cancelar</button>
         <button onClick={handleSave} disabled={saving||!titulo.trim()}
           style={{ flex:1, background:'var(--accent)', border:'none', borderRadius:8, padding:'9px', fontSize:12, color:'#fff', fontWeight:500, cursor:'pointer', opacity:(saving||!titulo.trim())?.6:1 }}>
           <SaveIcon size={13} style={{ marginRight:5, verticalAlign:-2 }} />
@@ -926,7 +1036,7 @@ function ModalTarefasLote({ dept, clientes, onClose, onSaved }) {
       </div>
       <div style={{ display:'flex', gap:8, marginTop:16 }}>
         <button onClick={onClose}
-          style={{ flex:1, background:'var(--surface2)', border:'1px solid var(--navy2)', borderRadius:8, padding:'9px', fontSize:12, color:'var(--text2)', cursor:'pointer' }}>Cancelar</button>
+          style={{ flex:1, background:'var(--surface2)', border:'1px solid var(--border)', borderRadius:8, padding:'9px', fontSize:12, color:'var(--text2)', cursor:'pointer' }}>Cancelar</button>
         <button onClick={handleSave} disabled={saving||!titulo.trim()||clientesSel.length===0}
           style={{ flex:1, background:'var(--accent)', border:'none', borderRadius:8, padding:'9px', fontSize:12, color:'#fff', fontWeight:500, cursor:'pointer', opacity:(saving||!titulo.trim()||clientesSel.length===0)?.6:1 }}>
           {saving?'Criando...':`Criar para ${clientesSel.length} empresa${clientesSel.length!==1?'s':''}`}
@@ -1105,7 +1215,7 @@ function ModalObrigacoesLote({ departamentos, clientes, competenciaInicial, onCl
       </div>
       <div style={{ display:'flex', gap:8, marginTop:16 }}>
         <button onClick={onClose}
-          style={{ flex:1, background:'var(--surface2)', border:'1px solid var(--navy2)', borderRadius:8, padding:'9px', fontSize:12, color:'var(--text2)', cursor:'pointer' }}>Cancelar</button>
+          style={{ flex:1, background:'var(--surface2)', border:'1px solid var(--border)', borderRadius:8, padding:'9px', fontSize:12, color:'var(--text2)', cursor:'pointer' }}>Cancelar</button>
         <button onClick={handleSave} disabled={saving||!podeSalvar}
           style={{ flex:1, background:'var(--accent)', border:'none', borderRadius:8, padding:'9px', fontSize:12, color:'#fff', fontWeight:500, cursor:'pointer', opacity:(saving||!podeSalvar)?.6:1 }}>
           {saving?'Criando...':`Criar para ${clientesSel.length} empresa${clientesSel.length!==1?'s':''}`}
