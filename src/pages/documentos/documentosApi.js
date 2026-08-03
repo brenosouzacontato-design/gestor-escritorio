@@ -10,6 +10,15 @@ import { concluirEtapa } from '../andamento/andamentoApi';
 
 const BUCKET = 'documentos';
 
+// Título legível do item que o documento resolveu — usado tanto na aba
+// "Concluídos" (DocumentosPage.jsx) quanto na página pública de
+// compartilhamento (DocumentoCompartilhadoPage.jsx).
+export function itemResolvido(doc) {
+  if (doc.etapas_obrigacao) return `${doc.obrigacoes?.titulo || 'Obrigação'} — etapa "${doc.etapas_obrigacao.nome}"`;
+  if (doc.tarefas) return `Tarefa: ${doc.tarefas.titulo}`;
+  return null;
+}
+
 // ---------- UPLOAD ----------
 
 export async function uploadArquivo(arquivo) {
@@ -93,6 +102,49 @@ export async function listarDocumentos() {
     .order('created_at', { ascending: false });
   if (error) throw error;
   return data;
+}
+
+// Documentos já confirmados (deram baixa ou foram arquivados), com o
+// título do item resolvido — alimenta a aba "Concluídos" de
+// DocumentosPage.jsx. Um documento só tem um dos três vínculos preenchido
+// por vez (ver confirmarDocumento), por isso os três joins são todos
+// opcionais (left join implícito do PostgREST quando a FK é nullable).
+export async function listarDocumentosConfirmados() {
+  const { data, error } = await supabase
+    .from('documentos')
+    .select('*, clientes(nome), obrigacoes(titulo), etapas_obrigacao(nome), tarefas(titulo)')
+    .eq('status', 'confirmado')
+    .order('confirmado_em', { ascending: false });
+  if (error) throw error;
+  return data;
+}
+
+// Signed URL avulsa (botão "Baixar" na aba Concluídos) — bucket é privado,
+// não dá pra linkar direto pelo storage_path.
+export async function criarLinkAssinado(storagePath, segundos = 60 * 5) {
+  const { data, error } = await supabase.storage.from(BUCKET).createSignedUrl(storagePath, segundos);
+  if (error) throw error;
+  return data.signedUrl;
+}
+
+// Usado pela página pública de compartilhamento (DocumentoCompartilhadoPage,
+// acessada via ?doc=<id> — ver main.jsx). Gera uma signed URL nova a cada
+// acesso (o bucket é privado, não dá pra usar getPublicUrl) — o link
+// ?doc=<id> em si não expira, só o acesso ao arquivo dentro dele.
+export async function obterDocumentoPublico(documentoId) {
+  const { data: doc, error } = await supabase
+    .from('documentos')
+    .select('*, clientes(nome), obrigacoes(titulo), etapas_obrigacao(nome), tarefas(titulo)')
+    .eq('id', documentoId)
+    .single();
+  if (error) throw error;
+
+  const { data: signed, error: errSigned } = await supabase.storage
+    .from(BUCKET)
+    .createSignedUrl(doc.storage_path, 60 * 60); // 1h, renovado a cada visita
+  if (errSigned) throw errSigned;
+
+  return { ...doc, urlArquivo: signed.signedUrl };
 }
 
 export async function excluirDocumento(id) {

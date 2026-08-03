@@ -1,8 +1,11 @@
 import { useState, useEffect, useMemo } from 'react'
-import { PaperclipIcon, UploadCloudIcon, CheckCircle2Icon, Loader2Icon, FileIcon } from 'lucide-react'
+import { PaperclipIcon, UploadCloudIcon, CheckCircle2Icon, Loader2Icon, FileIcon, Share2Icon, DownloadIcon } from 'lucide-react'
 import { useStore } from '../../store'
 import { useToast } from '../../components/shared'
-import { uploadArquivo, listarCandidatos, criarDocumento, confirmarDocumento } from './documentosApi'
+import {
+  uploadArquivo, listarCandidatos, criarDocumento, confirmarDocumento,
+  listarDocumentosConfirmados, criarLinkAssinado, itemResolvido,
+} from './documentosApi'
 
 const ACCEPT = '.pdf,.jpg,.jpeg,.png,.webp,application/pdf,image/jpeg,image/png,image/webp'
 
@@ -40,6 +43,7 @@ export default function DocumentosPage() {
   const fetchTarefas = useStore((s) => s.fetchTarefas)
   const { show } = useToast()
 
+  const [aba, setAba] = useState('enviar') // enviar | concluidos
   const [candidatos, setCandidatos] = useState([])
   const [itens, setItens] = useState([]) // [{id, arquivo, status, storagePath, sugestao, clienteId, candidatoId, ignorar, erro}]
   const [arrastando, setArrastando] = useState(false)
@@ -137,6 +141,14 @@ export default function DocumentosPage() {
         </div>
       </div>
 
+      <div className="tabs" style={{ maxWidth: 320 }}>
+        <button className={`tab-btn ${aba === 'enviar' ? 'active' : ''}`} onClick={() => setAba('enviar')}>Enviar</button>
+        <button className={`tab-btn ${aba === 'concluidos' ? 'active' : ''}`} onClick={() => setAba('concluidos')}>Concluídos</button>
+      </div>
+
+      {aba === 'concluidos' && <AbaConcluidos />}
+
+      {aba === 'enviar' && <>
       <div
         onDragOver={(e) => { e.preventDefault(); setArrastando(true) }}
         onDragLeave={() => setArrastando(false)}
@@ -236,8 +248,70 @@ export default function DocumentosPage() {
           Nenhum documento enviado ainda.
         </div>
       )}
+      </>}
 
       <style>{'@keyframes spin { to { transform: rotate(360deg); } }'}</style>
+    </div>
+  )
+}
+
+// ── Aba Concluídos ───────────────────────────────────────────────────────────
+// Documentos já confirmados (deram baixa ou foram arquivados), com o item
+// que cada um resolveu e ações de baixar/compartilhar o arquivo original.
+function AbaConcluidos() {
+  const [docs, setDocs] = useState(null) // null = carregando
+  const [erro, setErro] = useState(null)
+  const { show } = useToast()
+
+  useEffect(() => {
+    listarDocumentosConfirmados().then(setDocs).catch((e) => setErro(e.message))
+  }, [])
+
+  const baixar = async (doc) => {
+    try {
+      const url = await criarLinkAssinado(doc.storage_path)
+      window.open(url, '_blank')
+    } catch (e) {
+      show?.('Erro ao gerar link: ' + e.message)
+    }
+  }
+
+  const compartilhar = (doc) => {
+    const url = `${window.location.origin}${window.location.pathname}?doc=${doc.id}`
+    const label = doc.tipo_documento_sugerido || doc.nome_arquivo
+    const mensagem = `Olá! Segue ${label}${doc.clientes?.nome ? ` de ${doc.clientes.nome}` : ''} pra conferência:\n${url}`
+    window.open(`https://wa.me/?text=${encodeURIComponent(mensagem)}`, '_blank')
+  }
+
+  if (erro) return <p style={{ color: 'var(--danger)', fontSize: 13 }}>{erro}</p>
+  if (!docs) return <p style={{ color: 'var(--text3)', fontSize: 13 }}>Carregando...</p>
+  if (docs.length === 0) return (
+    <div className="empty">
+      <p>✅</p>
+      Nenhum documento confirmado ainda.
+    </div>
+  )
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+      {docs.map((doc) => (
+        <div key={doc.id} style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)', padding: '12px 14px', display: 'flex', alignItems: 'center', gap: 12 }}>
+          <FileIcon size={16} color="var(--text3)" style={{ flexShrink: 0 }} />
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text1)' }}>{doc.tipo_documento_sugerido || doc.nome_arquivo}</div>
+            <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 2 }}>
+              {doc.clientes?.nome || '—'}
+              {itemResolvido(doc) && <> · {itemResolvido(doc)}</>}
+            </div>
+          </div>
+          <button className="btn btn-ghost btn-sm" onClick={() => baixar(doc)} title="Baixar arquivo original">
+            <DownloadIcon size={13} /> Baixar
+          </button>
+          <button className="btn btn-ghost btn-sm" onClick={() => compartilhar(doc)} title="Compartilhar via WhatsApp">
+            <Share2Icon size={13} /> Compartilhar
+          </button>
+        </div>
+      ))}
     </div>
   )
 }

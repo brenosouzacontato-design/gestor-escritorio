@@ -3,6 +3,7 @@ import ReactDOM from 'react-dom/client'
 import App from './App.jsx'
 import RelatorioCompartilhadoPage from './pages/contabil/RelatorioCompartilhadoPage.jsx'
 import IdentificarLancamentosPage from './pages/contabil/IdentificarLancamentosPage.jsx'
+import DocumentoCompartilhadoPage from './pages/documentos/DocumentoCompartilhadoPage.jsx'
 import './styles.css'
 
 // Links compartilhados (Balancete/DRE e identificação de lançamentos via
@@ -12,6 +13,7 @@ import './styles.css'
 const params = new URLSearchParams(window.location.search)
 const share = params.get('share')
 const identificar = params.get('identificar')
+const doc = params.get('doc')
 
 let raiz = <App />
 if (share === 'dre' || share === 'balancete') {
@@ -27,6 +29,8 @@ if (share === 'dre' || share === 'balancete') {
     dataInicio={params.get('inicio')}
     dataFim={params.get('fim')}
   />
+} else if (doc) {
+  raiz = <DocumentoCompartilhadoPage documentoId={doc} />
 }
 
 ReactDOM.createRoot(document.getElementById('root')).render(

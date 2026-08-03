@@ -299,14 +299,14 @@ export default function Empresas() {
               <tr style={{ background:'var(--navy)' }}>
                 <th style={{ padding:'12px 14px', textAlign:'left', fontWeight:600, fontSize:12, color:'var(--navy-text)',
                   textTransform:'uppercase', letterSpacing:.6, position:'relative',
-                  borderBottom:'2px solid var(--navy2)', borderRight:'1px solid var(--navy2)', userSelect:'none' }}>
+                  borderBottom:'1px solid var(--navy2)', userSelect:'none' }}>
                   <span style={{ display:'flex', alignItems:'center', gap:6 }}>🏢 Empresa</span>
                   <div onMouseDown={handleResizeNome}
                     style={{ position:'absolute', right:0, top:0, bottom:0, width:5, cursor:'col-resize' }} />
                 </th>
                 <th style={{ padding:'12px 8px', textAlign:'center', fontWeight:600, fontSize:12,
                   color:'#fbbf24', textTransform:'uppercase', letterSpacing:.5,
-                  borderBottom:'2px solid var(--navy2)', borderRight:'2px solid var(--navy-border)', background:'var(--navy2)' }}>
+                  borderBottom:'1px solid var(--navy2)', background:'var(--navy2)' }}>
                   <div style={{ fontSize:18, marginBottom:4 }}>📊</div>
                   <div>Resumo</div>
                   <div style={{ fontSize:10, color:'var(--navy-text-dim)', marginTop:2, fontWeight:400 }}>geral</div>
@@ -314,7 +314,7 @@ export default function Empresas() {
                 {departamentos.map(d => (
                   <th key={d.id} style={{ padding:'12px 8px', textAlign:'center', fontWeight:600, fontSize:12,
                     color:'var(--navy-text)', textTransform:'uppercase', letterSpacing:.5,
-                    borderBottom:'2px solid var(--navy2)', borderRight:'1px solid var(--navy2)' }}>
+                    borderBottom:'1px solid var(--navy2)' }}>
                     <div style={{ fontSize:18, marginBottom:4 }}>{d.icone||'📋'}</div>
                     <div>{d.nome}</div>
                     <button onClick={() => setLoteDept(d)} title={`Tarefas em lote — ${d.nome}`}
@@ -324,7 +324,7 @@ export default function Empresas() {
                     </button>
                   </th>
                 ))}
-                <th style={{ padding:'12px 4px', textAlign:'center', borderBottom:'2px solid var(--navy2)' }}>
+                <th style={{ padding:'12px 4px', textAlign:'center', borderBottom:'1px solid var(--navy2)' }}>
                   <button onClick={() => setShowAddDept(true)} title="Novo módulo"
                     style={{ background:'none', border:'1px dashed var(--navy-border)', borderRadius:4, width:22, height:22,
                       color:'var(--navy-text-dim)', cursor:'pointer', display:'inline-flex', alignItems:'center', justifyContent:'center' }}>
@@ -358,12 +358,12 @@ export default function Empresas() {
 
                 return (
                   <tr key={c.id}
-                    style={{ background: isSel?'rgba(59,102,246,.08)':zebra, borderBottom:'1px solid var(--border)', cursor:'pointer' }}
-                    onMouseEnter={e => { if(!isSel) e.currentTarget.style.background='var(--sand-dim)' }}
+                    style={{ background: isSel?'var(--accent-dim)':zebra, borderBottom:'1px solid var(--border)', cursor:'pointer', transition:'background .12s' }}
+                    onMouseEnter={e => { if(!isSel) e.currentTarget.style.background='var(--surface2)' }}
                     onMouseLeave={e => { if(!isSel) e.currentTarget.style.background=zebra }}>
 
                     {/* Empresa */}
-                    <td style={{ padding:'11px 14px', borderRight:'1px solid var(--border)' }}
+                    <td style={{ padding:'13px 14px' }}
                       onClick={() => openDrawer(c, null)}>
                       <div style={{ display:'flex', alignItems:'center', gap:9 }}>
                         <div style={{ width:32, height:32, borderRadius:8, background:bg, color:tc, flexShrink:0,
@@ -381,14 +381,14 @@ export default function Empresas() {
                     </td>
 
                     {/* Resumo geral */}
-                    <td style={{ padding:'6px 4px', textAlign:'center', borderRight:'2px solid var(--border)', background: isSel?'rgba(59,102,246,.05)': ri%2===0?'rgba(18,21,31,.03)':'rgba(18,21,31,.06)' }}
+                    <td style={{ padding:'6px 4px', textAlign:'center' }}
                       onClick={() => openDrawer(c, null)}>
                       <DeptPill data={resumo} onClick={() => openDrawer(c, null)} />
                     </td>
 
                     {/* Módulos */}
                     {departamentos.map(d => (
-                      <td key={d.id} style={{ padding:'6px 4px', textAlign:'center', borderRight:'1px solid var(--border)' }}>
+                      <td key={d.id} style={{ padding:'6px 4px', textAlign:'center' }}>
                         <DeptPill data={deptData[d.id]} onClick={() => openDrawer(c, d)} />
                       </td>
                     ))}
