@@ -74,7 +74,7 @@ export default function BalanceteLista({ porTipo, onClickConta }) {
                 </div>
               ))}
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8,
-                background: '#1B2B4B', color: '#fff', borderRadius: 10, padding: '10px 14px', marginTop: 2 }}>
+                background: 'var(--navy)', color: '#fff', borderRadius: 10, padding: '10px 14px', marginTop: 2 }}>
                 <span style={{ fontWeight: 700, fontSize: '0.85rem' }}>Total {LABEL_TIPO[grupo.tipo]}</span>
                 <span className="num" style={{ fontWeight: 800, fontSize: '1rem' }}>{fmt(grupo.total.saldoAtual)}</span>
               </div>

@@ -50,12 +50,12 @@ export default function RelatorioCompartilhadoPage({ tipo, empresaId, dataInicio
   return (
     <div style={{ minHeight: '100vh', background: 'var(--bg)', padding: '32px 16px' }}>
       <div style={{ maxWidth: 900, margin: '0 auto', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 12, overflow: 'hidden' }}>
-        <div style={{ padding: '18px 24px', background: '#1B2B4B' }}>
-          <div style={{ fontSize: 11, color: '#8fadd4', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.04em' }}>
+        <div style={{ padding: '18px 24px', background: 'var(--navy)' }}>
+          <div style={{ fontSize: 11, color: 'var(--navy-text)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.04em' }}>
             {tipo === 'dre' ? 'DRE — Demonstração de Resultado' : 'Balancete'}
           </div>
           <div style={{ fontSize: 18, color: '#fff', fontWeight: 700, marginTop: 4 }}>{empresaNome || '...'}</div>
-          <div style={{ fontSize: 12, color: '#8fadd4', marginTop: 2 }}>
+          <div style={{ fontSize: 12, color: 'var(--navy-text)', marginTop: 2 }}>
             Período de {fmtData(dataInicio)} até {fmtData(dataFim)}
           </div>
         </div>

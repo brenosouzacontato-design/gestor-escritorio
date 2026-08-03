@@ -110,16 +110,16 @@
 }
 
 .btn-navy {
-  background: var(--navy2);
+  background: var(--accent);
   color: #fff;
   border: none;
-  border-radius: var(--r-sm);
+  border-radius: 999px;
   padding: 8px 16px;
   font-size: 0.9rem;
   cursor: pointer;
 }
 
-.btn-navy:hover { background: var(--navy); }
+.btn-navy:hover { background: var(--accent-dark); }
 
 .btn-ghost {
   background: transparent;

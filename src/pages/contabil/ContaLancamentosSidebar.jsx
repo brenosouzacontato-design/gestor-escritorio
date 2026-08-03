@@ -120,7 +120,7 @@ export default function ContaLancamentosSidebar({
           <div style={{ width: 40, height: 4, borderRadius: 99, background: 'var(--border)' }} />
         </div>
 
-        <div style={{ padding: '10px 20px 14px', background: '#1B2B4B', borderBottom: '1px solid #243660',
+        <div style={{ padding: '10px 20px 14px', background: 'var(--navy)', borderBottom: '1px solid var(--navy2)',
           borderTopLeftRadius: 16, borderTopRightRadius: 16, flexShrink: 0 }}>
           {editando ? (
             <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', maxWidth: 560 }}>
@@ -140,7 +140,7 @@ export default function ContaLancamentosSidebar({
                 {salvando ? 'Salvando...' : 'Salvar'}
               </button>
               <button onClick={() => setEditando(false)}
-                style={{ fontSize: 12, padding: '6px 12px', borderRadius: 6, border: '1px solid rgba(255,255,255,.15)', background: 'transparent', color: '#8fadd4', cursor: 'pointer' }}>
+                style={{ fontSize: 12, padding: '6px 12px', borderRadius: 6, border: '1px solid rgba(255,255,255,.15)', background: 'transparent', color: 'var(--navy-text)', cursor: 'pointer' }}>
                 Cancelar
               </button>
               {erro && <p style={{ fontSize: 11, color: '#ff9b9b', width: '100%', margin: 0 }}>{erro}</p>}
@@ -151,7 +151,7 @@ export default function ContaLancamentosSidebar({
                 <div style={{ fontSize: 15, fontWeight: 700, color: '#fff' }}>
                   Razão — {conta.codigo} {conta.nome}
                 </div>
-                <div style={{ fontSize: 11, color: '#8fadd4', marginTop: 3 }}>
+                <div style={{ fontSize: 11, color: 'var(--navy-text)', marginTop: 3 }}>
                   {lancamentos.length} lançamento{lancamentos.length === 1 ? '' : 's'} no período · saldo final{' '}
                   {fmt(linhasComSaldo.length ? linhasComSaldo[linhasComSaldo.length - 1].saldoCorrente : saldoAnterior)}
                 </div>
@@ -163,25 +163,25 @@ export default function ContaLancamentosSidebar({
                     <button onClick={() => exportarLancamentosPDF({ conta, lancamentos, periodo, empresaNome })}
                       title="Exportar PDF"
                       style={{ background: 'rgba(255,255,255,.1)', border: '1px solid rgba(255,255,255,.15)', borderRadius: 6, padding: '5px 9px',
-                        display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', color: '#8fadd4', fontSize: 11 }}>
+                        display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', color: 'var(--navy-text)', fontSize: 11 }}>
                       <FileTextIcon size={12} /> PDF
                     </button>
                     <button onClick={() => exportarLancamentosExcel({ conta, lancamentos, periodo, empresaNome })}
                       title="Exportar Excel"
                       style={{ background: 'rgba(255,255,255,.1)', border: '1px solid rgba(255,255,255,.15)', borderRadius: 6, padding: '5px 9px',
-                        display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', color: '#8fadd4', fontSize: 11 }}>
+                        display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', color: 'var(--navy-text)', fontSize: 11 }}>
                       <FileSpreadsheetIcon size={12} /> Excel
                     </button>
                   </>
                 )}
                 <button onClick={iniciarEdicao} title="Editar conta"
                   style={{ background: 'rgba(255,255,255,.1)', border: '1px solid rgba(255,255,255,.15)', borderRadius: 6, width: 28, height: 28,
-                    display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: '#8fadd4' }}>
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: 'var(--navy-text)' }}>
                   <PencilIcon size={13} />
                 </button>
                 <button onClick={onClose} title="Fechar"
                   style={{ background: 'rgba(255,255,255,.1)', border: '1px solid rgba(255,255,255,.15)', borderRadius: 6, width: 28, height: 28,
-                    display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: '#8fadd4' }}>
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: 'var(--navy-text)' }}>
                   <XIcon size={14} />
                 </button>
               </div>

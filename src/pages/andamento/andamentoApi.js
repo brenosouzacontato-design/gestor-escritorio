@@ -409,6 +409,39 @@ export async function concluirEtapa(etapa, { responsavel, observacao } = {}) {
   }
 }
 
+// Muda a data prevista da etapa ativa (em_andamento) de cada obrigação
+// selecionada em lote -- é a única etapa com vencimento "em aberto" (etapa
+// concluída já tem data_conclusao fixada; pendente ainda não teve prazo
+// calculado, só ganha data_prevista quando a anterior é concluída, ver
+// concluirEtapa). Obrigação sem etapa em_andamento (já concluída) é pulada.
+export async function atualizarVencimentoEmLote(obrigacaoIds, novaData) {
+  if (!obrigacaoIds || obrigacaoIds.length === 0) return { atualizadas: 0, puladas: 0 };
+  const { data: etapas, error: errEtapas } = await supabase
+    .from('etapas_obrigacao')
+    .select('id, obrigacao_id, nome')
+    .in('obrigacao_id', obrigacaoIds)
+    .eq('status', 'em_andamento');
+  if (errEtapas) throw errEtapas;
+
+  if (etapas.length > 0) {
+    const { error } = await supabase
+      .from('etapas_obrigacao')
+      .update({ data_prevista: novaData })
+      .in('id', etapas.map((e) => e.id));
+    if (error) throw error;
+
+    await supabase.from('historico_obrigacao').insert(
+      etapas.map((e) => ({
+        obrigacao_id: e.obrigacao_id,
+        etapa_obrigacao_id: e.id,
+        descricao: `Vencimento de "${e.nome}" alterado em lote para ${novaData}`,
+      }))
+    );
+  }
+
+  return { atualizadas: etapas.length, puladas: obrigacaoIds.length - etapas.length };
+}
+
 // "Atrasado" é derivado no cliente (sem cron): etapa em_andamento cuja data
 // prevista já passou.
 export function etapaAtrasada(etapa) {

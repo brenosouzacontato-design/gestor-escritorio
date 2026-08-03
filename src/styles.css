@@ -1,44 +1,51 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&display=swap');
 
 :root {
-  --font: 'Inter', -apple-system, sans-serif;
+  color-scheme: light;
+  --font: 'Poppins', -apple-system, sans-serif;
 
-  /* Paleta areia + navy */
-  --bg:       #F4F1EC;
-  --surface:  #FDFCF9;
-  --surface2: #EFECE6;
-  --surface3: #E6E2DA;
-  --border:   #DDD9D0;
-  --border2:  #C8C2B8;
+  /* Paleta inspirada na HubStrom: neutros slate + verde de marca */
+  --bg:       #F8FAFC;
+  --surface:  #FFFFFF;
+  --surface2: #F1F5F9;
+  --surface3: #E2E8F0;
+  --border:   #E2E8F0;
+  --border2:  #CBD5E1;
 
   /* Texto */
-  --text1: #1B2B4B;
-  --text2: #5B6B8A;
-  --text3: #8A8F9E;
+  --text1: #1E293B;
+  --text2: #475569;
+  --text3: #64748B;
 
-  /* Navy (sidebar, table header, etc) */
-  --navy:     #1B2B4B;
-  --navy2:    #243660;
-  --navy3:    #2F4478;
+  /* Chrome escuro (barras de cabeçalho de modal/drawer, badges escuros) */
+  --navy:            #171717;
+  --navy2:            #232323;
+  --navy3:            #2E2E2E;
+  --navy-border:      #3A3A3A;
+  --navy-text:        #D4D4D4;
+  --navy-text-dim:    #A3A3A3;
 
-  /* Acento */
-  --accent:      #1E5FA0;
-  --accent-dim:  rgba(30,95,160,0.10);
-  --accent-dark: #185090;
+  /* Acento — verde de marca da HubStrom */
+  --accent:      #249F64;
+  --accent-dim:  rgba(36,159,100,0.14);
+  --accent-dark: #1E8557;
 
-  /* Status — tons mais quentes para fundo claro */
-  --ok:        #2A7A5A;
-  --ok-dim:    rgba(42,122,90,0.12);
-  --warn:      #9A6B1A;
-  --warn-dim:  rgba(154,107,26,0.12);
-  --danger:    #A83030;
-  --danger-dim:rgba(168,48,48,0.12);
-  --info:      #1E5FA0;
-  --info-dim:  rgba(30,95,160,0.12);
+  /* Status */
+  --ok:        #15803D;
+  --ok-dim:    rgba(21,128,61,0.12);
+  --warn:      #B45309;
+  --warn-dim:  rgba(180,83,9,0.12);
+  --danger:    #B91C1C;
+  --danger-dim:rgba(185,28,28,0.12);
+  --info:      #249F64;
+  --info-dim:  rgba(36,159,100,0.12);
 
-  /* Areia */
-  --sand:      #C8B99A;
-  --sand-dim:  #E8E0D0;
+  /* Overlay de modal */
+  --overlay: rgba(15,18,25,.5);
+
+  /* Neutro (era "areia") */
+  --sand:      #C7CCD6;
+  --sand-dim:  #EDEFF3;
 
   /* Raios */
   --r-xs: 4px;
@@ -48,9 +55,58 @@
   --r-xl: 22px;
 
   /* Sombras */
-  --shadow-sm: 0 1px 3px rgba(27,43,75,.08);
-  --shadow-md: 0 4px 16px rgba(27,43,75,.12);
-  --shadow-lg: 0 8px 32px rgba(27,43,75,.18);
+  --shadow-sm: 0 1px 3px rgba(15,23,42,.06);
+  --shadow-md: 0 4px 16px rgba(15,23,42,.08);
+  --shadow-lg: 0 8px 32px rgba(15,23,42,.14);
+}
+
+/* ── Tema escuro ──────────────────────────────────────────
+   Ativado via [data-theme="dark"] no <html> (ver toggle no
+   topbar, App.jsx) — todos os tokens acima são redefinidos
+   aqui; como o resto do CSS/JSX só referencia var(--x), o
+   app inteiro re-tema sozinho sem tocar em mais nada. */
+:root[data-theme="dark"] {
+  color-scheme: dark;
+
+  --bg:       #0B0F17;
+  --surface:  #151A24;
+  --surface2: #1D2330;
+  --surface3: #272E3D;
+  --border:   #2A3140;
+  --border2:  #3B4354;
+
+  --text1: #F1F5F9;
+  --text2: #B7C0CE;
+  --text3: #8892A3;
+
+  --navy:            #1C2331;
+  --navy2:            #262E40;
+  --navy3:            #323C52;
+  --navy-border:      #414C66;
+  --navy-text:        #C9D1E0;
+  --navy-text-dim:    #8F98AC;
+
+  --accent:      #2FBE7A;
+  --accent-dim:  rgba(47,190,122,0.18);
+  --accent-dark: #249F64;
+
+  --ok:        #22C55E;
+  --ok-dim:    rgba(34,197,94,0.16);
+  --warn:      #F59E0B;
+  --warn-dim:  rgba(245,158,11,0.16);
+  --danger:    #EF4444;
+  --danger-dim:rgba(239,68,68,0.16);
+  --info:      #2FBE7A;
+  --info-dim:  rgba(47,190,122,0.16);
+
+  --overlay: rgba(0,0,0,.6);
+
+  --sand:      #3B4354;
+  --sand-dim:  #232B3A;
+
+  --shadow-sm: 0 1px 3px rgba(0,0,0,.35);
+  --shadow-md: 0 4px 16px rgba(0,0,0,.4);
+  --shadow-lg: 0 8px 32px rgba(0,0,0,.5);
 }
 
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -74,17 +130,26 @@ input, select, textarea { font-family: var(--font); }
 /* ── Layout ────────────────────────────────────────────── */
 .app-shell { display: flex; flex-direction: column; height: 100%; background: var(--bg); }
 
-@media (min-width: 768px) { .app-shell { flex-direction: row; } }
+/* .app-body = sidebar + conteúdo, lado a lado a partir do desktop; a topbar
+   fica de fora, sempre no topo em qualquer largura. */
+.app-body { display: flex; flex: 1; min-height: 0; }
+@media (min-width: 768px) { .app-body { flex-direction: row; } }
 
-/* ── Topbar mobile ──────────────────────────────────────── */
+/* ── Topbar (mobile + desktop) ───────────────────────────── */
 .topbar {
-  background: #1B2B4B;
-  border-bottom: 1px solid #243660;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
   padding: 13px 16px;
   display: flex; align-items: center; justify-content: space-between;
   flex-shrink: 0; position: sticky; top: 0; z-index: 100;
 }
-.topbar-title { font-size: 15px; font-weight: 700; color: #fff; display: flex; align-items: center; gap: 8px; }
+.topbar-title { font-size: 15px; font-weight: 700; color: var(--text1); display: flex; align-items: center; gap: 8px; }
+.topbar-title--page { display: none; }
+
+@media (min-width: 768px) {
+  .topbar-title--brand { display: none; }
+  .topbar-title--page  { display: flex; }
+}
 
 /* ── Sidebar desktop ────────────────────────────────────── */
 .sidebar { display: none; }
@@ -93,25 +158,37 @@ input, select, textarea { font-family: var(--font); }
   .sidebar {
     display: flex; flex-direction: column;
     width: 220px;
-    background: #1B2B4B;
-    border-right: 1px solid #243660;
+    background: var(--surface);
+    border-right: 1px solid var(--border);
     flex-shrink: 0;
+    transition: width .15s ease;
   }
+
+  .sidebar.collapsed { width: 68px; }
+  .sidebar.collapsed .nav-label,
+  .sidebar.collapsed .brand-text { display: none; }
+  .sidebar.collapsed .nav-item { justify-content: center; padding: 11px 0; gap: 0; }
+  .sidebar.collapsed .nav-item .badge {
+    position: absolute; top: 6px; right: 14px;
+    width: 7px !important; height: 7px !important; min-width: 0;
+    padding: 0 !important; font-size: 0 !important; margin-left: 0 !important;
+    overflow: hidden;
+  }
+  .sidebar.collapsed .sidebar-brand { padding: 22px 0 18px; text-align: center; }
 
   .sidebar-brand {
     padding: 22px 20px 18px;
-    border-bottom: 1px solid #243660;
+    border-bottom: 1px solid var(--border);
     margin-bottom: 8px;
   }
 
   .sidebar-brand h1 {
-    font-size: 15px; font-weight: 700; color: #fff;
-    display: flex; align-items: center; gap: 8px;
+    font-size: 15px; font-weight: 700; color: var(--text1);
+    display: flex; align-items: center; gap: 8px; justify-content: center;
   }
 
-  .sidebar-brand p { font-size: 11px; color: #6B80A8; margin-top: 3px; }
+  .sidebar-brand p { font-size: 11px; color: var(--text3); margin-top: 3px; }
 
-  .topbar { display: none; }
   .app-main { flex: 1; overflow-y: auto; }
 }
 
@@ -120,25 +197,25 @@ input, select, textarea { font-family: var(--font); }
   display: flex; align-items: center; gap: 11px;
   padding: 11px 20px;
   font-size: 13px; font-weight: 500;
-  color: #6B80A8;
+  color: var(--text2);
   border: none; background: none;
   width: 100%; text-align: left;
   transition: all 0.15s; cursor: pointer;
   position: relative; letter-spacing: .1px;
 }
 
-.nav-item:hover { color: #c5d4f0; background: #243660; }
+.nav-item:hover { color: var(--text1); background: var(--surface2); }
 
 .nav-item.active {
-  color: #93b4f0;
-  background: #243660;
+  color: var(--accent);
+  background: var(--accent-dim);
   font-weight: 600;
 }
 
 .nav-item.active::before {
   content: '';
   position: absolute; left: 0; top: 6px; bottom: 6px;
-  width: 3px; background: #3b82f6;
+  width: 3px; background: var(--accent);
   border-radius: 0 3px 3px 0;
 }
 
@@ -243,6 +320,7 @@ input, select, textarea { font-family: var(--font); }
 .btn-accent {
   background: var(--accent); color: #fff;
   border-color: var(--accent); font-weight: 700;
+  border-radius: 999px;
 }
 .btn-accent:hover { background: var(--accent-dark); border-color: var(--accent-dark); }
 
@@ -394,7 +472,7 @@ textarea { resize: vertical; min-height: 60px; }
 /* ── Modal ──────────────────────────────────────────────── */
 .modal-backdrop {
   position: fixed; inset: 0;
-  background: rgba(0,0,0,.7);
+  background: var(--overlay);
   backdrop-filter: blur(6px);
   z-index: 200;
   display: flex; align-items: flex-end; justify-content: center;
@@ -459,7 +537,7 @@ textarea { resize: vertical; min-height: 60px; }
   background: var(--accent); color: #fff; border: none;
   display: flex; align-items: center; justify-content: center;
   cursor: pointer;
-  box-shadow: 0 4px 20px rgba(108,99,255,.5);
+  box-shadow: 0 4px 20px rgba(59,102,246,.45);
   z-index: 50; transition: all 0.15s;
 }
 .fab:hover { transform: scale(1.08); }

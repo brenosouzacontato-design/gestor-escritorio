@@ -4,7 +4,7 @@ import { listarHistoricoObrigacao, concluirEtapa } from './andamentoApi';
 
 const STATUS_LABEL = { concluido: 'Concluído', em_andamento: 'Em andamento', pendente: 'Pendente', atrasado: 'Atrasado' };
 const STATUS_COLOR = {
-  concluido:    { bg: 'rgba(27,43,75,.10)', fg: 'var(--navy)' },
+  concluido:    { bg: 'rgba(18,21,31,.10)', fg: 'var(--navy)' },
   em_andamento: { bg: 'var(--accent-dim)',  fg: 'var(--accent)' },
   pendente:     { bg: 'var(--surface2)',    fg: 'var(--text3)' },
   atrasado:     { bg: 'var(--danger-dim)',  fg: 'var(--danger)' },
@@ -62,21 +62,21 @@ export default function HistoricoObrigacaoModal({ stage, titulo, clienteNome, de
   };
 
   return (
-    <div style={{ position: 'fixed', inset: 0, background: 'rgba(27,43,75,.45)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}
+    <div style={{ position: 'fixed', inset: 0, background: 'var(--overlay)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}
       onClick={onClose}>
       <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 12, overflow: 'hidden', width: '100%', maxWidth: 420, maxHeight: '90vh', display: 'flex', flexDirection: 'column' }}
         onClick={(e) => e.stopPropagation()}>
 
-        <div style={{ padding: '12px 16px', background: '#1B2B4B', borderBottom: '1px solid #243660' }}>
+        <div style={{ padding: '12px 16px', background: 'var(--navy)', borderBottom: '1px solid var(--navy2)' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
             <div style={{ minWidth: 0 }}>
               <div style={{ fontSize: 13, fontWeight: 600, color: '#fff', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                 {titulo}
               </div>
-              <div style={{ fontSize: 10, color: '#8fadd4', marginTop: 3 }}>{clienteNome} · {departamentoNome}</div>
+              <div style={{ fontSize: 10, color: 'var(--navy-text)', marginTop: 3 }}>{clienteNome} · {departamentoNome}</div>
             </div>
             <button onClick={onClose}
-              style={{ background: 'rgba(255,255,255,.1)', border: '1px solid rgba(255,255,255,.15)', borderRadius: 6, width: 24, height: 24, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: '#8fadd4', flexShrink: 0 }}>
+              style={{ background: 'rgba(255,255,255,.1)', border: '1px solid rgba(255,255,255,.15)', borderRadius: 6, width: 24, height: 24, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: 'var(--navy-text)', flexShrink: 0 }}>
               <XIcon size={13} />
             </button>
           </div>

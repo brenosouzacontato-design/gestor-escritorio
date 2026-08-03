@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect } from 'react'
-import { PlusIcon, XIcon, CheckCircleIcon, ClockIcon, AlertCircleIcon, MinusCircleIcon, ChevronRightIcon, CalendarIcon, CheckIcon, SaveIcon, ZapIcon, RefreshCwIcon } from 'lucide-react'
+import { PlusIcon, XIcon, CheckCircleIcon, ClockIcon, AlertCircleIcon, MinusCircleIcon, ChevronRightIcon, CalendarIcon, CheckIcon, SaveIcon, ZapIcon, RefreshCwIcon, Trash2Icon } from 'lucide-react'
 import { useStore } from '../store'
 import { DeptChip, PriDot, fmtDate, isOverdue, useToast } from '../components/shared'
 import { supabase } from '../lib/supabase'
@@ -26,10 +26,10 @@ const LEGACY_DEPT_TIPOS = {
 const STATUS_OBS       = ['pendente','concluido','nao_aplica','vencido']
 const STATUS_OBS_LABEL = { pendente:'Pendente', concluido:'Concluído', nao_aplica:'N/A', vencido:'Vencido' }
 const STATUS_OBS_COLOR = {
-  pendente:   { bg:'rgba(154,107,26,.12)',  color:'#9A6B1A' },
-  concluido:  { bg:'rgba(42,122,90,.12)',   color:'#2A7A5A' },
-  nao_aplica: { bg:'rgba(30,95,160,.12)',   color:'#1E5FA0' },
-  vencido:    { bg:'rgba(168,48,48,.12)',   color:'#A83030' },
+  pendente:   { bg:'var(--warn-dim)', color:'var(--warn)' },
+  concluido:  { bg:'var(--ok-dim)',   color:'var(--ok)' },
+  nao_aplica: { bg:'var(--info-dim)', color:'var(--info)' },
+  vencido:    { bg:'var(--danger-dim)', color:'var(--danger)' },
 }
 
 // Obrigação pendente cujo vencimento está dentro da janela de lembrete do
@@ -63,8 +63,9 @@ function getStatusDept(obsEmp, tarefasEmp, dept) {
   return { s, pct, val: obs.length > 0 ? `${ok}/${obs.length}` : tasks.length > 0 ? `${tasks.length}t` : '—' }
 }
 
-const S_COLOR = { ok:'#2A7A5A', warn:'#9A6B1A', venc_breve:'#C2540A', danger:'#A83030', na:'#1E5FA0', empty:'#8A8F9E' }
-const S_BG    = { ok:'rgba(42,122,90,.10)', warn:'rgba(154,107,26,.10)', venc_breve:'rgba(194,84,10,.12)', danger:'rgba(168,48,48,.10)', na:'rgba(30,95,160,.10)', empty:'var(--surface2)' }
+const COR_VENCENDO = '#C2410C'
+const S_COLOR = { ok:'var(--ok)', warn:'var(--warn)', venc_breve:COR_VENCENDO, danger:'var(--danger)', na:'var(--info)', empty:'var(--text3)' }
+const S_BG    = { ok:'var(--ok-dim)', warn:'var(--warn-dim)', venc_breve:'rgba(194,65,12,.12)', danger:'var(--danger-dim)', na:'var(--info-dim)', empty:'var(--surface2)' }
 const S_ICON  = { ok:CheckCircleIcon, warn:ClockIcon, venc_breve:AlertCircleIcon, danger:AlertCircleIcon, na:MinusCircleIcon, empty:null }
 
 const AVATAR_COLORS = [
@@ -102,6 +103,7 @@ export default function Empresas() {
   const tarefas         = useStore(s => s.tarefas)
   const fetchObrigacoes = useStore(s => s.fetchObrigacoes)
   const fetchTarefas    = useStore(s => s.fetchTarefas)
+  const deleteCliente   = useStore(s => s.deleteCliente)
   const { show }        = useToast()
 
   // Competência única do app — só o Painel tem o seletor; essa tela lê o
@@ -173,6 +175,15 @@ export default function Empresas() {
 
   const openDrawer = (c, dept) => { setDrawer({c, dept}); setDrawerTab('obrig') }
 
+  // Soft-delete (marca ativo=false) — obrigações/tarefas/lançamentos já
+  // gerados continuam existindo, só a empresa some das listagens.
+  const handleDeleteCliente = async (c) => {
+    if (!window.confirm(`Excluir "${c.nome}"? A empresa deixa de aparecer nas listagens (histórico de lançamentos e obrigações é preservado).`)) return
+    setDrawer(null)
+    const { error } = await deleteCliente(c.id)
+    show?.(error ? `Erro: ${error.message}` : `"${c.nome}" excluída`)
+  }
+
   const handleResizeNome = (e) => {
     e.preventDefault()
     const sx = e.clientX, sw = nomeColW
@@ -229,29 +240,29 @@ export default function Empresas() {
           <h2 style={{ fontSize:14, fontWeight:500, color:'var(--text1)', margin:0 }}>Empresas</h2>
           <p style={{ fontSize:10, color:'var(--text3)', margin:0 }}>Status por módulo · {rows.length} empresas</p>
         </div>
-        <div style={{ display:'flex', alignItems:'center', gap:5, background:'var(--surface2)', border:'1px solid #232840', borderRadius:8, padding:'5px 9px', marginLeft:12 }}>
+        <div style={{ display:'flex', alignItems:'center', gap:5, background:'var(--surface2)', border:'1px solid var(--navy2)', borderRadius:8, padding:'5px 9px', marginLeft:12 }}>
           <span style={{ fontSize:12, color:'var(--text3)' }}>🔍</span>
           <input value={busca} onChange={e => setBusca(e.target.value)} placeholder="Buscar empresa..."
             style={{ background:'none', border:'none', outline:'none', fontSize:11, color:'var(--text2)', width:160 }} />
         </div>
         {carteiras.length > 1 && (
           <select value={carteira} onChange={e => setCarteira(e.target.value)}
-            style={{ background:'var(--surface2)', border:'1px solid #232840', borderRadius:8, padding:'5px 8px', fontSize:11, color:'var(--text2)' }}>
+            style={{ background:'var(--surface2)', border:'1px solid var(--navy2)', borderRadius:8, padding:'5px 8px', fontSize:11, color:'var(--text2)' }}>
             {carteiras.map(c => <option key={c} value={c}>{c==='todas'?'Todas as carteiras':c}</option>)}
           </select>
         )}
         <div style={{ marginLeft:'auto', display:'flex', alignItems:'center', gap:8 }}>
           <button onClick={handleGerarCompetencia} disabled={gerando}
             title="Gerar obrigações recorrentes desta competência (automático, todas as empresas)"
-            style={{ display:'flex', alignItems:'center', gap:5, background:'var(--surface2)', border:'1px solid #232840', borderRadius:8, padding:'5px 10px', fontSize:11, color:'var(--text2)', cursor:'pointer', fontWeight:500, opacity:gerando?.6:1 }}>
+            style={{ display:'flex', alignItems:'center', gap:5, background:'var(--surface2)', border:'1px solid var(--navy2)', borderRadius:8, padding:'5px 10px', fontSize:11, color:'var(--text2)', cursor:'pointer', fontWeight:500, opacity:gerando?.6:1 }}>
             <RefreshCwIcon size={12} /> {gerando ? 'Gerando...' : `Gerar ${compSel}`}
           </button>
           <button onClick={() => setShowLoteObs(true)}
             title="Criar uma obrigação escolhida à mão pra várias empresas"
-            style={{ display:'flex', alignItems:'center', gap:5, background:'var(--surface2)', border:'1px solid #232840', borderRadius:8, padding:'5px 10px', fontSize:11, color:'var(--text2)', cursor:'pointer', fontWeight:500 }}>
+            style={{ display:'flex', alignItems:'center', gap:5, background:'var(--surface2)', border:'1px solid var(--navy2)', borderRadius:8, padding:'5px 10px', fontSize:11, color:'var(--text2)', cursor:'pointer', fontWeight:500 }}>
             <ZapIcon size={12} /> Obrigações em lote
           </button>
-          <span style={{ background:'var(--surface2)', border:'1px solid #232840', borderRadius:8, padding:'5px 8px', fontSize:11, color:'var(--text2)' }}
+          <span style={{ background:'var(--surface2)', border:'1px solid var(--navy2)', borderRadius:8, padding:'5px 8px', fontSize:11, color:'var(--text2)' }}
             title="Competência escolhida no Painel">
             {compSel}
           </span>
@@ -259,7 +270,7 @@ export default function Empresas() {
       </div>
 
       {/* Filtros */}
-      <div style={{ display:'flex', gap:5, padding:'7px 16px', borderBottom:'1px solid #1e2438', flexShrink:0, background:'var(--surface2)', alignItems:'center' }}>
+      <div style={{ display:'flex', gap:5, padding:'7px 16px', borderBottom:'1px solid var(--navy2)', flexShrink:0, background:'var(--surface2)', alignItems:'center' }}>
         {[['todos','Todos'],['pendentes','Pendentes'],['criticos','Críticos'],['ok','100% ok']].map(([id,lbl]) => (
           <button key={id} onClick={() => setFiltro(id)}
             style={{ background:filtro===id?'var(--accent-dim)':'var(--surface2)', border:`1px solid ${filtro===id?'var(--accent)':'var(--border)'}`,
@@ -285,38 +296,38 @@ export default function Empresas() {
             </colgroup>
 
             <thead style={{ position:'sticky', top:0, zIndex:5 }}>
-              <tr style={{ background:'#1B2B4B' }}>
-                <th style={{ padding:'12px 14px', textAlign:'left', fontWeight:600, fontSize:12, color:'#8fadd4',
+              <tr style={{ background:'var(--navy)' }}>
+                <th style={{ padding:'12px 14px', textAlign:'left', fontWeight:600, fontSize:12, color:'var(--navy-text)',
                   textTransform:'uppercase', letterSpacing:.6, position:'relative',
-                  borderBottom:'2px solid #243660', borderRight:'1px solid #243660', userSelect:'none' }}>
+                  borderBottom:'2px solid var(--navy2)', borderRight:'1px solid var(--navy2)', userSelect:'none' }}>
                   <span style={{ display:'flex', alignItems:'center', gap:6 }}>🏢 Empresa</span>
                   <div onMouseDown={handleResizeNome}
                     style={{ position:'absolute', right:0, top:0, bottom:0, width:5, cursor:'col-resize' }} />
                 </th>
                 <th style={{ padding:'12px 8px', textAlign:'center', fontWeight:600, fontSize:12,
                   color:'#fbbf24', textTransform:'uppercase', letterSpacing:.5,
-                  borderBottom:'2px solid #243660', borderRight:'2px solid #3b5280', background:'#162240' }}>
+                  borderBottom:'2px solid var(--navy2)', borderRight:'2px solid var(--navy-border)', background:'var(--navy2)' }}>
                   <div style={{ fontSize:18, marginBottom:4 }}>📊</div>
                   <div>Resumo</div>
-                  <div style={{ fontSize:10, color:'#6B80A8', marginTop:2, fontWeight:400 }}>geral</div>
+                  <div style={{ fontSize:10, color:'var(--navy-text-dim)', marginTop:2, fontWeight:400 }}>geral</div>
                 </th>
                 {departamentos.map(d => (
                   <th key={d.id} style={{ padding:'12px 8px', textAlign:'center', fontWeight:600, fontSize:12,
-                    color:'#8fadd4', textTransform:'uppercase', letterSpacing:.5,
-                    borderBottom:'2px solid #243660', borderRight:'1px solid #243660' }}>
+                    color:'var(--navy-text)', textTransform:'uppercase', letterSpacing:.5,
+                    borderBottom:'2px solid var(--navy2)', borderRight:'1px solid var(--navy2)' }}>
                     <div style={{ fontSize:18, marginBottom:4 }}>{d.icone||'📋'}</div>
                     <div>{d.nome}</div>
                     <button onClick={() => setLoteDept(d)} title={`Tarefas em lote — ${d.nome}`}
-                      style={{ marginTop:4, background:'none', border:'1px dashed #3b5280', borderRadius:4,
-                        padding:'1px 6px', fontSize:9, color:'#6B80A8', cursor:'pointer', fontWeight:400 }}>
+                      style={{ marginTop:4, background:'none', border:'1px dashed var(--navy-border)', borderRadius:4,
+                        padding:'1px 6px', fontSize:9, color:'var(--navy-text-dim)', cursor:'pointer', fontWeight:400 }}>
                       <ZapIcon size={9} style={{ verticalAlign:-1, marginRight:2 }} />lote
                     </button>
                   </th>
                 ))}
-                <th style={{ padding:'12px 4px', textAlign:'center', borderBottom:'2px solid #243660' }}>
+                <th style={{ padding:'12px 4px', textAlign:'center', borderBottom:'2px solid var(--navy2)' }}>
                   <button onClick={() => setShowAddDept(true)} title="Novo módulo"
-                    style={{ background:'none', border:'1px dashed #3b5280', borderRadius:4, width:22, height:22,
-                      color:'#6B80A8', cursor:'pointer', display:'inline-flex', alignItems:'center', justifyContent:'center' }}>
+                    style={{ background:'none', border:'1px dashed var(--navy-border)', borderRadius:4, width:22, height:22,
+                      color:'var(--navy-text-dim)', cursor:'pointer', display:'inline-flex', alignItems:'center', justifyContent:'center' }}>
                     <PlusIcon size={12} />
                   </button>
                 </th>
@@ -347,7 +358,7 @@ export default function Empresas() {
 
                 return (
                   <tr key={c.id}
-                    style={{ background: isSel?'rgba(30,95,160,.08)':zebra, borderBottom:'1px solid var(--border)', cursor:'pointer' }}
+                    style={{ background: isSel?'rgba(59,102,246,.08)':zebra, borderBottom:'1px solid var(--border)', cursor:'pointer' }}
                     onMouseEnter={e => { if(!isSel) e.currentTarget.style.background='var(--sand-dim)' }}
                     onMouseLeave={e => { if(!isSel) e.currentTarget.style.background=zebra }}>
 
@@ -363,14 +374,14 @@ export default function Empresas() {
                           <div style={{ fontSize:13, fontWeight:600, color:'var(--text1)', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{c.nome}</div>
                           <div style={{ fontSize:11, color:'var(--text3)', display:'flex', gap:4, alignItems:'center', marginTop:2 }}>
                             {c.regime||'SN'}
-                            {c.carteira && <span style={{ background:'rgba(30,95,160,.12)', color:'var(--accent)', borderRadius:99, padding:'0 6px', fontSize:10, fontWeight:600 }}>{c.carteira}</span>}
+                            {c.carteira && <span style={{ background:'rgba(59,102,246,.12)', color:'var(--accent)', borderRadius:99, padding:'0 6px', fontSize:10, fontWeight:600 }}>{c.carteira}</span>}
                           </div>
                         </div>
                       </div>
                     </td>
 
                     {/* Resumo geral */}
-                    <td style={{ padding:'6px 4px', textAlign:'center', borderRight:'2px solid var(--border)', background: isSel?'rgba(30,95,160,.05)': ri%2===0?'rgba(27,43,75,.03)':'rgba(27,43,75,.06)' }}
+                    <td style={{ padding:'6px 4px', textAlign:'center', borderRight:'2px solid var(--border)', background: isSel?'rgba(59,102,246,.05)': ri%2===0?'rgba(18,21,31,.03)':'rgba(18,21,31,.06)' }}
                       onClick={() => openDrawer(c, null)}>
                       <DeptPill data={resumo} onClick={() => openDrawer(c, null)} />
                     </td>
@@ -409,21 +420,26 @@ export default function Empresas() {
             <div style={{ position:'absolute', inset:0, zIndex:9 }} onClick={() => setDrawer(null)} />
             <div style={{ position:'absolute', top:0, right:0, bottom:0, width:340, zIndex:10,
               background:'var(--surface)', borderLeft:'1px solid var(--border)', display:'flex', flexDirection:'column',
-              boxShadow:'-4px 0 20px rgba(27,43,75,.15)', animation:'sli .2s ease' }}>
+              boxShadow:'-4px 0 20px rgba(18,21,31,.15)', animation:'sli .2s ease' }}>
               <style>{`@keyframes sli{from{transform:translateX(100%)}to{transform:translateX(0)}}`}</style>
 
               {/* Header drawer — navy */}
-              <div style={{ padding:'12px 14px', borderBottom:'1px solid #243660', flexShrink:0,
-                display:'flex', alignItems:'flex-start', gap:8, background:'#1B2B4B' }}>
+              <div style={{ padding:'12px 14px', borderBottom:'1px solid var(--navy2)', flexShrink:0,
+                display:'flex', alignItems:'flex-start', gap:8, background:'var(--navy)' }}>
                 <div style={{ flex:1, minWidth:0 }}>
                   <div style={{ fontSize:13, fontWeight:500, color:'#fff', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>
                     {drawer.c.nome}
                   </div>
-                  <div style={{ fontSize:10, color:'#8fadd4', marginTop:2 }}>{drawer.dept?.nome||'Todos os módulos'} · {compSel}</div>
+                  <div style={{ fontSize:10, color:'var(--navy-text)', marginTop:2 }}>{drawer.dept?.nome||'Todos os módulos'} · {compSel}</div>
                 </div>
+                <button onClick={() => handleDeleteCliente(drawer.c)} title="Excluir empresa"
+                  style={{ background:'rgba(255,255,255,.1)', border:'1px solid rgba(255,255,255,.15)', borderRadius:6, width:24, height:24,
+                    display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer', color:'#f87171', flexShrink:0 }}>
+                  <Trash2Icon size={13} />
+                </button>
                 <button onClick={() => setDrawer(null)}
                   style={{ background:'rgba(255,255,255,.1)', border:'1px solid rgba(255,255,255,.15)', borderRadius:6, width:24, height:24,
-                    display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer', color:'#8fadd4', flexShrink:0 }}>
+                    display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer', color:'var(--navy-text)', flexShrink:0 }}>
                   <XIcon size={13} />
                 </button>
               </div>
@@ -454,7 +470,7 @@ export default function Empresas() {
                     const vencendo = isVencendo(o)
                     return (
                       <div key={o.id} style={{ background:'var(--surface)', border:'1px solid var(--border)',
-                        borderLeft: vencendo ? '3px solid #C2540A' : '1px solid var(--border)', borderRadius:8, padding:'10px 12px' }}>
+                        borderLeft: vencendo ? `3px solid ${COR_VENCENDO}` : '1px solid var(--border)', borderRadius:8, padding:'10px 12px' }}>
                         <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:6, marginBottom: o.vencimento ? 6 : 0 }}>
                           <span style={{ fontSize:12, fontWeight:500, color:'var(--text1)' }}>{o.titulo || o.tipo}</span>
                           <select
@@ -473,7 +489,7 @@ export default function Empresas() {
                           </select>
                         </div>
                         {o.vencimento && (
-                          <div style={{ fontSize:10, color:o.status==='vencido'?'#f87171':vencendo?'#C2540A':'var(--text3)', display:'flex', alignItems:'center', gap:4, fontWeight:vencendo?600:400 }}>
+                          <div style={{ fontSize:10, color:o.status==='vencido'?'var(--danger)':vencendo?COR_VENCENDO:'var(--text3)', display:'flex', alignItems:'center', gap:4, fontWeight:vencendo?600:400 }}>
                             <CalendarIcon size={9} />
                             {o.status==='vencido'?'⚠ ':vencendo?'⏰ vence em breve · ':''}Venc. {new Date(o.vencimento+'T12:00:00').toLocaleDateString('pt-BR')}
                           </div>
@@ -492,7 +508,7 @@ export default function Empresas() {
                     const overdue = isOverdue(t.vencimento) && !t.concluida
                     const busy = updatingId === t.id
                     return (
-                      <div key={t.id} style={{ background:'var(--surface2)', border:'1px solid #1e2438', borderRadius:8, padding:'10px 12px' }}>
+                      <div key={t.id} style={{ background:'var(--surface2)', border:'1px solid var(--navy2)', borderRadius:8, padding:'10px 12px' }}>
                         <div style={{ display:'flex', alignItems:'flex-start', gap:8, marginBottom:5 }}>
                           <button onClick={() => handleToggleTask(t)} disabled={busy}
                             style={{ width:16, height:16, borderRadius:4, flexShrink:0, marginTop:1, cursor:'pointer',
@@ -530,7 +546,7 @@ export default function Empresas() {
                   🧾 + Obrigação
                 </button>
                 <button onClick={() => { setShowNovaTarefa(true) }}
-                  style={{ flex:1, background:'#1B2B4B', border:'none', borderRadius:8, padding:'7px', fontSize:11, color:'#fff', fontWeight:500, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', gap:4 }}>
+                  style={{ flex:1, background:'var(--navy)', border:'none', borderRadius:8, padding:'7px', fontSize:11, color:'#fff', fontWeight:500, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', gap:4 }}>
                   ✓ + Tarefa
                 </button>
               </div>
@@ -749,7 +765,7 @@ function NovaObrigacaoModal({ cliente, dept, departamentos, competencia, onClose
       </div>
       <div style={{ display:'flex', gap:8, marginTop:16 }}>
         <button onClick={onClose}
-          style={{ flex:1, background:'var(--surface2)', border:'1px solid #232840', borderRadius:8, padding:'9px', fontSize:12, color:'var(--text2)', cursor:'pointer' }}>Cancelar</button>
+          style={{ flex:1, background:'var(--surface2)', border:'1px solid var(--navy2)', borderRadius:8, padding:'9px', fontSize:12, color:'var(--text2)', cursor:'pointer' }}>Cancelar</button>
         <button onClick={handleSave} disabled={saving||!podeSalvar}
           style={{ flex:1, background:'var(--accent)', border:'none', borderRadius:8, padding:'9px', fontSize:12, color:'#fff', fontWeight:500, cursor:'pointer', opacity:(saving||!podeSalvar)?.6:1 }}>
           <SaveIcon size={13} style={{ marginRight:5, verticalAlign:-2 }} />
@@ -824,7 +840,7 @@ function NovaTarefaModal({ cliente, dept, onClose, onSaved }) {
       </div>
       <div style={{ display:'flex', gap:8, marginTop:16 }}>
         <button onClick={onClose}
-          style={{ flex:1, background:'var(--surface2)', border:'1px solid #232840', borderRadius:8, padding:'9px', fontSize:12, color:'var(--text2)', cursor:'pointer' }}>Cancelar</button>
+          style={{ flex:1, background:'var(--surface2)', border:'1px solid var(--navy2)', borderRadius:8, padding:'9px', fontSize:12, color:'var(--text2)', cursor:'pointer' }}>Cancelar</button>
         <button onClick={handleSave} disabled={saving||!titulo.trim()}
           style={{ flex:1, background:'var(--accent)', border:'none', borderRadius:8, padding:'9px', fontSize:12, color:'#fff', fontWeight:500, cursor:'pointer', opacity:(saving||!titulo.trim())?.6:1 }}>
           <SaveIcon size={13} style={{ marginRight:5, verticalAlign:-2 }} />
@@ -910,7 +926,7 @@ function ModalTarefasLote({ dept, clientes, onClose, onSaved }) {
       </div>
       <div style={{ display:'flex', gap:8, marginTop:16 }}>
         <button onClick={onClose}
-          style={{ flex:1, background:'var(--surface2)', border:'1px solid #232840', borderRadius:8, padding:'9px', fontSize:12, color:'var(--text2)', cursor:'pointer' }}>Cancelar</button>
+          style={{ flex:1, background:'var(--surface2)', border:'1px solid var(--navy2)', borderRadius:8, padding:'9px', fontSize:12, color:'var(--text2)', cursor:'pointer' }}>Cancelar</button>
         <button onClick={handleSave} disabled={saving||!titulo.trim()||clientesSel.length===0}
           style={{ flex:1, background:'var(--accent)', border:'none', borderRadius:8, padding:'9px', fontSize:12, color:'#fff', fontWeight:500, cursor:'pointer', opacity:(saving||!titulo.trim()||clientesSel.length===0)?.6:1 }}>
           {saving?'Criando...':`Criar para ${clientesSel.length} empresa${clientesSel.length!==1?'s':''}`}
@@ -1089,7 +1105,7 @@ function ModalObrigacoesLote({ departamentos, clientes, competenciaInicial, onCl
       </div>
       <div style={{ display:'flex', gap:8, marginTop:16 }}>
         <button onClick={onClose}
-          style={{ flex:1, background:'var(--surface2)', border:'1px solid #232840', borderRadius:8, padding:'9px', fontSize:12, color:'var(--text2)', cursor:'pointer' }}>Cancelar</button>
+          style={{ flex:1, background:'var(--surface2)', border:'1px solid var(--navy2)', borderRadius:8, padding:'9px', fontSize:12, color:'var(--text2)', cursor:'pointer' }}>Cancelar</button>
         <button onClick={handleSave} disabled={saving||!podeSalvar}
           style={{ flex:1, background:'var(--accent)', border:'none', borderRadius:8, padding:'9px', fontSize:12, color:'#fff', fontWeight:500, cursor:'pointer', opacity:(saving||!podeSalvar)?.6:1 }}>
           {saving?'Criando...':`Criar para ${clientesSel.length} empresa${clientesSel.length!==1?'s':''}`}
@@ -1102,18 +1118,18 @@ function ModalObrigacoesLote({ departamentos, clientes, competenciaInicial, onCl
 // ── Modal Base ───────────────────────────────────────────────────────────────
 function ModalBase({ onClose, titulo, children }) {
   return (
-    <div style={{ position:'fixed', inset:0, background:'rgba(27,43,75,.45)', zIndex:2000,
+    <div style={{ position:'fixed', inset:0, background:'var(--overlay)', zIndex:2000,
       display:'flex', alignItems:'center', justifyContent:'center', padding:20 }}
       onClick={onClose}>
       <div style={{ background:'var(--surface)', border:'1px solid var(--border)', borderRadius:12,
         overflow:'hidden', width:'100%', maxWidth:400, maxHeight:'90vh', display:'flex', flexDirection:'column' }}
         onClick={e => e.stopPropagation()}>
         <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center',
-          padding:'12px 16px', background:'#1B2B4B', borderBottom:'1px solid #243660' }}>
+          padding:'12px 16px', background:'var(--navy)', borderBottom:'1px solid var(--navy2)' }}>
           <span style={{ fontSize:13, fontWeight:500, color:'#fff' }}>{titulo}</span>
           <button onClick={onClose}
             style={{ background:'rgba(255,255,255,.1)', border:'1px solid rgba(255,255,255,.15)',
-              borderRadius:6, width:22, height:22, color:'#8fadd4', cursor:'pointer',
+              borderRadius:6, width:22, height:22, color:'var(--navy-text)', cursor:'pointer',
               display:'flex', alignItems:'center', justifyContent:'center', fontSize:13 }}>✕</button>
         </div>
         <div style={{ padding:20, overflowY:'auto' }}>

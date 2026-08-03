@@ -99,6 +99,15 @@ exports.handler = async (event) => {
     try {
       transacoes = JSON.parse(limpo);
     } catch {
+      // o modelo, às vezes, escreve um comentário antes/depois do array (ex:
+      // explicando que o PDF não é um extrato) em vez de devolver só o JSON
+      // como pedido no system prompt -- tenta isolar o array pelo primeiro
+      // "[" e último "]" antes de desistir de vez
+      const extraido = extrairArrayDoTexto(limpo);
+      if (extraido) {
+        return resposta(200, { transacoes: extraido, truncado });
+      }
+
       if (truncado) {
         const salvo = tentarSalvarJsonTruncado(limpo);
         if (salvo && salvo.length > 0) {
@@ -108,7 +117,7 @@ exports.handler = async (event) => {
       return resposta(502, {
         error: truncado
           ? 'O extrato tem transações demais pra processar de uma vez (resposta cortada pelo limite de tamanho). Tente dividir o PDF em partes menores.'
-          : 'Não consegui interpretar a resposta do modelo como JSON.',
+          : 'Não consegui interpretar a resposta do modelo como JSON. Confira se o arquivo enviado é mesmo um extrato bancário (não um relatório fiscal, boleto, comprovante etc).',
         respostaBruta: texto.slice(0, 2000),
       });
     }
@@ -129,6 +138,22 @@ function resposta(statusCode, body) {
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(body),
   };
+}
+
+// isola o array JSON de uma resposta que veio com texto ao redor (ex: o
+// modelo explica em prosa por que não achou transações, em vez de só
+// devolver "[]" como pedido no system prompt) -- pega do primeiro "[" ao
+// último "]" e tenta parsear só esse trecho
+function extrairArrayDoTexto(texto) {
+  const inicio = texto.indexOf('[');
+  const fim = texto.lastIndexOf(']');
+  if (inicio === -1 || fim === -1 || fim < inicio) return null;
+  try {
+    const arr = JSON.parse(texto.slice(inicio, fim + 1));
+    return Array.isArray(arr) ? arr : null;
+  } catch {
+    return null;
+  }
 }
 
 // quando a resposta corta no meio de um objeto, fecha o array no último

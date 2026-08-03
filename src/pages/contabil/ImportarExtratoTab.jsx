@@ -51,7 +51,11 @@ async function extrairTransacoesDoPDF(arquivo, nomeArquivo) {
 
   if (!resp.ok) {
     const erro = await resp.json().catch(() => ({}));
-    throw new Error(erro.error || 'Falha ao extrair o extrato.');
+    const mensagem = erro.error || 'Falha ao extrair o extrato.';
+    // respostaBruta ajuda a diagnosticar sem precisar olhar os logs da
+    // function no Netlify -- ex: mostra que o modelo disse "isso não é um
+    // extrato bancário" em vez de devolver o JSON esperado
+    throw new Error(erro.respostaBruta ? `${mensagem}\n\nResposta do modelo: "${erro.respostaBruta.slice(0, 300)}"` : mensagem);
   }
   return resp.json();
 }
@@ -336,7 +340,7 @@ export default function ImportarExtratoTab({ empresaId }) {
           )}
         </div>
 
-        {erro && <p style={{ color: 'var(--danger)', marginTop: 8 }}>{erro}</p>}
+        {erro && <p style={{ color: 'var(--danger)', marginTop: 8, whiteSpace: 'pre-wrap' }}>{erro}</p>}
         {info && <p style={{ color: 'var(--text2)', marginTop: 8 }}>{info}</p>}
 
         <button className="btn-navy" style={{ marginTop: 12 }} onClick={processar} disabled={processando}>

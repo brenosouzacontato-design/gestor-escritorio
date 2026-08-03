@@ -81,8 +81,31 @@ export const useStore = create((set, get) => ({
       .upsert(registros, { onConflict: 'cnpj', ignoreDuplicates: true })
       .select()
     console.log('syncEmpresasOneFlow result:', data?.length, 'error:', JSON.stringify(error))
-    if (!error) await get().fetchClientes()
-    return { data, error }
+
+    // Reconciliação: desativa clientes já vinculados ao OneFlow (têm
+    // oneflow_app_hash ou oneflow_token) cujo CNPJ sumiu da lista atual do
+    // ERP -- sem isso, empresa removida/desligada no ERP ficava presa como
+    // ativa aqui pra sempre (upsert acima só insere, nunca atualiza nem
+    // remove quem já existe).
+    let desativadas = 0
+    if (!error) {
+      const cnpjsAtivosErp = new Set(registros.map(r => r.cnpj))
+      const { data: vinculadas } = await supabase
+        .from('clientes')
+        .select('id, cnpj')
+        .eq('ativo', true)
+        .or('oneflow_app_hash.not.is.null,oneflow_token.not.is.null')
+      const paraDesativar = (vinculadas || []).filter(c => c.cnpj && !cnpjsAtivosErp.has(c.cnpj.replace(/\D/g, '')))
+      if (paraDesativar.length > 0) {
+        const { error: errDesativar } = await supabase
+          .from('clientes')
+          .update({ ativo: false })
+          .in('id', paraDesativar.map(c => c.id))
+        if (!errDesativar) desativadas = paraDesativar.length
+      }
+      await get().fetchClientes()
+    }
+    return { data, error, desativadas }
   },
 
   // ── Tarefas ──────────────────────────────────────────────────────────────────

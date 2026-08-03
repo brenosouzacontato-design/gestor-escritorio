@@ -303,7 +303,7 @@ function ModalObrigacoesTipo({ tipo, meta, lista, compSel, onClose }) {
   }
 
   return (
-    <div style={{ position:'fixed', inset:0, background:'rgba(27,43,75,.5)', backdropFilter:'blur(4px)',
+    <div style={{ position:'fixed', inset:0, background:'var(--overlay)', backdropFilter:'blur(4px)',
       zIndex:1000, display:'flex', alignItems:'center', justifyContent:'center', padding:20 }}
       onClick={onClose}>
       <div style={{ background:'var(--surface)', border:'1px solid var(--border)', borderRadius:'var(--r-xl)',
@@ -312,18 +312,18 @@ function ModalObrigacoesTipo({ tipo, meta, lista, compSel, onClose }) {
         onClick={e => e.stopPropagation()}>
 
         {/* Header navy */}
-        <div style={{ background:'#1B2B4B', borderRadius:'var(--r-xl) var(--r-xl) 0 0', padding:'16px 20px',
+        <div style={{ background:'var(--navy)', borderRadius:'var(--r-xl) var(--r-xl) 0 0', padding:'16px 20px',
           display:'flex', alignItems:'center', justifyContent:'space-between' }}>
           <div style={{ display:'flex', alignItems:'center', gap:12 }}>
             <span style={{ fontSize:28 }}>{meta.icon}</span>
             <div>
               <div style={{ fontSize:16, fontWeight:700, color:'#fff' }}>{tipo}</div>
-              <div style={{ fontSize:12, color:'#8fadd4', marginTop:2 }}>{meta.dept} · {compSel}</div>
+              <div style={{ fontSize:12, color:'var(--navy-text)', marginTop:2 }}>{meta.dept} · {compSel}</div>
             </div>
           </div>
           <button onClick={onClose}
             style={{ background:'rgba(255,255,255,.1)', border:'1px solid rgba(255,255,255,.2)',
-              borderRadius:8, width:30, height:30, color:'#8fadd4', cursor:'pointer',
+              borderRadius:8, width:30, height:30, color:'var(--navy-text)', cursor:'pointer',
               display:'flex', alignItems:'center', justifyContent:'center', fontSize:16 }}>✕</button>
         </div>
 
@@ -331,7 +331,7 @@ function ModalObrigacoesTipo({ tipo, meta, lista, compSel, onClose }) {
         <div style={{ display:'flex', gap:6, padding:'12px 20px', borderBottom:'1px solid var(--border)', background:'var(--surface2)' }}>
           {[['todos','Todos'],['pendente','Pendentes'],['vencido','Vencidos'],['concluido','Concluídos']].map(([id,lbl]) => (
             <button key={id} onClick={() => setFiltro(id)}
-              style={{ background: filtro===id ? '#1B2B4B' : 'var(--surface)', border:`1px solid ${filtro===id?'#1B2B4B':'var(--border)'}`,
+              style={{ background: filtro===id ? 'var(--navy)' : 'var(--surface)', border:`1px solid ${filtro===id?'var(--navy)':'var(--border)'}`,
                 borderRadius:99, padding:'5px 12px', fontSize:12, fontWeight:600,
                 color: filtro===id ? '#fff' : 'var(--text2)', cursor:'pointer' }}>
               {lbl} <span style={{ fontSize:11, opacity:.7 }}>({counts[id]})</span>
@@ -385,7 +385,7 @@ function ModalObrigacoesTipo({ tipo, meta, lista, compSel, onClose }) {
         <div style={{ padding:'12px 20px', borderTop:'1px solid var(--border)', display:'flex', justifyContent:'space-between', alignItems:'center', background:'var(--surface2)', borderRadius:'0 0 var(--r-xl) var(--r-xl)' }}>
           <span style={{ fontSize:12, color:'var(--text3)' }}>{filtrada.length} de {listaAtual.length} registros</span>
           <button onClick={onClose}
-            style={{ background:'#1B2B4B', border:'none', borderRadius:8, padding:'8px 18px', fontSize:13, color:'#fff', fontWeight:600, cursor:'pointer' }}>
+            style={{ background:'var(--navy)', border:'none', borderRadius:8, padding:'8px 18px', fontSize:13, color:'#fff', fontWeight:600, cursor:'pointer' }}>
             Fechar
           </button>
         </div>

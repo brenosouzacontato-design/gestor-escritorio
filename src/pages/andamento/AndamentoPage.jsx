@@ -6,11 +6,11 @@ import {
   criarObrigacaoComEtapas, criarTipoObrigacaoComEtapas, atualizarTipoObrigacao, adicionarEtapaTemplate,
   excluirEtapaTemplate, arquivarTipoObrigacao,
   listarObrigacoesComEtapas, marcarEntregaObrigacao, statusVisualEtapa, etapaAtrasada,
-  listarTarefasComData,
+  listarTarefasComData, atualizarVencimentoEmLote,
 } from './andamentoApi'
 import DepartamentoTimeline from './DepartamentoTimeline'
 import HistoricoObrigacaoModal from './HistoricoObrigacaoModal'
-import { isOverdue, fmtDate, PriDot } from '../../components/shared'
+import { isOverdue, fmtDate, PriDot, useToast } from '../../components/shared'
 
 const AVATAR_COLORS = [
   ['#1a2e22','#34d399'],['#2a1f10','#fbbf24'],['#18203a','var(--accent)'],
@@ -23,6 +23,7 @@ const AVATAR_COLORS = [
 // e marcar cada uma como entregue ou a entregar.
 export default function AndamentoPage({ onOpenTarefa }) {
   const clientes = useStore(s => s.clientes)
+  const { show } = useToast()
 
   const [departamentos, setDepartamentos] = useState([])
   const [obrigacoes,    setObrigacoes]    = useState([])
@@ -35,6 +36,12 @@ export default function AndamentoPage({ onOpenTarefa }) {
   const [historicoModal, setHistoricoModal] = useState(null)
   const [showNova,       setShowNova]       = useState(false)
   const [showGerenciar,  setShowGerenciar]  = useState(false)
+
+  // Seleção múltipla pra edição de vencimento em lote (só nas obrigações
+  // com etapas — tarefas simples não entram nesse fluxo)
+  const [selecionados,    setSelecionados]    = useState(() => new Set())
+  const [novoVencimento,  setNovoVencimento]  = useState('')
+  const [aplicandoLote,   setAplicandoLote]   = useState(false)
 
   const carregarObrigacoes = async () => {
     if (clientes.length === 0) return
@@ -49,6 +56,9 @@ export default function AndamentoPage({ onOpenTarefa }) {
 
   useEffect(() => { listarDepartamentos().then(setDepartamentos).catch(() => {}) }, [])
   useEffect(() => { carregarObrigacoes() }, [clientes.length])
+  // troca de filtro muda quem tá visível na lista -- evita manter selecionado
+  // algo que sumiu de vista sem o usuário perceber
+  useEffect(() => { setSelecionados(new Set()) }, [filtroDept, filtroStatus, busca])
 
   const clientePorId = useMemo(() => Object.fromEntries(clientes.map(c => [c.id, c])), [clientes])
   const deptPorId    = useMemo(() => Object.fromEntries(departamentos.map(d => [d.id, d])), [departamentos])
@@ -97,6 +107,29 @@ export default function AndamentoPage({ onOpenTarefa }) {
   const handleToggleEntrega = async (o) => {
     await marcarEntregaObrigacao(o.id, !o.entregue)
     await carregarObrigacoes()
+  }
+
+  const toggleSelecionado = (id) => setSelecionados(prev => {
+    const next = new Set(prev)
+    next.has(id) ? next.delete(id) : next.add(id)
+    return next
+  })
+
+  const limparSelecao = () => { setSelecionados(new Set()); setNovoVencimento('') }
+
+  const handleAplicarVencimentoLote = async () => {
+    if (!novoVencimento || selecionados.size === 0) return
+    setAplicandoLote(true)
+    try {
+      const { atualizadas, puladas } = await atualizarVencimentoEmLote([...selecionados], novoVencimento)
+      await carregarObrigacoes()
+      limparSelecao()
+      show?.(`Vencimento atualizado em ${atualizadas} atividade${atualizadas !== 1 ? 's' : ''}${puladas > 0 ? ` (${puladas} pulada${puladas !== 1 ? 's' : ''} — já concluída${puladas !== 1 ? 's' : ''} ou sem etapa ativa)` : ''}`)
+    } catch (e) {
+      show?.('Erro: ' + e.message)
+    } finally {
+      setAplicandoLote(false)
+    }
   }
 
   return (
@@ -151,6 +184,28 @@ export default function AndamentoPage({ onOpenTarefa }) {
         ))}
       </div>
 
+      {/* Barra de edição de vencimento em lote */}
+      {selecionados.size > 0 && (
+        <div style={{ display:'flex', alignItems:'center', gap:8, padding:'8px 16px', flexShrink:0, background:'var(--accent-dim)', borderBottom:'1px solid var(--border)', flexWrap:'wrap' }}>
+          <strong style={{ fontSize:12, color:'var(--text1)' }}>
+            {selecionados.size} atividade{selecionados.size > 1 ? 's' : ''} selecionada{selecionados.size > 1 ? 's' : ''}
+          </strong>
+          <input type="date" value={novoVencimento} onChange={e => setNovoVencimento(e.target.value)}
+            style={{ background:'var(--surface)', border:'1px solid var(--border)', borderRadius:8, padding:'5px 8px', fontSize:12, color:'var(--text1)', outline:'none' }} />
+          <button onClick={handleAplicarVencimentoLote} disabled={aplicandoLote || !novoVencimento}
+            style={{ background:'var(--navy)', border:'none', borderRadius:8, padding:'6px 12px', fontSize:11, color:'#fff', fontWeight:600, cursor:'pointer', opacity:(aplicandoLote||!novoVencimento)?.6:1 }}>
+            {aplicandoLote ? 'Aplicando...' : 'Aplicar vencimento'}
+          </button>
+          <button onClick={limparSelecao} disabled={aplicandoLote}
+            style={{ background:'none', border:'1px solid var(--border2)', borderRadius:8, padding:'6px 10px', fontSize:11, color:'var(--text2)', cursor:'pointer' }}>
+            Limpar seleção
+          </button>
+          <span style={{ fontSize:10.5, color:'var(--text3)' }}>
+            Aplica na etapa em andamento de cada atividade (a que tem prazo em aberto agora); atividades já concluídas são ignoradas.
+          </span>
+        </div>
+      )}
+
       {/* Lista de atividades */}
       <div style={{ flex:1, overflow:'auto', padding:'4px 16px 16px' }}>
         {!carregando && lista.length === 0 && listaTarefas.length === 0 && (
@@ -199,10 +254,14 @@ export default function AndamentoPage({ onOpenTarefa }) {
               key: e.id, nome: e.nome, statusVisual: statusVisualEtapa(e), kind: 'processo', raw: e, obrigacaoRef: o,
             })),
           }
+          const sel = selecionados.has(o.id)
           return (
-            <div key={o.id} style={{ background:'var(--surface)', borderRadius:12, padding:'16px 20px', marginBottom:14, boxShadow:'var(--shadow-sm)' }}>
+            <div key={o.id} style={{ background:'var(--surface)', borderRadius:12, padding:'16px 20px', marginBottom:14, boxShadow:'var(--shadow-sm)',
+              outline: sel ? '2px solid var(--accent)' : 'none', outlineOffset:-1 }}>
               <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:12, flexWrap:'wrap', gap:10 }}>
                 <div style={{ display:'flex', alignItems:'center', gap:12 }}>
+                  <input type="checkbox" checked={sel} onChange={() => toggleSelecionado(o.id)} title="Selecionar pra editar vencimento em lote"
+                    style={{ width:15, height:15, cursor:'pointer', flexShrink:0 }} />
                   <div style={{ width:38, height:38, borderRadius:9, background:bg, color:tc, flexShrink:0,
                     display:'flex', alignItems:'center', justifyContent:'center', fontSize:13, fontWeight:700 }}>
                     {initials}
@@ -421,15 +480,15 @@ function GerenciarTiposModal({ departamentos, onClose }) {
   }
 
   return (
-    <div style={{ position:'fixed', inset:0, background:'rgba(27,43,75,.45)', zIndex:2000, display:'flex', alignItems:'center', justifyContent:'center', padding:20 }}
+    <div style={{ position:'fixed', inset:0, background:'var(--overlay)', zIndex:2000, display:'flex', alignItems:'center', justifyContent:'center', padding:20 }}
       onClick={onClose}>
       <div style={{ background:'var(--surface)', border:'1px solid var(--border)', borderRadius:12, overflow:'hidden', width:'100%', maxWidth:560, maxHeight:'88vh', display:'flex', flexDirection:'column' }}
         onClick={e => e.stopPropagation()}>
 
-        <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', padding:'12px 16px', background:'#1B2B4B', borderBottom:'1px solid #243660' }}>
+        <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', padding:'12px 16px', background:'var(--navy)', borderBottom:'1px solid var(--navy2)' }}>
           <span style={{ fontSize:13, fontWeight:500, color:'#fff' }}>Personalizar tipos de atividade e etapas</span>
           <button onClick={onClose}
-            style={{ background:'rgba(255,255,255,.1)', border:'1px solid rgba(255,255,255,.15)', borderRadius:6, width:22, height:22, color:'#8fadd4', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center' }}>
+            style={{ background:'rgba(255,255,255,.1)', border:'1px solid rgba(255,255,255,.15)', borderRadius:6, width:22, height:22, color:'var(--navy-text)', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center' }}>
             <XIcon size={13} />
           </button>
         </div>
@@ -719,14 +778,14 @@ function EtapasDoTipo({ tipo, onChanged }) {
 // ── Modal Base ───────────────────────────────────────────────────────────────
 function ModalBase({ onClose, titulo, children }) {
   return (
-    <div style={{ position:'fixed', inset:0, background:'rgba(27,43,75,.45)', zIndex:2000, display:'flex', alignItems:'center', justifyContent:'center', padding:20 }}
+    <div style={{ position:'fixed', inset:0, background:'var(--overlay)', zIndex:2000, display:'flex', alignItems:'center', justifyContent:'center', padding:20 }}
       onClick={onClose}>
       <div style={{ background:'var(--surface)', border:'1px solid var(--border)', borderRadius:12, overflow:'hidden', width:'100%', maxWidth:400, maxHeight:'90vh', display:'flex', flexDirection:'column' }}
         onClick={e => e.stopPropagation()}>
-        <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', padding:'12px 16px', background:'#1B2B4B', borderBottom:'1px solid #243660' }}>
+        <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', padding:'12px 16px', background:'var(--navy)', borderBottom:'1px solid var(--navy2)' }}>
           <span style={{ fontSize:13, fontWeight:500, color:'#fff' }}>{titulo}</span>
           <button onClick={onClose}
-            style={{ background:'rgba(255,255,255,.1)', border:'1px solid rgba(255,255,255,.15)', borderRadius:6, width:22, height:22, color:'#8fadd4', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', fontSize:13 }}>✕</button>
+            style={{ background:'rgba(255,255,255,.1)', border:'1px solid rgba(255,255,255,.15)', borderRadius:6, width:22, height:22, color:'var(--navy-text)', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', fontSize:13 }}>✕</button>
         </div>
         <div style={{ padding:20, overflowY:'auto' }}>
           {children}

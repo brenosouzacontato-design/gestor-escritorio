@@ -77,7 +77,7 @@ export default function OneflowConfigModal({ onClose }) {
       await salvarTokenNoSupabase(cfg)
       
       setResultado(empresas)
-      await syncEmpresasOneFlow(empresas)
+      const { desativadas } = await syncEmpresasOneFlow(empresas)
 
       // Vincular tokens nas empresas existentes
       let vinculados = 0
@@ -95,7 +95,7 @@ export default function OneflowConfigModal({ onClose }) {
           vinculados++
         }
       }
-      show(`${empresas.length} empresas, ${vinculados} vinculadas`)
+      show(`${empresas.length} empresas, ${vinculados} vinculadas${desativadas > 0 ? `, ${desativadas} desativada${desativadas !== 1 ? 's' : ''} (saíram do ERP)` : ''}`)
     } catch (e) {
       show(`Erro: ${e.message}`)
     }
