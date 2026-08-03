@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect } from 'react'
-import { PlusIcon, XIcon, CheckCircleIcon, ClockIcon, AlertCircleIcon, MinusCircleIcon, ChevronRightIcon, CalendarIcon, CheckIcon, SaveIcon, ZapIcon, RefreshCwIcon, Trash2Icon, ListIcon, LayoutGridIcon, BarChart3Icon, Share2Icon } from 'lucide-react'
+import { PlusIcon, XIcon, CheckCircleIcon, ClockIcon, AlertCircleIcon, MinusCircleIcon, ChevronRightIcon, CalendarIcon, CheckIcon, SaveIcon, ZapIcon, RefreshCwIcon, Trash2Icon, ListIcon, LayoutGridIcon, BarChart3Icon, Share2Icon, EyeIcon } from 'lucide-react'
 import { useStore } from '../store'
 import { DeptChip, PriDot, fmtDate, isOverdue, useToast } from '../components/shared'
 import { supabase } from '../lib/supabase'
@@ -196,9 +196,12 @@ export default function Empresas() {
   }
 
   // Link público do painel consolidado (PainelClientePage.jsx via main.jsx)
+  const linkPainel = (cliente) => `${window.location.origin}${window.location.pathname}?painel=${cliente.id}&competencia=${encodeURIComponent(compSel)}`
+
+  const handleVisualizarPainel = (cliente) => window.open(linkPainel(cliente), '_blank')
+
   const handleCompartilharPainel = (cliente) => {
-    const url = `${window.location.origin}${window.location.pathname}?painel=${cliente.id}&competencia=${encodeURIComponent(compSel)}`
-    const mensagem = `Olá! Segue o painel de ${cliente.nome} — competência ${compSel} — com obrigações, financeiro e demais informações:\n${url}`
+    const mensagem = `Olá! Segue o painel de ${cliente.nome} — competência ${compSel} — com obrigações, financeiro e demais informações:\n${linkPainel(cliente)}`
     window.open(`https://wa.me/?text=${encodeURIComponent(mensagem)}`, '_blank')
   }
 
@@ -648,15 +651,20 @@ export default function Empresas() {
                     ✓ + Tarefa
                   </button>
                 </div>
+                <label style={{ background:'var(--surface2)', border:'1px solid var(--border)', borderRadius:8, padding:'7px', fontSize:11, color:'var(--text2)', fontWeight:500, cursor:enviandoDeclaracao?'default':'pointer', display:'flex', alignItems:'center', justifyContent:'center', gap:4, opacity:enviandoDeclaracao?.6:1 }}>
+                  <BarChart3Icon size={12} /> {enviandoDeclaracao ? 'Processando...' : 'Declaração do Simples'}
+                  <input type="file" accept=".pdf,application/pdf" style={{ display:'none' }} disabled={enviandoDeclaracao}
+                    onChange={(e) => { handleUploadDeclaracao(drawer.c, e.target.files?.[0]); e.target.value = '' }} />
+                </label>
                 <div style={{ display:'flex', gap:7 }}>
-                  <label style={{ flex:1, background:'var(--surface2)', border:'1px solid var(--border)', borderRadius:8, padding:'7px', fontSize:11, color:'var(--text2)', fontWeight:500, cursor:enviandoDeclaracao?'default':'pointer', display:'flex', alignItems:'center', justifyContent:'center', gap:4, opacity:enviandoDeclaracao?.6:1 }}>
-                    <BarChart3Icon size={12} /> {enviandoDeclaracao ? 'Processando...' : 'Declaração do Simples'}
-                    <input type="file" accept=".pdf,application/pdf" style={{ display:'none' }} disabled={enviandoDeclaracao}
-                      onChange={(e) => { handleUploadDeclaracao(drawer.c, e.target.files?.[0]); e.target.value = '' }} />
-                  </label>
+                  <button onClick={() => handleVisualizarPainel(drawer.c)}
+                    title="Abrir o painel do cliente numa aba nova, pra conferir antes de mandar"
+                    style={{ flex:1, background:'var(--surface2)', border:'1px solid var(--border)', borderRadius:8, padding:'7px', fontSize:11, color:'var(--text2)', fontWeight:500, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', gap:4 }}>
+                    <EyeIcon size={12} /> Visualizar painel
+                  </button>
                   <button onClick={() => handleCompartilharPainel(drawer.c)}
                     style={{ flex:1, background:'var(--accent)', border:'none', borderRadius:8, padding:'7px', fontSize:11, color:'#fff', fontWeight:500, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', gap:4 }}>
-                    <Share2Icon size={12} /> Compartilhar painel
+                    <Share2Icon size={12} /> Compartilhar
                   </button>
                 </div>
               </div>

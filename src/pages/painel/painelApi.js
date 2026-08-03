@@ -39,6 +39,23 @@ export async function obterResumoTarefas(clienteId, competencia) {
 
 // ---------- Financeiro ----------
 
+// ---------- Documentos do mês ----------
+
+// Documentos confirmados daquele cliente enviados dentro do período —
+// completa o "resumo de tudo que acontece com o cliente" no painel.
+export async function obterDocumentosDoMes(clienteId, { dataInicio, dataFim }) {
+  const { data, error } = await supabase
+    .from('documentos')
+    .select('id, nome_arquivo, tipo_documento_sugerido, created_at')
+    .eq('cliente_id', clienteId)
+    .eq('status', 'confirmado')
+    .gte('created_at', dataInicio)
+    .lte('created_at', `${dataFim}T23:59:59`)
+    .order('created_at', { ascending: false });
+  if (error) throw error;
+  return data;
+}
+
 export async function obterResumoFinanceiro(clienteId, { dataInicio, dataFim }) {
   const [{ count: conciliados, error: errC }, { count: aConciliar, error: errA }, dre] = await Promise.all([
     supabase.from('lancamentos_contabeis').select('id', { count: 'exact', head: true })

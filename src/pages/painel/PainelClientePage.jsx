@@ -1,7 +1,15 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '../../lib/supabase';
 import { listarLancamentosAIdentificar, salvarObservacaoCliente } from '../contabil/contabilApi';
-import { obterResumoObrigacoes, obterResumoTarefas, obterResumoFinanceiro, obterDadosGerenciais } from './painelApi';
+import { obterResumoObrigacoes, obterResumoTarefas, obterResumoFinanceiro, obterDadosGerenciais, obterDocumentosDoMes } from './painelApi';
+
+const STATUS_OBS_LABEL = { pendente: 'Pendente', concluido: 'Concluído', nao_aplica: 'N/A', vencido: 'Vencido' };
+const STATUS_OBS_COR = {
+  pendente: ['var(--warn)', 'var(--warn-dim)'],
+  concluido: ['var(--ok)', 'var(--ok-dim)'],
+  nao_aplica: ['var(--info)', 'var(--info-dim)'],
+  vencido: ['var(--danger)', 'var(--danger-dim)'],
+};
 
 function fmt(v) {
   return Number(v ?? 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
@@ -38,6 +46,7 @@ export default function PainelClientePage({ clienteId, competencia }) {
   const [financeiro, setFinanceiro] = useState(null);
   const [lancamentos, setLancamentos] = useState([]);
   const [gerenciais, setGerenciais] = useState(null);
+  const [documentos, setDocumentos] = useState([]);
   const [carregando, setCarregando] = useState(true);
   const [erro, setErro] = useState(null);
 
@@ -47,7 +56,7 @@ export default function PainelClientePage({ clienteId, competencia }) {
       setErro(null);
       try {
         const { dataInicio, dataFim } = competenciaParaPeriodo(competencia);
-        const [{ data: cliente, error: errCliente }, resObs, resTarefas, resFinanceiro, itensIdentificar, dadosSimples] = await Promise.all([
+        const [{ data: cliente, error: errCliente }, resObs, resTarefas, resFinanceiro, itensIdentificar, dadosSimples, docs] = await Promise.all([
           supabase.from('clientes').select('nome').eq('id', clienteId).single(),
           obterResumoObrigacoes(clienteId, competencia),
           obterResumoTarefas(clienteId, competencia),
@@ -56,6 +65,7 @@ export default function PainelClientePage({ clienteId, competencia }) {
           // tabela nova (dados_gerenciais_simples) — tolera ainda não existir
           // no banco (schema pendente de aplicar) sem quebrar o resto do painel
           obterDadosGerenciais(clienteId, competencia).catch(() => null),
+          obterDocumentosDoMes(clienteId, { dataInicio, dataFim }).catch(() => []),
         ]);
         if (errCliente) throw errCliente;
         setClienteNome(cliente?.nome ?? '');
@@ -64,6 +74,7 @@ export default function PainelClientePage({ clienteId, competencia }) {
         setFinanceiro(resFinanceiro);
         setLancamentos(itensIdentificar);
         setGerenciais(dadosSimples);
+        setDocumentos(docs);
       } catch (e) {
         setErro(e.message);
       } finally {
@@ -90,13 +101,43 @@ export default function PainelClientePage({ clienteId, competencia }) {
           {!carregando && !erro && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 22 }}>
 
-              {/* Obrigações + Tarefas */}
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-                <ResumoCard titulo="Obrigações" pct={obs.total ? Math.round((obs.ok / obs.total) * 100) : 0}
-                  linha1={`${obs.ok}/${obs.total} concluídas`} alerta={obs.vencido > 0 ? `${obs.vencido} vencida${obs.vencido !== 1 ? 's' : ''}` : null} />
-                <ResumoCard titulo="Tarefas" pct={tarefas.total ? Math.round((tarefas.concluidas / tarefas.total) * 100) : 0}
-                  linha1={`${tarefas.concluidas}/${tarefas.total} concluídas`} alerta={null} />
+              {/* Obrigações */}
+              <div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: obs.itens.length > 0 ? 10 : 0 }}>
+                  <ResumoCard titulo="Obrigações" pct={obs.total ? Math.round((obs.ok / obs.total) * 100) : 0}
+                    linha1={`${obs.ok}/${obs.total} concluídas`} alerta={obs.vencido > 0 ? `${obs.vencido} vencida${obs.vencido !== 1 ? 's' : ''}` : null} />
+                  <ResumoCard titulo="Tarefas" pct={tarefas.total ? Math.round((tarefas.concluidas / tarefas.total) * 100) : 0}
+                    linha1={`${tarefas.concluidas}/${tarefas.total} concluídas`} alerta={null} />
+                </div>
+                {obs.itens.length > 0 && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 10 }}>
+                    {obs.itens.map((o) => (
+                      <ItemLista key={o.id} titulo={o.titulo || o.tipo} sub={o.departamentos?.nome}
+                        statusLabel={STATUS_OBS_LABEL[o.status]} statusCor={STATUS_OBS_COR[o.status]} />
+                    ))}
+                  </div>
+                )}
+                {tarefas.itens.length > 0 && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    {tarefas.itens.map((t) => (
+                      <ItemLista key={t.id} titulo={t.titulo} sub={t.departamento}
+                        statusLabel={t.concluida ? 'Concluída' : 'Pendente'} statusCor={t.concluida ? ['var(--ok)', 'var(--ok-dim)'] : ['var(--warn)', 'var(--warn-dim)']} />
+                    ))}
+                  </div>
+                )}
               </div>
+
+              {/* Documentos do mês — só se houver algum confirmado no período */}
+              {documentos.length > 0 && (
+                <div>
+                  <SecaoTitulo>Documentos do mês</SecaoTitulo>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    {documentos.map((d) => (
+                      <ItemLista key={d.id} titulo={d.tipo_documento_sugerido || d.nome_arquivo} sub={fmtData(d.created_at?.slice(0, 10))} />
+                    ))}
+                  </div>
+                </div>
+              )}
 
               {/* Financeiro */}
               <div>
@@ -164,6 +205,23 @@ function ResumoCard({ titulo, pct, linha1, alerta }) {
       <div style={{ fontSize: 22, fontWeight: 800, color: alerta ? 'var(--danger)' : 'var(--ok)', marginTop: 4 }}>{pct}%</div>
       <div style={{ fontSize: 11, color: 'var(--text2)', marginTop: 2 }}>{linha1}</div>
       {alerta && <div style={{ fontSize: 11, color: 'var(--danger)', marginTop: 2, fontWeight: 600 }}>⚠ {alerta}</div>}
+    </div>
+  );
+}
+
+function ItemLista({ titulo, sub, statusLabel, statusCor }) {
+  const [cor, corDim] = statusCor || [];
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 8 }}>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontSize: 12.5, color: 'var(--text1)', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{titulo}</div>
+        {sub && <div style={{ fontSize: 10.5, color: 'var(--text3)', marginTop: 1 }}>{sub}</div>}
+      </div>
+      {statusLabel && (
+        <span style={{ fontSize: 10, fontWeight: 700, color: cor, background: corDim, borderRadius: 99, padding: '2px 8px', flexShrink: 0 }}>
+          {statusLabel}
+        </span>
+      )}
     </div>
   );
 }
