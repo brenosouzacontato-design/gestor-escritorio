@@ -34,6 +34,7 @@ export default function App() {
   const [newTaskClienteId, setNewTaskClienteId] = useState('')
   const [showConfig, setShowConfig]           = useState(false)
   const [highlightTaskId, setHighlightTaskId] = useState(null)
+  const [filtroClienteTarefas, setFiltroClienteTarefas] = useState(null)
   const [showNotifs, setShowNotifs]           = useState(false)
   const [collapsed, setCollapsed] = useState(() => localStorage.getItem('sidebar-collapsed') === '1')
   const [theme, setTheme] = useState(() =>
@@ -110,9 +111,10 @@ export default function App() {
         ) : (
           <>
             {page === 'overview'   && <Overview onAddTarefa={openNewTask} onOpenCliente={(id) => { setSelectedCliente(id); navigate('clientes') }} onOpenObrigacoes={() => navigate('empresas')} onOpenTarefas={() => navigate('tarefas')} onOpenContabil={() => navigate('contabil')} />}
-            {page === 'empresas'   && <Empresas onOpenTarefas={() => navigate('tarefas')} />}
+            {page === 'empresas'   && <Empresas onOpenTarefas={(clienteId) => { setFiltroClienteTarefas(clienteId ?? null); navigate('tarefas') }} />}
             {page === 'documentos' && <DocumentosPage />}
-            {page === 'tarefas'    && <Tarefas onAddTarefa={openNewTask} highlightTaskId={highlightTaskId} onHighlightConsumed={() => setHighlightTaskId(null)} />}
+            {page === 'tarefas'    && <Tarefas onAddTarefa={openNewTask} highlightTaskId={highlightTaskId} onHighlightConsumed={() => setHighlightTaskId(null)}
+              clienteFilterInicial={filtroClienteTarefas} onClienteFilterConsumido={() => setFiltroClienteTarefas(null)} />}
             {page === 'clientes'   && <Clientes onAddTarefa={openNewTask} selectedId={selectedCliente} onSelect={setSelectedCliente} />}
             {page === 'prospectos' && <Prospectos />}
             {page === 'erp'        && <FechamentosERP onOpenConfig={() => setShowConfig(true)} />}

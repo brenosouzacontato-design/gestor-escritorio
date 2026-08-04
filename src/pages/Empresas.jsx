@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect } from 'react'
-import { PlusIcon, XIcon, CheckCircleIcon, ClockIcon, AlertCircleIcon, MinusCircleIcon, ChevronRightIcon, CalendarIcon, CheckIcon, SaveIcon, ZapIcon, RefreshCwIcon, Trash2Icon, ListIcon, LayoutGridIcon, BarChart3Icon, Share2Icon, EyeIcon } from 'lucide-react'
+import { PlusIcon, XIcon, CheckCircleIcon, ClockIcon, AlertCircleIcon, MinusCircleIcon, ChevronRightIcon, CalendarIcon, CheckIcon, SaveIcon, ZapIcon, RefreshCwIcon, Trash2Icon, ListIcon, LayoutGridIcon, BarChart3Icon, Share2Icon, EyeIcon, CheckSquareIcon } from 'lucide-react'
 import { useStore } from '../store'
 import { DeptChip, PriDot, fmtDate, isOverdue, useToast } from '../components/shared'
 import { supabase } from '../lib/supabase'
@@ -98,7 +98,7 @@ function DeptPill({ data, onClick }) {
   )
 }
 
-export default function Empresas() {
+export default function Empresas({ onOpenTarefas }) {
   const clientes        = useStore(s => s.clientes)
   const obrigacoes      = useStore(s => s.obrigacoes || [])
   const tarefas         = useStore(s => s.tarefas)
@@ -474,6 +474,8 @@ export default function Empresas() {
                 const resPct  = obsTotal.length > 0 ? Math.round((resOk/obsTotal.length)*100) : 0
                 const resS    = resVenc > 0 ? 'danger' : resVencendo ? 'venc_breve' : resPct===100 ? 'ok' : obsTotal.filter(o=>o.status==='pendente').length > 0 ? 'warn' : 'empty'
                 const completo = resS === 'ok' && obsTotal.length > 0
+                const tasksCliente = tarefas.filter(t => t.cliente_id === c.id)
+                const tasksPend = tasksCliente.filter(t => !t.concluida).length
                 return (
                   <div key={c.id} onClick={() => openDrawer(c, null)}
                     style={{ background:completo?'var(--ok-dim)':'var(--surface)', border:`1px solid ${completo?'var(--ok)':resS==='danger'?'var(--danger)':'var(--border)'}`, borderRadius:'var(--r-lg)',
@@ -494,19 +496,22 @@ export default function Empresas() {
 
                     {completo ? (
                       <div style={{ display:'flex', alignItems:'center', justifyContent:'center', gap:5, background:'var(--ok)', color:'#fff',
-                        borderRadius:99, padding:'5px 0', marginBottom:10, fontSize:11, fontWeight:700 }}>
-                        <CheckCircleIcon size={13} /> Tudo em dia
+                        borderRadius:99, padding:'7px 0', marginBottom:12, fontSize:12, fontWeight:700 }}>
+                        <CheckCircleIcon size={14} /> Tudo em dia
                       </div>
                     ) : (
-                      <div style={{ display:'flex', alignItems:'center', gap:6, marginBottom:10 }}>
-                        <div style={{ flex:1, height:5, background:'var(--surface2)', borderRadius:99, overflow:'hidden' }}>
-                          <div style={{ height:'100%', width:`${resPct}%`, background:S_COLOR[resS], borderRadius:99 }} />
+                      <div style={{ marginBottom:12 }}>
+                        <div style={{ display:'flex', justifyContent:'space-between', alignItems:'baseline', marginBottom:5 }}>
+                          <span style={{ fontSize:19, fontWeight:800, color:S_COLOR[resS] }}>{resPct}%</span>
+                          <span style={{ fontSize:10, color:'var(--text3)', textTransform:'uppercase', letterSpacing:.3 }}>obrigações</span>
                         </div>
-                        <span style={{ fontSize:11, fontWeight:700, color:S_COLOR[resS] }}>{resPct}%</span>
+                        <div style={{ height:10, background:'var(--surface2)', borderRadius:99, overflow:'hidden' }}>
+                          <div style={{ height:'100%', width:`${resPct}%`, background:S_COLOR[resS], borderRadius:99, transition:'width .3s' }} />
+                        </div>
                       </div>
                     )}
 
-                    <div style={{ display:'flex', gap:5, flexWrap:'wrap' }}>
+                    <div style={{ display:'flex', gap:5, flexWrap:'wrap', marginBottom:10 }}>
                       {departamentos.map(d => (
                         <span key={d.id} title={`${d.nome}: ${deptData[d.id]?.val || '—'}`}
                           style={{ width:22, height:22, borderRadius:6, display:'flex', alignItems:'center', justifyContent:'center',
@@ -515,6 +520,19 @@ export default function Empresas() {
                         </span>
                       ))}
                     </div>
+
+                    <button onClick={(e) => { e.stopPropagation(); onOpenTarefas?.(c.id) }}
+                      title="Abrir tarefas dessa empresa no módulo de Tarefas"
+                      style={{ width:'100%', display:'flex', alignItems:'center', justifyContent:'space-between', gap:6,
+                        background:completo?'rgba(255,255,255,.5)':'var(--surface2)', border:'1px solid var(--border)', borderRadius:8,
+                        padding:'6px 10px', cursor:'pointer' }}>
+                      <span style={{ fontSize:11, color:'var(--text2)', display:'flex', alignItems:'center', gap:5, fontWeight:500 }}>
+                        <CheckSquareIcon size={12} /> Tarefas
+                      </span>
+                      <span style={{ fontSize:11, fontWeight:700, color: tasksCliente.length===0 ? 'var(--text3)' : tasksPend>0 ? 'var(--warn)' : 'var(--ok)' }}>
+                        {tasksCliente.length===0 ? '—' : `${tasksCliente.length-tasksPend}/${tasksCliente.length}`}
+                      </span>
+                    </button>
                   </div>
                 )
               })}

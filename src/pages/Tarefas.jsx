@@ -28,7 +28,7 @@ function getKanbanStatus(t) {
   return t.concluida ? 'concluido' : 'pendente'
 }
 
-export default function Tarefas({ onAddTarefa, highlightTaskId, onHighlightConsumed }) {
+export default function Tarefas({ onAddTarefa, highlightTaskId, onHighlightConsumed, clienteFilterInicial, onClienteFilterConsumido }) {
   const tarefas      = useStore(s => s.tarefas)
   const clientes     = useStore(s => s.clientes)
   const toggleTarefa = useStore(s => s.toggleTarefa)
@@ -36,13 +36,21 @@ export default function Tarefas({ onAddTarefa, highlightTaskId, onHighlightConsu
   const fetchTarefas = useStore(s => s.fetchTarefas)
 
   const [deptFilter,    setDeptFilter]    = useState('todos')
-  const [clienteFilter, setClienteFilter] = useState('todos')
+  const [clienteFilter, setClienteFilter] = useState(clienteFilterInicial || 'todos')
   const [tarefaAberta,  setTarefaAberta]  = useState(null)
   const [dragging,      setDragging]      = useState(null) // { id, fromCol }
   const [dragOver,      setDragOver]      = useState(null) // colId
 
-  // Veio de "Abrir tarefa no Kanban" (Andamento de Obrigações) — abre direto
-  // o detalhe da tarefa em questão.
+  // Veio do card de uma empresa (Empresas.jsx, clique em "Tarefas") —
+  // pré-seleciona o filtro de empresa direto no Kanban.
+  useEffect(() => {
+    if (!clienteFilterInicial) return
+    setClienteFilter(clienteFilterInicial)
+    onClienteFilterConsumido?.()
+  }, [clienteFilterInicial])
+
+  // Veio de "Abrir tarefa" a partir de um link/notificação — abre direto o
+  // detalhe da tarefa em questão.
   useEffect(() => {
     if (!highlightTaskId) return
     const t = tarefas.find(x => x.id === highlightTaskId)
