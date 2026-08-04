@@ -473,9 +473,10 @@ export default function Empresas() {
                 const resVencendo = obsTotal.some(isVencendo)
                 const resPct  = obsTotal.length > 0 ? Math.round((resOk/obsTotal.length)*100) : 0
                 const resS    = resVenc > 0 ? 'danger' : resVencendo ? 'venc_breve' : resPct===100 ? 'ok' : obsTotal.filter(o=>o.status==='pendente').length > 0 ? 'warn' : 'empty'
+                const completo = resS === 'ok' && obsTotal.length > 0
                 return (
                   <div key={c.id} onClick={() => openDrawer(c, null)}
-                    style={{ background:'var(--surface)', border:`1px solid ${resS==='danger'?'var(--danger)':'var(--border)'}`, borderRadius:'var(--r-lg)',
+                    style={{ background:completo?'var(--ok-dim)':'var(--surface)', border:`1px solid ${completo?'var(--ok)':resS==='danger'?'var(--danger)':'var(--border)'}`, borderRadius:'var(--r-lg)',
                       padding:14, cursor:'pointer', transition:'transform .1s, box-shadow .1s', boxShadow:'var(--shadow-sm)' }}
                     onMouseEnter={e => { e.currentTarget.style.transform='translateY(-2px)'; e.currentTarget.style.boxShadow='var(--shadow-md)' }}
                     onMouseLeave={e => { e.currentTarget.style.transform='none'; e.currentTarget.style.boxShadow='var(--shadow-sm)' }}>
@@ -491,18 +492,25 @@ export default function Empresas() {
                       {S_ICON[resS] && (() => { const Icon = S_ICON[resS]; return <Icon size={16} color={S_COLOR[resS]} /> })()}
                     </div>
 
-                    <div style={{ display:'flex', alignItems:'center', gap:6, marginBottom:10 }}>
-                      <div style={{ flex:1, height:5, background:'var(--surface2)', borderRadius:99, overflow:'hidden' }}>
-                        <div style={{ height:'100%', width:`${resPct}%`, background:S_COLOR[resS], borderRadius:99 }} />
+                    {completo ? (
+                      <div style={{ display:'flex', alignItems:'center', justifyContent:'center', gap:5, background:'var(--ok)', color:'#fff',
+                        borderRadius:99, padding:'5px 0', marginBottom:10, fontSize:11, fontWeight:700 }}>
+                        <CheckCircleIcon size={13} /> Tudo em dia
                       </div>
-                      <span style={{ fontSize:11, fontWeight:700, color:S_COLOR[resS] }}>{resPct}%</span>
-                    </div>
+                    ) : (
+                      <div style={{ display:'flex', alignItems:'center', gap:6, marginBottom:10 }}>
+                        <div style={{ flex:1, height:5, background:'var(--surface2)', borderRadius:99, overflow:'hidden' }}>
+                          <div style={{ height:'100%', width:`${resPct}%`, background:S_COLOR[resS], borderRadius:99 }} />
+                        </div>
+                        <span style={{ fontSize:11, fontWeight:700, color:S_COLOR[resS] }}>{resPct}%</span>
+                      </div>
+                    )}
 
                     <div style={{ display:'flex', gap:5, flexWrap:'wrap' }}>
                       {departamentos.map(d => (
                         <span key={d.id} title={`${d.nome}: ${deptData[d.id]?.val || '—'}`}
                           style={{ width:22, height:22, borderRadius:6, display:'flex', alignItems:'center', justifyContent:'center',
-                            fontSize:11, background:S_BG[deptData[d.id]?.s || 'empty'], flexShrink:0 }}>
+                            fontSize:11, background:completo?'rgba(255,255,255,.5)':S_BG[deptData[d.id]?.s || 'empty'], flexShrink:0 }}>
                           {d.icone || '📋'}
                         </span>
                       ))}

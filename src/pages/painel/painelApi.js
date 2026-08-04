@@ -56,6 +56,20 @@ export async function obterDocumentosDoMes(clienteId, { dataInicio, dataFim }) {
   return data;
 }
 
+// Documentos confirmados vinculados a essas obrigações (pra oferecer o
+// "baixar anexo" direto na lista de obrigações do painel) — indexado por
+// obrigacao_id pra lookup rápido no render.
+export async function obterDocumentosPorObrigacao(obrigacaoIds) {
+  if (!obrigacaoIds || obrigacaoIds.length === 0) return {};
+  const { data, error } = await supabase
+    .from('documentos')
+    .select('id, obrigacao_id, storage_path, nome_arquivo')
+    .in('obrigacao_id', obrigacaoIds)
+    .eq('status', 'confirmado');
+  if (error) throw error;
+  return Object.fromEntries(data.map((d) => [d.obrigacao_id, d]));
+}
+
 export async function obterResumoFinanceiro(clienteId, { dataInicio, dataFim }) {
   const [{ count: conciliados, error: errC }, { count: aConciliar, error: errA }, dre] = await Promise.all([
     supabase.from('lancamentos_contabeis').select('id', { count: 'exact', head: true })
