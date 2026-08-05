@@ -1,9 +1,11 @@
-import { useState, useMemo } from 'react'
-import { ArrowLeftIcon, PlusIcon, CheckIcon, Trash2Icon, PencilIcon, RefreshCwIcon, CheckSquareIcon, ClipboardListIcon, ZapIcon } from 'lucide-react'
+import { useState, useMemo, useEffect } from 'react'
+import { ArrowLeftIcon, PlusIcon, CheckIcon, Trash2Icon, PencilIcon, RefreshCwIcon, CheckSquareIcon, ClipboardListIcon, ZapIcon, CalendarClockIcon } from 'lucide-react'
 import { useStore } from '../store'
 import { Avatar, StatusDots, DeptChip, ErpBadge, PriDot, fmtDate, isOverdue, clientTaskStatus, useToast } from '../components/shared'
 import ClienteFormModal from '../components/ClienteFormModal'
 import { supabase } from '../lib/supabase'
+import { listarDepartamentos } from './andamento/andamentoApi'
+import { NovaObrigacaoModal, ModalObrigacoesLote } from './andamento/modaisObrigacao'
 
 const DEPTS = ['fiscal','folha','societario','contabil','geral']
 const DEPT_LABELS = { fiscal:'Fiscal', folha:'Folha', societario:'Societário', contabil:'Contábil', geral:'Geral' }
@@ -108,6 +110,14 @@ function ClienteDetalhe({ cliente, tarefas, fechamentos, onBack, onAddTarefa }) 
   const [showBaixa, setShowBaixa] = useState(false)
   const [competencia, setCompetencia] = useState(competenciaAnterior())
   const [tarefaAberta, setTarefaAberta] = useState(null)
+
+  // Programação de obrigações/tarefas com data e particularidades (mesmo
+  // modelo — departamentos/tipos_obrigacao com etapas — já usado em
+  // Empresas.jsx; modais reaproveitados de andamento/modaisObrigacao.jsx).
+  const [departamentosModelo, setDepartamentosModelo] = useState([])
+  const [showNovaObsModelo, setShowNovaObsModelo] = useState(false)
+  const [showObsLoteModelo, setShowObsLoteModelo] = useState(false)
+  useEffect(() => { listarDepartamentos().then(setDepartamentosModelo).catch(() => {}) }, [])
 
   const folha = fechamentos.find(f => f.tipo === 'folha')
   const fiscal = fechamentos.find(f => f.tipo === 'fiscal')
@@ -231,7 +241,7 @@ function ClienteDetalhe({ cliente, tarefas, fechamentos, onBack, onAddTarefa }) 
       )}
 
       {/* Ações em lote */}
-      <div style={{ display:'flex', gap:8, marginBottom:14 }}>
+      <div style={{ display:'flex', gap:8, marginBottom:8 }}>
         <button className="btn btn-sm btn-accent" style={{ flex:1 }} onClick={() => setShowLote(true)}>
           <ZapIcon size={13} /> Criar em lote
         </button>
@@ -240,6 +250,19 @@ function ClienteDetalhe({ cliente, tarefas, fechamentos, onBack, onAddTarefa }) 
         </button>
         <button className="btn btn-sm btn-ghost" onClick={onAddTarefa}>
           <PlusIcon size={13} /> Tarefa
+        </button>
+      </div>
+
+      {/* Programação com data e particularidades (módulos/tipos de obrigação,
+          vencimento por dia/mês, recorrência — mesmo modelo de Empresas.jsx) */}
+      <div style={{ display:'flex', gap:8, marginBottom:14 }}>
+        <button className="btn btn-sm" style={{ flex:1, background:'var(--navy)', color:'#fff', border:'none' }}
+          onClick={() => setShowNovaObsModelo(true)} disabled={departamentosModelo.length === 0}>
+          <CalendarClockIcon size={13} /> Programar obrigação
+        </button>
+        <button className="btn btn-sm btn-ghost" style={{ flex:1 }}
+          onClick={() => setShowObsLoteModelo(true)} disabled={departamentosModelo.length === 0}>
+          <ZapIcon size={13} /> Programar em lote
         </button>
       </div>
 
@@ -339,6 +362,31 @@ function ClienteDetalhe({ cliente, tarefas, fechamentos, onBack, onAddTarefa }) 
           competencia={competencia}
           onClose={() => setShowBaixa(false)}
           onSaved={() => { fetchTarefas(); fetchObrigacoes(); setShowBaixa(false); show('Baixa realizada!') }}
+        />
+      )}
+
+      {showNovaObsModelo && (
+        <NovaObrigacaoModal
+          cliente={cliente}
+          dept={null}
+          departamentos={departamentosModelo}
+          competencia={competencia}
+          onClose={() => setShowNovaObsModelo(false)}
+          onSaved={async () => { setShowNovaObsModelo(false); await fetchObrigacoes(); show('Obrigação programada!') }}
+        />
+      )}
+
+      {showObsLoteModelo && (
+        <ModalObrigacoesLote
+          departamentos={departamentosModelo}
+          clientes={[cliente]}
+          competenciaInicial={competencia}
+          onClose={() => setShowObsLoteModelo(false)}
+          onSaved={async (resultado) => {
+            setShowObsLoteModelo(false)
+            await fetchObrigacoes()
+            show(`${resultado.criadas} programada${resultado.criadas !== 1 ? 's' : ''}${resultado.jaExistiam ? `, ${resultado.jaExistiam} já existia${resultado.jaExistiam !== 1 ? 'm' : ''}` : ''}`)
+          }}
         />
       )}
 
