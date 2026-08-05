@@ -138,8 +138,10 @@ exports.handler = async (event) => {
   // ignorada, não cai no fluxo de tarefa abaixo.
   if (DOCS_GRUPO_ID && remoteJid === DOCS_GRUPO_ID) {
     if (!midia) {
-      console.log('DEBUG chaves da mensagem:', JSON.stringify(Object.keys(body?.data?.message || {})))
-      console.log('DEBUG message completo:', JSON.stringify(body?.data?.message))
+      const chaves = Object.keys(body?.data?.message || {})
+      console.log('DEBUG_V2 chaves da mensagem: ' + chaves.join(','))
+      const bruto = JSON.stringify(body?.data?.message || {})
+      console.log('DEBUG_V2 message (primeiros 800 chars): ' + bruto.slice(0, 800))
       return { statusCode: 200, body: 'No file in docs group message' }
     }
     return await processarDocumento(body, midia, remoteJid)
