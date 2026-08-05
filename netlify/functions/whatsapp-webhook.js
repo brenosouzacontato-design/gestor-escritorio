@@ -137,7 +137,11 @@ exports.handler = async (event) => {
   // depender de prefixo. Mensagem de texto nesse grupo (sem arquivo) é
   // ignorada, não cai no fluxo de tarefa abaixo.
   if (DOCS_GRUPO_ID && remoteJid === DOCS_GRUPO_ID) {
-    if (!midia) return { statusCode: 200, body: 'No file in docs group message' }
+    if (!midia) {
+      console.log('DEBUG chaves da mensagem:', JSON.stringify(Object.keys(body?.data?.message || {})))
+      console.log('DEBUG message completo:', JSON.stringify(body?.data?.message))
+      return { statusCode: 200, body: 'No file in docs group message' }
+    }
     return await processarDocumento(body, midia, remoteJid)
   }
 
