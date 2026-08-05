@@ -1,4 +1,5 @@
 const { createClient } = require('@supabase/supabase-js')
+const { uploadArquivo } = require('./lib/googleDrive')
 
 const supabase = createClient(
   process.env.SUPABASE_URL,
@@ -6,10 +7,14 @@ const supabase = createClient(
 )
 
 const GRUPO_ID = process.env.WHATSAPP_GROUP_ID
+const DOCS_GRUPO_ID = process.env.WHATSAPP_DOCS_GROUP_ID // grupo "Documentos" — todo arquivo enviado aqui vai pro Drive
+const DRIVE_FOLDER_ID = process.env.GOOGLE_DRIVE_FOLDER_ID
 const EVOLUTION_URL = process.env.EVOLUTION_API_URL
 const EVOLUTION_KEY = process.env.EVOLUTION_API_KEY
 const EVOLUTION_INSTANCE = process.env.EVOLUTION_INSTANCE
 const ANTHROPIC_KEY = process.env.ANTHROPIC_API_KEY
+
+const EXTENSAO_POR_MIME = { 'application/pdf': 'pdf', 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp' }
 
 async function extrairTarefa(mensagem, clientes) {
   const listaNomes = clientes.map(c => `${c.nome} (id: ${c.id})`).join('\n')
@@ -72,6 +77,41 @@ async function enviarMensagem(numero, texto) {
   }
 }
 
+// Documento/imagem enviado no grupo "Documentos" — busca o conteúdo (já
+// vem em base64 no payload se a opção "Webhook Base64" estiver ligada no
+// Evolution API; senão busca via getBase64FromMediaMessage) e sobe pro
+// Drive. `midia` é o bloco documentMessage/imageMessage do payload.
+async function processarDocumento(body, midia, remoteJid) {
+  try {
+    const mimeType = midia.mimetype || 'application/octet-stream'
+    const nomeArquivo = midia.fileName || `whatsapp-${Date.now()}.${EXTENSAO_POR_MIME[mimeType] || 'bin'}`
+
+    let base64 = midia.base64 || null
+    if (!base64) {
+      const messageId = body?.data?.key?.id
+      if (!messageId) throw new Error('Não achei o id da mensagem pra buscar o arquivo.')
+      const resp = await fetch(`${EVOLUTION_URL}/chat/getBase64FromMediaMessage/${EVOLUTION_INSTANCE}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', apikey: EVOLUTION_KEY },
+        body: JSON.stringify({ message: { key: { id: messageId } } }),
+      })
+      if (!resp.ok) throw new Error(`Falha ao buscar o arquivo no WhatsApp (${resp.status}): ${await resp.text()}`)
+      const dados = await resp.json()
+      base64 = dados.base64
+      if (!base64) throw new Error('A API do WhatsApp não devolveu o conteúdo do arquivo.')
+    }
+
+    const arquivo = await uploadArquivo({ nomeArquivo, mimeType, base64, folderId: DRIVE_FOLDER_ID })
+    console.log('Arquivo salvo no Drive:', arquivo.id, arquivo.name)
+    await enviarMensagem(remoteJid, `✅ *Documento salvo no Drive!*\n📄 ${arquivo.name}`)
+    return { statusCode: 200, body: JSON.stringify({ success: true, driveFileId: arquivo.id, nome: arquivo.name }) }
+  } catch (e) {
+    console.error('Erro ao processar documento:', e.message)
+    await enviarMensagem(remoteJid, `❌ Erro ao salvar o documento: ${e.message}`)
+    return { statusCode: 500, body: e.message }
+  }
+}
+
 exports.handler = async (event) => {
   if (event.httpMethod !== 'POST') {
     return { statusCode: 200, body: 'OK' }
@@ -87,9 +127,19 @@ exports.handler = async (event) => {
   const remoteJid = body?.data?.key?.remoteJid || body?.data?.remoteJid || ''
   const mensagem = body?.data?.message?.conversation ||
                    body?.data?.message?.extendedTextMessage?.text || ''
+  const midia = body?.data?.message?.documentMessage || body?.data?.message?.imageMessage || null
 
   console.log('remoteJid:', remoteJid)
   console.log('mensagem:', mensagem)
+  console.log('tem midia:', !!midia)
+
+  // Grupo "Documentos" — qualquer arquivo enviado aqui vai pro Drive, sem
+  // depender de prefixo. Mensagem de texto nesse grupo (sem arquivo) é
+  // ignorada, não cai no fluxo de tarefa abaixo.
+  if (DOCS_GRUPO_ID && remoteJid === DOCS_GRUPO_ID) {
+    if (!midia) return { statusCode: 200, body: 'No file in docs group message' }
+    return await processarDocumento(body, midia, remoteJid)
+  }
 
   // Só processa mensagens com prefixo "tarefa:"
   if (!mensagem.toLowerCase().trim().startsWith('tarefa:')) {
