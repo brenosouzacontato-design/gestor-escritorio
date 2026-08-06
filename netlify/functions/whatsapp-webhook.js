@@ -82,7 +82,6 @@ async function enviarMensagem(numero, texto) {
 // Evolution API; senão busca via getBase64FromMediaMessage) e sobe pro
 // Drive. `midia` é o bloco documentMessage/imageMessage do payload.
 async function processarDocumento(body, midia, remoteJid) {
-  console.log('DEBUG_V3 entrou em processarDocumento, chaves midia: ' + Object.keys(midia || {}).join(','))
   try {
     const mimeType = midia.mimetype || 'application/octet-stream'
     const nomeArquivo = midia.fileName || `whatsapp-${Date.now()}.${EXTENSAO_POR_MIME[mimeType] || 'bin'}`
@@ -128,7 +127,10 @@ exports.handler = async (event) => {
   const remoteJid = body?.data?.key?.remoteJid || body?.data?.remoteJid || ''
   const mensagem = body?.data?.message?.conversation ||
                    body?.data?.message?.extendedTextMessage?.text || ''
-  const midia = body?.data?.message?.documentMessage || body?.data?.message?.imageMessage || null
+  const midia = body?.data?.message?.documentMessage ||
+                body?.data?.message?.imageMessage ||
+                body?.data?.message?.documentWithCaptionMessage?.message?.documentMessage ||
+                null
 
   console.log('remoteJid:', remoteJid)
   console.log('mensagem:', mensagem)
@@ -139,19 +141,9 @@ exports.handler = async (event) => {
   // ignorada, não cai no fluxo de tarefa abaixo.
   if (DOCS_GRUPO_ID && remoteJid === DOCS_GRUPO_ID) {
     if (!midia) {
-      const chaves = Object.keys(body?.data?.message || {})
-      console.log('DEBUG_V2 chaves da mensagem: ' + chaves.join(','))
-      const bruto = JSON.stringify(body?.data?.message || {})
-      console.log('DEBUG_V2 message (primeiros 800 chars): ' + bruto.slice(0, 800))
-      await new Promise((r) => setTimeout(r, 300))
       return { statusCode: 200, body: 'No file in docs group message' }
     }
-    try {
-      return await processarDocumento(body, midia, remoteJid)
-    } catch (eFora) {
-      console.error('DEBUG_V3 erro escapou de processarDocumento: ' + (eFora && eFora.stack ? eFora.stack : eFora))
-      return { statusCode: 500, body: 'erro inesperado' }
-    }
+    return await processarDocumento(body, midia, remoteJid)
   }
 
   // Só processa mensagens com prefixo "tarefa:"
