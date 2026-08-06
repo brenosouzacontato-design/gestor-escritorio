@@ -82,6 +82,7 @@ async function enviarMensagem(numero, texto) {
 // Evolution API; senão busca via getBase64FromMediaMessage) e sobe pro
 // Drive. `midia` é o bloco documentMessage/imageMessage do payload.
 async function processarDocumento(body, midia, remoteJid) {
+  console.log('DEBUG_V3 entrou em processarDocumento, chaves midia: ' + Object.keys(midia || {}).join(','))
   try {
     const mimeType = midia.mimetype || 'application/octet-stream'
     const nomeArquivo = midia.fileName || `whatsapp-${Date.now()}.${EXTENSAO_POR_MIME[mimeType] || 'bin'}`
@@ -144,7 +145,12 @@ exports.handler = async (event) => {
       console.log('DEBUG_V2 message (primeiros 800 chars): ' + bruto.slice(0, 800))
       return { statusCode: 200, body: 'No file in docs group message' }
     }
-    return await processarDocumento(body, midia, remoteJid)
+    try {
+      return await processarDocumento(body, midia, remoteJid)
+    } catch (eFora) {
+      console.error('DEBUG_V3 erro escapou de processarDocumento: ' + (eFora && eFora.stack ? eFora.stack : eFora))
+      return { statusCode: 500, body: 'erro inesperado' }
+    }
   }
 
   // Só processa mensagens com prefixo "tarefa:"
