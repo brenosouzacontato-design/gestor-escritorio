@@ -46,6 +46,7 @@ async function obterAccessToken() {
   if (!clientEmail || !privateKey) {
     throw new Error('GOOGLE_SERVICE_ACCOUNT_EMAIL / GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY não configuradas.');
   }
+  console.log('DEBUG_KEY clientEmail=' + clientEmail + ' rawLen=' + (process.env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY || '').length + ' keyLen=' + privateKey.length + ' first30=' + privateKey.slice(0, 30) + ' last30=' + privateKey.slice(-30))
 
   const jwt = assinarJwt(clientEmail, privateKey);
   const resp = await fetch(TOKEN_URL, {
