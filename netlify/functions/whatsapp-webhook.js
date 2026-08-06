@@ -143,6 +143,7 @@ exports.handler = async (event) => {
       console.log('DEBUG_V2 chaves da mensagem: ' + chaves.join(','))
       const bruto = JSON.stringify(body?.data?.message || {})
       console.log('DEBUG_V2 message (primeiros 800 chars): ' + bruto.slice(0, 800))
+      await new Promise((r) => setTimeout(r, 300))
       return { statusCode: 200, body: 'No file in docs group message' }
     }
     try {
