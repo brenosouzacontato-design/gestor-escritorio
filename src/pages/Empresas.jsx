@@ -1,12 +1,13 @@
 import { useState, useMemo, useEffect } from 'react'
-import { PlusIcon, XIcon, CheckCircleIcon, ClockIcon, AlertCircleIcon, MinusCircleIcon, ChevronRightIcon, CalendarIcon, CheckIcon, ZapIcon, RefreshCwIcon, Trash2Icon, ListIcon, LayoutGridIcon, BarChart3Icon, Share2Icon, EyeIcon, CheckSquareIcon, FileIcon, DownloadIcon, PencilIcon, FileTextIcon, GripVerticalIcon } from 'lucide-react'
+import { PlusIcon, XIcon, CheckCircleIcon, ClockIcon, AlertCircleIcon, MinusCircleIcon, ChevronRightIcon, CalendarIcon, CheckIcon, ZapIcon, RefreshCwIcon, Trash2Icon, ListIcon, LayoutGridIcon, BarChart3Icon, Share2Icon, EyeIcon, CheckSquareIcon, FileIcon, DownloadIcon, PencilIcon, FileTextIcon, GripVerticalIcon, BellIcon, BellRingIcon } from 'lucide-react'
 import { useStore } from '../store'
 import { DeptChip, PriDot, fmtDate, isOverdue, useToast } from '../components/shared'
 import { supabase } from '../lib/supabase'
 import { listarDepartamentos, criarDepartamento, gerarObrigacoesRecorrentesCompetencia } from './andamento/andamentoApi'
-import { NovaObrigacaoModal, NovaTarefaModuloModal, ModalTarefasLote, ModalObrigacoesLote } from './andamento/modaisObrigacao'
+import { NovaObrigacaoModal, NovaTarefaModuloModal, ModalTarefasLote, ModalObrigacoesLote, ModalBase } from './andamento/modaisObrigacao'
 import { uploadDeclaracaoSimples, uploadSituacaoFiscal } from './painel/painelApi'
 import { listarDocumentosPorCliente, criarLinkAssinado } from './documentos/documentosApi'
+import { criarLembrete, listarLembretesPorItens, excluirLembrete } from './andamento/lembretesApi'
 
 // Casamento histórico tipo-texto → departamento, só pra competências
 // anteriores à adoção do modelo novo (departamento_id em obrigacoes, ver
@@ -133,6 +134,8 @@ export default function Empresas({ onOpenTarefas, clienteInicialId, onClienteIni
   const [loteDept,         setLoteDept]       = useState(null) // dept aberto pro modal de tarefas em lote
   const [showLoteObs,      setShowLoteObs]    = useState(false)
   const [tarefaEditando,   setTarefaEditando] = useState(null) // tarefa aberta pro modal de edição
+  const [lembreteAlvo,     setLembreteAlvo]   = useState(null) // {obrigacaoId} ou {tarefaId} aberto pro modal de lembrete
+  const [lembretesPendentes, setLembretesPendentes] = useState([]) // dos itens do drawer aberto
 
   const carregarDepartamentos = () => listarDepartamentos().then(setDepartamentos).catch(() => {})
   useEffect(() => { carregarDepartamentos() }, [])
@@ -208,6 +211,22 @@ export default function Empresas({ onOpenTarefas, clienteInicialId, onClienteIni
     if (!drawer.dept) return true
     return t.departamento_id === drawer.dept.id || (t.departamento||'').toLowerCase() === drawer.dept.nome.toLowerCase()
   })
+
+  // Lembretes pendentes dos itens do drawer aberto — alimenta o sino
+  // preenchido nas linhas de obrigação/tarefa.
+  useEffect(() => {
+    if (!drawer) { setLembretesPendentes([]); return }
+    listarLembretesPorItens({ obrigacaoIds: drawerObs.map(o => o.id), tarefaIds: drawerTasks.map(t => t.id) })
+      .then(setLembretesPendentes)
+      .catch(() => {})
+  }, [drawer, drawerObs.length, drawerTasks.length])
+
+  const lembreteDoItem = (obrigacaoId, tarefaId) =>
+    lembretesPendentes.find(l => (obrigacaoId && l.obrigacao_id === obrigacaoId) || (tarefaId && l.tarefa_id === tarefaId))
+
+  const recarregarLembretes = () =>
+    listarLembretesPorItens({ obrigacaoIds: drawerObs.map(o => o.id), tarefaIds: drawerTasks.map(t => t.id) })
+      .then(setLembretesPendentes).catch(() => {})
 
   const openDrawer = (c, dept) => { setDrawer({c, dept}); setDrawerTab('obrig') }
 
@@ -746,11 +765,18 @@ export default function Empresas({ onOpenTarefas, clienteInicialId, onClienteIni
                     const cfg = STATUS_OBS_COLOR[o.status] || STATUS_OBS_COLOR.pendente
                     const busy = updatingId === o.id
                     const vencendo = isVencendo(o)
+                    const lembrete = lembreteDoItem(o.id, null)
                     return (
                       <div key={o.id} style={{ background:'var(--surface)', border:'1px solid var(--border)',
                         borderLeft: vencendo ? `3px solid ${COR_VENCENDO}` : '1px solid var(--border)', borderRadius:8, padding:'10px 12px' }}>
                         <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:6, marginBottom: o.vencimento ? 6 : 0 }}>
                           <span style={{ fontSize:12, fontWeight:500, color:'var(--text1)' }}>{o.titulo || o.tipo}</span>
+                          <button onClick={() => setLembreteAlvo({ obrigacaoId: o.id, titulo: o.titulo || o.tipo, lembrete })}
+                            title={lembrete ? `Lembrete pra ${new Date(lembrete.data_hora).toLocaleString('pt-BR')}` : 'Marcar lembrete'}
+                            style={{ background:'none', border:'none', cursor:'pointer', padding:2, flexShrink:0,
+                              color: lembrete ? 'var(--accent)' : 'var(--text3)' }}>
+                            {lembrete ? <BellRingIcon size={13} /> : <BellIcon size={13} />}
+                          </button>
                           <select
                             value={o.status || 'pendente'}
                             disabled={busy}
@@ -787,6 +813,7 @@ export default function Empresas({ onOpenTarefas, clienteInicialId, onClienteIni
                     const altaPrioridade = t.prioridade === 'alta' && !t.concluida
                     const corStatus = overdue ? 'var(--danger)' : altaPrioridade ? 'var(--warn)' : 'transparent'
                     const busy = updatingId === t.id
+                    const lembrete = lembreteDoItem(null, t.id)
                     return (
                       <div key={t.id} style={{ background:'var(--surface2)', border:'1px solid var(--border)',
                         borderLeft:`3px solid ${corStatus}`, borderRadius:8, padding:'10px 12px' }}>
@@ -813,6 +840,12 @@ export default function Empresas({ onOpenTarefas, clienteInicialId, onClienteIni
                               )}
                             </div>
                           </div>
+                          <button onClick={() => setLembreteAlvo({ tarefaId: t.id, titulo: t.titulo, lembrete })}
+                            title={lembrete ? `Lembrete pra ${new Date(lembrete.data_hora).toLocaleString('pt-BR')}` : 'Marcar lembrete'}
+                            style={{ background:'none', border:'none', cursor:'pointer', padding:2, flexShrink:0,
+                              color: lembrete ? 'var(--accent)' : 'var(--text3)' }}>
+                            {lembrete ? <BellRingIcon size={12} /> : <BellIcon size={12} />}
+                          </button>
                           <button onClick={() => setTarefaEditando(t)} title="Editar"
                             style={{ background:'none', border:'none', color:'var(--text3)', cursor:'pointer', padding:2, flexShrink:0 }}>
                             <PencilIcon size={12} />
@@ -925,6 +958,15 @@ export default function Empresas({ onOpenTarefas, clienteInicialId, onClienteIni
         />
       )}
 
+      {/* Modal marcar lembrete */}
+      {lembreteAlvo && (
+        <ModalLembrete
+          alvo={lembreteAlvo}
+          onClose={() => setLembreteAlvo(null)}
+          onSaved={async () => { setLembreteAlvo(null); await recarregarLembretes() }}
+        />
+      )}
+
       {/* Modal tarefas em lote por módulo */}
       {loteDept && (
         <ModalTarefasLote
@@ -1002,5 +1044,81 @@ function AbaAnexosEmpresa({ clienteId }) {
       </div>
     ))}
   </>
+}
+
+// ── Modal marcar lembrete ────────────────────────────────────────────────────
+// Data/hora própria (independente do vencimento) numa obrigação ou tarefa —
+// disparado por WhatsApp pra o grupo do escritório (lembretes-cron.js).
+function ModalLembrete({ alvo, onClose, onSaved }) {
+  const [dataHora, setDataHora] = useState('')
+  const [mensagem, setMensagem] = useState('')
+  const [saving, setSaving] = useState(false)
+  const { show } = useToast()
+
+  const handleSalvar = async () => {
+    if (!dataHora) return
+    setSaving(true)
+    try {
+      await criarLembrete({
+        obrigacaoId: alvo.obrigacaoId || null,
+        tarefaId: alvo.tarefaId || null,
+        dataHora: new Date(dataHora).toISOString(),
+        mensagem: mensagem.trim(),
+      })
+      onSaved()
+    } catch (e) {
+      show?.('Erro ao salvar lembrete: ' + e.message)
+    }
+    setSaving(false)
+  }
+
+  const handleExcluir = async () => {
+    setSaving(true)
+    try {
+      await excluirLembrete(alvo.lembrete.id)
+      onSaved()
+    } catch (e) {
+      show?.('Erro ao excluir lembrete: ' + e.message)
+    }
+    setSaving(false)
+  }
+
+  return (
+    <ModalBase onClose={onClose} titulo={`🔔 Lembrete — ${alvo.titulo}`}>
+      <div style={{ display:'flex', flexDirection:'column', gap:12 }}>
+        {alvo.lembrete && (
+          <div style={{ fontSize:12, color:'var(--text2)', background:'var(--surface2)', borderRadius:8, padding:'8px 10px' }}>
+            Já tem um lembrete marcado pra {new Date(alvo.lembrete.data_hora).toLocaleString('pt-BR')}.
+          </div>
+        )}
+        <div>
+          <label style={{ fontSize:11, color:'var(--text2)', display:'block', marginBottom:4 }}>Data e hora *</label>
+          <input type="datetime-local" value={dataHora} onChange={e => setDataHora(e.target.value)} autoFocus
+            style={{ width:'100%', background:'var(--surface2)', border:'1px solid var(--border)', borderRadius:8, padding:'8px 10px', fontSize:13, color:'var(--text1)', outline:'none' }} />
+        </div>
+        <div>
+          <label style={{ fontSize:11, color:'var(--text2)', display:'block', marginBottom:4 }}>Nota (opcional)</label>
+          <textarea value={mensagem} onChange={e => setMensagem(e.target.value)} rows={2}
+            placeholder="Vai junto na mensagem do WhatsApp..."
+            style={{ width:'100%', background:'var(--surface2)', border:'1px solid var(--border)', borderRadius:8, padding:'8px 10px', fontSize:13, color:'var(--text1)', outline:'none', resize:'vertical', fontFamily:'inherit' }} />
+        </div>
+        <p style={{ fontSize:11, color:'var(--text3)' }}>Manda um WhatsApp pro grupo do escritório na hora marcada.</p>
+      </div>
+      <div style={{ display:'flex', gap:8, marginTop:16 }}>
+        {alvo.lembrete && (
+          <button onClick={handleExcluir} disabled={saving}
+            style={{ background:'var(--danger-dim)', border:'1px solid var(--danger)', borderRadius:8, padding:'9px 14px', fontSize:12, color:'var(--danger)', cursor:'pointer', opacity:saving?.6:1 }}>
+            <Trash2Icon size={13} style={{ verticalAlign:-2 }} />
+          </button>
+        )}
+        <button onClick={onClose}
+          style={{ flex:1, background:'var(--surface2)', border:'1px solid var(--border)', borderRadius:8, padding:'9px', fontSize:12, color:'var(--text2)', cursor:'pointer' }}>Cancelar</button>
+        <button onClick={handleSalvar} disabled={saving||!dataHora}
+          style={{ flex:1, background:'var(--accent)', border:'none', borderRadius:8, padding:'9px', fontSize:12, color:'#fff', fontWeight:500, cursor:'pointer', opacity:(saving||!dataHora)?.6:1 }}>
+          {saving?'Salvando...':'Marcar lembrete'}
+        </button>
+      </div>
+    </ModalBase>
+  )
 }
 

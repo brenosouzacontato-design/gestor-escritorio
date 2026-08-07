@@ -5,6 +5,9 @@
 [functions]
   directory = "netlify/functions"
 
+[functions."lembretes-cron"]
+  schedule = "*/15 * * * *"
+
 [[redirects]]
   from = "/*"
   to = "/index.html"

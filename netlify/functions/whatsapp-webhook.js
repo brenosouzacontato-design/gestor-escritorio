@@ -1,5 +1,6 @@
 const { createClient } = require('@supabase/supabase-js')
 const { uploadArquivo } = require('./lib/googleDrive')
+const { enviarMensagem } = require('./lib/whatsapp')
 
 const supabase = createClient(
   process.env.SUPABASE_URL,
@@ -62,18 +63,6 @@ Regras:
     return JSON.parse(texto)
   } catch {
     return JSON.parse(texto.replace(/```json|```/g, '').trim())
-  }
-}
-
-async function enviarMensagem(numero, texto) {
-  try {
-    await fetch(`${EVOLUTION_URL}/message/sendText/${EVOLUTION_INSTANCE}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'apikey': EVOLUTION_KEY },
-      body: JSON.stringify({ number: numero, text: texto })
-    })
-  } catch (e) {
-    console.error('Erro ao enviar mensagem:', e.message)
   }
 }
 
