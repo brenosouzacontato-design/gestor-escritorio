@@ -150,6 +150,7 @@ export async function uploadDeclaracaoSimples(arquivo, competenciaFallback, { cl
       aliquota_efetiva: extraido.aliquotaEfetiva,
       valor_das: extraido.valorDas,
       anexo: extraido.anexo,
+      receita_por_tipo: extraido.receitaPorTipo?.length > 0 ? extraido.receitaPorTipo : null,
       storage_path: path,
       observacao_ia: extraido.observacao,
     }, { onConflict: 'cliente_id,competencia' })
@@ -168,6 +169,25 @@ export async function obterDadosGerenciais(clienteId, competencia) {
     .maybeSingle();
   if (error) throw error;
   return data;
+}
+
+// Histórico do faturamento pra alimentar o gráfico de evolução no painel —
+// uma competência por Declaração do Simples já enviada. "competencia" é
+// texto "MM/YYYY", não dá pra ordenar direto no Postgres, então busca tudo
+// e ordena no client convertendo pra ano*100+mes; mantém só os últimos 12
+// pontos (mais recentes) pro gráfico não ficar espremido.
+export async function obterHistoricoFaturamento(clienteId) {
+  const { data, error } = await supabase
+    .from('dados_gerenciais_simples')
+    .select('competencia, faturamento_periodo')
+    .eq('cliente_id', clienteId)
+    .not('faturamento_periodo', 'is', null);
+  if (error) throw error;
+
+  const chave = (c) => { const [mes, ano] = c.split('/').map(Number); return ano * 100 + mes; };
+  return (data || [])
+    .sort((a, b) => chave(a.competencia) - chave(b.competencia))
+    .slice(-12);
 }
 
 // ---------- Situação Fiscal (RFB) ----------

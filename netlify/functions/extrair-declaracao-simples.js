@@ -18,6 +18,7 @@
 // Contrato de retorno (o que painelApi.js espera):
 //   { competencia: "MM/YYYY"|null, faturamentoPeriodo: number|null, rbt12: number|null,
 //     aliquotaEfetiva: number|null, valorDas: number|null, anexo: string|null,
+//     receitaPorTipo: [{tipo: 'normal'|'st'|'monofasico', valor: number}],
 //     clienteId: string|null, observacao: string }
 
 const ANTHROPIC_API_URL = 'https://api.anthropic.com/v1/messages';
@@ -27,18 +28,19 @@ function montarSystemPrompt(temClientes) {
   return `Você é um assistente contábil brasileiro. Recebe uma Declaração do Simples Nacional (PGDAS-D ou extrato/relatório de apuração) e extrai os números gerenciais principais dela.${temClientes ? ' Também recebe uma lista de clientes cadastrados e precisa identificar de qual cliente da lista é o documento.' : ''}
 
 Devolva APENAS um JSON, sem texto antes ou depois, sem markdown e sem crases, no formato exato:
-{"competencia":"MM/YYYY ou null","faturamentoPeriodo":number|null,"rbt12":number|null,"aliquotaEfetiva":number|null,"valorDas":number|null,"anexo":"string ou null"${temClientes ? ',"clienteId":"id da lista ou null"' : ''},"observacao":"string curta"}
+{"competencia":"MM/YYYY ou null","faturamentoPeriodo":number|null,"rbt12":number|null,"aliquotaEfetiva":number|null,"valorDas":number|null,"anexo":"string ou null","receitaPorTipo":[{"tipo":"normal"|"st"|"monofasico","valor":number}]${temClientes ? ',"clienteId":"id da lista ou null"' : ''},"observacao":"string curta"}
 
 Regras:
 - "competencia": o período de apuração do documento, formato MM/YYYY.
 - "faturamentoPeriodo": receita bruta apurada naquela competência (só o número, sem "R$" nem separador de milhar — use ponto como separador decimal).
 - "rbt12": receita bruta acumulada dos últimos 12 meses (RBT12), mesmo formato numérico.
-- "aliquotaEfetiva": alíquota efetiva resultante, em percentual (ex: 6.5 pra 6,5%).
+- "aliquotaEfetiva": alíquota efetiva resultante, em percentual (ex: 6.5 pra 6,5%), calculada sobre o total da competência.
 - "valorDas": valor total do DAS apurado/devido naquela competência.
-- "anexo": o anexo do Simples Nacional em que a atividade está enquadrada (ex: "I", "II", "III", "IV", "V"), se identificável.${temClientes ? '\n- "clienteId": só preencha se o nome ou CNPJ do documento bater com um item da lista de clientes. Se não tiver certeza, null — não invente.' : ''}
+- "anexo": o anexo do Simples Nacional em que a atividade está enquadrada (ex: "I", "II", "III", "IV", "V"), se identificável.
+- "receitaPorTipo": se a declaração mostrar o faturamento segregado por tipo de receita (normal, com Substituição Tributária/ST, monofásico — comum em empresas de comércio/indústria com produtos sujeitos a esses regimes), devolva um item por tipo presente, com o valor de cada um. Se a declaração NÃO segregar por tipo (a maioria dos casos), devolva array vazio — não invente uma quebra que não está no documento.${temClientes ? '\n- "clienteId": só preencha se o nome ou CNPJ do documento bater com um item da lista de clientes. Se não tiver certeza, null — não invente.' : ''}
 - "observacao": uma frase curta com qualquer ressalva (ex: "documento parece ser só um resumo, RBT12 não veio explícito").
 - Se não conseguir identificar um valor com confiança, use null pra ele — não invente números.
-- Se o PDF não parecer uma declaração/apuração do Simples Nacional, devolva todos os campos numéricos como null e explique em "observacao".`;
+- Se o PDF não parecer uma declaração/apuração do Simples Nacional, devolva todos os campos numéricos como null, receitaPorTipo vazio, e explique em "observacao".`;
 }
 
 exports.handler = async (event) => {
@@ -132,6 +134,7 @@ exports.handler = async (event) => {
       aliquotaEfetiva: extraido.aliquotaEfetiva ?? null,
       valorDas: extraido.valorDas ?? null,
       anexo: extraido.anexo || null,
+      receitaPorTipo: Array.isArray(extraido.receitaPorTipo) ? extraido.receitaPorTipo : [],
       clienteId: temClientes ? (extraido.clienteId || null) : null,
       observacao: extraido.observacao || '',
     });

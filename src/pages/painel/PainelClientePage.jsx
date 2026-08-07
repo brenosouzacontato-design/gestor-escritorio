@@ -1,15 +1,17 @@
 import { useEffect, useState } from 'react';
 import {
   WalletIcon, ClipboardListIcon, CheckSquareIcon, PaperclipIcon, BarChart3Icon,
-  SearchIcon, CalendarIcon, DownloadIcon, CheckCircleIcon, FileTextIcon,
+  SearchIcon, CalendarIcon, DownloadIcon, CheckCircleIcon, FileTextIcon, TrendingUpIcon,
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { listarLancamentosAIdentificar, salvarObservacaoCliente } from '../contabil/contabilApi';
 import { criarLinkAssinado } from '../documentos/documentosApi';
 import {
   obterResumoObrigacoes, obterResumoTarefas, obterResumoFinanceiro, obterDadosGerenciais,
-  obterDocumentosDoMes, obterDocumentosPorObrigacao, obterSituacaoFiscal,
+  obterDocumentosDoMes, obterDocumentosPorObrigacao, obterSituacaoFiscal, obterHistoricoFaturamento,
 } from './painelApi';
+
+const RECEITA_TIPO_LABEL = { normal: 'Normal', st: 'Com ST', monofasico: 'Monofásico' };
 
 const STATUS_OBS_LABEL = { pendente: 'Pendente', concluido: 'Concluído', nao_aplica: 'N/A', vencido: 'Vencido' };
 const STATUS_OBS_COR = {
@@ -70,6 +72,7 @@ export default function PainelClientePage({ clienteId, competencia }) {
   const [financeiro, setFinanceiro] = useState(null);
   const [lancamentos, setLancamentos] = useState([]);
   const [gerenciais, setGerenciais] = useState(null);
+  const [historicoFaturamento, setHistoricoFaturamento] = useState([]);
   const [situacaoFiscal, setSituacaoFiscal] = useState(null);
   const [documentos, setDocumentos] = useState([]);
   const [anexosObrigacao, setAnexosObrigacao] = useState({});
@@ -82,16 +85,17 @@ export default function PainelClientePage({ clienteId, competencia }) {
       setErro(null);
       try {
         const { dataInicio, dataFim } = competenciaParaPeriodo(competencia);
-        const [{ data: cliente, error: errCliente }, resObs, resTarefas, resFinanceiro, itensIdentificar, dadosSimples, situFiscal, docs] = await Promise.all([
+        const [{ data: cliente, error: errCliente }, resObs, resTarefas, resFinanceiro, itensIdentificar, dadosSimples, historico, situFiscal, docs] = await Promise.all([
           supabase.from('clientes').select('nome').eq('id', clienteId).single(),
           obterResumoObrigacoes(clienteId, competencia),
           obterResumoTarefas(clienteId, competencia),
           obterResumoFinanceiro(clienteId, { dataInicio, dataFim }),
           listarLancamentosAIdentificar(clienteId, { dataInicio, dataFim }),
-          // tabelas novas (dados_gerenciais_simples/situacao_fiscal_rfb) —
+          // tabelas/colunas novas (dados_gerenciais_simples/situacao_fiscal_rfb) —
           // toleram ainda não existir no banco (schema pendente de aplicar)
           // sem quebrar o resto do painel
           obterDadosGerenciais(clienteId, competencia).catch(() => null),
+          obterHistoricoFaturamento(clienteId).catch(() => []),
           obterSituacaoFiscal(clienteId, competencia).catch(() => null),
           obterDocumentosDoMes(clienteId, { dataInicio, dataFim }).catch(() => []),
         ]);
@@ -102,6 +106,7 @@ export default function PainelClientePage({ clienteId, competencia }) {
         setFinanceiro(resFinanceiro);
         setLancamentos(itensIdentificar);
         setGerenciais(dadosSimples);
+        setHistoricoFaturamento(historico);
         setSituacaoFiscal(situFiscal);
         setDocumentos(docs);
         const anexos = await obterDocumentosPorObrigacao(resObs.itens.map((o) => o.id)).catch(() => ({}));
@@ -137,21 +142,18 @@ export default function PainelClientePage({ clienteId, competencia }) {
           {!carregando && !erro && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
 
-              {/* Financeiro — primeiro, é o que mais importa pro cliente ver de cara */}
-              <div>
-                <SecaoTitulo icone={<WalletIcon size={14} />}>Financeiro</SecaoTitulo>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10 }}>
-                  <Metrica label="Conciliados" valor={financeiro.conciliados} />
-                  <Metrica label="A conciliar" valor={financeiro.aConciliar} cor={financeiro.aConciliar > 0 ? 'var(--warn)' : 'var(--ok)'} />
-                  <Metrica label="Resultado do período" valor={financeiro.resultado != null ? fmt(financeiro.resultado) : '—'}
-                    cor={financeiro.resultado < 0 ? 'var(--danger)' : 'var(--ok)'} />
-                </div>
-              </div>
-
-              {/* Informações gerenciais (Simples Nacional) — só se já enviaram a declaração */}
+              {/* Informações gerenciais (Simples Nacional) — só se já enviaram a declaração. Abre o painel: é a informação mais importante hoje. */}
               {gerenciais && (
                 <div>
                   <SecaoTitulo icone={<BarChart3Icon size={14} />}>Informações gerenciais — Simples Nacional</SecaoTitulo>
+                  {historicoFaturamento.length > 0 && (
+                    <div style={{ marginBottom: 14 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 10.5, color: 'var(--text3)', fontWeight: 600, marginBottom: 6 }}>
+                        <TrendingUpIcon size={12} /> Evolução do faturamento
+                      </div>
+                      <GraficoFaturamento dados={historicoFaturamento} />
+                    </div>
+                  )}
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 10 }}>
                     <Metrica label="Faturamento do período" valor={fmt(gerenciais.faturamento_periodo)} />
                     <Metrica label="RBT12" valor={fmt(gerenciais.rbt12)} />
@@ -160,6 +162,21 @@ export default function PainelClientePage({ clienteId, competencia }) {
                   </div>
                   {gerenciais.anexo && (
                     <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 8 }}>Enquadrado no Anexo {gerenciais.anexo} do Simples Nacional.</div>
+                  )}
+                  {gerenciais.receita_por_tipo?.length > 0 && (
+                    <div style={{ marginTop: 12 }}>
+                      <div style={{ fontSize: 10.5, color: 'var(--text3)', fontWeight: 600, marginBottom: 6 }}>Receita por tipo</div>
+                      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                        {gerenciais.receita_por_tipo.map((r, i) => (
+                          <span key={i} style={{ fontSize: 11, fontWeight: 600, color: 'var(--text2)', background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 99, padding: '4px 10px' }}>
+                            {RECEITA_TIPO_LABEL[r.tipo] || r.tipo}: {fmt(r.valor)}
+                          </span>
+                        ))}
+                      </div>
+                      <div style={{ fontSize: 10.5, color: 'var(--text3)', marginTop: 6 }}>
+                        A alíquota efetiva acima é sobre o total da competência — parte dessa receita já teve imposto retido antes (ST/monofásico).
+                      </div>
+                    </div>
                   )}
                 </div>
               )}
@@ -276,6 +293,17 @@ export default function PainelClientePage({ clienteId, competencia }) {
                   </div>
                 </div>
               )}
+
+              {/* Financeiro — no final, é o que menos precisa de destaque pro cliente */}
+              <div>
+                <SecaoTitulo icone={<WalletIcon size={14} />}>Financeiro</SecaoTitulo>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10 }}>
+                  <Metrica label="Conciliados" valor={financeiro.conciliados} />
+                  <Metrica label="A conciliar" valor={financeiro.aConciliar} cor={financeiro.aConciliar > 0 ? 'var(--warn)' : 'var(--ok)'} />
+                  <Metrica label="Resultado do período" valor={financeiro.resultado != null ? fmt(financeiro.resultado) : '—'}
+                    cor={financeiro.resultado < 0 ? 'var(--danger)' : 'var(--ok)'} />
+                </div>
+              </div>
             </div>
           )}
         </div>
@@ -354,6 +382,46 @@ function Metrica({ label, valor, cor }) {
     <div style={{ background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: '10px 12px' }}>
       <div style={{ fontSize: 10, color: 'var(--text3)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.03em' }}>{label}</div>
       <div style={{ fontSize: 15, fontWeight: 700, color: cor || 'var(--text1)', marginTop: 3 }}>{valor}</div>
+    </div>
+  );
+}
+
+// Gráfico de barras da evolução do faturamento — SVG à mão, sem lib de
+// gráficos (o projeto não usa nenhuma hoje, mantém o mesmo estilo das
+// barras de progresso já feitas à mão no resto do app). `dados` já vem
+// ordenado cronologicamente de obterHistoricoFaturamento.
+function GraficoFaturamento({ dados }) {
+  const max = Math.max(...dados.map((d) => d.faturamento_periodo || 0), 1);
+  const larguraBarra = 46, gap = 16, altura = 100;
+  const larguraTotal = dados.length * (larguraBarra + gap);
+
+  const fmtCurto = (v) => {
+    if (v >= 1000000) return `${(v / 1000000).toLocaleString('pt-BR', { maximumFractionDigits: 1 })}M`;
+    if (v >= 1000) return `${(v / 1000).toLocaleString('pt-BR', { maximumFractionDigits: 1 })}k`;
+    return v.toLocaleString('pt-BR', { maximumFractionDigits: 0 });
+  };
+
+  return (
+    <div style={{ overflowX: 'auto' }}>
+      <svg viewBox={`0 0 ${larguraTotal} ${altura + 36}`} width="100%" height={altura + 36} style={{ minWidth: larguraTotal, display: 'block' }}>
+        {dados.map((d, i) => {
+          const valor = d.faturamento_periodo || 0;
+          const alturaBarra = max > 0 ? Math.max((valor / max) * altura, 2) : 2;
+          const x = i * (larguraBarra + gap);
+          const [mes, ano] = d.competencia.split('/');
+          return (
+            <g key={d.competencia}>
+              <text x={x + larguraBarra / 2} y={altura - alturaBarra - 6} textAnchor="middle" fontSize="10" fontWeight="700" fill="var(--text2)">
+                {fmtCurto(valor)}
+              </text>
+              <rect x={x} y={altura - alturaBarra} width={larguraBarra} height={alturaBarra} rx="4" fill="var(--accent)" />
+              <text x={x + larguraBarra / 2} y={altura + 16} textAnchor="middle" fontSize="10" fill="var(--text3)">
+                {mes}/{ano.slice(2)}
+              </text>
+            </g>
+          );
+        })}
+      </svg>
     </div>
   );
 }
