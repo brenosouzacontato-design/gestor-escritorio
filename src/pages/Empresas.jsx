@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect } from 'react'
-import { PlusIcon, XIcon, CheckCircleIcon, ClockIcon, AlertCircleIcon, MinusCircleIcon, ChevronRightIcon, CalendarIcon, CheckIcon, ZapIcon, RefreshCwIcon, Trash2Icon, ListIcon, LayoutGridIcon, BarChart3Icon, Share2Icon, EyeIcon, CheckSquareIcon, FileIcon, DownloadIcon, PencilIcon, FileTextIcon } from 'lucide-react'
+import { PlusIcon, XIcon, CheckCircleIcon, ClockIcon, AlertCircleIcon, MinusCircleIcon, ChevronRightIcon, CalendarIcon, CheckIcon, ZapIcon, RefreshCwIcon, Trash2Icon, ListIcon, LayoutGridIcon, BarChart3Icon, Share2Icon, EyeIcon, CheckSquareIcon, FileIcon, DownloadIcon, PencilIcon, FileTextIcon, GripVerticalIcon } from 'lucide-react'
 import { useStore } from '../store'
 import { DeptChip, PriDot, fmtDate, isOverdue, useToast } from '../components/shared'
 import { supabase } from '../lib/supabase'
@@ -112,6 +112,13 @@ export default function Empresas({ onOpenTarefas, clienteInicialId, onClienteIni
   const [filtro,      setFiltro]      = useState('todos')
   const [carteira,    setCarteira]    = useState('todas')
   const [visualizacao, setVisualizacao] = useState(() => localStorage.getItem('empresas-visualizacao') || 'tabela')
+  // Ordem manual dos cards (arrastar e soltar) — persistida no navegador,
+  // guarda só os ids na ordem escolhida; empresas fora da lista (novas ou
+  // que nunca foram arrastadas) ficam no fim, na ordem natural.
+  const [ordemCards, setOrdemCards] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('empresas-ordem-cards') || '[]') } catch { return [] }
+  })
+  const [arrastandoId, setArrastandoId] = useState(null)
   const [departamentos,setDepartamentos] = useState([])
   const [showAddDept, setShowAddDept] = useState(false)
   const [novoDept,    setNovoDept]    = useState('')
@@ -160,6 +167,34 @@ export default function Empresas({ onOpenTarefas, clienteInicialId, onClienteIni
         return true
       })
   }, [clientes, obrigacoes, tarefas, compSel, busca, departamentos, filtro, carteira])
+
+  // Aplica a ordem manual (visão cards) por cima do resultado filtrado —
+  // empresas com posição salva vêm primeiro nessa ordem, o resto mantém a
+  // ordem natural de `rows` (Array.sort é estável).
+  const rowsCards = useMemo(() => {
+    if (ordemCards.length === 0) return rows
+    const pos = new Map(ordemCards.map((id, i) => [id, i]))
+    return [...rows].sort((a, b) => {
+      const pa = pos.has(a.c.id) ? pos.get(a.c.id) : Infinity
+      const pb = pos.has(b.c.id) ? pos.get(b.c.id) : Infinity
+      return pa - pb
+    })
+  }, [rows, ordemCards])
+
+  const handleDropCard = (targetId) => {
+    const arrastado = arrastandoId
+    setArrastandoId(null)
+    if (!arrastado || arrastado === targetId) return
+    const ids = rowsCards.map(r => r.c.id)
+    const de = ids.indexOf(arrastado)
+    const para = ids.indexOf(targetId)
+    if (de === -1 || para === -1) return
+    const nova = [...ids]
+    nova.splice(de, 1)
+    nova.splice(para, 0, arrastado)
+    setOrdemCards(nova)
+    localStorage.setItem('empresas-ordem-cards', JSON.stringify(nova))
+  }
 
   // Drawer: leitura direta do store (sem useMemo) para refletir mudanças imediatas
   const drawerObs = !drawer ? [] : obrigacoes.filter(o => {
@@ -497,7 +532,7 @@ export default function Empresas({ onOpenTarefas, clienteInicialId, onClienteIni
               <div style={{ padding:40, textAlign:'center', color:'var(--text3)', fontSize:13 }}>Nenhuma empresa encontrada</div>
             )}
             <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(230px, 1fr))', gap:12 }}>
-              {rows.map(({ c, deptData }, ri) => {
+              {rowsCards.map(({ c, deptData }, ri) => {
                 const [bg, tc] = AVATAR_COLORS[ri % AVATAR_COLORS.length]
                 const initials = c.nome.split(' ').slice(0,2).map(w=>w[0]).join('').toUpperCase()
                 const obsTotal = obrigacoes.filter(o => o.cliente_id===c.id && o.competencia===compSel)
@@ -509,10 +544,24 @@ export default function Empresas({ onOpenTarefas, clienteInicialId, onClienteIni
                 const completo = resS === 'ok' && obsTotal.length > 0
                 const tasksCliente = tarefas.filter(t => t.cliente_id === c.id)
                 const tasksPend = tasksCliente.filter(t => !t.concluida).length
+                // Progresso combinado (obrigações + tarefas) só pra guiar o
+                // gradiente de fundo do card — os números exibidos (% e
+                // "Tudo em dia") continuam olhando só pra obrigações.
+                const totalItens = obsTotal.length + tasksCliente.length
+                const itensOk = resOk + (tasksCliente.length - tasksPend)
+                const progressoGeral = totalItens > 0 ? Math.round((itensOk / totalItens) * 100) : 0
+                const arrastando = arrastandoId === c.id
                 return (
                   <div key={c.id} onClick={() => openDrawer(c, null)}
-                    style={{ background:completo?'var(--ok-dim)':'var(--surface)', border:`1px solid ${completo?'var(--ok)':resS==='danger'?'var(--danger)':'var(--border)'}`, borderRadius:'var(--r-lg)',
-                      padding:14, cursor:'pointer', transition:'transform .1s, box-shadow .1s', boxShadow:'var(--shadow-sm)' }}
+                    draggable
+                    onDragStart={e => { e.stopPropagation(); setArrastandoId(c.id) }}
+                    onDragOver={e => e.preventDefault()}
+                    onDrop={e => { e.preventDefault(); e.stopPropagation(); handleDropCard(c.id) }}
+                    onDragEnd={() => setArrastandoId(null)}
+                    style={{ background:`color-mix(in srgb, var(--surface), var(--ok-dim) ${progressoGeral}%)`,
+                      border:`1px solid ${completo?'var(--ok)':resS==='danger'?'var(--danger)':'var(--border)'}`, borderRadius:'var(--r-lg)',
+                      padding:14, cursor:'grab', transition:'transform .1s, box-shadow .1s, opacity .1s', boxShadow:'var(--shadow-sm)',
+                      opacity:arrastando?.4:1 }}
                     onMouseEnter={e => { e.currentTarget.style.transform='translateY(-2px)'; e.currentTarget.style.boxShadow='var(--shadow-md)' }}
                     onMouseLeave={e => { e.currentTarget.style.transform='none'; e.currentTarget.style.boxShadow='var(--shadow-sm)' }}>
                     <div style={{ display:'flex', alignItems:'center', gap:9, marginBottom:12 }}>
@@ -525,6 +574,7 @@ export default function Empresas({ onOpenTarefas, clienteInicialId, onClienteIni
                         <div style={{ fontSize:10, color:'var(--text3)' }}>{c.regime||'SN'}</div>
                       </div>
                       {S_ICON[resS] && (() => { const Icon = S_ICON[resS]; return <Icon size={16} color={S_COLOR[resS]} /> })()}
+                      <GripVerticalIcon size={14} color="var(--text3)" style={{ flexShrink:0, cursor:'grab' }} title="Arrastar pra reordenar" />
                     </div>
 
                     {completo ? (
