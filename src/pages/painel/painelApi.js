@@ -94,6 +94,16 @@ async function arquivoParaBase64(arquivo) {
   });
 }
 
+// Chave do Storage só com uuid + extensão — o nome original do arquivo
+// (com acento/espaço/etc, ex: "Relatório Situação Fiscal GERALDO.pdf")
+// não é uma "key" válida pro Supabase Storage ("Invalid key"). O nome
+// legível não é exibido em lugar nenhum pra esses dois uploads (só os
+// dados extraídos aparecem no painel), então não precisa ser preservado.
+function chaveStorage(arquivo) {
+  const ext = arquivo.name.includes('.') ? arquivo.name.split('.').pop() : 'pdf';
+  return `${crypto.randomUUID()}.${ext}`;
+}
+
 // Sobe o PDF, chama a IA (netlify/functions/extrair-declaracao-simples.js)
 // e grava/atualiza dados_gerenciais_simples pra competência identificada.
 // Se a IA não conseguir identificar a competência, cai na competência
@@ -106,7 +116,7 @@ async function arquivoParaBase64(arquivo) {
 //     qual empresa é o documento (upload "detectar empresa" da topbar).
 //     Lança erro se não conseguir identificar — nunca grava adivinhando.
 export async function uploadDeclaracaoSimples(arquivo, competenciaFallback, { clienteId = null, clientes = null } = {}) {
-  const path = `${crypto.randomUUID()}-${arquivo.name}`;
+  const path = chaveStorage(arquivo);
   const { error: errUpload } = await supabase.storage.from(BUCKET).upload(path, arquivo, {
     contentType: arquivo.type || 'application/pdf',
   });
@@ -172,7 +182,7 @@ export async function obterDadosGerenciais(clienteId, competencia) {
 // `clienteId` (já sabido) OU `clientes` (lista, pra IA detectar) — nunca
 // os dois. Lança erro se não conseguir identificar via `clientes`.
 export async function uploadSituacaoFiscal(arquivo, competencia, { clienteId = null, clientes = null } = {}) {
-  const path = `${crypto.randomUUID()}-${arquivo.name}`;
+  const path = chaveStorage(arquivo);
   const { error: errUpload } = await supabase.storage.from(BUCKET).upload(path, arquivo, {
     contentType: arquivo.type || 'application/pdf',
   });
