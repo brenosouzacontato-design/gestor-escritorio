@@ -1,11 +1,12 @@
 import { useState, useMemo, useEffect } from 'react'
-import { PlusIcon, XIcon, CheckCircleIcon, ClockIcon, AlertCircleIcon, MinusCircleIcon, ChevronRightIcon, CalendarIcon, CheckIcon, ZapIcon, RefreshCwIcon, Trash2Icon, ListIcon, LayoutGridIcon, BarChart3Icon, Share2Icon, EyeIcon, CheckSquareIcon } from 'lucide-react'
+import { PlusIcon, XIcon, CheckCircleIcon, ClockIcon, AlertCircleIcon, MinusCircleIcon, ChevronRightIcon, CalendarIcon, CheckIcon, ZapIcon, RefreshCwIcon, Trash2Icon, ListIcon, LayoutGridIcon, BarChart3Icon, Share2Icon, EyeIcon, CheckSquareIcon, FileIcon, DownloadIcon, PencilIcon } from 'lucide-react'
 import { useStore } from '../store'
 import { DeptChip, PriDot, fmtDate, isOverdue, useToast } from '../components/shared'
 import { supabase } from '../lib/supabase'
 import { listarDepartamentos, criarDepartamento, gerarObrigacoesRecorrentesCompetencia } from './andamento/andamentoApi'
 import { NovaObrigacaoModal, NovaTarefaModuloModal, ModalTarefasLote, ModalObrigacoesLote } from './andamento/modaisObrigacao'
 import { uploadDeclaracaoSimples } from './painel/painelApi'
+import { listarDocumentosPorCliente, criarLinkAssinado } from './documentos/documentosApi'
 
 // Casamento histórico tipo-texto → departamento, só pra competências
 // anteriores à adoção do modelo novo (departamento_id em obrigacoes, ver
@@ -95,7 +96,7 @@ function DeptPill({ data, onClick }) {
   )
 }
 
-export default function Empresas({ onOpenTarefas }) {
+export default function Empresas({ onOpenTarefas, clienteInicialId, onClienteInicialConsumido }) {
   const clientes        = useStore(s => s.clientes)
   const obrigacoes      = useStore(s => s.obrigacoes || [])
   const tarefas         = useStore(s => s.tarefas)
@@ -124,6 +125,7 @@ export default function Empresas({ onOpenTarefas }) {
   const [showNovaTarefa,  setShowNovaTarefa]  = useState(false)
   const [loteDept,         setLoteDept]       = useState(null) // dept aberto pro modal de tarefas em lote
   const [showLoteObs,      setShowLoteObs]    = useState(false)
+  const [tarefaEditando,   setTarefaEditando] = useState(null) // tarefa aberta pro modal de edição
 
   const carregarDepartamentos = () => listarDepartamentos().then(setDepartamentos).catch(() => {})
   useEffect(() => { carregarDepartamentos() }, [])
@@ -173,6 +175,16 @@ export default function Empresas({ onOpenTarefas }) {
   })
 
   const openDrawer = (c, dept) => { setDrawer({c, dept}); setDrawerTab('obrig') }
+
+  // Abre o modal de uma empresa específica quando pedido de fora (ex: ao
+  // clicar num cliente dentro de um card do Painel) — mesmo padrão de
+  // filtroClienteTarefas no App.jsx/Tarefas.jsx.
+  useEffect(() => {
+    if (!clienteInicialId) return
+    const c = clientes.find(cl => cl.id === clienteInicialId)
+    if (c) openDrawer(c, null)
+    onClienteInicialConsumido?.()
+  }, [clienteInicialId, clientes])
 
   const escolherVisualizacao = (v) => { setVisualizacao(v); localStorage.setItem('empresas-visualizacao', v) }
 
@@ -233,6 +245,14 @@ export default function Empresas({ onOpenTarefas }) {
     setUpdatingId(t.id)
     const concluida = !t.concluida
     await supabase.from('tarefas').update({ concluida, concluida_em: concluida ? new Date().toISOString() : null, updated_at: new Date().toISOString() }).eq('id', t.id)
+    await fetchTarefas()
+    setUpdatingId(null)
+  }
+
+  const handleDeleteTask = async (t) => {
+    if (!window.confirm(`Excluir a tarefa "${t.titulo}"?`)) return
+    setUpdatingId(t.id)
+    await supabase.from('tarefas').delete().eq('id', t.id)
     await fetchTarefas()
     setUpdatingId(null)
   }
@@ -541,7 +561,7 @@ export default function Empresas({ onOpenTarefas }) {
         {drawer && (
           <>
             <div style={{ position:'fixed', inset:0, background:'var(--overlay)', zIndex:9 }} onClick={() => setDrawer(null)} />
-            <div style={{ position:'fixed', top:'50%', left:'50%', transform:'translate(-50%,-50%)', width:400, maxWidth:'calc(100vw - 32px)',
+            <div style={{ position:'fixed', top:'50%', left:'50%', transform:'translate(-50%,-50%)', width:640, maxWidth:'calc(100vw - 32px)',
               maxHeight:'85vh', zIndex:10, background:'var(--surface)', border:'1px solid var(--border)', borderRadius:'var(--r-xl)',
               display:'flex', flexDirection:'column', overflow:'hidden', boxShadow:'var(--shadow-lg)', animation:'popIn .18s ease' }}>
               <style>{`@keyframes popIn{from{opacity:0; transform:translate(-50%,-50%) scale(.96)}to{opacity:1; transform:translate(-50%,-50%) scale(1)}}`}</style>
@@ -554,6 +574,21 @@ export default function Empresas({ onOpenTarefas }) {
                     {drawer.c.nome}
                   </div>
                   <div style={{ fontSize:10, color:'var(--navy-text)', marginTop:2 }}>{drawer.dept?.nome||'Todos os módulos'} · {compSel}</div>
+                  <div style={{ display:'flex', gap:6, flexWrap:'wrap', marginTop:6 }}>
+                    {drawer.c.cnpj && (
+                      <span style={{ fontSize:10, color:'var(--navy-text)', background:'rgba(255,255,255,.08)', border:'1px solid rgba(255,255,255,.15)', borderRadius:99, padding:'2px 8px' }}>
+                        {drawer.c.cnpj}
+                      </span>
+                    )}
+                    <span style={{ fontSize:10, color:'var(--navy-text)', background:'rgba(255,255,255,.08)', border:'1px solid rgba(255,255,255,.15)', borderRadius:99, padding:'2px 8px' }}>
+                      {drawer.c.regime || 'SN'}
+                    </span>
+                    {drawer.c.carteira && (
+                      <span style={{ fontSize:10, color:'var(--navy-text)', background:'rgba(255,255,255,.08)', border:'1px solid rgba(255,255,255,.15)', borderRadius:99, padding:'2px 8px' }}>
+                        {drawer.c.carteira}
+                      </span>
+                    )}
+                  </div>
                 </div>
                 <button onClick={() => handleDeleteCliente(drawer.c)} title="Excluir empresa"
                   style={{ background:'rgba(255,255,255,.1)', border:'1px solid rgba(255,255,255,.15)', borderRadius:6, width:24, height:24,
@@ -569,7 +604,7 @@ export default function Empresas({ onOpenTarefas }) {
 
               {/* Tabs */}
               <div style={{ display:'flex', borderBottom:'1px solid var(--border)', flexShrink:0, background:'var(--surface)' }}>
-                {[['obrig',`📋 Obrigações (${drawerObs.length})`],['tarefas',`✓ Tarefas (${drawerTasks.length})`]].map(([id,lbl]) => (
+                {[['obrig',`📋 Obrigações (${drawerObs.length})`],['tarefas',`✓ Tarefas (${drawerTasks.length})`],['anexos',`📎 Anexos`]].map(([id,lbl]) => (
                   <button key={id} onClick={() => setDrawerTab(id)}
                     style={{ flex:1, padding:'8px', fontSize:11, fontWeight:500, border:'none', background:'none', cursor:'pointer',
                       borderBottom:`2px solid ${drawerTab===id?'var(--accent)':'transparent'}`,
@@ -629,10 +664,13 @@ export default function Empresas({ onOpenTarefas }) {
                   )}
                   {drawerTasks.map(t => {
                     const overdue = isOverdue(t.vencimento) && !t.concluida
+                    const altaPrioridade = t.prioridade === 'alta' && !t.concluida
+                    const corStatus = overdue ? 'var(--danger)' : altaPrioridade ? 'var(--warn)' : 'transparent'
                     const busy = updatingId === t.id
                     return (
-                      <div key={t.id} style={{ background:'var(--surface2)', border:'1px solid var(--border)', borderRadius:8, padding:'10px 12px' }}>
-                        <div style={{ display:'flex', alignItems:'flex-start', gap:8, marginBottom:5 }}>
+                      <div key={t.id} style={{ background:'var(--surface2)', border:'1px solid var(--border)',
+                        borderLeft:`3px solid ${corStatus}`, borderRadius:8, padding:'10px 12px' }}>
+                        <div style={{ display:'flex', alignItems:'flex-start', gap:8 }}>
                           <button onClick={() => handleToggleTask(t)} disabled={busy}
                             style={{ width:16, height:16, borderRadius:4, flexShrink:0, marginTop:1, cursor:'pointer',
                               border:`1px solid ${t.concluida?'#34d399':'#3b4570'}`,
@@ -640,7 +678,7 @@ export default function Empresas({ onOpenTarefas }) {
                               display:'flex', alignItems:'center', justifyContent:'center', opacity:busy?.5:1 }}>
                             {t.concluida && <CheckIcon size={10} color="#12151f" strokeWidth={3} />}
                           </button>
-                          <div style={{ flex:1, minWidth:0 }}>
+                          <div style={{ flex:1, minWidth:0, cursor:'pointer' }} onClick={() => setTarefaEditando(t)} title="Editar tarefa">
                             <div style={{ fontSize:11, fontWeight:500, lineHeight:1.4,
                               color:t.concluida?'var(--text3)':'var(--text1)',
                               textDecoration:t.concluida?'line-through':'none' }}>
@@ -655,11 +693,22 @@ export default function Empresas({ onOpenTarefas }) {
                               )}
                             </div>
                           </div>
+                          <button onClick={() => setTarefaEditando(t)} title="Editar"
+                            style={{ background:'none', border:'none', color:'var(--text3)', cursor:'pointer', padding:2, flexShrink:0 }}>
+                            <PencilIcon size={12} />
+                          </button>
+                          <button onClick={() => handleDeleteTask(t)} title="Excluir tarefa"
+                            style={{ background:'none', border:'none', color:'var(--text3)', cursor:'pointer', padding:2, flexShrink:0 }}>
+                            <Trash2Icon size={12} />
+                          </button>
                         </div>
                       </div>
                     )
                   })}
                 </>}
+
+                {/* ── Anexos ── */}
+                {drawerTab === 'anexos' && <AbaAnexosEmpresa clienteId={drawer.c.id} />}
               </div>
 
               {/* Footer drawer */}
@@ -739,6 +788,16 @@ export default function Empresas({ onOpenTarefas }) {
         />
       )}
 
+      {/* Modal editar tarefa */}
+      {tarefaEditando && drawer && (
+        <NovaTarefaModuloModal
+          cliente={drawer.c}
+          tarefa={tarefaEditando}
+          onClose={() => setTarefaEditando(null)}
+          onSaved={async () => { setTarefaEditando(null); await fetchTarefas() }}
+        />
+      )}
+
       {/* Modal tarefas em lote por módulo */}
       {loteDept && (
         <ModalTarefasLote
@@ -765,5 +824,56 @@ export default function Empresas({ onOpenTarefas }) {
       )}
     </div>
   )
+}
+
+// ── Aba Anexos (modal de empresa) ────────────────────────────────────────────
+// Documentos da tabela "documentos" (upload manual + IA, ver documentosApi.js)
+// filtrados pra esse cliente — reaproveita o mesmo bucket/URL assinada
+// usados na aba "Concluídos" de DocumentosPage.jsx.
+function AbaAnexosEmpresa({ clienteId }) {
+  const [docs, setDocs] = useState(null) // null = carregando
+  const [erro, setErro] = useState(null)
+  const { show } = useToast()
+
+  useEffect(() => {
+    setDocs(null)
+    listarDocumentosPorCliente(clienteId).then(setDocs).catch(e => setErro(e.message))
+  }, [clienteId])
+
+  const baixar = async (doc) => {
+    try {
+      const url = await criarLinkAssinado(doc.storage_path)
+      window.open(url, '_blank')
+    } catch (e) {
+      show?.('Erro ao gerar link: ' + e.message)
+    }
+  }
+
+  if (erro) return <p style={{ color:'var(--danger)', fontSize:12 }}>{erro}</p>
+  if (!docs) return <p style={{ color:'var(--text3)', fontSize:12 }}>Carregando...</p>
+  if (docs.length === 0) return (
+    <div style={{ textAlign:'center', color:'var(--text3)', fontSize:12, padding:'24px 0' }}>Nenhum anexo pra essa empresa</div>
+  )
+
+  return <>
+    {docs.map(doc => (
+      <div key={doc.id} style={{ background:'var(--surface2)', border:'1px solid var(--border)', borderRadius:8,
+        padding:'10px 12px', display:'flex', alignItems:'center', gap:10 }}>
+        <FileIcon size={14} color="var(--text3)" style={{ flexShrink:0 }} />
+        <div style={{ flex:1, minWidth:0 }}>
+          <div style={{ fontSize:11, fontWeight:500, color:'var(--text1)', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>
+            {doc.tipo_documento_sugerido || doc.nome_arquivo}
+          </div>
+          <div style={{ fontSize:10, color:'var(--text3)', marginTop:2 }}>
+            {new Date(doc.created_at).toLocaleDateString('pt-BR')}
+          </div>
+        </div>
+        <button onClick={() => baixar(doc)} title="Baixar"
+          style={{ background:'none', border:'none', color:'var(--text3)', cursor:'pointer', padding:2, flexShrink:0 }}>
+          <DownloadIcon size={13} />
+        </button>
+      </div>
+    ))}
+  </>
 }
 

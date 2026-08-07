@@ -109,6 +109,18 @@ export async function listarDocumentos() {
 // DocumentosPage.jsx. Um documento só tem um dos três vínculos preenchido
 // por vez (ver confirmarDocumento), por isso os três joins são todos
 // opcionais (left join implícito do PostgREST quando a FK é nullable).
+// Anexos de um cliente específico (qualquer status) — alimenta a aba
+// "Anexos" do modal de empresa em Empresas.jsx.
+export async function listarDocumentosPorCliente(clienteId) {
+  const { data, error } = await supabase
+    .from('documentos')
+    .select('*, obrigacoes(titulo), etapas_obrigacao(nome), tarefas(titulo)')
+    .eq('cliente_id', clienteId)
+    .order('created_at', { ascending: false });
+  if (error) throw error;
+  return data;
+}
+
 export async function listarDocumentosConfirmados() {
   const { data, error } = await supabase
     .from('documentos')

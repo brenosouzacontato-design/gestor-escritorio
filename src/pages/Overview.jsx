@@ -24,7 +24,7 @@ function compMesAtras(n) {
   return String(d.getMonth()+1).padStart(2,'0') + '/' + d.getFullYear()
 }
 
-export default function Overview({ onAddTarefa, onOpenCliente, onOpenObrigacoes, onOpenTarefas, onOpenContabil }) {
+export default function Overview({ onAddTarefa, onOpenCliente, onOpenEmpresa, onOpenObrigacoes, onOpenTarefas, onOpenContabil }) {
   const clientes     = useStore(s => s.clientes)
   const tarefas      = useStore(s => s.tarefas)
   const obrigacoes   = useStore(s => s.obrigacoes || [])
@@ -186,7 +186,7 @@ export default function Overview({ onAddTarefa, onOpenCliente, onOpenObrigacoes,
           Nenhuma obrigação registrada para {compSel}
         </div>
       ) : (
-        <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(260px, 1fr))', gap:14, marginBottom:20 }}>
+        <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(300px, 1fr))', gap:14, marginBottom:20 }}>
           {atividadeStats.map(({ tipo, total, ok, venc, pend, pct, status, clientesPend, listaCompleta, meta }) => {
             const corStatus = status==='ok'?'var(--ok)':status==='vencido'?'var(--danger)':status==='pendente'?'var(--warn)':'var(--text3)'
             const bgStatus  = status==='ok'?'var(--ok-dim)':status==='vencido'?'var(--danger-dim)':status==='pendente'?'var(--warn-dim)':'transparent'
@@ -256,13 +256,14 @@ export default function Overview({ onAddTarefa, onOpenCliente, onOpenObrigacoes,
           lista={modalTipo.lista}
           compSel={compSel}
           onClose={() => setModalTipo(null)}
+          onOpenEmpresa={onOpenEmpresa}
         />
       )}
     </div>
   )
 }
 
-function ModalObrigacoesTipo({ tipo, meta, lista, compSel, onClose }) {
+function ModalObrigacoesTipo({ tipo, meta, lista, compSel, onClose, onOpenEmpresa }) {
   const [filtro, setFiltro]     = useState('todos')
   const [updatingId, setUpdatingId] = useState(null)
   const clientes      = useStore(s => s.clientes)
@@ -354,8 +355,16 @@ function ModalObrigacoesTipo({ tipo, meta, lista, compSel, onClose }) {
                 borderLeft:`4px solid ${cfg.cor}`, borderRadius:'var(--r-sm)', padding:'12px 14px',
                 display:'flex', alignItems:'center', gap:12 }}>
                 <div style={{ flex:1, minWidth:0 }}>
-                  <div style={{ fontSize:14, fontWeight:600, color:'var(--text1)', marginBottom:3,
-                    whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }} title={o.clienteNome}>
+                  <div
+                    onClick={() => { if (onOpenEmpresa && o.cliente_id) { onOpenEmpresa(o.cliente_id); onClose() } }}
+                    title={onOpenEmpresa && o.cliente_id ? `Abrir ${o.clienteNome}` : o.clienteNome}
+                    style={{ fontSize:14, fontWeight:600, marginBottom:3,
+                      whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis',
+                      color: onOpenEmpresa && o.cliente_id ? 'var(--accent)' : 'var(--text1)',
+                      cursor: onOpenEmpresa && o.cliente_id ? 'pointer' : 'default',
+                      textDecoration: onOpenEmpresa && o.cliente_id ? 'underline' : 'none', textDecorationColor:'transparent' }}
+                    onMouseEnter={e => { if (onOpenEmpresa && o.cliente_id) e.currentTarget.style.textDecorationColor = 'var(--accent)' }}
+                    onMouseLeave={e => { e.currentTarget.style.textDecorationColor = 'transparent' }}>
                     {o.clienteNome}
                   </div>
                   {o.vencimento && (
@@ -396,8 +405,10 @@ function ModalObrigacoesTipo({ tipo, meta, lista, compSel, onClose }) {
 
 function TaskRow({ tarefa, onToggle }) {
   const overdue = isOverdue(tarefa.vencimento) && !tarefa.concluida
+  const altaPrioridade = tarefa.prioridade === 'alta' && !tarefa.concluida
+  const corStatus = overdue ? 'var(--danger)' : altaPrioridade ? 'var(--warn)' : 'transparent'
   return (
-    <div className="task-item">
+    <div className="task-item" style={{ borderLeft: `3px solid ${corStatus}`, paddingLeft: 8, marginLeft: -3 }}>
       <div className={`task-check ${tarefa.concluida ? 'done' : ''}`} onClick={onToggle}>
         {tarefa.concluida && <CheckIcon size={13} color="white" strokeWidth={3} />}
       </div>

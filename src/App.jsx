@@ -35,6 +35,7 @@ export default function App() {
   const [showConfig, setShowConfig]           = useState(false)
   const [highlightTaskId, setHighlightTaskId] = useState(null)
   const [filtroClienteTarefas, setFiltroClienteTarefas] = useState(null)
+  const [clienteAbrirEmpresas, setClienteAbrirEmpresas] = useState(null)
   const [showNotifs, setShowNotifs]           = useState(false)
   const [collapsed, setCollapsed] = useState(() => localStorage.getItem('sidebar-collapsed') === '1')
   const [theme, setTheme] = useState(() =>
@@ -110,8 +111,9 @@ export default function App() {
           <div className="center"><div className="spinner" /></div>
         ) : (
           <>
-            {page === 'overview'   && <Overview onAddTarefa={openNewTask} onOpenCliente={(id) => { setSelectedCliente(id); navigate('clientes') }} onOpenObrigacoes={() => navigate('empresas')} onOpenTarefas={() => navigate('tarefas')} onOpenContabil={() => navigate('contabil')} />}
-            {page === 'empresas'   && <Empresas onOpenTarefas={(clienteId) => { setFiltroClienteTarefas(clienteId ?? null); navigate('tarefas') }} />}
+            {page === 'overview'   && <Overview onAddTarefa={openNewTask} onOpenCliente={(id) => { setSelectedCliente(id); navigate('clientes') }} onOpenEmpresa={(id) => { setClienteAbrirEmpresas(id); navigate('empresas') }} onOpenObrigacoes={() => navigate('empresas')} onOpenTarefas={() => navigate('tarefas')} onOpenContabil={() => navigate('contabil')} />}
+            {page === 'empresas'   && <Empresas onOpenTarefas={(clienteId) => { setFiltroClienteTarefas(clienteId ?? null); navigate('tarefas') }}
+              clienteInicialId={clienteAbrirEmpresas} onClienteInicialConsumido={() => setClienteAbrirEmpresas(null)} />}
             {page === 'documentos' && <DocumentosPage />}
             {page === 'tarefas'    && <Tarefas onAddTarefa={openNewTask} highlightTaskId={highlightTaskId} onHighlightConsumed={() => setHighlightTaskId(null)}
               clienteFilterInicial={filtroClienteTarefas} onClienteFilterConsumido={() => setFiltroClienteTarefas(null)} />}

@@ -162,29 +162,40 @@ export function NovaObrigacaoModal({ cliente, dept, departamentos, competencia, 
 }
 
 // ── Modal Nova Tarefa (por módulo, uma empresa) ─────────────────────────────
-export function NovaTarefaModuloModal({ cliente, dept, onClose, onSaved }) {
-  const [titulo,       setTitulo]       = useState('')
-  const [departamento, setDepartamento] = useState(dept?.nome?.toLowerCase() || 'geral')
-  const [prioridade,   setPrioridade]   = useState('normal')
-  const [vencimento,   setVencimento]   = useState('')
-  const [observacao,   setObservacao]   = useState('')
+// Com `tarefa` preenchida, vira edição (update em vez de insert) — reaproveitado
+// pelo modal de empresa em Empresas.jsx pra editar uma tarefa existente.
+export function NovaTarefaModuloModal({ cliente, dept, tarefa, onClose, onSaved }) {
+  const editando = !!tarefa
+  const [titulo,       setTitulo]       = useState(tarefa?.titulo || '')
+  const [departamento, setDepartamento] = useState(tarefa?.departamento || dept?.nome?.toLowerCase() || 'geral')
+  const [prioridade,   setPrioridade]   = useState(tarefa?.prioridade || 'normal')
+  const [vencimento,   setVencimento]   = useState(tarefa?.vencimento || '')
+  const [observacao,   setObservacao]   = useState(tarefa?.observacao || '')
   const [saving,       setSaving]       = useState(false)
 
   const handleSave = async () => {
     if (!titulo.trim()) return
     setSaving(true)
-    await supabase.from('tarefas').insert({
-      titulo: titulo.trim(), departamento, departamento_id: dept?.id || null, prioridade,
-      vencimento: vencimento || null, observacao: observacao || null,
-      cliente_id: cliente.id, concluida: false,
-      updated_at: new Date().toISOString(),
-    })
+    if (editando) {
+      await supabase.from('tarefas').update({
+        titulo: titulo.trim(), departamento, prioridade,
+        vencimento: vencimento || null, observacao: observacao || null,
+        updated_at: new Date().toISOString(),
+      }).eq('id', tarefa.id)
+    } else {
+      await supabase.from('tarefas').insert({
+        titulo: titulo.trim(), departamento, departamento_id: dept?.id || null, prioridade,
+        vencimento: vencimento || null, observacao: observacao || null,
+        cliente_id: cliente.id, concluida: false,
+        updated_at: new Date().toISOString(),
+      })
+    }
     setSaving(false)
     onSaved()
   }
 
   return (
-    <ModalBase onClose={onClose} titulo={`Nova tarefa — ${cliente.nome.split(' ')[0]}`}>
+    <ModalBase onClose={onClose} titulo={`${editando ? 'Editar tarefa' : 'Nova tarefa'} — ${cliente.nome.split(' ')[0]}`}>
       <div style={{ display:'flex', flexDirection:'column', gap:12 }}>
         <div>
           <label style={{ fontSize:11, color:'var(--text2)', display:'block', marginBottom:4 }}>Título *</label>
@@ -229,7 +240,7 @@ export function NovaTarefaModuloModal({ cliente, dept, onClose, onSaved }) {
         <button onClick={handleSave} disabled={saving||!titulo.trim()}
           style={{ flex:1, background:'var(--accent)', border:'none', borderRadius:8, padding:'9px', fontSize:12, color:'#fff', fontWeight:500, cursor:'pointer', opacity:(saving||!titulo.trim())?.6:1 }}>
           <SaveIcon size={13} style={{ marginRight:5, verticalAlign:-2 }} />
-          {saving?'Salvando...':'Criar tarefa'}
+          {saving?'Salvando...':editando?'Salvar':'Criar tarefa'}
         </button>
       </div>
     </ModalBase>
