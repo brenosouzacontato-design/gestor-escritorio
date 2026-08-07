@@ -147,3 +147,59 @@ export async function obterDadosGerenciais(clienteId, competencia) {
   if (error) throw error;
   return data;
 }
+
+// ---------- Situação Fiscal (RFB) ----------
+
+// Sobe o PDF, chama a IA (netlify/functions/extrair-situacao-fiscal.js) e
+// grava/atualiza situacao_fiscal_rfb pra competência selecionada no
+// Painel no momento do upload (o relatório não traz "competência" própria,
+// é um retrato do momento — por isso não há fallback pra extrair do PDF
+// aqui, diferente da Declaração do Simples).
+export async function uploadSituacaoFiscal(clienteId, arquivo, competencia) {
+  const path = `${crypto.randomUUID()}-${arquivo.name}`;
+  const { error: errUpload } = await supabase.storage.from(BUCKET).upload(path, arquivo, {
+    contentType: arquivo.type || 'application/pdf',
+  });
+  if (errUpload) throw errUpload;
+
+  const pdfBase64 = await arquivoParaBase64(arquivo);
+  const resp = await fetch('/.netlify/functions/extrair-situacao-fiscal', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ pdfBase64, filename: arquivo.name }),
+  });
+  if (!resp.ok) {
+    const erro = await resp.json().catch(() => ({}));
+    throw new Error(erro.error || 'Falha ao extrair o relatório.');
+  }
+  const extraido = await resp.json();
+
+  const { data, error } = await supabase
+    .from('situacao_fiscal_rfb')
+    .upsert({
+      cliente_id: clienteId,
+      competencia,
+      data_emissao: extraido.dataEmissao,
+      situacao_geral: extraido.situacaoGeral,
+      debitos: extraido.debitos,
+      parcelamentos: extraido.parcelamentos,
+      dividas_ativas: extraido.dividasAtivas,
+      storage_path: path,
+      observacao_ia: extraido.observacao,
+    }, { onConflict: 'cliente_id,competencia' })
+    .select()
+    .single();
+  if (error) throw error;
+  return data;
+}
+
+export async function obterSituacaoFiscal(clienteId, competencia) {
+  const { data, error } = await supabase
+    .from('situacao_fiscal_rfb')
+    .select('*')
+    .eq('cliente_id', clienteId)
+    .eq('competencia', competencia)
+    .maybeSingle();
+  if (error) throw error;
+  return data;
+}

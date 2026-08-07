@@ -1,14 +1,14 @@
 import { useEffect, useState } from 'react';
 import {
   WalletIcon, ClipboardListIcon, CheckSquareIcon, PaperclipIcon, BarChart3Icon,
-  SearchIcon, CalendarIcon, DownloadIcon, CheckCircleIcon,
+  SearchIcon, CalendarIcon, DownloadIcon, CheckCircleIcon, FileTextIcon,
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { listarLancamentosAIdentificar, salvarObservacaoCliente } from '../contabil/contabilApi';
 import { criarLinkAssinado } from '../documentos/documentosApi';
 import {
   obterResumoObrigacoes, obterResumoTarefas, obterResumoFinanceiro, obterDadosGerenciais,
-  obterDocumentosDoMes, obterDocumentosPorObrigacao,
+  obterDocumentosDoMes, obterDocumentosPorObrigacao, obterSituacaoFiscal,
 } from './painelApi';
 
 const STATUS_OBS_LABEL = { pendente: 'Pendente', concluido: 'Concluído', nao_aplica: 'N/A', vencido: 'Vencido' };
@@ -70,6 +70,7 @@ export default function PainelClientePage({ clienteId, competencia }) {
   const [financeiro, setFinanceiro] = useState(null);
   const [lancamentos, setLancamentos] = useState([]);
   const [gerenciais, setGerenciais] = useState(null);
+  const [situacaoFiscal, setSituacaoFiscal] = useState(null);
   const [documentos, setDocumentos] = useState([]);
   const [anexosObrigacao, setAnexosObrigacao] = useState({});
   const [carregando, setCarregando] = useState(true);
@@ -81,15 +82,17 @@ export default function PainelClientePage({ clienteId, competencia }) {
       setErro(null);
       try {
         const { dataInicio, dataFim } = competenciaParaPeriodo(competencia);
-        const [{ data: cliente, error: errCliente }, resObs, resTarefas, resFinanceiro, itensIdentificar, dadosSimples, docs] = await Promise.all([
+        const [{ data: cliente, error: errCliente }, resObs, resTarefas, resFinanceiro, itensIdentificar, dadosSimples, situFiscal, docs] = await Promise.all([
           supabase.from('clientes').select('nome').eq('id', clienteId).single(),
           obterResumoObrigacoes(clienteId, competencia),
           obterResumoTarefas(clienteId, competencia),
           obterResumoFinanceiro(clienteId, { dataInicio, dataFim }),
           listarLancamentosAIdentificar(clienteId, { dataInicio, dataFim }),
-          // tabela nova (dados_gerenciais_simples) — tolera ainda não existir
-          // no banco (schema pendente de aplicar) sem quebrar o resto do painel
+          // tabelas novas (dados_gerenciais_simples/situacao_fiscal_rfb) —
+          // toleram ainda não existir no banco (schema pendente de aplicar)
+          // sem quebrar o resto do painel
           obterDadosGerenciais(clienteId, competencia).catch(() => null),
+          obterSituacaoFiscal(clienteId, competencia).catch(() => null),
           obterDocumentosDoMes(clienteId, { dataInicio, dataFim }).catch(() => []),
         ]);
         if (errCliente) throw errCliente;
@@ -99,6 +102,7 @@ export default function PainelClientePage({ clienteId, competencia }) {
         setFinanceiro(resFinanceiro);
         setLancamentos(itensIdentificar);
         setGerenciais(dadosSimples);
+        setSituacaoFiscal(situFiscal);
         setDocumentos(docs);
         const anexos = await obterDocumentosPorObrigacao(resObs.itens.map((o) => o.id)).catch(() => ({}));
         setAnexosObrigacao(anexos);
@@ -156,6 +160,54 @@ export default function PainelClientePage({ clienteId, competencia }) {
                   </div>
                   {gerenciais.anexo && (
                     <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 8 }}>Enquadrado no Anexo {gerenciais.anexo} do Simples Nacional.</div>
+                  )}
+                </div>
+              )}
+
+              {/* Situação Fiscal (RFB) — só se já enviaram o relatório */}
+              {situacaoFiscal && (
+                <div>
+                  <SecaoTitulo icone={<FileTextIcon size={14} />}>Situação Fiscal — RFB</SecaoTitulo>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 10, marginBottom: 10 }}>
+                    <div style={{ background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: '10px 12px' }}>
+                      <div style={{ fontSize: 10, color: 'var(--text3)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.03em' }}>Situação</div>
+                      <span style={{ display: 'inline-block', marginTop: 5, fontSize: 12, fontWeight: 700, borderRadius: 99, padding: '3px 10px',
+                        color: situacaoFiscal.situacao_geral === 'regular' ? 'var(--ok)' : situacaoFiscal.situacao_geral === 'pendente' ? 'var(--danger)' : 'var(--text3)',
+                        background: situacaoFiscal.situacao_geral === 'regular' ? 'var(--ok-dim)' : situacaoFiscal.situacao_geral === 'pendente' ? 'var(--danger-dim)' : 'var(--surface2)' }}>
+                        {situacaoFiscal.situacao_geral === 'regular' ? 'Regular' : situacaoFiscal.situacao_geral === 'pendente' ? 'Com pendências' : 'Não identificada'}
+                      </span>
+                    </div>
+                    <Metrica label="Emissão do relatório" valor={situacaoFiscal.data_emissao ? fmtData(situacaoFiscal.data_emissao) : '—'} />
+                  </div>
+                  {situacaoFiscal.debitos?.length > 0 && (
+                    <div style={{ marginBottom: 10 }}>
+                      <div style={{ fontSize: 10.5, color: 'var(--text3)', fontWeight: 600, marginBottom: 6 }}>Débitos em aberto</div>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                        {situacaoFiscal.debitos.map((d, i) => (
+                          <ItemLista key={i} titulo={d.tributo} sub={fmt(d.valor)} statusLabel={d.situacao} statusCor={['var(--warn)', 'var(--warn-dim)']} />
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  {situacaoFiscal.parcelamentos?.length > 0 && (
+                    <div style={{ marginBottom: 10 }}>
+                      <div style={{ fontSize: 10.5, color: 'var(--text3)', fontWeight: 600, marginBottom: 6 }}>Parcelamentos ativos</div>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                        {situacaoFiscal.parcelamentos.map((p, i) => (
+                          <ItemLista key={i} titulo={p.modalidade} sub={fmt(p.valor)} statusLabel={p.parcelas || null} statusCor={['var(--info)', 'var(--info-dim)']} />
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  {situacaoFiscal.dividas_ativas?.length > 0 && (
+                    <div>
+                      <div style={{ fontSize: 10.5, color: 'var(--text3)', fontWeight: 600, marginBottom: 6 }}>Dívida Ativa (PGFN)</div>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                        {situacaoFiscal.dividas_ativas.map((d, i) => (
+                          <ItemLista key={i} titulo={d.inscricao || 'Inscrição'} sub={fmt(d.valor)} statusLabel={d.situacao} statusCor={['var(--danger)', 'var(--danger-dim)']} />
+                        ))}
+                      </div>
+                    </div>
                   )}
                 </div>
               )}

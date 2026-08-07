@@ -1,11 +1,11 @@
 import { useState, useMemo, useEffect } from 'react'
-import { PlusIcon, XIcon, CheckCircleIcon, ClockIcon, AlertCircleIcon, MinusCircleIcon, ChevronRightIcon, CalendarIcon, CheckIcon, ZapIcon, RefreshCwIcon, Trash2Icon, ListIcon, LayoutGridIcon, BarChart3Icon, Share2Icon, EyeIcon, CheckSquareIcon, FileIcon, DownloadIcon, PencilIcon } from 'lucide-react'
+import { PlusIcon, XIcon, CheckCircleIcon, ClockIcon, AlertCircleIcon, MinusCircleIcon, ChevronRightIcon, CalendarIcon, CheckIcon, ZapIcon, RefreshCwIcon, Trash2Icon, ListIcon, LayoutGridIcon, BarChart3Icon, Share2Icon, EyeIcon, CheckSquareIcon, FileIcon, DownloadIcon, PencilIcon, FileTextIcon } from 'lucide-react'
 import { useStore } from '../store'
 import { DeptChip, PriDot, fmtDate, isOverdue, useToast } from '../components/shared'
 import { supabase } from '../lib/supabase'
 import { listarDepartamentos, criarDepartamento, gerarObrigacoesRecorrentesCompetencia } from './andamento/andamentoApi'
 import { NovaObrigacaoModal, NovaTarefaModuloModal, ModalTarefasLote, ModalObrigacoesLote } from './andamento/modaisObrigacao'
-import { uploadDeclaracaoSimples } from './painel/painelApi'
+import { uploadDeclaracaoSimples, uploadSituacaoFiscal } from './painel/painelApi'
 import { listarDocumentosPorCliente, criarLinkAssinado } from './documentos/documentosApi'
 
 // Casamento histórico tipo-texto → departamento, só pra competências
@@ -202,6 +202,22 @@ export default function Empresas({ onOpenTarefas, clienteInicialId, onClienteIni
       show?.('Erro ao processar declaração: ' + e.message)
     }
     setEnviandoDeclaracao(false)
+  }
+
+  // Upload do Relatório de Situação Fiscal (RFB) — sobe pro Storage, IA
+  // extrai situação geral, débitos, parcelamentos e dívidas ativas (PGFN)
+  // e grava em situacao_fiscal_rfb pra aparecer no painel compartilhável.
+  const [enviandoSituacaoFiscal, setEnviandoSituacaoFiscal] = useState(false)
+  const handleUploadSituacaoFiscal = async (cliente, arquivo) => {
+    if (!arquivo) return
+    setEnviandoSituacaoFiscal(true)
+    try {
+      const salvo = await uploadSituacaoFiscal(cliente.id, arquivo, compSel)
+      show?.(`Situação fiscal processada — ${salvo.situacao_geral === 'regular' ? 'sem pendências' : salvo.situacao_geral === 'pendente' ? 'com pendências' : 'situação não identificada'}`)
+    } catch (e) {
+      show?.('Erro ao processar relatório: ' + e.message)
+    }
+    setEnviandoSituacaoFiscal(false)
   }
 
   // Link público do painel consolidado (PainelClientePage.jsx via main.jsx)
@@ -723,11 +739,18 @@ export default function Empresas({ onOpenTarefas, clienteInicialId, onClienteIni
                     ✓ + Tarefa
                   </button>
                 </div>
-                <label style={{ background:'var(--surface2)', border:'1px solid var(--border)', borderRadius:8, padding:'7px', fontSize:11, color:'var(--text2)', fontWeight:500, cursor:enviandoDeclaracao?'default':'pointer', display:'flex', alignItems:'center', justifyContent:'center', gap:4, opacity:enviandoDeclaracao?.6:1 }}>
-                  <BarChart3Icon size={12} /> {enviandoDeclaracao ? 'Processando...' : 'Declaração do Simples'}
-                  <input type="file" accept=".pdf,application/pdf" style={{ display:'none' }} disabled={enviandoDeclaracao}
-                    onChange={(e) => { handleUploadDeclaracao(drawer.c, e.target.files?.[0]); e.target.value = '' }} />
-                </label>
+                <div style={{ display:'flex', gap:7 }}>
+                  <label style={{ flex:1, background:'var(--surface2)', border:'1px solid var(--border)', borderRadius:8, padding:'7px', fontSize:11, color:'var(--text2)', fontWeight:500, cursor:enviandoDeclaracao?'default':'pointer', display:'flex', alignItems:'center', justifyContent:'center', gap:4, opacity:enviandoDeclaracao?.6:1 }}>
+                    <BarChart3Icon size={12} /> {enviandoDeclaracao ? 'Processando...' : 'Declaração do Simples'}
+                    <input type="file" accept=".pdf,application/pdf" style={{ display:'none' }} disabled={enviandoDeclaracao}
+                      onChange={(e) => { handleUploadDeclaracao(drawer.c, e.target.files?.[0]); e.target.value = '' }} />
+                  </label>
+                  <label style={{ flex:1, background:'var(--surface2)', border:'1px solid var(--border)', borderRadius:8, padding:'7px', fontSize:11, color:'var(--text2)', fontWeight:500, cursor:enviandoSituacaoFiscal?'default':'pointer', display:'flex', alignItems:'center', justifyContent:'center', gap:4, opacity:enviandoSituacaoFiscal?.6:1 }}>
+                    <FileTextIcon size={12} /> {enviandoSituacaoFiscal ? 'Processando...' : 'Situação Fiscal RFB'}
+                    <input type="file" accept=".pdf,application/pdf" style={{ display:'none' }} disabled={enviandoSituacaoFiscal}
+                      onChange={(e) => { handleUploadSituacaoFiscal(drawer.c, e.target.files?.[0]); e.target.value = '' }} />
+                  </label>
+                </div>
                 <div style={{ display:'flex', gap:7 }}>
                   <button onClick={() => handleVisualizarPainel(drawer.c)}
                     title="Abrir o painel do cliente numa aba nova, pra conferir antes de mandar"
