@@ -5,19 +5,29 @@
 // Anthropic pra ler PDF (mesmo padrão de extrair-extrato.js). Alimenta o
 // painel consolidado do cliente (src/pages/painel/PainelClientePage.jsx).
 //
+// Opcionalmente recebe também `clientes` ([{id, nome, cnpj}]) — quando
+// presente, pede pro modelo tentar identificar de qual cliente da lista é
+// o documento (mesmo padrão de identificar-documento.js: casa por
+// nome/CNPJ, "null" se não tiver certeza, nunca inventa). Usado pelo
+// upload "detectar empresa" da topbar de Empresas.jsx — quando o upload
+// já parte de dentro do modal de uma empresa conhecida, `clientes` não é
+// enviado e `clienteId` simplesmente não aparece no retorno.
+//
 // Variável de ambiente necessária no Netlify: ANTHROPIC_API_KEY
 //
 // Contrato de retorno (o que painelApi.js espera):
 //   { competencia: "MM/YYYY"|null, faturamentoPeriodo: number|null, rbt12: number|null,
-//     aliquotaEfetiva: number|null, valorDas: number|null, anexo: string|null, observacao: string }
+//     aliquotaEfetiva: number|null, valorDas: number|null, anexo: string|null,
+//     clienteId: string|null, observacao: string }
 
 const ANTHROPIC_API_URL = 'https://api.anthropic.com/v1/messages';
 const MODELO = 'claude-haiku-4-5-20251001';
 
-const SYSTEM_PROMPT = `Você é um assistente contábil brasileiro. Recebe uma Declaração do Simples Nacional (PGDAS-D ou extrato/relatório de apuração) e extrai os números gerenciais principais dela.
+function montarSystemPrompt(temClientes) {
+  return `Você é um assistente contábil brasileiro. Recebe uma Declaração do Simples Nacional (PGDAS-D ou extrato/relatório de apuração) e extrai os números gerenciais principais dela.${temClientes ? ' Também recebe uma lista de clientes cadastrados e precisa identificar de qual cliente da lista é o documento.' : ''}
 
 Devolva APENAS um JSON, sem texto antes ou depois, sem markdown e sem crases, no formato exato:
-{"competencia":"MM/YYYY ou null","faturamentoPeriodo":number|null,"rbt12":number|null,"aliquotaEfetiva":number|null,"valorDas":number|null,"anexo":"string ou null","observacao":"string curta"}
+{"competencia":"MM/YYYY ou null","faturamentoPeriodo":number|null,"rbt12":number|null,"aliquotaEfetiva":number|null,"valorDas":number|null,"anexo":"string ou null"${temClientes ? ',"clienteId":"id da lista ou null"' : ''},"observacao":"string curta"}
 
 Regras:
 - "competencia": o período de apuração do documento, formato MM/YYYY.
@@ -25,21 +35,23 @@ Regras:
 - "rbt12": receita bruta acumulada dos últimos 12 meses (RBT12), mesmo formato numérico.
 - "aliquotaEfetiva": alíquota efetiva resultante, em percentual (ex: 6.5 pra 6,5%).
 - "valorDas": valor total do DAS apurado/devido naquela competência.
-- "anexo": o anexo do Simples Nacional em que a atividade está enquadrada (ex: "I", "II", "III", "IV", "V"), se identificável.
+- "anexo": o anexo do Simples Nacional em que a atividade está enquadrada (ex: "I", "II", "III", "IV", "V"), se identificável.${temClientes ? '\n- "clienteId": só preencha se o nome ou CNPJ do documento bater com um item da lista de clientes. Se não tiver certeza, null — não invente.' : ''}
 - "observacao": uma frase curta com qualquer ressalva (ex: "documento parece ser só um resumo, RBT12 não veio explícito").
 - Se não conseguir identificar um valor com confiança, use null pra ele — não invente números.
 - Se o PDF não parecer uma declaração/apuração do Simples Nacional, devolva todos os campos numéricos como null e explique em "observacao".`;
+}
 
 exports.handler = async (event) => {
   if (event.httpMethod !== 'POST') {
     return resposta(405, { error: 'Método não permitido, use POST.' });
   }
 
-  let pdfBase64, filename;
+  let pdfBase64, filename, clientes;
   try {
     const body = JSON.parse(event.body);
     pdfBase64 = body.pdfBase64;
     filename = body.filename ?? 'declaracao.pdf';
+    clientes = Array.isArray(body.clientes) ? body.clientes : null;
   } catch {
     return resposta(400, { error: 'Body inválido: esperado JSON com { pdfBase64, filename }.' });
   }
@@ -53,6 +65,11 @@ exports.handler = async (event) => {
     return resposta(500, { error: 'ANTHROPIC_API_KEY não configurada nas variáveis de ambiente do Netlify.' });
   }
 
+  const temClientes = !!(clientes && clientes.length > 0);
+  const listaClientes = temClientes
+    ? clientes.map((c) => `- id: ${c.id} | nome: ${c.nome} | cnpj: ${c.cnpj || '—'}`).join('\n')
+    : '';
+
   try {
     const anthropicResp = await fetch(ANTHROPIC_API_URL, {
       method: 'POST',
@@ -64,7 +81,7 @@ exports.handler = async (event) => {
       body: JSON.stringify({
         model: MODELO,
         max_tokens: 1024,
-        system: SYSTEM_PROMPT,
+        system: montarSystemPrompt(temClientes),
         messages: [
           {
             role: 'user',
@@ -73,7 +90,12 @@ exports.handler = async (event) => {
                 type: 'document',
                 source: { type: 'base64', media_type: 'application/pdf', data: pdfBase64 },
               },
-              { type: 'text', text: `Extraia os dados gerenciais da declaração "${filename}".` },
+              {
+                type: 'text',
+                text: temClientes
+                  ? `Extraia os dados gerenciais da declaração "${filename}".\n\nClientes cadastrados:\n${listaClientes}`
+                  : `Extraia os dados gerenciais da declaração "${filename}".`,
+              },
             ],
           },
         ],
@@ -110,6 +132,7 @@ exports.handler = async (event) => {
       aliquotaEfetiva: extraido.aliquotaEfetiva ?? null,
       valorDas: extraido.valorDas ?? null,
       anexo: extraido.anexo || null,
+      clienteId: temClientes ? (extraido.clienteId || null) : null,
       observacao: extraido.observacao || '',
     });
   } catch (e) {

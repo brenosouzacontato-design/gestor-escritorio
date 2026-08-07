@@ -231,7 +231,7 @@ export default function Empresas({ onOpenTarefas, clienteInicialId, onClienteIni
     if (!arquivo) return
     setEnviandoDeclaracao(true)
     try {
-      const salvo = await uploadDeclaracaoSimples(cliente.id, arquivo, compSel)
+      const salvo = await uploadDeclaracaoSimples(arquivo, compSel, { clienteId: cliente.id })
       show?.(`Declaração processada — competência ${salvo.competencia}${salvo.faturamento_periodo ? `, faturamento R$ ${Number(salvo.faturamento_periodo).toLocaleString('pt-BR')}` : ''}`)
     } catch (e) {
       show?.('Erro ao processar declaração: ' + e.message)
@@ -247,7 +247,7 @@ export default function Empresas({ onOpenTarefas, clienteInicialId, onClienteIni
     if (!arquivo) return
     setEnviandoSituacaoFiscal(true)
     try {
-      const salvo = await uploadSituacaoFiscal(cliente.id, arquivo, compSel)
+      const salvo = await uploadSituacaoFiscal(arquivo, compSel, { clienteId: cliente.id })
       show?.(`Situação fiscal processada — ${salvo.situacao_geral === 'regular' ? 'sem pendências' : salvo.situacao_geral === 'pendente' ? 'com pendências' : 'situação não identificada'}`)
     } catch (e) {
       show?.('Erro ao processar relatório: ' + e.message)
@@ -263,6 +263,48 @@ export default function Empresas({ onOpenTarefas, clienteInicialId, onClienteIni
   const handleCompartilharPainel = (cliente) => {
     const mensagem = `Olá! Segue o painel de ${cliente.nome} — competência ${compSel} — com obrigações, financeiro e demais informações:\n${linkPainel(cliente)}`
     window.open(`https://wa.me/?text=${encodeURIComponent(mensagem)}`, '_blank')
+  }
+
+  // Upload "às cegas" (sem empresa pré-selecionada) — manda a lista de
+  // clientes pra IA identificar por nome/CNPJ dentro do documento, e ao
+  // identificar já abre o modal da empresa + o painel público dela, pra
+  // poupar o passo de achar a empresa manualmente antes.
+  const clientesParaDetectar = clientes.map(c => ({ id: c.id, nome: c.nome, cnpj: c.cnpj }))
+
+  const aoDetectarEmpresa = (salvo) => {
+    const cliente = clientes.find(c => c.id === salvo.cliente_id)
+    if (!cliente) return
+    openDrawer(cliente, null)
+    window.open(linkPainel(cliente), '_blank')
+    return cliente
+  }
+
+  const [enviandoDeclaracaoAuto, setEnviandoDeclaracaoAuto] = useState(false)
+  const handleUploadDeclaracaoAuto = async (arquivo) => {
+    if (!arquivo) return
+    setEnviandoDeclaracaoAuto(true)
+    try {
+      const salvo = await uploadDeclaracaoSimples(arquivo, compSel, { clientes: clientesParaDetectar })
+      const cliente = aoDetectarEmpresa(salvo)
+      show?.(cliente ? `Empresa identificada: ${cliente.nome} — declaração processada` : 'Declaração processada')
+    } catch (e) {
+      show?.('Erro: ' + e.message)
+    }
+    setEnviandoDeclaracaoAuto(false)
+  }
+
+  const [enviandoSituacaoFiscalAuto, setEnviandoSituacaoFiscalAuto] = useState(false)
+  const handleUploadSituacaoFiscalAuto = async (arquivo) => {
+    if (!arquivo) return
+    setEnviandoSituacaoFiscalAuto(true)
+    try {
+      const salvo = await uploadSituacaoFiscal(arquivo, compSel, { clientes: clientesParaDetectar })
+      const cliente = aoDetectarEmpresa(salvo)
+      show?.(cliente ? `Empresa identificada: ${cliente.nome} — relatório processado` : 'Relatório processado')
+    } catch (e) {
+      show?.('Erro: ' + e.message)
+    }
+    setEnviandoSituacaoFiscalAuto(false)
   }
 
   // Soft-delete (marca ativo=false) — obrigações/tarefas/lançamentos já
@@ -372,6 +414,18 @@ export default function Empresas({ onOpenTarefas, clienteInicialId, onClienteIni
             style={{ display:'flex', alignItems:'center', gap:5, background:'var(--surface2)', border:'1px solid var(--border)', borderRadius:8, padding:'5px 10px', fontSize:11, color:'var(--text2)', cursor:'pointer', fontWeight:500 }}>
             <ZapIcon size={12} /> Obrigações em lote
           </button>
+          <label title="Sobe o PDF e identifica a empresa sozinho, sem precisar abrir ela antes"
+            style={{ display:'flex', alignItems:'center', gap:5, background:'var(--surface2)', border:'1px solid var(--border)', borderRadius:8, padding:'5px 10px', fontSize:11, color:'var(--text2)', cursor:enviandoDeclaracaoAuto?'default':'pointer', fontWeight:500, opacity:enviandoDeclaracaoAuto?.6:1 }}>
+            <BarChart3Icon size={12} /> {enviandoDeclaracaoAuto ? 'Processando...' : 'Declaração (detectar empresa)'}
+            <input type="file" accept=".pdf,application/pdf" style={{ display:'none' }} disabled={enviandoDeclaracaoAuto}
+              onChange={(e) => { handleUploadDeclaracaoAuto(e.target.files?.[0]); e.target.value = '' }} />
+          </label>
+          <label title="Sobe o PDF e identifica a empresa sozinho, sem precisar abrir ela antes"
+            style={{ display:'flex', alignItems:'center', gap:5, background:'var(--surface2)', border:'1px solid var(--border)', borderRadius:8, padding:'5px 10px', fontSize:11, color:'var(--text2)', cursor:enviandoSituacaoFiscalAuto?'default':'pointer', fontWeight:500, opacity:enviandoSituacaoFiscalAuto?.6:1 }}>
+            <FileTextIcon size={12} /> {enviandoSituacaoFiscalAuto ? 'Processando...' : 'Situação Fiscal (detectar empresa)'}
+            <input type="file" accept=".pdf,application/pdf" style={{ display:'none' }} disabled={enviandoSituacaoFiscalAuto}
+              onChange={(e) => { handleUploadSituacaoFiscalAuto(e.target.files?.[0]); e.target.value = '' }} />
+          </label>
           <span style={{ background:'var(--surface2)', border:'1px solid var(--border)', borderRadius:8, padding:'5px 8px', fontSize:11, color:'var(--text2)' }}
             title="Competência escolhida no Painel">
             {compSel}

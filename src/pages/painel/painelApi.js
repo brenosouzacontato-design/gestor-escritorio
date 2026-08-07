@@ -98,7 +98,14 @@ async function arquivoParaBase64(arquivo) {
 // e grava/atualiza dados_gerenciais_simples pra competência identificada.
 // Se a IA não conseguir identificar a competência, cai na competência
 // informada (a que estava selecionada no Painel no momento do upload).
-export async function uploadDeclaracaoSimples(clienteId, arquivo, competenciaFallback) {
+//
+// A empresa vem de UMA das duas formas (nunca as duas):
+//   { clienteId } — já sabida de antemão (upload de dentro do modal de
+//     uma empresa aberta, ver Empresas.jsx).
+//   { clientes } — lista [{id, nome, cnpj}] pra IA tentar identificar de
+//     qual empresa é o documento (upload "detectar empresa" da topbar).
+//     Lança erro se não conseguir identificar — nunca grava adivinhando.
+export async function uploadDeclaracaoSimples(arquivo, competenciaFallback, { clienteId = null, clientes = null } = {}) {
   const path = `${crypto.randomUUID()}-${arquivo.name}`;
   const { error: errUpload } = await supabase.storage.from(BUCKET).upload(path, arquivo, {
     contentType: arquivo.type || 'application/pdf',
@@ -109,7 +116,7 @@ export async function uploadDeclaracaoSimples(clienteId, arquivo, competenciaFal
   const resp = await fetch('/.netlify/functions/extrair-declaracao-simples', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ pdfBase64, filename: arquivo.name }),
+    body: JSON.stringify({ pdfBase64, filename: arquivo.name, clientes: clienteId ? null : clientes }),
   });
   if (!resp.ok) {
     const erro = await resp.json().catch(() => ({}));
@@ -117,11 +124,16 @@ export async function uploadDeclaracaoSimples(clienteId, arquivo, competenciaFal
   }
   const extraido = await resp.json();
 
+  const clienteFinal = clienteId || extraido.clienteId;
+  if (!clienteFinal) {
+    throw new Error('Não consegui identificar a empresa no documento — abra a empresa certa em Empresas e envie por lá.');
+  }
+
   const competencia = extraido.competencia || competenciaFallback;
   const { data, error } = await supabase
     .from('dados_gerenciais_simples')
     .upsert({
-      cliente_id: clienteId,
+      cliente_id: clienteFinal,
       competencia,
       faturamento_periodo: extraido.faturamentoPeriodo,
       rbt12: extraido.rbt12,
@@ -134,7 +146,7 @@ export async function uploadDeclaracaoSimples(clienteId, arquivo, competenciaFal
     .select()
     .single();
   if (error) throw error;
-  return data;
+  return { ...data, clienteDetectado: !clienteId };
 }
 
 export async function obterDadosGerenciais(clienteId, competencia) {
@@ -155,7 +167,11 @@ export async function obterDadosGerenciais(clienteId, competencia) {
 // Painel no momento do upload (o relatório não traz "competência" própria,
 // é um retrato do momento — por isso não há fallback pra extrair do PDF
 // aqui, diferente da Declaração do Simples).
-export async function uploadSituacaoFiscal(clienteId, arquivo, competencia) {
+//
+// Mesma regra de origem da empresa que uploadDeclaracaoSimples: OU
+// `clienteId` (já sabido) OU `clientes` (lista, pra IA detectar) — nunca
+// os dois. Lança erro se não conseguir identificar via `clientes`.
+export async function uploadSituacaoFiscal(arquivo, competencia, { clienteId = null, clientes = null } = {}) {
   const path = `${crypto.randomUUID()}-${arquivo.name}`;
   const { error: errUpload } = await supabase.storage.from(BUCKET).upload(path, arquivo, {
     contentType: arquivo.type || 'application/pdf',
@@ -166,7 +182,7 @@ export async function uploadSituacaoFiscal(clienteId, arquivo, competencia) {
   const resp = await fetch('/.netlify/functions/extrair-situacao-fiscal', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ pdfBase64, filename: arquivo.name }),
+    body: JSON.stringify({ pdfBase64, filename: arquivo.name, clientes: clienteId ? null : clientes }),
   });
   if (!resp.ok) {
     const erro = await resp.json().catch(() => ({}));
@@ -174,10 +190,15 @@ export async function uploadSituacaoFiscal(clienteId, arquivo, competencia) {
   }
   const extraido = await resp.json();
 
+  const clienteFinal = clienteId || extraido.clienteId;
+  if (!clienteFinal) {
+    throw new Error('Não consegui identificar a empresa no documento — abra a empresa certa em Empresas e envie por lá.');
+  }
+
   const { data, error } = await supabase
     .from('situacao_fiscal_rfb')
     .upsert({
-      cliente_id: clienteId,
+      cliente_id: clienteFinal,
       competencia,
       data_emissao: extraido.dataEmissao,
       situacao_geral: extraido.situacaoGeral,
@@ -190,7 +211,7 @@ export async function uploadSituacaoFiscal(clienteId, arquivo, competencia) {
     .select()
     .single();
   if (error) throw error;
-  return data;
+  return { ...data, clienteDetectado: !clienteId };
 }
 
 export async function obterSituacaoFiscal(clienteId, competencia) {
