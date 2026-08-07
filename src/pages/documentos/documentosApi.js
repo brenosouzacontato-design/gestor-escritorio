@@ -147,6 +147,20 @@ export async function obterDocumentoPublico(documentoId) {
   return { ...doc, urlArquivo: signed.signedUrl };
 }
 
+// ---------- BACKUP WHATSAPP → DRIVE (só consulta, tabela "documentos_whatsapp") ----------
+// Log dos arquivos enviados no grupo "Documentos" do WhatsApp e subidos
+// automaticamente pro Drive (netlify/functions/whatsapp-webhook.js) — sistema
+// separado do fluxo de upload manual + IA acima, sem vínculo com cliente.
+export async function listarUploadsWhatsapp() {
+  const { data, error } = await supabase
+    .from('documentos_whatsapp')
+    .select('*')
+    .order('created_at', { ascending: false })
+    .limit(200);
+  if (error) throw error;
+  return data;
+}
+
 export async function excluirDocumento(id) {
   const { data: doc, error: errBusca } = await supabase.from('documentos').select('storage_path').eq('id', id).single();
   if (errBusca) throw errBusca;

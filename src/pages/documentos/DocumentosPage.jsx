@@ -1,10 +1,10 @@
 import { useState, useEffect, useMemo } from 'react'
-import { PaperclipIcon, UploadCloudIcon, CheckCircle2Icon, Loader2Icon, FileIcon, Share2Icon, DownloadIcon } from 'lucide-react'
+import { PaperclipIcon, UploadCloudIcon, CheckCircle2Icon, Loader2Icon, FileIcon, Share2Icon, DownloadIcon, MessageCircleIcon, ExternalLinkIcon } from 'lucide-react'
 import { useStore } from '../../store'
 import { useToast } from '../../components/shared'
 import {
   uploadArquivo, listarCandidatos, criarDocumento, confirmarDocumento,
-  listarDocumentosConfirmados, criarLinkAssinado, itemResolvido,
+  listarDocumentosConfirmados, criarLinkAssinado, itemResolvido, listarUploadsWhatsapp,
 } from './documentosApi'
 
 const ACCEPT = '.pdf,.jpg,.jpeg,.png,.webp,application/pdf,image/jpeg,image/png,image/webp'
@@ -141,12 +141,14 @@ export default function DocumentosPage() {
         </div>
       </div>
 
-      <div className="tabs" style={{ maxWidth: 320 }}>
+      <div className="tabs" style={{ maxWidth: 460 }}>
         <button className={`tab-btn ${aba === 'enviar' ? 'active' : ''}`} onClick={() => setAba('enviar')}>Enviar</button>
         <button className={`tab-btn ${aba === 'concluidos' ? 'active' : ''}`} onClick={() => setAba('concluidos')}>Concluídos</button>
+        <button className={`tab-btn ${aba === 'whatsapp' ? 'active' : ''}`} onClick={() => setAba('whatsapp')}>WhatsApp → Drive</button>
       </div>
 
       {aba === 'concluidos' && <AbaConcluidos />}
+      {aba === 'whatsapp' && <AbaWhatsapp />}
 
       {aba === 'enviar' && <>
       <div
@@ -310,6 +312,56 @@ function AbaConcluidos() {
           <button className="btn btn-ghost btn-sm" onClick={() => compartilhar(doc)} title="Compartilhar via WhatsApp">
             <Share2Icon size={13} /> Compartilhar
           </button>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+// ── Aba WhatsApp → Drive ─────────────────────────────────────────────────────
+// Histórico dos arquivos enviados no grupo "Documentos" do WhatsApp e
+// subidos automaticamente pro Google Drive (netlify/functions/whatsapp-webhook.js).
+// Sistema separado do fluxo de upload manual acima — só consulta, sem ações.
+function AbaWhatsapp() {
+  const [uploads, setUploads] = useState(null) // null = carregando
+  const [erro, setErro] = useState(null)
+
+  useEffect(() => {
+    listarUploadsWhatsapp().then(setUploads).catch((e) => setErro(e.message))
+  }, [])
+
+  const formatarData = (iso) => new Date(iso).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })
+
+  if (erro) return <p style={{ color: 'var(--danger)', fontSize: 13 }}>{erro}</p>
+  if (!uploads) return <p style={{ color: 'var(--text3)', fontSize: 13 }}>Carregando...</p>
+  if (uploads.length === 0) return (
+    <div className="empty">
+      <p>💬</p>
+      Nenhum arquivo enviado pelo grupo "Documentos" do WhatsApp ainda.
+    </div>
+  )
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+      <p style={{ fontSize: 12, color: 'var(--text3)' }}>
+        Todo arquivo enviado no grupo "Documentos" do WhatsApp sobe automaticamente pro Google Drive. Aqui é só o histórico — não tem vínculo com empresas/obrigações.
+      </p>
+      {uploads.map((up) => (
+        <div key={up.id} style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)', padding: '12px 14px', display: 'flex', alignItems: 'center', gap: 12 }}>
+          <MessageCircleIcon size={16} color="var(--text3)" style={{ flexShrink: 0 }} />
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text1)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {up.nome_arquivo}
+            </div>
+            <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 2 }}>
+              {formatarData(up.created_at)}{up.remetente && <> · {up.remetente}</>}
+            </div>
+          </div>
+          {up.drive_link && (
+            <a className="btn btn-ghost btn-sm" href={up.drive_link} target="_blank" rel="noreferrer" title="Abrir no Google Drive">
+              <ExternalLinkIcon size={13} /> Abrir no Drive
+            </a>
+          )}
         </div>
       ))}
     </div>

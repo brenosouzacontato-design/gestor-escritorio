@@ -103,6 +103,17 @@ async function processarDocumento(body, midia, remoteJid) {
 
     const arquivo = await uploadArquivo({ nomeArquivo, mimeType, base64, folderId: DRIVE_FOLDER_ID })
     console.log('Arquivo salvo no Drive:', arquivo.id, arquivo.name)
+
+    const remetente = body?.data?.key?.participant || body?.data?.pushName || remoteJid
+    const { error: errLog } = await supabase.from('documentos_whatsapp').insert({
+      nome_arquivo: arquivo.name,
+      mime_type: mimeType,
+      remetente,
+      drive_file_id: arquivo.id,
+      drive_link: arquivo.webViewLink || null,
+    })
+    if (errLog) console.error('Erro ao gravar log do upload:', errLog.message)
+
     await enviarMensagem(remoteJid, `✅ *Documento salvo no Drive!*\n📄 ${arquivo.name}`)
     return { statusCode: 200, body: JSON.stringify({ success: true, driveFileId: arquivo.id, nome: arquivo.name }) }
   } catch (e) {
