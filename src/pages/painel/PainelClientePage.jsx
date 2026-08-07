@@ -5,6 +5,7 @@ import {
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { listarLancamentosAIdentificar, salvarObservacaoCliente } from '../contabil/contabilApi';
+import LancamentosAgrupados from '../contabil/LancamentosAgrupados';
 import { criarLinkAssinado } from '../documentos/documentosApi';
 import {
   obterResumoObrigacoes, obterResumoTarefas, obterResumoFinanceiro, obterDadosGerenciais,
@@ -288,9 +289,7 @@ export default function PainelClientePage({ clienteId, competencia }) {
                   <p style={{ fontSize: 12, color: 'var(--text2)', marginBottom: 10 }}>
                     Escreva embaixo de cada lançamento o que foi essa movimentação — a resposta salva sozinha ao sair do campo.
                   </p>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                    {lancamentos.map((l) => <LinhaIdentificar key={l.id} lancamento={l} />)}
-                  </div>
+                  <LancamentosAgrupados lancamentos={lancamentos} LinhaComponent={LinhaIdentificar} />
                 </div>
               )}
 

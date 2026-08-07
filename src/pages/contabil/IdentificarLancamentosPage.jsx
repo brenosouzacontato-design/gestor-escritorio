@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { supabase } from '../../lib/supabase';
 import { listarLancamentosAIdentificar, salvarObservacaoCliente } from './contabilApi';
+import LancamentosAgrupados from './LancamentosAgrupados';
 
 function fmt(v) {
   return v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
@@ -70,11 +71,9 @@ export default function IdentificarLancamentosPage({ empresaId, dataInicio, data
             </p>
           )}
 
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-            {lancamentos.map((l) => (
-              <LinhaIdentificar key={l.id} lancamento={l} />
-            ))}
-          </div>
+          {lancamentos.length > 0 && (
+            <LancamentosAgrupados lancamentos={lancamentos} LinhaComponent={LinhaIdentificar} />
+          )}
         </div>
 
         <div style={{ padding: '12px 24px', borderTop: '1px solid var(--border)', fontSize: 11, color: 'var(--text3)' }}>
