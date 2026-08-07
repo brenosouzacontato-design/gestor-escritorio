@@ -157,7 +157,38 @@ export async function uploadDeclaracaoSimples(arquivo, competenciaFallback, { cl
     .select()
     .single();
   if (error) throw error;
-  return { ...data, clienteDetectado: !clienteId };
+
+  const historicoPreenchido = extraido.historicoReceita?.length > 0
+    ? await backfillHistoricoFaturamento(clienteFinal, competencia, extraido.historicoReceita).catch(() => 0)
+    : 0;
+
+  return { ...data, clienteDetectado: !clienteId, historicoPreenchido };
+}
+
+// Preenche automaticamente competências anteriores que ainda não têm
+// registro, usando a tabela de receita mês a mês (RBT12) que já vem
+// dentro da própria declaração — assim o gráfico de evolução do painel
+// já nasce com histórico desde o primeiro envio, sem precisar perguntar
+// se "é a primeira declaração". `ignoreDuplicates` garante que uma
+// competência que já tem dados gravados (upload anterior, mais completo)
+// nunca é sobrescrita por essa carga automática.
+async function backfillHistoricoFaturamento(clienteId, competenciaAtual, historico) {
+  const linhas = historico
+    .filter((h) => h.competencia && h.competencia !== competenciaAtual && h.faturamento != null)
+    .map((h) => ({
+      cliente_id: clienteId,
+      competencia: h.competencia,
+      faturamento_periodo: h.faturamento,
+      observacao_ia: `Preenchido automaticamente a partir do histórico de RBT12 da declaração de ${competenciaAtual}.`,
+    }));
+  if (linhas.length === 0) return 0;
+
+  const { data, error } = await supabase
+    .from('dados_gerenciais_simples')
+    .upsert(linhas, { onConflict: 'cliente_id,competencia', ignoreDuplicates: true })
+    .select();
+  if (error) throw error;
+  return data?.length || 0;
 }
 
 export async function obterDadosGerenciais(clienteId, competencia) {

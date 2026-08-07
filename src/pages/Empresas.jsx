@@ -251,7 +251,7 @@ export default function Empresas({ onOpenTarefas, clienteInicialId, onClienteIni
     setEnviandoDeclaracao(true)
     try {
       const salvo = await uploadDeclaracaoSimples(arquivo, compSel, { clienteId: cliente.id })
-      show?.(`Declaração processada — competência ${salvo.competencia}${salvo.faturamento_periodo ? `, faturamento R$ ${Number(salvo.faturamento_periodo).toLocaleString('pt-BR')}` : ''}`)
+      show?.(`Declaração processada — competência ${salvo.competencia}${salvo.faturamento_periodo ? `, faturamento R$ ${Number(salvo.faturamento_periodo).toLocaleString('pt-BR')}` : ''}${salvo.historicoPreenchido > 0 ? ` · +${salvo.historicoPreenchido} mês${salvo.historicoPreenchido !== 1 ? 'es' : ''} anterior${salvo.historicoPreenchido !== 1 ? 'es' : ''} preenchido${salvo.historicoPreenchido !== 1 ? 's' : ''}` : ''}`)
     } catch (e) {
       show?.('Erro ao processar declaração: ' + e.message)
     }
@@ -305,7 +305,8 @@ export default function Empresas({ onOpenTarefas, clienteInicialId, onClienteIni
     try {
       const salvo = await uploadDeclaracaoSimples(arquivo, compSel, { clientes: clientesParaDetectar })
       const cliente = aoDetectarEmpresa(salvo)
-      show?.(cliente ? `Empresa identificada: ${cliente.nome} — declaração processada` : 'Declaração processada')
+      const sufixoHistorico = salvo.historicoPreenchido > 0 ? ` · +${salvo.historicoPreenchido} mês${salvo.historicoPreenchido !== 1 ? 'es' : ''} anterior${salvo.historicoPreenchido !== 1 ? 'es' : ''} preenchido${salvo.historicoPreenchido !== 1 ? 's' : ''}` : ''
+      show?.((cliente ? `Empresa identificada: ${cliente.nome} — declaração processada` : 'Declaração processada') + sufixoHistorico)
     } catch (e) {
       show?.('Erro: ' + e.message)
     }

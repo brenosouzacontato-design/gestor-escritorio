@@ -19,6 +19,7 @@
 //   { competencia: "MM/YYYY"|null, faturamentoPeriodo: number|null, rbt12: number|null,
 //     aliquotaEfetiva: number|null, valorDas: number|null, anexo: string|null,
 //     receitaPorTipo: [{tipo: 'normal'|'st'|'monofasico', valor: number}],
+//     historicoReceita: [{competencia: "MM/YYYY", faturamento: number}],
 //     clienteId: string|null, observacao: string }
 
 const ANTHROPIC_API_URL = 'https://api.anthropic.com/v1/messages';
@@ -28,7 +29,7 @@ function montarSystemPrompt(temClientes) {
   return `Você é um assistente contábil brasileiro. Recebe uma Declaração do Simples Nacional (PGDAS-D ou extrato/relatório de apuração) e extrai os números gerenciais principais dela.${temClientes ? ' Também recebe uma lista de clientes cadastrados e precisa identificar de qual cliente da lista é o documento.' : ''}
 
 Devolva APENAS um JSON, sem texto antes ou depois, sem markdown e sem crases, no formato exato:
-{"competencia":"MM/YYYY ou null","faturamentoPeriodo":number|null,"rbt12":number|null,"aliquotaEfetiva":number|null,"valorDas":number|null,"anexo":"string ou null","receitaPorTipo":[{"tipo":"normal"|"st"|"monofasico","valor":number}]${temClientes ? ',"clienteId":"id da lista ou null"' : ''},"observacao":"string curta"}
+{"competencia":"MM/YYYY ou null","faturamentoPeriodo":number|null,"rbt12":number|null,"aliquotaEfetiva":number|null,"valorDas":number|null,"anexo":"string ou null","receitaPorTipo":[{"tipo":"normal"|"st"|"monofasico","valor":number}],"historicoReceita":[{"competencia":"MM/YYYY","faturamento":number}]${temClientes ? ',"clienteId":"id da lista ou null"' : ''},"observacao":"string curta"}
 
 Regras:
 - "competencia": o período de apuração do documento, formato MM/YYYY.
@@ -37,7 +38,8 @@ Regras:
 - "aliquotaEfetiva": alíquota efetiva resultante, em percentual (ex: 6.5 pra 6,5%), calculada sobre o total da competência.
 - "valorDas": valor total do DAS apurado/devido naquela competência.
 - "anexo": o anexo do Simples Nacional em que a atividade está enquadrada (ex: "I", "II", "III", "IV", "V"), se identificável.
-- "receitaPorTipo": se a declaração mostrar o faturamento segregado por tipo de receita (normal, com Substituição Tributária/ST, monofásico — comum em empresas de comércio/indústria com produtos sujeitos a esses regimes), devolva um item por tipo presente, com o valor de cada um. Se a declaração NÃO segregar por tipo (a maioria dos casos), devolva array vazio — não invente uma quebra que não está no documento.${temClientes ? '\n- "clienteId": só preencha se o nome ou CNPJ do documento bater com um item da lista de clientes. Se não tiver certeza, null — não invente.' : ''}
+- "receitaPorTipo": se a declaração mostrar o faturamento segregado por tipo de receita (normal, com Substituição Tributária/ST, monofásico — comum em empresas de comércio/indústria com produtos sujeitos a esses regimes), devolva um item por tipo presente, com o valor de cada um. Se a declaração NÃO segregar por tipo (a maioria dos casos), devolva array vazio — não invente uma quebra que não está no documento.
+- "historicoReceita": declarações do Simples Nacional (PGDAS-D) costumam trazer uma tabela com a receita bruta mês a mês dos últimos 12 períodos, usada no cálculo do RBT12. Se essa tabela existir no documento, devolva cada linha dela (competência + faturamento daquele mês). Se não houver essa tabela detalhada, array vazio — não invente valores de meses que não estão explícitos no documento.${temClientes ? '\n- "clienteId": só preencha se o nome ou CNPJ do documento bater com um item da lista de clientes. Se não tiver certeza, null — não invente.' : ''}
 - "observacao": uma frase curta com qualquer ressalva (ex: "documento parece ser só um resumo, RBT12 não veio explícito").
 - Se não conseguir identificar um valor com confiança, use null pra ele — não invente números.
 - Se o PDF não parecer uma declaração/apuração do Simples Nacional, devolva todos os campos numéricos como null, receitaPorTipo vazio, e explique em "observacao".`;
@@ -135,6 +137,7 @@ exports.handler = async (event) => {
       valorDas: extraido.valorDas ?? null,
       anexo: extraido.anexo || null,
       receitaPorTipo: Array.isArray(extraido.receitaPorTipo) ? extraido.receitaPorTipo : [],
+      historicoReceita: Array.isArray(extraido.historicoReceita) ? extraido.historicoReceita : [],
       clienteId: temClientes ? (extraido.clienteId || null) : null,
       observacao: extraido.observacao || '',
     });
