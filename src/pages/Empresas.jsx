@@ -74,15 +74,22 @@ const AVATAR_COLORS = [
   ['#1a2a1a','#86efac'],['#1e2a2a','#67e8f9'],['#2a1a1a','#fca5a5'],
 ]
 
-function DeptPill({ data, onClick }) {
+// `titulo` é opcional — usado na visão de cards (que não tem cabeçalho de
+// coluna como a tabela) pra identificar de qual módulo é cada pill.
+function DeptPill({ data, onClick, titulo, icone }) {
   const Icon = S_ICON[data.s]
   return (
     <div onClick={e => { e.stopPropagation(); onClick() }}
-      style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:5, padding:'9px 10px',
+      style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:4, padding:'8px 10px',
         borderRadius:10, background:S_BG[data.s], border:'1px solid transparent',
         cursor:'pointer', minWidth:88, transition:'border-color .12s' }}
       onMouseEnter={e => e.currentTarget.style.borderColor='var(--accent)'}
       onMouseLeave={e => e.currentTarget.style.borderColor='transparent'}>
+      {titulo && (
+        <span style={{ fontSize:9.5, color:'var(--text3)', fontWeight:700, textTransform:'uppercase', letterSpacing:.3, display:'flex', alignItems:'center', gap:3 }}>
+          {icone && <span style={{ fontSize:11 }}>{icone}</span>} {titulo}
+        </span>
+      )}
       <div style={{ display:'flex', alignItems:'center', gap:6 }}>
         {Icon && <Icon size={16} color={S_COLOR[data.s]} />}
         <span style={{ fontSize:15, fontWeight:700, color:S_COLOR[data.s] }}>
@@ -95,6 +102,18 @@ function DeptPill({ data, onClick }) {
       <span style={{ fontSize:11, color:'var(--text3)', fontWeight:600 }}>{data.val}</span>
     </div>
   )
+}
+
+// CND (Certidão Negativa de Débitos) — módulo virtual nos cards, não é um
+// departamento de verdade: deriva direto da Situação Fiscal (RFB) já
+// enviada pra essa competência. Situação "regular" = tem CND; "pendente"
+// = não tem; sem relatório enviado ainda = vazio, igual os outros módulos
+// sem dado.
+function getStatusCND(situacaoFiscal) {
+  if (!situacaoFiscal) return { s:'empty', pct:0, val:'—' }
+  if (situacaoFiscal.situacao_geral === 'regular') return { s:'ok', pct:100, val:'Com CND' }
+  if (situacaoFiscal.situacao_geral === 'pendente') return { s:'danger', pct:0, val:'Sem CND' }
+  return { s:'empty', pct:0, val:'—' }
 }
 
 export default function Empresas({ onOpenTarefas, clienteInicialId, onClienteInicialConsumido }) {
@@ -139,6 +158,17 @@ export default function Empresas({ onOpenTarefas, clienteInicialId, onClienteIni
 
   const carregarDepartamentos = () => listarDepartamentos().then(setDepartamentos).catch(() => {})
   useEffect(() => { carregarDepartamentos() }, [])
+
+  // Situação Fiscal (RFB) de todas as empresas nessa competência — alimenta
+  // o módulo virtual "CND" nos cards (não é uma tabela nova de verdade, é
+  // deduzido de situacao_fiscal_rfb, ver getStatusCND). Tolera a tabela
+  // ainda não existir (schema pendente de aplicar), igual o resto do app.
+  const [situacoesFiscais, setSituacoesFiscais] = useState({}) // cliente_id -> row
+  useEffect(() => {
+    supabase.from('situacao_fiscal_rfb').select('cliente_id, situacao_geral').eq('competencia', compSel)
+      .then(({ data }) => setSituacoesFiscais(Object.fromEntries((data || []).map((r) => [r.cliente_id, r]))))
+      .catch(() => setSituacoesFiscais({}))
+  }, [compSel])
 
   const carteiras = useMemo(() => {
     const s = new Set(clientes.map(c => c.carteira).filter(Boolean))
@@ -605,7 +635,7 @@ export default function Empresas({ onOpenTarefas, clienteInicialId, onClienteIni
             {rows.length === 0 && (
               <div style={{ padding:40, textAlign:'center', color:'var(--text3)', fontSize:13 }}>Nenhuma empresa encontrada</div>
             )}
-            <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(230px, 1fr))', gap:12 }}>
+            <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(280px, 1fr))', gap:12 }}>
               {rowsCards.map(({ c, deptData }, ri) => {
                 const [bg, tc] = AVATAR_COLORS[ri % AVATAR_COLORS.length]
                 const initials = c.nome.split(' ').slice(0,2).map(w=>w[0]).join('').toUpperCase()
@@ -644,7 +674,7 @@ export default function Empresas({ onOpenTarefas, clienteInicialId, onClienteIni
                         {initials}
                       </div>
                       <div style={{ minWidth:0, flex:1 }}>
-                        <div style={{ fontSize:13, fontWeight:600, color:'var(--text1)', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{c.nome}</div>
+                        <div style={{ fontSize:13, fontWeight:600, color:'var(--text1)', wordBreak:'break-word' }}>{c.nome}</div>
                         <div style={{ fontSize:10, color:'var(--text3)' }}>{c.regime||'SN'}</div>
                       </div>
                       {S_ICON[resS] && (() => { const Icon = S_ICON[resS]; return <Icon size={16} color={S_COLOR[resS]} /> })()}
@@ -668,14 +698,12 @@ export default function Empresas({ onOpenTarefas, clienteInicialId, onClienteIni
                       </div>
                     )}
 
-                    <div style={{ display:'flex', gap:5, flexWrap:'wrap', marginBottom:10 }}>
+                    <div style={{ display:'flex', gap:6, flexWrap:'wrap', marginBottom:10 }}>
                       {departamentos.map(d => (
-                        <span key={d.id} title={`${d.nome}: ${deptData[d.id]?.val || '—'}`}
-                          style={{ width:22, height:22, borderRadius:6, display:'flex', alignItems:'center', justifyContent:'center',
-                            fontSize:11, background:completo?'rgba(255,255,255,.5)':S_BG[deptData[d.id]?.s || 'empty'], flexShrink:0 }}>
-                          {d.icone || '📋'}
-                        </span>
+                        <DeptPill key={d.id} data={deptData[d.id] || { s:'empty', pct:0, val:'—' }}
+                          onClick={() => openDrawer(c, d)} titulo={d.nome} icone={d.icone || '📋'} />
                       ))}
+                      <DeptPill data={getStatusCND(situacoesFiscais[c.id])} onClick={() => openDrawer(c, null)} titulo="CND" icone="🛡️" />
                     </div>
 
                     <button onClick={(e) => { e.stopPropagation(); onOpenTarefas?.(c.id) }}
