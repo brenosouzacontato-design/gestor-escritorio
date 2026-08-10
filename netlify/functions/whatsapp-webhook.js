@@ -1,6 +1,9 @@
+const crypto = require('crypto')
 const { createClient } = require('@supabase/supabase-js')
 const { uploadArquivo } = require('./lib/googleDrive')
 const { enviarMensagem } = require('./lib/whatsapp')
+const { identificarDocumento } = require('./lib/identificarDocumento')
+const { listarCandidatosDocumento } = require('./lib/candidatosDocumento')
 
 const supabase = createClient(
   process.env.SUPABASE_URL,
@@ -103,7 +106,50 @@ async function processarDocumento(body, midia, remoteJid) {
     })
     if (errLog) console.error('Erro ao gravar log do upload:', errLog.message)
 
-    await enviarMensagem(remoteJid, `✅ *Documento salvo no Drive!*\n📄 ${arquivo.name}`)
+    // Identificação automática (IA) + fila de revisão — mesmo pipeline do
+    // upload manual (DocumentosPage.jsx), só que persistido direto (aba "A
+    // revisar"), já que aqui não tem ninguém na tela pra confirmar na hora.
+    // Só SUGERE: a baixa de fato só acontece quando alguém confirma no
+    // sistema — nunca automático.
+    let mensagemIdentificacao = '\n\n⚠️ Não consegui rodar a identificação automática — revise manualmente no sistema.'
+    try {
+      const candidatos = await listarCandidatosDocumento(supabase)
+      const sugestao = await identificarDocumento({ arquivoBase64: base64, filename: nomeArquivo, mimeType, candidatos, apiKey: ANTHROPIC_KEY })
+      const candidato = sugestao.candidatoId ? candidatos.find((c) => c.id === sugestao.candidatoId) : null
+
+      const storagePath = `${crypto.randomUUID()}.${EXTENSAO_POR_MIME[mimeType] || 'bin'}`
+      const { error: errStorage } = await supabase.storage
+        .from('documentos')
+        .upload(storagePath, Buffer.from(base64, 'base64'), { contentType: mimeType })
+      if (errStorage) throw errStorage
+
+      const { error: errDoc } = await supabase.from('documentos').insert({
+        cliente_id: sugestao.clienteId || null,
+        nome_arquivo: nomeArquivo,
+        storage_path: storagePath,
+        tipo_mime: mimeType,
+        tamanho_bytes: Buffer.byteLength(base64, 'base64'),
+        tipo_documento_sugerido: sugestao.tipoDocumento,
+        confianca: sugestao.confianca,
+        observacao_ia: sugestao.observacao,
+        candidato_sugerido_id: candidato?.id || null,
+        candidato_sugerido_tipo: candidato?.tipo || null,
+        status: sugestao.candidatoId ? 'identificado' : 'sem_match',
+      })
+      if (errDoc) throw errDoc
+
+      mensagemIdentificacao = `\n\n🔎 ${sugestao.tipoDocumento}` + (
+        candidato
+          ? `\n👤 ${candidato.clienteNome} — ${candidato.rotulo}\nRevise e confirme em Documentos → A revisar.`
+          : sugestao.clienteId
+            ? `\n👤 Cliente identificado, mas sem correspondência clara. Revise em Documentos → A revisar.`
+            : '\n⚠️ Não identifiquei o cliente. Revise em Documentos → A revisar.'
+      )
+    } catch (eIdent) {
+      console.error('Erro ao identificar documento:', eIdent.message)
+    }
+
+    await enviarMensagem(remoteJid, `✅ *Documento salvo no Drive!*\n📄 ${arquivo.name}${mensagemIdentificacao}`)
     return { statusCode: 200, body: JSON.stringify({ success: true, driveFileId: arquivo.id, nome: arquivo.name }) }
   } catch (e) {
     console.error('Erro ao processar documento:', e.message)

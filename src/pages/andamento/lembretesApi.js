@@ -51,3 +51,46 @@ export async function excluirLembrete(id) {
   const { error } = await supabase.from('lembretes').delete().eq('id', id);
   if (error) throw error;
 }
+
+export async function atualizarLembrete(id, { dataHora, mensagem }) {
+  const { error } = await supabase
+    .from('lembretes')
+    .update({ data_hora: dataHora, mensagem: mensagem || null })
+    .eq('id', id);
+  if (error) throw error;
+}
+
+export async function marcarLembreteEnviado(id, enviado = true) {
+  const { error } = await supabase
+    .from('lembretes')
+    .update({ enviado, enviado_em: enviado ? new Date().toISOString() : null })
+    .eq('id', id);
+  if (error) throw error;
+}
+
+// Todos os lembretes de todos os clientes, com o nome do cliente e o
+// título do item (obrigação ou tarefa) já resolvidos — alimenta a tela
+// Notificacoes.jsx (visão tipo lista/planilha, com interações direto na
+// linha). Um lembrete só tem um dos dois vínculos preenchido por vez (ver
+// constraint lembretes_um_item), por isso os dois embeds abaixo são
+// sempre um "left join" implícito do PostgREST.
+export async function listarTodosLembretes() {
+  const { data, error } = await supabase
+    .from('lembretes')
+    .select('*, obrigacoes(titulo, cliente_id, clientes(nome)), tarefas(titulo, cliente_id, clientes(nome))')
+    .order('data_hora', { ascending: false });
+  if (error) throw error;
+  return data.map((l) => {
+    const item = l.obrigacoes || l.tarefas;
+    return {
+      id: l.id,
+      tipo: l.obrigacao_id ? 'obrigacao' : 'tarefa',
+      dataHora: l.data_hora,
+      mensagem: l.mensagem,
+      enviado: l.enviado,
+      enviadoEm: l.enviado_em,
+      itemTitulo: item?.titulo || '—',
+      clienteNome: item?.clientes?.nome || '—',
+    };
+  });
+}

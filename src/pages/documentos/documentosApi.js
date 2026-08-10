@@ -121,6 +121,21 @@ export async function listarDocumentosPorCliente(clienteId) {
   return data;
 }
 
+// Documentos ainda não confirmados, com a sugestão da IA já resolvida —
+// alimenta a aba "A revisar" de DocumentosPage.jsx. Cobre tanto o upload
+// manual quanto os que chegam pelo grupo "Documentos" do WhatsApp
+// (whatsapp-webhook.js insere direto nessa mesma tabela, com o mesmo
+// contrato de status usado aqui).
+export async function listarDocumentosPendentes() {
+  const { data, error } = await supabase
+    .from('documentos')
+    .select('*, clientes(nome)')
+    .in('status', ['pendente_analise', 'identificado', 'sem_match'])
+    .order('created_at', { ascending: false });
+  if (error) throw error;
+  return data;
+}
+
 export async function listarDocumentosConfirmados() {
   const { data, error } = await supabase
     .from('documentos')

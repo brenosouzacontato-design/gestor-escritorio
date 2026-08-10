@@ -1,10 +1,11 @@
 import { useState, useEffect, useMemo } from 'react'
-import { PaperclipIcon, UploadCloudIcon, CheckCircle2Icon, Loader2Icon, FileIcon, Share2Icon, DownloadIcon, MessageCircleIcon, ExternalLinkIcon } from 'lucide-react'
+import { PaperclipIcon, UploadCloudIcon, CheckCircle2Icon, Loader2Icon, FileIcon, Share2Icon, DownloadIcon, MessageCircleIcon, ExternalLinkIcon, SearchCheckIcon, Trash2Icon, ArchiveIcon } from 'lucide-react'
 import { useStore } from '../../store'
 import { useToast } from '../../components/shared'
 import {
   uploadArquivo, listarCandidatos, criarDocumento, confirmarDocumento,
-  listarDocumentosConfirmados, criarLinkAssinado, itemResolvido, listarUploadsWhatsapp,
+  listarDocumentosConfirmados, listarDocumentosPendentes, excluirDocumento,
+  criarLinkAssinado, itemResolvido, listarUploadsWhatsapp,
 } from './documentosApi'
 
 const ACCEPT = '.pdf,.jpg,.jpeg,.png,.webp,application/pdf,image/jpeg,image/png,image/webp'
@@ -141,12 +142,14 @@ export default function DocumentosPage() {
         </div>
       </div>
 
-      <div className="tabs" style={{ maxWidth: 460 }}>
+      <div className="tabs" style={{ maxWidth: 560 }}>
         <button className={`tab-btn ${aba === 'enviar' ? 'active' : ''}`} onClick={() => setAba('enviar')}>Enviar</button>
+        <button className={`tab-btn ${aba === 'revisar' ? 'active' : ''}`} onClick={() => setAba('revisar')}>A revisar</button>
         <button className={`tab-btn ${aba === 'concluidos' ? 'active' : ''}`} onClick={() => setAba('concluidos')}>Concluídos</button>
         <button className={`tab-btn ${aba === 'whatsapp' ? 'active' : ''}`} onClick={() => setAba('whatsapp')}>WhatsApp → Drive</button>
       </div>
 
+      {aba === 'revisar' && <AbaRevisar />}
       {aba === 'concluidos' && <AbaConcluidos />}
       {aba === 'whatsapp' && <AbaWhatsapp />}
 
@@ -253,6 +256,155 @@ export default function DocumentosPage() {
       </>}
 
       <style>{'@keyframes spin { to { transform: rotate(360deg); } }'}</style>
+    </div>
+  )
+}
+
+// ── Aba A revisar ────────────────────────────────────────────────────────────
+// Documentos com status pendente_analise/identificado/sem_match — fila que
+// sobrevive além da sessão de upload (diferente dos itens da aba Enviar,
+// que só existem em estado local do browser). Alimentada tanto pelo upload
+// manual (se alguém sair antes de confirmar) quanto, principalmente, pelos
+// documentos que chegam pelo grupo "Documentos" do WhatsApp
+// (whatsapp-webhook.js), que não têm ninguém na tela pra confirmar na hora.
+function AbaRevisar() {
+  const clientes = useStore((s) => s.clientes)
+  const fetchObrigacoes = useStore((s) => s.fetchObrigacoes)
+  const fetchTarefas = useStore((s) => s.fetchTarefas)
+  const { show } = useToast()
+
+  const [docs, setDocs] = useState(null) // null = carregando
+  const [candidatos, setCandidatos] = useState([])
+  const [erro, setErro] = useState(null)
+  const [selecoes, setSelecoes] = useState({}) // { [docId]: { clienteId, candidatoId } }
+  const [processando, setProcessando] = useState(null) // id do doc em confirmação/exclusão
+
+  const carregar = () => {
+    Promise.all([listarDocumentosPendentes(), listarCandidatos()])
+      .then(([pendentes, cands]) => {
+        setDocs(pendentes)
+        setCandidatos(cands)
+        setSelecoes(Object.fromEntries(pendentes.map((d) => [d.id, {
+          clienteId: d.cliente_id || '',
+          candidatoId: d.candidato_sugerido_id || '',
+        }])))
+      })
+      .catch((e) => setErro(e.message))
+  }
+  useEffect(() => { carregar() }, [])
+
+  const atualizarSelecao = (docId, campo, valor) => {
+    setSelecoes((prev) => ({
+      ...prev,
+      [docId]: { ...prev[docId], [campo]: valor, ...(campo === 'clienteId' ? { candidatoId: '' } : {}) },
+    }))
+  }
+
+  const baixar = async (doc) => {
+    try {
+      const url = await criarLinkAssinado(doc.storage_path)
+      window.open(url, '_blank')
+    } catch (e) {
+      show?.('Erro ao gerar link: ' + e.message)
+    }
+  }
+
+  const confirmar = async (doc) => {
+    const sel = selecoes[doc.id] || {}
+    setProcessando(doc.id)
+    try {
+      const candidato = sel.candidatoId ? candidatos.find((c) => c.id === sel.candidatoId) : null
+      await confirmarDocumento(doc.id, { clienteId: sel.clienteId || null, candidato })
+      setDocs((prev) => prev.filter((d) => d.id !== doc.id))
+      await Promise.all([fetchObrigacoes(), fetchTarefas(), listarCandidatos().then(setCandidatos)])
+      show?.(candidato ? 'Documento confirmado — baixa aplicada.' : 'Documento confirmado, sem baixa (arquivado).')
+    } catch (e) {
+      show?.('Erro ao confirmar: ' + e.message)
+    } finally {
+      setProcessando(null)
+    }
+  }
+
+  const excluir = async (doc) => {
+    if (!window.confirm(`Excluir "${doc.nome_arquivo}"? Essa ação não pode ser desfeita.`)) return
+    setProcessando(doc.id)
+    try {
+      await excluirDocumento(doc.id)
+      setDocs((prev) => prev.filter((d) => d.id !== doc.id))
+      show?.('Documento excluído.')
+    } catch (e) {
+      show?.('Erro ao excluir: ' + e.message)
+    } finally {
+      setProcessando(null)
+    }
+  }
+
+  if (erro) return <p style={{ color: 'var(--danger)', fontSize: 13 }}>{erro}</p>
+  if (!docs) return <p style={{ color: 'var(--text3)', fontSize: 13 }}>Carregando...</p>
+  if (docs.length === 0) return (
+    <div className="empty">
+      <p>🔎</p>
+      Nenhum documento aguardando revisão.
+    </div>
+  )
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+      <p style={{ fontSize: 12, color: 'var(--text3)' }}>
+        Documentos identificados automaticamente (upload manual não confirmado, ou chegados pelo grupo "Documentos" do WhatsApp) — confira a sugestão da IA e confirme pra dar baixa.
+      </p>
+      {docs.map((doc) => {
+        const sel = selecoes[doc.id] || { clienteId: '', candidatoId: '' }
+        return (
+          <div key={doc.id} style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)', padding: '12px 14px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
+              <FileIcon size={16} color="var(--text3)" style={{ flexShrink: 0 }} />
+              <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text1)', flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {doc.tipo_documento_sugerido || doc.nome_arquivo}
+              </span>
+              {doc.confianca && <span className={`badge ${CONFIANCA_BADGE[doc.confianca] || 'badge-gray'}`}>{doc.confianca}</span>}
+              <button className="btn btn-ghost btn-sm" onClick={() => baixar(doc)} title="Baixar arquivo original">
+                <DownloadIcon size={13} />
+              </button>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.6fr', gap: 8, alignItems: 'end', marginBottom: 8 }}>
+              <div>
+                <div style={{ fontSize: 10, color: 'var(--text3)', marginBottom: 3, textTransform: 'uppercase', letterSpacing: .4 }}>Empresa</div>
+                <select value={sel.clienteId} onChange={(e) => atualizarSelecao(doc.id, 'clienteId', e.target.value)}
+                  style={{ width: '100%', fontSize: 12, padding: '6px 8px' }}>
+                  <option value="">Não identificada</option>
+                  {clientes.map((c) => <option key={c.id} value={c.id}>{c.nome}</option>)}
+                </select>
+              </div>
+              <div>
+                <div style={{ fontSize: 10, color: 'var(--text3)', marginBottom: 3, textTransform: 'uppercase', letterSpacing: .4 }}>Dar baixa em</div>
+                <select value={sel.candidatoId} onChange={(e) => atualizarSelecao(doc.id, 'candidatoId', e.target.value)} disabled={!sel.clienteId}
+                  style={{ width: '100%', fontSize: 12, padding: '6px 8px', opacity: sel.clienteId ? 1 : .6 }}>
+                  <option value="">Nenhuma correspondência</option>
+                  {candidatos.filter((c) => c.clienteId === sel.clienteId).map((c) => (
+                    <option key={c.id} value={c.id}>{c.rotulo}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            {doc.observacao_ia && (
+              <div style={{ fontSize: 11, color: 'var(--text3)', marginBottom: 8, fontStyle: 'italic' }}>"{doc.observacao_ia}"</div>
+            )}
+
+            <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
+              <button className="btn btn-ghost btn-sm" onClick={() => excluir(doc)} disabled={processando === doc.id} title="Excluir sem arquivar">
+                <Trash2Icon size={13} color="var(--danger)" /> Excluir
+              </button>
+              <button className="btn btn-accent btn-sm" onClick={() => confirmar(doc)} disabled={processando === doc.id}>
+                {sel.candidatoId ? <SearchCheckIcon size={13} /> : <ArchiveIcon size={13} />}
+                {processando === doc.id ? 'Confirmando...' : sel.candidatoId ? 'Confirmar e dar baixa' : 'Confirmar (arquivar)'}
+              </button>
+            </div>
+          </div>
+        )
+      })}
     </div>
   )
 }

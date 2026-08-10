@@ -12,7 +12,7 @@ function fmtData(iso) {
 // aparece). `LinhaComponent` é o componente de linha de cada página (elas
 // têm um `LinhaIdentificar` quase idêntico, mas com estilos levemente
 // diferentes — não vale a pena unificar só por isso).
-export default function LancamentosAgrupados({ lancamentos, LinhaComponent }) {
+export default function LancamentosAgrupados({ lancamentos, LinhaComponent, onSaved }) {
   const [agrupado, setAgrupado] = useState(true)
   const [colapsados, setColapsados] = useState({})
 
@@ -38,7 +38,7 @@ export default function LancamentosAgrupados({ lancamentos, LinhaComponent }) {
 
       {!agrupado && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-          {lancamentos.map((l) => <LinhaComponent key={l.id} lancamento={l} />)}
+          {lancamentos.map((l) => <LinhaComponent key={l.id} lancamento={l} onSaved={onSaved} />)}
         </div>
       )}
 
@@ -56,7 +56,7 @@ export default function LancamentosAgrupados({ lancamentos, LinhaComponent }) {
             </button>
             {!colapsado && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 10, paddingLeft: 4 }}>
-                {itens.map((l) => <LinhaComponent key={l.id} lancamento={l} />)}
+                {itens.map((l) => <LinhaComponent key={l.id} lancamento={l} onSaved={onSaved} />)}
               </div>
             )}
           </div>

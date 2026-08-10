@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import {
   WalletIcon, ClipboardListIcon, CheckSquareIcon, PaperclipIcon, BarChart3Icon,
   SearchIcon, CalendarIcon, DownloadIcon, CheckCircleIcon, FileTextIcon, TrendingUpIcon, LayersIcon,
+  ChevronDownIcon, ChevronRightIcon,
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { listarLancamentosAIdentificar, salvarObservacaoCliente } from '../contabil/contabilApi';
@@ -119,6 +120,7 @@ export default function PainelClientePage({ clienteId, competencia }) {
   const [anexosObrigacao, setAnexosObrigacao] = useState({});
   const [carregando, setCarregando] = useState(true);
   const [erro, setErro] = useState(null);
+  const [concluidosAberto, setConcluidosAberto] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -235,47 +237,25 @@ export default function PainelClientePage({ clienteId, competencia }) {
                 </div>
 
                 {/* ── Aba Resumo ── */}
-                {abaAtiva === 'resumo' && (
+                {abaAtiva === 'resumo' && (() => {
+                  const obrigDas = obs.itens.find((o) => `${o.titulo || ''} ${o.tipo || ''}`.toLowerCase().includes('das'));
+                  const temValorDas = gerenciais?.valor_das != null && gerenciais.valor_das > 0;
+                  const itensTimeline = obs.itens
+                    .filter((o) => o.vencimento)
+                    .map((o) => ({
+                      id: o.id,
+                      titulo: o.titulo || o.tipo,
+                      departamento: o.departamentos?.nome,
+                      vencimento: o.vencimento,
+                      valor: temValorDas && obrigDas && o.id === obrigDas.id ? gerenciais.valor_das : null,
+                    }));
+                  const semData = [
+                    ...(temValorDas && !obrigDas ? [{ titulo: 'DAS — Simples Nacional', sub: 'Vencimento não cadastrado', valor: gerenciais.valor_das }] : []),
+                    ...(situacaoFiscal?.debitos || []).map((d) => ({ titulo: d.tributo, sub: d.situacao, valor: d.valor })),
+                  ];
+
+                  return (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
-
-                    <div>
-                      <SecaoTitulo icone={<LayersIcon size={14} />}>Módulos</SecaoTitulo>
-                      <div style={{ display: 'grid', gridTemplateColumns: `repeat(auto-fit, minmax(72px, 1fr))`, gap: 8 }}>
-                        {[...modulos, moduloCND(situacaoFiscal, cndManual)].map((m) => (
-                          <ModuloCard key={m.nome} {...m} onClick={() => setAba(m.nome === 'CND' ? 'cnd' : m.nome)} />
-                        ))}
-                      </div>
-                    </div>
-
-                    <div>
-                      <SecaoTitulo icone={<ClipboardListIcon size={14} />}>Visão geral do mês</SecaoTitulo>
-                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-                        <ResumoCard titulo="Obrigações" icone={<ClipboardListIcon size={13} />} pct={obs.total ? Math.round((obs.ok / obs.total) * 100) : 0}
-                          linha1={`${obs.ok}/${obs.total} concluídas`} alerta={obs.vencido > 0 ? `${obs.vencido} vencida${obs.vencido !== 1 ? 's' : ''}` : null} />
-                        <ResumoCard titulo="Tarefas" icone={<CheckSquareIcon size={13} />} pct={tarefas.total ? Math.round((tarefas.concluidas / tarefas.total) * 100) : 0}
-                          linha1={`${tarefas.concluidas}/${tarefas.total} concluídas`} alerta={null} />
-                      </div>
-                    </div>
-
-                    {((gerenciais?.valor_das != null && gerenciais.valor_das > 0) || situacaoFiscal?.debitos?.length > 0) && (() => {
-                      const obrigDas = obs.itens.find((o) => `${o.titulo || ''} ${o.tipo || ''}`.toLowerCase().includes('das'));
-                      const diasDas = obrigDas ? diasParaVencer(obrigDas.vencimento) : null;
-                      return (
-                        <div>
-                          <SecaoTitulo icone={<WalletIcon size={14} />}>Impostos a pagar</SecaoTitulo>
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                            {gerenciais?.valor_das != null && gerenciais.valor_das > 0 && (
-                              <ItemLista titulo="DAS — Simples Nacional" sub={fmt(gerenciais.valor_das)}
-                                vencimentoTexto={obrigDas?.vencimento ? `${fmtData(obrigDas.vencimento)} · ${fmtDiasParaVencer(diasDas)}` : null}
-                                vencimentoCor={diasDas != null && diasDas < 0 ? 'var(--danger)' : diasDas != null && diasDas <= 3 ? 'var(--warn)' : 'var(--text3)'} />
-                            )}
-                            {situacaoFiscal?.debitos?.map((d, i) => (
-                              <ItemLista key={i} titulo={d.tributo} sub={fmt(d.valor)} statusLabel={d.situacao} statusCor={['var(--warn)', 'var(--warn-dim)']} />
-                            ))}
-                          </div>
-                        </div>
-                      );
-                    })()}
 
                     {gerenciais && (
                       <div>
@@ -315,6 +295,42 @@ export default function PainelClientePage({ clienteId, competencia }) {
                       </div>
                     )}
 
+                    {(itensTimeline.length > 0 || semData.length > 0) && (
+                      <div>
+                        <SecaoTitulo icone={<CalendarIcon size={14} />}>Vencimentos do mês</SecaoTitulo>
+                        {itensTimeline.length > 0 && <LinhaDoTempoVencimentos itens={itensTimeline} />}
+                        {semData.length > 0 && (
+                          <div style={{ marginTop: itensTimeline.length > 0 ? 14 : 0 }}>
+                            <div style={{ fontSize: 10.5, color: 'var(--text3)', fontWeight: 600, marginBottom: 6 }}>Sem vencimento definido</div>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                              {semData.map((it, i) => (
+                                <ItemLista key={i} titulo={it.titulo} sub={it.sub} statusLabel={fmt(it.valor)} statusCor={['var(--warn)', 'var(--warn-dim)']} />
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    <div>
+                      <SecaoTitulo icone={<LayersIcon size={14} />}>Módulos</SecaoTitulo>
+                      <div style={{ display: 'grid', gridTemplateColumns: `repeat(auto-fit, minmax(72px, 1fr))`, gap: 8 }}>
+                        {[...modulos, moduloCND(situacaoFiscal, cndManual)].map((m) => (
+                          <ModuloCard key={m.nome} {...m} onClick={() => setAba(m.nome === 'CND' ? 'cnd' : m.nome)} />
+                        ))}
+                      </div>
+                    </div>
+
+                    <div>
+                      <SecaoTitulo icone={<ClipboardListIcon size={14} />}>Visão geral do mês</SecaoTitulo>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                        <ResumoCard titulo="Obrigações" icone={<ClipboardListIcon size={13} />} pct={obs.total ? Math.round((obs.ok / obs.total) * 100) : 0}
+                          linha1={`${obs.ok}/${obs.total} concluídas`} alerta={obs.vencido > 0 ? `${obs.vencido} vencida${obs.vencido !== 1 ? 's' : ''}` : null} />
+                        <ResumoCard titulo="Tarefas" icone={<CheckSquareIcon size={13} />} pct={tarefas.total ? Math.round((tarefas.concluidas / tarefas.total) * 100) : 0}
+                          linha1={`${tarefas.concluidas}/${tarefas.total} concluídas`} alerta={null} />
+                      </div>
+                    </div>
+
                     {documentos.length > 0 && (
                       <div>
                         <SecaoTitulo icone={<PaperclipIcon size={14} />}>Documentos do mês</SecaoTitulo>
@@ -337,7 +353,8 @@ export default function PainelClientePage({ clienteId, competencia }) {
                       </div>
                     </div>
                   </div>
-                )}
+                  );
+                })()}
 
                 {/* ── Aba de módulo (Fiscal/Folha/Legalização/Contábil/...) ── */}
                 {moduloAtual && (
@@ -379,15 +396,41 @@ export default function PainelClientePage({ clienteId, competencia }) {
                         })}
                       </div>
                     )}
-                    {moduloAtual.nome === 'Contábil' && lancamentos.length > 0 && (
-                      <div style={{ marginTop: (obsDoModulo.length > 0 || tarefasDoModulo.length > 0) ? 16 : 0 }}>
-                        <SecaoTitulo icone={<SearchIcon size={14} />}>Lançamentos a identificar</SecaoTitulo>
-                        <p style={{ fontSize: 12, color: 'var(--text2)', marginBottom: 10 }}>
-                          Escreva embaixo de cada lançamento o que foi essa movimentação — a resposta salva sozinha ao sair do campo.
-                        </p>
-                        <LancamentosAgrupados lancamentos={lancamentos} LinhaComponent={LinhaIdentificar} />
-                      </div>
-                    )}
+                    {moduloAtual.nome === 'Contábil' && lancamentos.length > 0 && (() => {
+                      const pendentes = lancamentos.filter((l) => !l.observacaoCliente);
+                      const concluidos = lancamentos.filter((l) => l.observacaoCliente);
+                      const forcarAtualizacao = () => setLancamentos((prev) => [...prev]);
+                      return (
+                        <div style={{ marginTop: (obsDoModulo.length > 0 || tarefasDoModulo.length > 0) ? 16 : 0 }}>
+                          {pendentes.length > 0 && (
+                            <div>
+                              <SecaoTitulo icone={<SearchIcon size={14} />}>Lançamentos a identificar</SecaoTitulo>
+                              <p style={{ fontSize: 12, color: 'var(--text2)', marginBottom: 10 }}>
+                                Escreva embaixo de cada lançamento o que foi essa movimentação — a resposta salva sozinha ao sair do campo.
+                              </p>
+                              <LancamentosAgrupados lancamentos={pendentes} LinhaComponent={LinhaIdentificar} onSaved={forcarAtualizacao} />
+                            </div>
+                          )}
+                          {concluidos.length > 0 && (
+                            <div style={{ marginTop: pendentes.length > 0 ? 18 : 0 }}>
+                              <button onClick={() => setConcluidosAberto((a) => !a)}
+                                style={{ display: 'flex', alignItems: 'center', gap: 6, width: '100%', background: 'var(--surface2)',
+                                  border: '1px solid var(--border)', borderRadius: 8, padding: '8px 10px', cursor: 'pointer' }}>
+                                {concluidosAberto ? <ChevronDownIcon size={13} color="var(--text3)" /> : <ChevronRightIcon size={13} color="var(--text3)" />}
+                                <CheckCircleIcon size={13} color="var(--ok)" />
+                                <span style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--text1)' }}>Concluídos</span>
+                                <span style={{ fontSize: 11, color: 'var(--text3)' }}>({concluidos.length})</span>
+                              </button>
+                              {concluidosAberto && (
+                                <div style={{ marginTop: 8, paddingLeft: 4 }}>
+                                  <LancamentosAgrupados lancamentos={concluidos} LinhaComponent={LinhaIdentificar} onSaved={forcarAtualizacao} />
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })()}
                   </div>
                 )}
 
@@ -548,6 +591,52 @@ function ModuloCard({ nome, icone, s, pct, val, onClick }) {
   );
 }
 
+// Linha do tempo vertical dos vencimentos da competência — `itens` já vem
+// filtrado (só o que tem vencimento) e com `valor` preenchido quando
+// conhecido (hoje só o DAS, casado por heurística de título em obs.itens).
+function LinhaDoTempoVencimentos({ itens }) {
+  const porData = {};
+  itens.forEach((it) => { (porData[it.vencimento] ||= []).push(it); });
+  const datas = Object.keys(porData).sort();
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column' }}>
+      {datas.map((data, i) => {
+        const grupo = porData[data];
+        const dias = diasParaVencer(data);
+        const totalValor = grupo.reduce((s, it) => s + (it.valor || 0), 0);
+        const cor = dias < 0 ? 'var(--danger)' : dias <= 3 ? 'var(--warn)' : 'var(--accent)';
+        return (
+          <div key={data} style={{ display: 'flex', gap: 10 }}>
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: 12, flexShrink: 0 }}>
+              <div style={{ width: 10, height: 10, borderRadius: '50%', background: cor, flexShrink: 0, marginTop: 3 }} />
+              {i < datas.length - 1 && <div style={{ width: 2, flex: 1, background: 'var(--border)', marginTop: 4 }} />}
+            </div>
+            <div style={{ flex: 1, paddingBottom: i < datas.length - 1 ? 14 : 0, minWidth: 0 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 8 }}>
+                <span style={{ fontSize: 12.5, fontWeight: 700, color: cor }}>
+                  {fmtData(data)} · {fmtDiasParaVencer(dias)}
+                </span>
+                {totalValor > 0 && <span style={{ fontSize: 13, fontWeight: 800, color: 'var(--text1)', flexShrink: 0 }}>{fmt(totalValor)}</span>}
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 3, marginTop: 5 }}>
+                {grupo.map((it) => (
+                  <div key={it.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, fontSize: 12, color: 'var(--text2)' }}>
+                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {it.titulo}{it.departamento ? ` · ${it.departamento}` : ''}
+                    </span>
+                    {it.valor != null && <span style={{ fontWeight: 600, color: 'var(--text1)', flexShrink: 0 }}>{fmt(it.valor)}</span>}
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 function CardSituacaoCND({ label, situacao }) {
   const cor = situacao === 'regular' ? 'var(--ok)' : situacao === 'pendente' ? 'var(--danger)' : 'var(--text3)';
   const corDim = situacao === 'regular' ? 'var(--ok-dim)' : situacao === 'pendente' ? 'var(--danger-dim)' : 'var(--surface2)';
@@ -612,7 +701,7 @@ function GraficoFaturamento({ dados }) {
 }
 
 // Mesma lógica de IdentificarLancamentosPage.jsx (autosave no onBlur).
-function LinhaIdentificar({ lancamento }) {
+function LinhaIdentificar({ lancamento, onSaved }) {
   const [observacao, setObservacao] = useState(lancamento.observacaoCliente);
   const [status, setStatus] = useState('idle');
 
@@ -623,6 +712,7 @@ function LinhaIdentificar({ lancamento }) {
       await salvarObservacaoCliente(lancamento.id, observacao);
       lancamento.observacaoCliente = observacao;
       setStatus('salvo');
+      onSaved?.();
     } catch {
       setStatus('erro');
     }
