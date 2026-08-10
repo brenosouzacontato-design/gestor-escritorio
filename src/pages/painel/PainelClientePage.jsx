@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import {
   WalletIcon, ClipboardListIcon, CheckSquareIcon, PaperclipIcon, BarChart3Icon,
-  SearchIcon, CalendarIcon, DownloadIcon, CheckCircleIcon, FileTextIcon, TrendingUpIcon,
+  SearchIcon, CalendarIcon, DownloadIcon, CheckCircleIcon, FileTextIcon, TrendingUpIcon, LayersIcon,
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { listarLancamentosAIdentificar, salvarObservacaoCliente } from '../contabil/contabilApi';
@@ -60,6 +60,37 @@ function competenciaParaPeriodo(competencia) {
   return { dataInicio, dataFim };
 }
 
+// Agrupa as obrigações do mês por módulo (departamento) pra alimentar a
+// fileira de cards "Módulos" no topo do painel — resumo rápido antes da
+// lista detalhada mais embaixo. Obrigações sem departamento_id (modelo
+// legado) caem num módulo "Geral".
+function agruparPorModulo(itensObrigacoes) {
+  const grupos = {};
+  itensObrigacoes.forEach((o) => {
+    const nome = o.departamentos?.nome || 'Geral';
+    const icone = o.departamentos?.icone || '📋';
+    if (!grupos[nome]) grupos[nome] = { nome, icone, itens: [] };
+    grupos[nome].itens.push(o);
+  });
+  return Object.values(grupos).map((g) => {
+    const ok = g.itens.filter((o) => o.status === 'concluido' || o.status === 'nao_aplica').length;
+    const venc = g.itens.filter((o) => o.status === 'vencido').length;
+    const pct = g.itens.length > 0 ? Math.round((ok / g.itens.length) * 100) : 0;
+    const s = venc > 0 ? 'danger' : pct === 100 ? 'ok' : g.itens.some((o) => o.status === 'pendente') ? 'warn' : 'empty';
+    return { nome: g.nome, icone: g.icone, s, pct, val: `${ok}/${g.itens.length}` };
+  });
+}
+
+// CND (Certidão Negativa de Débitos) — módulo virtual, deduzido da
+// Situação Fiscal (RFB) já enviada pra essa competência: "regular" = tem
+// CND, "pendente" = não tem, sem relatório ainda = vazio.
+function moduloCND(situacaoFiscal) {
+  if (!situacaoFiscal) return { nome: 'CND', icone: '🛡️', s: 'empty', pct: 0, val: '—' };
+  if (situacaoFiscal.situacao_geral === 'regular') return { nome: 'CND', icone: '🛡️', s: 'ok', pct: 100, val: 'Com CND' };
+  if (situacaoFiscal.situacao_geral === 'pendente') return { nome: 'CND', icone: '🛡️', s: 'danger', pct: 0, val: 'Sem CND' };
+  return { nome: 'CND', icone: '🛡️', s: 'empty', pct: 0, val: '—' };
+}
+
 // Página pública (sem login) com a visão consolidada do cliente naquela
 // competência: financeiro, obrigações, tarefas, documentos, lançamentos a
 // identificar (quando houver) e dados gerenciais do Simples Nacional
@@ -67,7 +98,8 @@ function competenciaParaPeriodo(competencia) {
 // (ver main.jsx). Mesmo padrão visual de RelatorioCompartilhadoPage.jsx /
 // IdentificarLancamentosPage.jsx.
 export default function PainelClientePage({ clienteId, competencia }) {
-  const [clienteNome, setClienteNome] = useState('');
+  const [cliente, setCliente] = useState(null); // {nome, cnpj, regime, carteira}
+  const [aba, setAba] = useState('resumo'); // 'resumo' | nome do módulo | 'cnd'
   const [obs, setObs] = useState(null);
   const [tarefas, setTarefas] = useState(null);
   const [financeiro, setFinanceiro] = useState(null);
@@ -86,8 +118,8 @@ export default function PainelClientePage({ clienteId, competencia }) {
       setErro(null);
       try {
         const { dataInicio, dataFim } = competenciaParaPeriodo(competencia);
-        const [{ data: cliente, error: errCliente }, resObs, resTarefas, resFinanceiro, itensIdentificar, dadosSimples, historico, situFiscal, docs] = await Promise.all([
-          supabase.from('clientes').select('nome').eq('id', clienteId).single(),
+        const [{ data: clienteData, error: errCliente }, resObs, resTarefas, resFinanceiro, itensIdentificar, dadosSimples, historico, situFiscal, docs] = await Promise.all([
+          supabase.from('clientes').select('nome, cnpj, regime, carteira').eq('id', clienteId).single(),
           obterResumoObrigacoes(clienteId, competencia),
           obterResumoTarefas(clienteId, competencia),
           obterResumoFinanceiro(clienteId, { dataInicio, dataFim }),
@@ -101,7 +133,7 @@ export default function PainelClientePage({ clienteId, competencia }) {
           obterDocumentosDoMes(clienteId, { dataInicio, dataFim }).catch(() => []),
         ]);
         if (errCliente) throw errCliente;
-        setClienteNome(cliente?.nome ?? '');
+        setCliente(clienteData);
         setObs(resObs);
         setTarefas(resTarefas);
         setFinanceiro(resFinanceiro);
@@ -132,179 +164,257 @@ export default function PainelClientePage({ clienteId, competencia }) {
           <div style={{ fontSize: 11, color: 'var(--navy-text)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.04em' }}>
             📋 Painel do cliente
           </div>
-          <div style={{ fontSize: 19, color: '#fff', fontWeight: 700, marginTop: 4 }}>{carregando ? '...' : clienteNome}</div>
+          <div style={{ fontSize: 19, color: '#fff', fontWeight: 700, marginTop: 4 }}>{carregando ? '...' : cliente?.nome}</div>
           <div style={{ fontSize: 12, color: 'var(--navy-text)', marginTop: 2 }}>Competência {competencia}</div>
+          {cliente && (
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 10 }}>
+              {cliente.cnpj && (
+                <span style={{ fontSize: 10.5, color: 'var(--navy-text)', background: 'rgba(255,255,255,.08)', border: '1px solid rgba(255,255,255,.15)', borderRadius: 99, padding: '3px 9px' }}>
+                  {cliente.cnpj}
+                </span>
+              )}
+              <span style={{ fontSize: 10.5, color: 'var(--navy-text)', background: 'rgba(255,255,255,.08)', border: '1px solid rgba(255,255,255,.15)', borderRadius: 99, padding: '3px 9px' }}>
+                {cliente.regime || 'SN'}
+              </span>
+              {cliente.carteira && (
+                <span style={{ fontSize: 10.5, color: 'var(--navy-text)', background: 'rgba(255,255,255,.08)', border: '1px solid rgba(255,255,255,.15)', borderRadius: 99, padding: '3px 9px' }}>
+                  {cliente.carteira}
+                </span>
+              )}
+            </div>
+          )}
         </div>
 
         <div style={{ padding: 26 }}>
           {carregando && <p style={{ color: 'var(--text2)' }}>Carregando...</p>}
           {erro && <p style={{ color: 'var(--danger)' }}>{erro}</p>}
 
-          {!carregando && !erro && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
+          {!carregando && !erro && (() => {
+            const modulos = agruparPorModulo(obs.itens);
+            const abas = [
+              { id: 'resumo', label: 'Resumo', icone: '🏠' },
+              ...modulos.map((m) => ({ id: m.nome, label: m.nome, icone: m.icone })),
+              { id: 'cnd', label: 'CND', icone: '🛡️' },
+            ];
+            const abaAtiva = abas.some((a) => a.id === aba) ? aba : 'resumo';
+            const moduloAtual = modulos.find((m) => m.nome === abaAtiva);
+            const obsDoModulo = moduloAtual ? obs.itens.filter((o) => (o.departamentos?.nome || 'Geral') === abaAtiva) : [];
+            const tarefasDoModulo = moduloAtual ? tarefas.itens.filter((t) => (t.departamento || '').toLowerCase() === abaAtiva.toLowerCase()) : [];
 
-              {/* Informações gerenciais (Simples Nacional) — só se já enviaram a declaração. Abre o painel: é a informação mais importante hoje. */}
-              {gerenciais && (
-                <div>
-                  <SecaoTitulo icone={<BarChart3Icon size={14} />}>Informações gerenciais — Simples Nacional</SecaoTitulo>
-                  {historicoFaturamento.length > 0 && (
-                    <div style={{ marginBottom: 14 }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 10.5, color: 'var(--text3)', fontWeight: 600, marginBottom: 6 }}>
-                        <TrendingUpIcon size={12} /> Evolução do faturamento
-                      </div>
-                      <GraficoFaturamento dados={historicoFaturamento} />
-                    </div>
-                  )}
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 10 }}>
-                    <Metrica label="Faturamento do período" valor={fmt(gerenciais.faturamento_periodo)} />
-                    <Metrica label="RBT12" valor={fmt(gerenciais.rbt12)} />
-                    <Metrica label="Alíquota efetiva" valor={fmtPct(gerenciais.aliquota_efetiva)} />
-                    <Metrica label="DAS a pagar" valor={fmt(gerenciais.valor_das)} />
-                  </div>
-                  {gerenciais.anexo && (
-                    <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 8 }}>Enquadrado no Anexo {gerenciais.anexo} do Simples Nacional.</div>
-                  )}
-                  {gerenciais.receita_por_tipo?.length > 0 && (
-                    <div style={{ marginTop: 12 }}>
-                      <div style={{ fontSize: 10.5, color: 'var(--text3)', fontWeight: 600, marginBottom: 6 }}>Receita por tipo</div>
-                      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                        {gerenciais.receita_por_tipo.map((r, i) => (
-                          <span key={i} style={{ fontSize: 11, fontWeight: 600, color: 'var(--text2)', background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 99, padding: '4px 10px' }}>
-                            {RECEITA_TIPO_LABEL[r.tipo] || r.tipo}: {fmt(r.valor)}
-                          </span>
+            return (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+
+                {/* Barra de abas — Resumo + um módulo por área com obrigação na competência + CND */}
+                <div style={{ display: 'flex', gap: 6, overflowX: 'auto', paddingBottom: 2 }}>
+                  {abas.map((a) => (
+                    <button key={a.id} onClick={() => setAba(a.id)}
+                      style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: 5,
+                        background: abaAtiva === a.id ? 'var(--navy)' : 'var(--surface2)',
+                        border: `1px solid ${abaAtiva === a.id ? 'var(--navy)' : 'var(--border)'}`,
+                        borderRadius: 99, padding: '6px 13px', fontSize: 12, fontWeight: 600,
+                        color: abaAtiva === a.id ? '#fff' : 'var(--text2)', cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                      <span>{a.icone}</span> {a.label}
+                    </button>
+                  ))}
+                </div>
+
+                {/* ── Aba Resumo ── */}
+                {abaAtiva === 'resumo' && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
+
+                    <div>
+                      <SecaoTitulo icone={<LayersIcon size={14} />}>Módulos</SecaoTitulo>
+                      <div style={{ display: 'grid', gridTemplateColumns: `repeat(auto-fit, minmax(72px, 1fr))`, gap: 8 }}>
+                        {[...modulos, moduloCND(situacaoFiscal)].map((m) => (
+                          <ModuloCard key={m.nome} {...m} onClick={() => setAba(m.nome === 'CND' ? 'cnd' : m.nome)} />
                         ))}
                       </div>
-                      <div style={{ fontSize: 10.5, color: 'var(--text3)', marginTop: 6 }}>
-                        A alíquota efetiva acima é sobre o total da competência — parte dessa receita já teve imposto retido antes (ST/monofásico).
+                    </div>
+
+                    <div>
+                      <SecaoTitulo icone={<ClipboardListIcon size={14} />}>Visão geral do mês</SecaoTitulo>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                        <ResumoCard titulo="Obrigações" icone={<ClipboardListIcon size={13} />} pct={obs.total ? Math.round((obs.ok / obs.total) * 100) : 0}
+                          linha1={`${obs.ok}/${obs.total} concluídas`} alerta={obs.vencido > 0 ? `${obs.vencido} vencida${obs.vencido !== 1 ? 's' : ''}` : null} />
+                        <ResumoCard titulo="Tarefas" icone={<CheckSquareIcon size={13} />} pct={tarefas.total ? Math.round((tarefas.concluidas / tarefas.total) * 100) : 0}
+                          linha1={`${tarefas.concluidas}/${tarefas.total} concluídas`} alerta={null} />
                       </div>
                     </div>
-                  )}
-                </div>
-              )}
 
-              {/* Situação Fiscal (RFB) — só se já enviaram o relatório */}
-              {situacaoFiscal && (
-                <div>
-                  <SecaoTitulo icone={<FileTextIcon size={14} />}>Situação Fiscal — RFB</SecaoTitulo>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 10, marginBottom: 10 }}>
-                    <div style={{ background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: '10px 12px' }}>
-                      <div style={{ fontSize: 10, color: 'var(--text3)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.03em' }}>Situação</div>
-                      <span style={{ display: 'inline-block', marginTop: 5, fontSize: 12, fontWeight: 700, borderRadius: 99, padding: '3px 10px',
-                        color: situacaoFiscal.situacao_geral === 'regular' ? 'var(--ok)' : situacaoFiscal.situacao_geral === 'pendente' ? 'var(--danger)' : 'var(--text3)',
-                        background: situacaoFiscal.situacao_geral === 'regular' ? 'var(--ok-dim)' : situacaoFiscal.situacao_geral === 'pendente' ? 'var(--danger-dim)' : 'var(--surface2)' }}>
-                        {situacaoFiscal.situacao_geral === 'regular' ? 'Regular' : situacaoFiscal.situacao_geral === 'pendente' ? 'Com pendências' : 'Não identificada'}
+                    {gerenciais && (
+                      <div>
+                        <SecaoTitulo icone={<BarChart3Icon size={14} />}>Informações gerenciais — Simples Nacional</SecaoTitulo>
+                        {historicoFaturamento.length > 0 && (
+                          <div style={{ marginBottom: 14 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 10.5, color: 'var(--text3)', fontWeight: 600, marginBottom: 6 }}>
+                              <TrendingUpIcon size={12} /> Evolução do faturamento
+                            </div>
+                            <GraficoFaturamento dados={historicoFaturamento} />
+                          </div>
+                        )}
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 10 }}>
+                          <Metrica label="Faturamento do período" valor={fmt(gerenciais.faturamento_periodo)} />
+                          <Metrica label="RBT12" valor={fmt(gerenciais.rbt12)} />
+                          <Metrica label="Alíquota efetiva" valor={fmtPct(gerenciais.aliquota_efetiva)} />
+                          <Metrica label="DAS a pagar" valor={fmt(gerenciais.valor_das)} />
+                        </div>
+                        {gerenciais.anexo && (
+                          <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 8 }}>Enquadrado no Anexo {gerenciais.anexo} do Simples Nacional.</div>
+                        )}
+                        {gerenciais.receita_por_tipo?.length > 0 && (
+                          <div style={{ marginTop: 12 }}>
+                            <div style={{ fontSize: 10.5, color: 'var(--text3)', fontWeight: 600, marginBottom: 6 }}>Receita por tipo</div>
+                            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                              {gerenciais.receita_por_tipo.map((r, i) => (
+                                <span key={i} style={{ fontSize: 11, fontWeight: 600, color: 'var(--text2)', background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 99, padding: '4px 10px' }}>
+                                  {RECEITA_TIPO_LABEL[r.tipo] || r.tipo}: {fmt(r.valor)}
+                                </span>
+                              ))}
+                            </div>
+                            <div style={{ fontSize: 10.5, color: 'var(--text3)', marginTop: 6 }}>
+                              A alíquota efetiva acima é sobre o total da competência — parte dessa receita já teve imposto retido antes (ST/monofásico).
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {documentos.length > 0 && (
+                      <div>
+                        <SecaoTitulo icone={<PaperclipIcon size={14} />}>Documentos do mês</SecaoTitulo>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                          {documentos.map((d) => (
+                            <ItemLista key={d.id} titulo={d.tipo_documento_sugerido || d.nome_arquivo} sub={fmtData(d.created_at?.slice(0, 10))}
+                              anexo={d} onBaixarAnexo={baixarAnexo} />
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {lancamentos.length > 0 && (
+                      <div>
+                        <SecaoTitulo icone={<SearchIcon size={14} />}>Lançamentos a identificar</SecaoTitulo>
+                        <p style={{ fontSize: 12, color: 'var(--text2)', marginBottom: 10 }}>
+                          Escreva embaixo de cada lançamento o que foi essa movimentação — a resposta salva sozinha ao sair do campo.
+                        </p>
+                        <LancamentosAgrupados lancamentos={lancamentos} LinhaComponent={LinhaIdentificar} />
+                      </div>
+                    )}
+
+                    <div>
+                      <SecaoTitulo icone={<WalletIcon size={14} />}>Financeiro</SecaoTitulo>
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10 }}>
+                        <Metrica label="Conciliados" valor={financeiro.conciliados} />
+                        <Metrica label="A conciliar" valor={financeiro.aConciliar} cor={financeiro.aConciliar > 0 ? 'var(--warn)' : 'var(--ok)'} />
+                        <Metrica label="Resultado do período" valor={financeiro.resultado != null ? fmt(financeiro.resultado) : '—'}
+                          cor={financeiro.resultado < 0 ? 'var(--danger)' : 'var(--ok)'} />
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* ── Aba de módulo (Fiscal/Folha/Legalização/Contábil/...) ── */}
+                {moduloAtual && (
+                  <div>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
+                      <SecaoTitulo icone={<span>{moduloAtual.icone}</span>}>{moduloAtual.nome}</SecaoTitulo>
+                      <span style={{ fontSize: 18, fontWeight: 800, color: MODULO_COR[moduloAtual.s] }}>
+                        {moduloAtual.s === 'empty' ? '—' : `${moduloAtual.pct}%`}
                       </span>
                     </div>
-                    <Metrica label="Emissão do relatório" valor={situacaoFiscal.data_emissao ? fmtData(situacaoFiscal.data_emissao) : '—'} />
-                  </div>
-                  {situacaoFiscal.debitos?.length > 0 && (
-                    <div style={{ marginBottom: 10 }}>
-                      <div style={{ fontSize: 10.5, color: 'var(--text3)', fontWeight: 600, marginBottom: 6 }}>Débitos em aberto</div>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                        {situacaoFiscal.debitos.map((d, i) => (
-                          <ItemLista key={i} titulo={d.tributo} sub={fmt(d.valor)} statusLabel={d.situacao} statusCor={['var(--warn)', 'var(--warn-dim)']} />
-                        ))}
+                    {obsDoModulo.length === 0 && tarefasDoModulo.length === 0 && (
+                      <div style={{ textAlign: 'center', color: 'var(--text3)', fontSize: 13, padding: '24px 0' }}>Nada nesse módulo por enquanto.</div>
+                    )}
+                    {obsDoModulo.length > 0 && (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: tarefasDoModulo.length > 0 ? 10 : 0 }}>
+                        {obsDoModulo.map((o) => {
+                          const dias = diasParaVencer(o.vencimento);
+                          const anexo = anexosObrigacao[o.id];
+                          return (
+                            <ItemLista key={o.id} titulo={o.titulo || o.tipo} sub={o.departamentos?.nome}
+                              statusLabel={STATUS_OBS_LABEL[o.status]} statusCor={STATUS_OBS_COR[o.status]}
+                              vencimentoTexto={o.vencimento ? `${fmtData(o.vencimento)} · ${fmtDiasParaVencer(dias)}` : null}
+                              vencimentoCor={dias != null && dias < 0 ? 'var(--danger)' : dias != null && dias <= 3 ? 'var(--warn)' : 'var(--text3)'}
+                              anexo={anexo} onBaixarAnexo={baixarAnexo} />
+                          );
+                        })}
                       </div>
-                    </div>
-                  )}
-                  {situacaoFiscal.parcelamentos?.length > 0 && (
-                    <div style={{ marginBottom: 10 }}>
-                      <div style={{ fontSize: 10.5, color: 'var(--text3)', fontWeight: 600, marginBottom: 6 }}>Parcelamentos ativos</div>
+                    )}
+                    {tarefasDoModulo.length > 0 && (
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                        {situacaoFiscal.parcelamentos.map((p, i) => (
-                          <ItemLista key={i} titulo={p.modalidade} sub={fmt(p.valor)} statusLabel={p.parcelas || null} statusCor={['var(--info)', 'var(--info-dim)']} />
-                        ))}
+                        {tarefasDoModulo.map((t) => {
+                          const dias = diasParaVencer(t.vencimento);
+                          return (
+                            <ItemLista key={t.id} titulo={t.titulo} sub={t.departamento}
+                              statusLabel={t.concluida ? 'Concluída' : 'Pendente'} statusCor={t.concluida ? ['var(--ok)', 'var(--ok-dim)'] : ['var(--warn)', 'var(--warn-dim)']}
+                              vencimentoTexto={t.vencimento && !t.concluida ? `${fmtData(t.vencimento)} · ${fmtDiasParaVencer(dias)}` : null}
+                              vencimentoCor={dias != null && dias < 0 ? 'var(--danger)' : dias != null && dias <= 3 ? 'var(--warn)' : 'var(--text3)'} />
+                          );
+                        })}
                       </div>
-                    </div>
-                  )}
-                  {situacaoFiscal.dividas_ativas?.length > 0 && (
-                    <div>
-                      <div style={{ fontSize: 10.5, color: 'var(--text3)', fontWeight: 600, marginBottom: 6 }}>Dívida Ativa (PGFN)</div>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                        {situacaoFiscal.dividas_ativas.map((d, i) => (
-                          <ItemLista key={i} titulo={d.inscricao || 'Inscrição'} sub={fmt(d.valor)} statusLabel={d.situacao} statusCor={['var(--danger)', 'var(--danger-dim)']} />
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* Obrigações + Tarefas */}
-              <div>
-                <SecaoTitulo icone={<ClipboardListIcon size={14} />}>Obrigações e tarefas do mês</SecaoTitulo>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: (obs.itens.length > 0 || tarefas.itens.length > 0) ? 10 : 0 }}>
-                  <ResumoCard titulo="Obrigações" icone={<ClipboardListIcon size={13} />} pct={obs.total ? Math.round((obs.ok / obs.total) * 100) : 0}
-                    linha1={`${obs.ok}/${obs.total} concluídas`} alerta={obs.vencido > 0 ? `${obs.vencido} vencida${obs.vencido !== 1 ? 's' : ''}` : null} />
-                  <ResumoCard titulo="Tarefas" icone={<CheckSquareIcon size={13} />} pct={tarefas.total ? Math.round((tarefas.concluidas / tarefas.total) * 100) : 0}
-                    linha1={`${tarefas.concluidas}/${tarefas.total} concluídas`} alerta={null} />
-                </div>
-                {obs.itens.length > 0 && (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: tarefas.itens.length > 0 ? 10 : 0 }}>
-                    {obs.itens.map((o) => {
-                      const dias = diasParaVencer(o.vencimento);
-                      const anexo = anexosObrigacao[o.id];
-                      return (
-                        <ItemLista key={o.id} titulo={o.titulo || o.tipo} sub={o.departamentos?.nome}
-                          statusLabel={STATUS_OBS_LABEL[o.status]} statusCor={STATUS_OBS_COR[o.status]}
-                          vencimentoTexto={o.vencimento ? `${fmtData(o.vencimento)} · ${fmtDiasParaVencer(dias)}` : null}
-                          vencimentoCor={dias != null && dias < 0 ? 'var(--danger)' : dias != null && dias <= 3 ? 'var(--warn)' : 'var(--text3)'}
-                          anexo={anexo} onBaixarAnexo={baixarAnexo} />
-                      );
-                    })}
+                    )}
                   </div>
                 )}
-                {tarefas.itens.length > 0 && (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                    {tarefas.itens.map((t) => {
-                      const dias = diasParaVencer(t.vencimento);
-                      return (
-                        <ItemLista key={t.id} titulo={t.titulo} sub={t.departamento}
-                          statusLabel={t.concluida ? 'Concluída' : 'Pendente'} statusCor={t.concluida ? ['var(--ok)', 'var(--ok-dim)'] : ['var(--warn)', 'var(--warn-dim)']}
-                          vencimentoTexto={t.vencimento && !t.concluida ? `${fmtData(t.vencimento)} · ${fmtDiasParaVencer(dias)}` : null}
-                          vencimentoCor={dias != null && dias < 0 ? 'var(--danger)' : dias != null && dias <= 3 ? 'var(--warn)' : 'var(--text3)'} />
-                      );
-                    })}
+
+                {/* ── Aba CND ── */}
+                {abaAtiva === 'cnd' && (
+                  <div>
+                    <SecaoTitulo icone={<FileTextIcon size={14} />}>Situação Fiscal — RFB</SecaoTitulo>
+                    {!situacaoFiscal && (
+                      <div style={{ textAlign: 'center', color: 'var(--text3)', fontSize: 13, padding: '24px 0' }}>
+                        Nenhum relatório de situação fiscal enviado ainda pra essa competência.
+                      </div>
+                    )}
+                    {situacaoFiscal && (
+                      <>
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 10, marginBottom: 10 }}>
+                          <div style={{ background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: '10px 12px' }}>
+                            <div style={{ fontSize: 10, color: 'var(--text3)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.03em' }}>Situação</div>
+                            <span style={{ display: 'inline-block', marginTop: 5, fontSize: 12, fontWeight: 700, borderRadius: 99, padding: '3px 10px',
+                              color: situacaoFiscal.situacao_geral === 'regular' ? 'var(--ok)' : situacaoFiscal.situacao_geral === 'pendente' ? 'var(--danger)' : 'var(--text3)',
+                              background: situacaoFiscal.situacao_geral === 'regular' ? 'var(--ok-dim)' : situacaoFiscal.situacao_geral === 'pendente' ? 'var(--danger-dim)' : 'var(--surface2)' }}>
+                              {situacaoFiscal.situacao_geral === 'regular' ? 'Regular' : situacaoFiscal.situacao_geral === 'pendente' ? 'Com pendências' : 'Não identificada'}
+                            </span>
+                          </div>
+                          <Metrica label="Emissão do relatório" valor={situacaoFiscal.data_emissao ? fmtData(situacaoFiscal.data_emissao) : '—'} />
+                        </div>
+                        {situacaoFiscal.debitos?.length > 0 && (
+                          <div style={{ marginBottom: 10 }}>
+                            <div style={{ fontSize: 10.5, color: 'var(--text3)', fontWeight: 600, marginBottom: 6 }}>Débitos em aberto</div>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                              {situacaoFiscal.debitos.map((d, i) => (
+                                <ItemLista key={i} titulo={d.tributo} sub={fmt(d.valor)} statusLabel={d.situacao} statusCor={['var(--warn)', 'var(--warn-dim)']} />
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                        {situacaoFiscal.parcelamentos?.length > 0 && (
+                          <div style={{ marginBottom: 10 }}>
+                            <div style={{ fontSize: 10.5, color: 'var(--text3)', fontWeight: 600, marginBottom: 6 }}>Parcelamentos ativos</div>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                              {situacaoFiscal.parcelamentos.map((p, i) => (
+                                <ItemLista key={i} titulo={p.modalidade} sub={fmt(p.valor)} statusLabel={p.parcelas || null} statusCor={['var(--info)', 'var(--info-dim)']} />
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                        {situacaoFiscal.dividas_ativas?.length > 0 && (
+                          <div>
+                            <div style={{ fontSize: 10.5, color: 'var(--text3)', fontWeight: 600, marginBottom: 6 }}>Dívida Ativa (PGFN)</div>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                              {situacaoFiscal.dividas_ativas.map((d, i) => (
+                                <ItemLista key={i} titulo={d.inscricao || 'Inscrição'} sub={fmt(d.valor)} statusLabel={d.situacao} statusCor={['var(--danger)', 'var(--danger-dim)']} />
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </>
+                    )}
                   </div>
                 )}
               </div>
-
-              {/* Documentos do mês — só se houver algum confirmado no período */}
-              {documentos.length > 0 && (
-                <div>
-                  <SecaoTitulo icone={<PaperclipIcon size={14} />}>Documentos do mês</SecaoTitulo>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                    {documentos.map((d) => (
-                      <ItemLista key={d.id} titulo={d.tipo_documento_sugerido || d.nome_arquivo} sub={fmtData(d.created_at?.slice(0, 10))}
-                        anexo={d} onBaixarAnexo={baixarAnexo} />
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Lançamentos a identificar — só aparece se houver algum */}
-              {lancamentos.length > 0 && (
-                <div>
-                  <SecaoTitulo icone={<SearchIcon size={14} />}>Lançamentos a identificar</SecaoTitulo>
-                  <p style={{ fontSize: 12, color: 'var(--text2)', marginBottom: 10 }}>
-                    Escreva embaixo de cada lançamento o que foi essa movimentação — a resposta salva sozinha ao sair do campo.
-                  </p>
-                  <LancamentosAgrupados lancamentos={lancamentos} LinhaComponent={LinhaIdentificar} />
-                </div>
-              )}
-
-              {/* Financeiro — no final, é o que menos precisa de destaque pro cliente */}
-              <div>
-                <SecaoTitulo icone={<WalletIcon size={14} />}>Financeiro</SecaoTitulo>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10 }}>
-                  <Metrica label="Conciliados" valor={financeiro.conciliados} />
-                  <Metrica label="A conciliar" valor={financeiro.aConciliar} cor={financeiro.aConciliar > 0 ? 'var(--warn)' : 'var(--ok)'} />
-                  <Metrica label="Resultado do período" valor={financeiro.resultado != null ? fmt(financeiro.resultado) : '—'}
-                    cor={financeiro.resultado < 0 ? 'var(--danger)' : 'var(--ok)'} />
-                </div>
-              </div>
-            </div>
-          )}
+            );
+          })()}
         </div>
 
         <div style={{ padding: '12px 26px', borderTop: '1px solid var(--border)', fontSize: 11, color: 'var(--text3)' }}>
@@ -372,6 +482,22 @@ function ItemLista({ titulo, sub, statusLabel, statusCor, vencimentoTexto, venci
           {statusLabel}
         </span>
       )}
+    </div>
+  );
+}
+
+const MODULO_COR = { ok: 'var(--ok)', warn: 'var(--warn)', danger: 'var(--danger)', empty: 'var(--text3)' };
+
+function ModuloCard({ nome, icone, s, pct, val, onClick }) {
+  const cor = MODULO_COR[s];
+  return (
+    <div onClick={onClick} style={{ background: 'var(--bg)', border: `1px solid ${s === 'empty' ? 'var(--border)' : cor}`,
+      borderRadius: 'var(--r-md)', padding: '10px 6px', textAlign: 'center', cursor: onClick ? 'pointer' : 'default' }}>
+      <div style={{ fontSize: 16, marginBottom: 3 }}>{icone}</div>
+      <div style={{ fontSize: 9, color: 'var(--text3)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.02em', marginBottom: 4,
+        whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{nome}</div>
+      <div style={{ fontSize: 14, fontWeight: 800, color: cor }}>{s === 'empty' ? '—' : `${pct}%`}</div>
+      <div style={{ fontSize: 9, color: 'var(--text3)', marginTop: 2 }}>{val}</div>
     </div>
   );
 }
