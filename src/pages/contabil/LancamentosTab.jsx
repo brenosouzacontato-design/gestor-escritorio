@@ -36,6 +36,13 @@ export default function LancamentosTab({ empresaId, periodo, empresaNome }) {
   const [aplicandoLote, setAplicandoLote] = useState(false);
   const [excluindoLote, setExcluindoLote] = useState(false);
   const [avisoLote, setAvisoLote] = useState(null);
+  // confirmação inline em vez de window.confirm — em alguns navegadores/PWA
+  // instalado, diálogos nativos (confirm/alert) vêm bloqueados ou somem sem
+  // aviso, e confirm() acaba devolvendo false pra página sem o usuário ver
+  // nada; a exclusão então nunca roda, parecendo "não fazer nada" (esse foi
+  // o sintoma relatado: exclusão em lote "não concretiza").
+  const [confirmandoExclusaoLote, setConfirmandoExclusaoLote] = useState(false);
+  const [confirmandoExclusaoId, setConfirmandoExclusaoId] = useState(null);
 
   const carregar = useCallback(async () => {
     setCarregando(true);
@@ -57,7 +64,8 @@ export default function LancamentosTab({ empresaId, periodo, empresaNome }) {
   useEffect(() => { carregar(); }, [carregar]);
 
   async function apagar(id) {
-    if (!window.confirm('Excluir este lançamento?')) return;
+    if (confirmandoExclusaoId !== id) { setConfirmandoExclusaoId(id); return; }
+    setConfirmandoExclusaoId(null);
     await excluirLancamento(id);
     carregar();
   }
@@ -130,6 +138,7 @@ export default function LancamentosTab({ empresaId, periodo, empresaNome }) {
     && lancamentosFiltrados.every((l) => selecionados.has(l.id));
 
   function toggleSelecionado(id) {
+    setConfirmandoExclusaoLote(false);
     setSelecionados((prev) => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id); else next.add(id);
@@ -138,6 +147,7 @@ export default function LancamentosTab({ empresaId, periodo, empresaNome }) {
   }
 
   function toggleSelecionarTodos() {
+    setConfirmandoExclusaoLote(false);
     setSelecionados((prev) => {
       const next = new Set(prev);
       if (todosSelecionados) lancamentosFiltrados.forEach((l) => next.delete(l.id));
@@ -179,13 +189,14 @@ export default function LancamentosTab({ empresaId, periodo, empresaNome }) {
 
   async function excluirSelecionados() {
     if (selecionados.size === 0) return;
-    if (!window.confirm(`Excluir ${selecionados.size} lançamento${selecionados.size > 1 ? 's' : ''}? Essa ação não pode ser desfeita.`)) return;
+    if (!confirmandoExclusaoLote) { setConfirmandoExclusaoLote(true); return; }
     setExcluindoLote(true);
     setErro(null);
     try {
       await excluirLancamentosEmLote([...selecionados]);
       setSelecionados(new Set());
       setContaLote('');
+      setConfirmandoExclusaoLote(false);
       carregar();
     } catch (e) {
       setErro(e.message);
@@ -252,10 +263,18 @@ export default function LancamentosTab({ empresaId, periodo, empresaNome }) {
             disabled={aplicandoLote || excluindoLote || !contaLote || lancamentosClassificaveis.every((l) => !selecionados.has(l.id))}>
             {aplicandoLote ? 'Aplicando...' : 'Classificar selecionados'}
           </button>
+          {confirmandoExclusaoLote && (
+            <span style={{ fontSize: '0.82rem', color: 'var(--danger)' }}>Confirma? Não pode ser desfeito.</span>
+          )}
           <button type="button" className="btn-danger" onClick={excluirSelecionados} disabled={aplicandoLote || excluindoLote}>
-            {excluindoLote ? 'Excluindo...' : 'Excluir selecionados'}
+            {excluindoLote ? 'Excluindo...' : confirmandoExclusaoLote ? 'Sim, excluir' : 'Excluir selecionados'}
           </button>
-          <button type="button" className="btn-ghost" onClick={() => setSelecionados(new Set())} disabled={aplicandoLote || excluindoLote}>
+          {confirmandoExclusaoLote && (
+            <button type="button" className="btn-ghost" onClick={() => setConfirmandoExclusaoLote(false)} disabled={excluindoLote}>
+              Cancelar
+            </button>
+          )}
+          <button type="button" className="btn-ghost" onClick={() => { setSelecionados(new Set()); setConfirmandoExclusaoLote(false); }} disabled={aplicandoLote || excluindoLote}>
             Limpar seleção
           </button>
         </div>
@@ -372,7 +391,16 @@ export default function LancamentosTab({ empresaId, periodo, empresaNome }) {
                       <span className="badge-origem" style={{ background: 'var(--warn-dim)', color: 'var(--warn)' }}>A conciliar</span>
                     )}
                   </td>
-                  <td style={{ whiteSpace: 'nowrap' }}><button className="btn-ghost" onClick={() => apagar(l.id)}>Excluir</button></td>
+                  <td style={{ whiteSpace: 'nowrap' }}>
+                    {confirmandoExclusaoId === l.id ? (
+                      <span style={{ display: 'inline-flex', gap: 4 }}>
+                        <button className="btn-danger" onClick={() => apagar(l.id)}>Confirmar</button>
+                        <button className="btn-ghost" onClick={() => setConfirmandoExclusaoId(null)}>Cancelar</button>
+                      </span>
+                    ) : (
+                      <button className="btn-ghost" onClick={() => apagar(l.id)}>Excluir</button>
+                    )}
+                  </td>
                 </tr>
               ))}
               {lancamentosFiltrados.length === 0 && (
