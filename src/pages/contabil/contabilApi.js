@@ -153,37 +153,74 @@ export async function criarContaQualquerTipo(empresaId, nome, tipo, sintetica = 
   });
 }
 
-// Cria uma conta como "filha" de uma conta já existente — modelo clássico
-// de plano de contas, onde você parte de uma conta de referência (ex:
-// "Itaú", "Aluguel") pra criar uma nova relacionada. Herda tipo e natureza
-// da conta-base, o código estende o dela (ex: "1.1.01.003.003.001") e
-// conta_pai_id fica de verdade preenchido — diferente das ~743 contas do
-// plano padrão importado, que só têm código hierárquico "visual" (sem
-// conta_pai_id real, nunca migradas por esse motivo). "sintetica" — ver
-// criarContaQualquerTipo.
-export async function criarContaFilha(empresaId, nome, contaPaiId, sintetica = false) {
-  const { data: pai, error: errPai } = await supabase
+// Cria uma conta "a partir de" uma conta-base já existente — modelo
+// clássico de plano de contas, onde você parte de uma conta de referência
+// (ex: "Itaú") pra criar uma nova relacionada (ex: "Bradesco"). Duas
+// situações bem diferentes, dependendo do que a base é:
+//
+// 1) Base SINTÉTICA (grupo de verdade, aceita_lancamento=false) — a nova
+//    conta nasce como FILHA real dela (conta_pai_id = base.id), um nível
+//    abaixo: é "criar uma sub-conta dentro deste grupo".
+//
+// 2) Base ANALÍTICA (aceita_lancamento=true — o caso da esmagadora maioria
+//    das contas, incluindo TODO o plano padrão importado, que não tem
+//    conta_pai_id real, só código hierárquico "visual") — a nova conta
+//    nasce como IRMÃ dela, no mesmo grupo (mesmo prefixo de código, um
+//    segmento a mais que o grupo, conta_pai_id herdado da base). Antes
+//    disso, criar "a partir de" QUALQUER conta analítica (ou seja, quase
+//    sempre) transformava essa conta-folha num novo grupo sintético com um
+//    único filho aninhado um nível abaixo dela — um subgrupo espúrio que
+//    não existia no plano de contas real, em vez de simplesmente colocar a
+//    conta nova ao lado dela.
+export async function criarContaFilha(empresaId, nome, contaBaseId, sintetica = false) {
+  const { data: base, error: errBase } = await supabase
     .from('contas_contabeis')
-    .select('id, codigo, tipo, natureza, nivel')
-    .eq('id', contaPaiId)
+    .select('id, codigo, tipo, natureza, nivel, conta_pai_id, aceita_lancamento')
+    .eq('id', contaBaseId)
     .single();
-  if (errPai) throw errPai;
+  if (errBase) throw errBase;
 
-  const { count, error: errCount } = await supabase
-    .from('contas_contabeis')
-    .select('id', { count: 'exact', head: true })
-    .eq('conta_pai_id', contaPaiId);
-  if (errCount) throw errCount;
+  const ehGrupoReal = !base.aceita_lancamento;
+  const contaPaiId = ehGrupoReal ? base.id : (base.conta_pai_id ?? null);
+  const nivel = ehGrupoReal ? (base.nivel ?? 0) + 1 : (base.nivel ?? 0);
+  const partesBase = base.codigo.split('.');
+  const prefixoGrupo = ehGrupoReal ? base.codigo : partesBase.slice(0, -1).join('.');
 
-  const codigo = `${pai.codigo}.${String((count ?? 0) + 1).padStart(3, '0')}`;
+  let codigo;
+  if (partesBase.length <= 1) {
+    // código raiz sem separador (esquema antigo "TIPO-001") — não tem
+    // grupo/prefixo pra ancorar uma irmã, cai no mesmo fluxo de raiz nova.
+    codigo = await proximoCodigoRaiz(empresaId, base.tipo);
+  } else {
+    const { data: existentes, error: errExistentes } = await supabase
+      .from('contas_contabeis')
+      .select('codigo')
+      .eq('empresa_id', empresaId)
+      .like('codigo', `${prefixoGrupo}.%`);
+    if (errExistentes) throw errExistentes;
+    // profundidade exata do próximo nível do grupo — ignora netos/bisnetos
+    // que por acaso compartilhem o mesmo prefixo mais longo.
+    const profundidadeAlvo = prefixoGrupo.split('.').length + 1;
+    const numeros = existentes
+      .map((c) => c.codigo.split('.'))
+      .filter((partes) => partes.length === profundidadeAlvo)
+      .map((partes) => parseInt(partes[partes.length - 1], 10))
+      .filter((n) => !Number.isNaN(n));
+    // máximo em vez de contagem — contagem erra o próximo número assim que
+    // há uma lacuna (conta excluída no meio do grupo), gerando código
+    // duplicado com uma conta já existente.
+    const proximoNumero = (numeros.length > 0 ? Math.max(...numeros) : 0) + 1;
+    codigo = `${prefixoGrupo}.${String(proximoNumero).padStart(3, '0')}`;
+  }
+
   return criarConta({
     empresa_id: empresaId,
     codigo,
     nome,
-    tipo: pai.tipo,
-    natureza: pai.natureza,
-    conta_pai_id: pai.id,
-    nivel: (pai.nivel ?? 0) + 1,
+    tipo: base.tipo,
+    natureza: base.natureza,
+    conta_pai_id: contaPaiId,
+    nivel,
     aceita_lancamento: !sintetica,
   });
 }

@@ -172,11 +172,17 @@ export default function PlanoContasTab({ empresaId }) {
             {salvando ? 'Salvando...' : 'Adicionar'}
           </button>
         </div>
-        {contaBaseId && (
-          <p style={{ fontSize: '0.78rem', color: 'var(--text3)', marginTop: 6, marginBottom: 0 }}>
-            A nova conta nasce como filha de "{contasPorId.get(contaBaseId)?.nome}" — mesmo tipo e natureza, código estendido.
-          </p>
-        )}
+        {contaBaseId && (() => {
+          const base = contasPorId.get(contaBaseId);
+          const ehGrupo = base && !base.aceita_lancamento;
+          return (
+            <p style={{ fontSize: '0.78rem', color: 'var(--text3)', marginTop: 6, marginBottom: 0 }}>
+              {ehGrupo
+                ? `A nova conta nasce como sub-conta dentro do grupo "${base?.nome}" — mesmo tipo e natureza, código estendido.`
+                : `A nova conta nasce ao lado de "${base?.nome}", no mesmo grupo — mesmo tipo e natureza, próximo código do grupo.`}
+            </p>
+          );
+        })()}
         {sintetica && (
           <p style={{ fontSize: '0.78rem', color: 'var(--text3)', marginTop: 6, marginBottom: 0 }}>
             Conta sintética não recebe lançamento direto — só agrupa e soma as contas criadas a partir dela.
