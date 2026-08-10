@@ -9,7 +9,7 @@ import LancamentosAgrupados from '../contabil/LancamentosAgrupados';
 import { criarLinkAssinado } from '../documentos/documentosApi';
 import {
   obterResumoObrigacoes, obterResumoTarefas, obterResumoFinanceiro, obterDadosGerenciais,
-  obterDocumentosDoMes, obterDocumentosPorObrigacao, obterSituacaoFiscal, obterHistoricoFaturamento,
+  obterDocumentosDoMes, obterDocumentosPorObrigacao, obterSituacaoFiscal, obterHistoricoFaturamento, obterCndManual,
 } from './painelApi';
 
 const RECEITA_TIPO_LABEL = { normal: 'Normal', st: 'Com ST', monofasico: 'Monofásico' };
@@ -81,14 +81,21 @@ function agruparPorModulo(itensObrigacoes) {
   });
 }
 
-// CND (Certidão Negativa de Débitos) — módulo virtual, deduzido da
-// Situação Fiscal (RFB) já enviada pra essa competência: "regular" = tem
-// CND, "pendente" = não tem, sem relatório ainda = vazio.
-function moduloCND(situacaoFiscal) {
-  if (!situacaoFiscal) return { nome: 'CND', icone: '🛡️', s: 'empty', pct: 0, val: '—' };
-  if (situacaoFiscal.situacao_geral === 'regular') return { nome: 'CND', icone: '🛡️', s: 'ok', pct: 100, val: 'Com CND' };
-  if (situacaoFiscal.situacao_geral === 'pendente') return { nome: 'CND', icone: '🛡️', s: 'danger', pct: 0, val: 'Sem CND' };
-  return { nome: 'CND', icone: '🛡️', s: 'empty', pct: 0, val: '—' };
+// CND (Certidão Negativa de Débitos) — módulo virtual que combina as 3
+// esferas: federal (situacao_fiscal_rfb, extraído por IA), estadual e
+// municipal (cnd_manual, marcação manual — layout de certidão varia
+// demais entre estados/prefeituras pra automatizar). "Com CND" só se
+// todas as esferas que têm dado estiverem regulares; "Sem CND" se
+// qualquer uma estiver pendente; vazio se nenhuma tiver dado ainda.
+function moduloCND(situacaoFiscal, cndManual) {
+  const esferas = [
+    situacaoFiscal?.situacao_geral,
+    cndManual?.situacao_estadual,
+    cndManual?.situacao_municipal,
+  ].filter(Boolean);
+  if (esferas.length === 0) return { nome: 'CND', icone: '🛡️', s: 'empty', pct: 0, val: '—' };
+  if (esferas.some((s) => s === 'pendente')) return { nome: 'CND', icone: '🛡️', s: 'danger', pct: 0, val: 'Sem CND' };
+  return { nome: 'CND', icone: '🛡️', s: 'ok', pct: 100, val: 'Com CND' };
 }
 
 // Página pública (sem login) com a visão consolidada do cliente naquela
@@ -107,6 +114,7 @@ export default function PainelClientePage({ clienteId, competencia }) {
   const [gerenciais, setGerenciais] = useState(null);
   const [historicoFaturamento, setHistoricoFaturamento] = useState([]);
   const [situacaoFiscal, setSituacaoFiscal] = useState(null);
+  const [cndManual, setCndManual] = useState(null);
   const [documentos, setDocumentos] = useState([]);
   const [anexosObrigacao, setAnexosObrigacao] = useState({});
   const [carregando, setCarregando] = useState(true);
@@ -118,18 +126,19 @@ export default function PainelClientePage({ clienteId, competencia }) {
       setErro(null);
       try {
         const { dataInicio, dataFim } = competenciaParaPeriodo(competencia);
-        const [{ data: clienteData, error: errCliente }, resObs, resTarefas, resFinanceiro, itensIdentificar, dadosSimples, historico, situFiscal, docs] = await Promise.all([
+        const [{ data: clienteData, error: errCliente }, resObs, resTarefas, resFinanceiro, itensIdentificar, dadosSimples, historico, situFiscal, cndManualData, docs] = await Promise.all([
           supabase.from('clientes').select('nome, cnpj, regime, carteira').eq('id', clienteId).single(),
           obterResumoObrigacoes(clienteId, competencia),
           obterResumoTarefas(clienteId, competencia),
           obterResumoFinanceiro(clienteId, { dataInicio, dataFim }),
           listarLancamentosAIdentificar(clienteId, { dataInicio, dataFim }),
-          // tabelas/colunas novas (dados_gerenciais_simples/situacao_fiscal_rfb) —
+          // tabelas/colunas novas (dados_gerenciais_simples/situacao_fiscal_rfb/cnd_manual) —
           // toleram ainda não existir no banco (schema pendente de aplicar)
           // sem quebrar o resto do painel
           obterDadosGerenciais(clienteId, competencia).catch(() => null),
           obterHistoricoFaturamento(clienteId).catch(() => []),
           obterSituacaoFiscal(clienteId, competencia).catch(() => null),
+          obterCndManual(clienteId, competencia).catch(() => null),
           obterDocumentosDoMes(clienteId, { dataInicio, dataFim }).catch(() => []),
         ]);
         if (errCliente) throw errCliente;
@@ -141,6 +150,7 @@ export default function PainelClientePage({ clienteId, competencia }) {
         setGerenciais(dadosSimples);
         setHistoricoFaturamento(historico);
         setSituacaoFiscal(situFiscal);
+        setCndManual(cndManualData);
         setDocumentos(docs);
         const anexos = await obterDocumentosPorObrigacao(resObs.itens.map((o) => o.id)).catch(() => ({}));
         setAnexosObrigacao(anexos);
@@ -191,6 +201,12 @@ export default function PainelClientePage({ clienteId, competencia }) {
 
           {!carregando && !erro && (() => {
             const modulos = agruparPorModulo(obs.itens);
+            // Lançamentos a identificar moraram na aba Contábil — garante que a
+            // aba apareça mesmo se não houver obrigação desse módulo na
+            // competência (senão os lançamentos ficariam sem lugar pra aparecer).
+            if (lancamentos.length > 0 && !modulos.some((m) => m.nome === 'Contábil')) {
+              modulos.push({ nome: 'Contábil', icone: '🧮', s: 'empty', pct: 0, val: '—' });
+            }
             const abas = [
               { id: 'resumo', label: 'Resumo', icone: '🏠' },
               ...modulos.map((m) => ({ id: m.nome, label: m.nome, icone: m.icone })),
@@ -225,7 +241,7 @@ export default function PainelClientePage({ clienteId, competencia }) {
                     <div>
                       <SecaoTitulo icone={<LayersIcon size={14} />}>Módulos</SecaoTitulo>
                       <div style={{ display: 'grid', gridTemplateColumns: `repeat(auto-fit, minmax(72px, 1fr))`, gap: 8 }}>
-                        {[...modulos, moduloCND(situacaoFiscal)].map((m) => (
+                        {[...modulos, moduloCND(situacaoFiscal, cndManual)].map((m) => (
                           <ModuloCard key={m.nome} {...m} onClick={() => setAba(m.nome === 'CND' ? 'cnd' : m.nome)} />
                         ))}
                       </div>
@@ -240,6 +256,26 @@ export default function PainelClientePage({ clienteId, competencia }) {
                           linha1={`${tarefas.concluidas}/${tarefas.total} concluídas`} alerta={null} />
                       </div>
                     </div>
+
+                    {((gerenciais?.valor_das != null && gerenciais.valor_das > 0) || situacaoFiscal?.debitos?.length > 0) && (() => {
+                      const obrigDas = obs.itens.find((o) => `${o.titulo || ''} ${o.tipo || ''}`.toLowerCase().includes('das'));
+                      const diasDas = obrigDas ? diasParaVencer(obrigDas.vencimento) : null;
+                      return (
+                        <div>
+                          <SecaoTitulo icone={<WalletIcon size={14} />}>Impostos a pagar</SecaoTitulo>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                            {gerenciais?.valor_das != null && gerenciais.valor_das > 0 && (
+                              <ItemLista titulo="DAS — Simples Nacional" sub={fmt(gerenciais.valor_das)}
+                                vencimentoTexto={obrigDas?.vencimento ? `${fmtData(obrigDas.vencimento)} · ${fmtDiasParaVencer(diasDas)}` : null}
+                                vencimentoCor={diasDas != null && diasDas < 0 ? 'var(--danger)' : diasDas != null && diasDas <= 3 ? 'var(--warn)' : 'var(--text3)'} />
+                            )}
+                            {situacaoFiscal?.debitos?.map((d, i) => (
+                              <ItemLista key={i} titulo={d.tributo} sub={fmt(d.valor)} statusLabel={d.situacao} statusCor={['var(--warn)', 'var(--warn-dim)']} />
+                            ))}
+                          </div>
+                        </div>
+                      );
+                    })()}
 
                     {gerenciais && (
                       <div>
@@ -291,16 +327,6 @@ export default function PainelClientePage({ clienteId, competencia }) {
                       </div>
                     )}
 
-                    {lancamentos.length > 0 && (
-                      <div>
-                        <SecaoTitulo icone={<SearchIcon size={14} />}>Lançamentos a identificar</SecaoTitulo>
-                        <p style={{ fontSize: 12, color: 'var(--text2)', marginBottom: 10 }}>
-                          Escreva embaixo de cada lançamento o que foi essa movimentação — a resposta salva sozinha ao sair do campo.
-                        </p>
-                        <LancamentosAgrupados lancamentos={lancamentos} LinhaComponent={LinhaIdentificar} />
-                      </div>
-                    )}
-
                     <div>
                       <SecaoTitulo icone={<WalletIcon size={14} />}>Financeiro</SecaoTitulo>
                       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10 }}>
@@ -322,7 +348,7 @@ export default function PainelClientePage({ clienteId, competencia }) {
                         {moduloAtual.s === 'empty' ? '—' : `${moduloAtual.pct}%`}
                       </span>
                     </div>
-                    {obsDoModulo.length === 0 && tarefasDoModulo.length === 0 && (
+                    {obsDoModulo.length === 0 && tarefasDoModulo.length === 0 && !(moduloAtual.nome === 'Contábil' && lancamentos.length > 0) && (
                       <div style={{ textAlign: 'center', color: 'var(--text3)', fontSize: 13, padding: '24px 0' }}>Nada nesse módulo por enquanto.</div>
                     )}
                     {obsDoModulo.length > 0 && (
@@ -351,6 +377,15 @@ export default function PainelClientePage({ clienteId, competencia }) {
                               vencimentoCor={dias != null && dias < 0 ? 'var(--danger)' : dias != null && dias <= 3 ? 'var(--warn)' : 'var(--text3)'} />
                           );
                         })}
+                      </div>
+                    )}
+                    {moduloAtual.nome === 'Contábil' && lancamentos.length > 0 && (
+                      <div style={{ marginTop: (obsDoModulo.length > 0 || tarefasDoModulo.length > 0) ? 16 : 0 }}>
+                        <SecaoTitulo icone={<SearchIcon size={14} />}>Lançamentos a identificar</SecaoTitulo>
+                        <p style={{ fontSize: 12, color: 'var(--text2)', marginBottom: 10 }}>
+                          Escreva embaixo de cada lançamento o que foi essa movimentação — a resposta salva sozinha ao sair do campo.
+                        </p>
+                        <LancamentosAgrupados lancamentos={lancamentos} LinhaComponent={LinhaIdentificar} />
                       </div>
                     )}
                   </div>
@@ -410,6 +445,17 @@ export default function PainelClientePage({ clienteId, competencia }) {
                         )}
                       </>
                     )}
+
+                    <div style={{ marginTop: situacaoFiscal ? 16 : 0 }}>
+                      <SecaoTitulo icone={<span>🛡️</span>}>Estadual e Municipal</SecaoTitulo>
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 10 }}>
+                        <CardSituacaoCND label="Estadual" situacao={cndManual?.situacao_estadual} />
+                        <CardSituacaoCND label="Municipal" situacao={cndManual?.situacao_municipal} />
+                      </div>
+                      {cndManual?.observacao && (
+                        <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 8 }}>{cndManual.observacao}</div>
+                      )}
+                    </div>
                   </div>
                 )}
               </div>
@@ -498,6 +544,20 @@ function ModuloCard({ nome, icone, s, pct, val, onClick }) {
         whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{nome}</div>
       <div style={{ fontSize: 14, fontWeight: 800, color: cor }}>{s === 'empty' ? '—' : `${pct}%`}</div>
       <div style={{ fontSize: 9, color: 'var(--text3)', marginTop: 2 }}>{val}</div>
+    </div>
+  );
+}
+
+function CardSituacaoCND({ label, situacao }) {
+  const cor = situacao === 'regular' ? 'var(--ok)' : situacao === 'pendente' ? 'var(--danger)' : 'var(--text3)';
+  const corDim = situacao === 'regular' ? 'var(--ok-dim)' : situacao === 'pendente' ? 'var(--danger-dim)' : 'var(--surface2)';
+  const texto = situacao === 'regular' ? 'Regular' : situacao === 'pendente' ? 'Com pendências' : 'Não informado';
+  return (
+    <div style={{ background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: '10px 12px' }}>
+      <div style={{ fontSize: 10, color: 'var(--text3)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.03em' }}>{label}</div>
+      <span style={{ display: 'inline-block', marginTop: 5, fontSize: 12, fontWeight: 700, borderRadius: 99, padding: '3px 10px', color: cor, background: corDim }}>
+        {texto}
+      </span>
     </div>
   );
 }

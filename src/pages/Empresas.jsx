@@ -5,7 +5,7 @@ import { DeptChip, PriDot, fmtDate, isOverdue, useToast } from '../components/sh
 import { supabase } from '../lib/supabase'
 import { listarDepartamentos, criarDepartamento, gerarObrigacoesRecorrentesCompetencia } from './andamento/andamentoApi'
 import { NovaObrigacaoModal, NovaTarefaModuloModal, ModalTarefasLote, ModalObrigacoesLote, ModalBase } from './andamento/modaisObrigacao'
-import { uploadDeclaracaoSimples, uploadSituacaoFiscal } from './painel/painelApi'
+import { uploadDeclaracaoSimples, uploadSituacaoFiscal, obterCndManual, salvarCndManual } from './painel/painelApi'
 import { listarDocumentosPorCliente, criarLinkAssinado } from './documentos/documentosApi'
 import { criarLembrete, listarLembretesPorItens, excluirLembrete } from './andamento/lembretesApi'
 
@@ -135,6 +135,7 @@ export default function Empresas({ onOpenTarefas, clienteInicialId, onClienteIni
   const [showLoteObs,      setShowLoteObs]    = useState(false)
   const [tarefaEditando,   setTarefaEditando] = useState(null) // tarefa aberta pro modal de edição
   const [lembreteAlvo,     setLembreteAlvo]   = useState(null) // {obrigacaoId} ou {tarefaId} aberto pro modal de lembrete
+  const [showCndManual,   setShowCndManual]   = useState(false) // modal de marcar CND estadual/municipal
   const [lembretesPendentes, setLembretesPendentes] = useState([]) // dos itens do drawer aberto
 
   const carregarDepartamentos = () => listarDepartamentos().then(setDepartamentos).catch(() => {})
@@ -889,6 +890,10 @@ export default function Empresas({ onOpenTarefas, clienteInicialId, onClienteIni
                       onChange={(e) => { handleUploadSituacaoFiscal(drawer.c, e.target.files?.[0]); e.target.value = '' }} />
                   </label>
                 </div>
+                <button onClick={() => setShowCndManual(true)}
+                  style={{ width:'100%', background:'var(--surface2)', border:'1px solid var(--border)', borderRadius:8, padding:'7px', fontSize:11, color:'var(--text2)', fontWeight:500, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', gap:4 }}>
+                  🛡️ CND Estadual/Municipal
+                </button>
                 <div style={{ display:'flex', gap:7 }}>
                   <button onClick={() => handleVisualizarPainel(drawer.c)}
                     title="Abrir o painel do cliente numa aba nova, pra conferir antes de mandar"
@@ -965,6 +970,16 @@ export default function Empresas({ onOpenTarefas, clienteInicialId, onClienteIni
           alvo={lembreteAlvo}
           onClose={() => setLembreteAlvo(null)}
           onSaved={async () => { setLembreteAlvo(null); await recarregarLembretes() }}
+        />
+      )}
+
+      {/* Modal CND estadual/municipal */}
+      {showCndManual && drawer && (
+        <ModalCndManual
+          cliente={drawer.c}
+          competencia={compSel}
+          onClose={() => setShowCndManual(false)}
+          onSaved={() => { setShowCndManual(false); show?.('CND estadual/municipal atualizada') }}
         />
       )}
 
@@ -1117,6 +1132,85 @@ function ModalLembrete({ alvo, onClose, onSaved }) {
         <button onClick={handleSalvar} disabled={saving||!dataHora}
           style={{ flex:1, background:'var(--accent)', border:'none', borderRadius:8, padding:'9px', fontSize:12, color:'#fff', fontWeight:500, cursor:'pointer', opacity:(saving||!dataHora)?.6:1 }}>
           {saving?'Salvando...':'Marcar lembrete'}
+        </button>
+      </div>
+    </ModalBase>
+  )
+}
+
+// ── Modal CND Estadual/Municipal ─────────────────────────────────────────────
+// Marcação manual (sem upload/IA — layout de certidão varia demais entre
+// estados/prefeituras) que complementa a Situação Fiscal federal (RFB) já
+// automatizada. Alimenta a aba CND do painel compartilhável do cliente.
+function ModalCndManual({ cliente, competencia, onClose, onSaved }) {
+  const [situacaoEstadual, setSituacaoEstadual] = useState('')
+  const [situacaoMunicipal, setSituacaoMunicipal] = useState('')
+  const [observacao, setObservacao] = useState('')
+  const [carregando, setCarregando] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const { show } = useToast()
+
+  useEffect(() => {
+    obterCndManual(cliente.id, competencia)
+      .then((atual) => {
+        if (atual) {
+          setSituacaoEstadual(atual.situacao_estadual || '')
+          setSituacaoMunicipal(atual.situacao_municipal || '')
+          setObservacao(atual.observacao || '')
+        }
+      })
+      .catch(() => {})
+      .finally(() => setCarregando(false))
+  }, [cliente.id, competencia])
+
+  const handleSalvar = async () => {
+    setSaving(true)
+    try {
+      await salvarCndManual(cliente.id, competencia, { situacaoEstadual, situacaoMunicipal, observacao: observacao.trim() })
+      onSaved()
+    } catch (e) {
+      show?.('Erro ao salvar: ' + e.message)
+    }
+    setSaving(false)
+  }
+
+  const SeletorSituacao = ({ label, valor, onChange }) => (
+    <div>
+      <label style={{ fontSize:11, color:'var(--text2)', display:'block', marginBottom:4 }}>{label}</label>
+      <select value={valor} onChange={e => onChange(e.target.value)}
+        style={{ width:'100%', background:'var(--surface2)', border:'1px solid var(--border)', borderRadius:8, padding:'8px 10px', fontSize:13, color:'var(--text1)', outline:'none' }}>
+        <option value="">Não informado</option>
+        <option value="regular">Regular</option>
+        <option value="pendente">Pendente</option>
+      </select>
+    </div>
+  )
+
+  return (
+    <ModalBase onClose={onClose} titulo={`🛡️ CND Estadual/Municipal — ${cliente.nome.split(' ')[0]}`}>
+      {carregando ? (
+        <p style={{ fontSize:12, color:'var(--text3)' }}>Carregando...</p>
+      ) : (
+        <div style={{ display:'flex', flexDirection:'column', gap:12 }}>
+          <p style={{ fontSize:11, color:'var(--text3)' }}>Competência {competencia} — marcação manual, sem upload de certidão.</p>
+          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10 }}>
+            <SeletorSituacao label="Estadual" valor={situacaoEstadual} onChange={setSituacaoEstadual} />
+            <SeletorSituacao label="Municipal" valor={situacaoMunicipal} onChange={setSituacaoMunicipal} />
+          </div>
+          <div>
+            <label style={{ fontSize:11, color:'var(--text2)', display:'block', marginBottom:4 }}>Observação (opcional)</label>
+            <textarea value={observacao} onChange={e => setObservacao(e.target.value)} rows={2}
+              placeholder="Ex: certidão estadual vence dia 15..."
+              style={{ width:'100%', background:'var(--surface2)', border:'1px solid var(--border)', borderRadius:8, padding:'8px 10px', fontSize:13, color:'var(--text1)', outline:'none', resize:'vertical', fontFamily:'inherit' }} />
+          </div>
+        </div>
+      )}
+      <div style={{ display:'flex', gap:8, marginTop:16 }}>
+        <button onClick={onClose}
+          style={{ flex:1, background:'var(--surface2)', border:'1px solid var(--border)', borderRadius:8, padding:'9px', fontSize:12, color:'var(--text2)', cursor:'pointer' }}>Cancelar</button>
+        <button onClick={handleSalvar} disabled={saving||carregando}
+          style={{ flex:1, background:'var(--accent)', border:'none', borderRadius:8, padding:'9px', fontSize:12, color:'#fff', fontWeight:500, cursor:'pointer', opacity:(saving||carregando)?.6:1 }}>
+          {saving?'Salvando...':'Salvar'}
         </button>
       </div>
     </ModalBase>

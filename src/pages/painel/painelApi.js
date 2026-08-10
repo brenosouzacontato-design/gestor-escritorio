@@ -285,3 +285,33 @@ export async function obterSituacaoFiscal(clienteId, competencia) {
   if (error) throw error;
   return data;
 }
+
+// ---------- CND estadual/municipal (marcação manual) ----------
+
+export async function obterCndManual(clienteId, competencia) {
+  const { data, error } = await supabase
+    .from('cnd_manual')
+    .select('*')
+    .eq('cliente_id', clienteId)
+    .eq('competencia', competencia)
+    .maybeSingle();
+  if (error) throw error;
+  return data;
+}
+
+export async function salvarCndManual(clienteId, competencia, { situacaoEstadual, situacaoMunicipal, observacao }) {
+  const { data, error } = await supabase
+    .from('cnd_manual')
+    .upsert({
+      cliente_id: clienteId,
+      competencia,
+      situacao_estadual: situacaoEstadual || null,
+      situacao_municipal: situacaoMunicipal || null,
+      observacao: observacao || null,
+      atualizado_em: new Date().toISOString(),
+    }, { onConflict: 'cliente_id,competencia' })
+    .select()
+    .single();
+  if (error) throw error;
+  return data;
+}
