@@ -14,7 +14,10 @@ function fmtData(iso) {
 // diferentes — não vale a pena unificar só por isso).
 export default function LancamentosAgrupados({ lancamentos, LinhaComponent, onSaved }) {
   const [agrupado, setAgrupado] = useState(true)
-  const [colapsados, setColapsados] = useState({})
+  // dias abertos (expandidos) — por padrão nenhum, os grupos nascem
+  // recolhidos (com muitos lançamentos por dia, tudo aberto de cara não
+  // reduz a poluição visual, que é o ponto de agrupar por dia).
+  const [abertos, setAbertos] = useState(() => new Set())
 
   const grupos = useMemo(() => {
     if (!agrupado) return null
@@ -23,7 +26,11 @@ export default function LancamentosAgrupados({ lancamentos, LinhaComponent, onSa
     return Object.entries(porData).sort((a, b) => b[0].localeCompare(a[0]))
   }, [lancamentos, agrupado])
 
-  const toggleGrupo = (data) => setColapsados((prev) => ({ ...prev, [data]: !prev[data] }))
+  const toggleGrupo = (data) => setAbertos((prev) => {
+    const next = new Set(prev)
+    if (next.has(data)) next.delete(data); else next.add(data)
+    return next
+  })
 
   return (
     <div>
@@ -43,7 +50,7 @@ export default function LancamentosAgrupados({ lancamentos, LinhaComponent, onSa
       )}
 
       {agrupado && grupos.map(([data, itens]) => {
-        const colapsado = !!colapsados[data]
+        const colapsado = !abertos.has(data)
         return (
           <div key={data} style={{ marginBottom: 10 }}>
             <button onClick={() => toggleGrupo(data)}

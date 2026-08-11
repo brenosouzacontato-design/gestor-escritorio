@@ -9,6 +9,15 @@ import { calcularDREPorConta } from '../contabil/contabilApi';
 
 const BUCKET = 'documentos'; // mesmo bucket já criado pra anexos de documentos
 
+// "MM/YYYY" -> inteiro comparável (ano*100+mes) — competencia é texto, então
+// comparação de string não ordena certo entre anos (ex: "09/2025" > "01/2026"
+// como string). Usado tanto pro histórico de faturamento quanto pra achar
+// pendências de competências anteriores.
+function competenciaOrdinal(c) {
+  const [mes, ano] = c.split('/').map(Number);
+  return ano * 100 + mes;
+}
+
 // ---------- Obrigações / tarefas do mês ----------
 
 export async function obterResumoObrigacoes(clienteId, competencia) {
@@ -215,10 +224,41 @@ export async function obterHistoricoFaturamento(clienteId) {
     .not('faturamento_periodo', 'is', null);
   if (error) throw error;
 
-  const chave = (c) => { const [mes, ano] = c.split('/').map(Number); return ano * 100 + mes; };
   return (data || [])
-    .sort((a, b) => chave(a.competencia) - chave(b.competencia))
+    .sort((a, b) => competenciaOrdinal(a.competencia) - competenciaOrdinal(b.competencia))
     .slice(-12);
+}
+
+// Obrigações e tarefas ainda pendentes/vencidas de competências ANTERIORES
+// à selecionada — o painel é histórico: uma pendência não some só porque o
+// mês virou, ela deve continuar visível até ser resolvida. Fica de fora do
+// resumo/percentual da competência atual (obterResumoObrigacoes/Tarefas) de
+// propósito, pra não distorcer o "% do mês" — mora numa seção à parte.
+export async function obterPendenciasAnteriores(clienteId, competenciaAtual) {
+  const ordAtual = competenciaOrdinal(competenciaAtual);
+  const [{ data: obrigacoes, error: errObs }, { data: tarefas, error: errTar }] = await Promise.all([
+    supabase
+      .from('obrigacoes')
+      .select('id, titulo, tipo, status, vencimento, competencia, departamento_id, departamentos(nome, icone)')
+      .eq('cliente_id', clienteId)
+      .in('status', ['pendente', 'vencido']),
+    supabase
+      .from('tarefas')
+      .select('id, titulo, vencimento, departamento, competencia')
+      .eq('cliente_id', clienteId)
+      .eq('concluida', false),
+  ]);
+  if (errObs) throw errObs;
+  if (errTar) throw errTar;
+
+  return {
+    obrigacoes: (obrigacoes || [])
+      .filter((o) => o.competencia && competenciaOrdinal(o.competencia) < ordAtual)
+      .sort((a, b) => competenciaOrdinal(a.competencia) - competenciaOrdinal(b.competencia)),
+    tarefas: (tarefas || [])
+      .filter((t) => t.competencia && competenciaOrdinal(t.competencia) < ordAtual)
+      .sort((a, b) => competenciaOrdinal(a.competencia) - competenciaOrdinal(b.competencia)),
+  };
 }
 
 // ---------- Situação Fiscal (RFB) ----------
@@ -299,17 +339,39 @@ export async function obterCndManual(clienteId, competencia) {
   return data;
 }
 
-export async function salvarCndManual(clienteId, competencia, { situacaoEstadual, situacaoMunicipal, observacao }) {
+// anexoEstadual/anexoMunicipal (File, opcionais) — o PDF da própria
+// certidão, guardado junto da marcação manual. Só entram no payload (e só
+// sobem pro Storage) quando um arquivo novo é escolhido — sem isso, o
+// upsert não mexe no anexo que já estava salvo (upsert do PostgREST só
+// atualiza as colunas presentes no payload).
+export async function salvarCndManual(clienteId, competencia, { situacaoEstadual, situacaoMunicipal, observacao, anexoEstadual, anexoMunicipal }) {
+  const payload = {
+    cliente_id: clienteId,
+    competencia,
+    situacao_estadual: situacaoEstadual || null,
+    situacao_municipal: situacaoMunicipal || null,
+    observacao: observacao || null,
+    atualizado_em: new Date().toISOString(),
+  };
+
+  if (anexoEstadual) {
+    const path = chaveStorage(anexoEstadual);
+    const { error: errUpload } = await supabase.storage.from(BUCKET).upload(path, anexoEstadual, { contentType: anexoEstadual.type || 'application/pdf' });
+    if (errUpload) throw errUpload;
+    payload.anexo_estadual_path = path;
+    payload.anexo_estadual_nome = anexoEstadual.name;
+  }
+  if (anexoMunicipal) {
+    const path = chaveStorage(anexoMunicipal);
+    const { error: errUpload } = await supabase.storage.from(BUCKET).upload(path, anexoMunicipal, { contentType: anexoMunicipal.type || 'application/pdf' });
+    if (errUpload) throw errUpload;
+    payload.anexo_municipal_path = path;
+    payload.anexo_municipal_nome = anexoMunicipal.name;
+  }
+
   const { data, error } = await supabase
     .from('cnd_manual')
-    .upsert({
-      cliente_id: clienteId,
-      competencia,
-      situacao_estadual: situacaoEstadual || null,
-      situacao_municipal: situacaoMunicipal || null,
-      observacao: observacao || null,
-      atualizado_em: new Date().toISOString(),
-    }, { onConflict: 'cliente_id,competencia' })
+    .upsert(payload, { onConflict: 'cliente_id,competencia' })
     .select()
     .single();
   if (error) throw error;

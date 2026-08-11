@@ -1146,6 +1146,10 @@ function ModalCndManual({ cliente, competencia, onClose, onSaved }) {
   const [situacaoEstadual, setSituacaoEstadual] = useState('')
   const [situacaoMunicipal, setSituacaoMunicipal] = useState('')
   const [observacao, setObservacao] = useState('')
+  const [anexoEstadualAtual, setAnexoEstadualAtual] = useState(null) // {path, nome} já salvo
+  const [anexoMunicipalAtual, setAnexoMunicipalAtual] = useState(null)
+  const [novoAnexoEstadual, setNovoAnexoEstadual] = useState(null) // File escolhido agora
+  const [novoAnexoMunicipal, setNovoAnexoMunicipal] = useState(null)
   const [carregando, setCarregando] = useState(true)
   const [saving, setSaving] = useState(false)
   const { show } = useToast()
@@ -1157,6 +1161,8 @@ function ModalCndManual({ cliente, competencia, onClose, onSaved }) {
           setSituacaoEstadual(atual.situacao_estadual || '')
           setSituacaoMunicipal(atual.situacao_municipal || '')
           setObservacao(atual.observacao || '')
+          setAnexoEstadualAtual(atual.anexo_estadual_path ? { path: atual.anexo_estadual_path, nome: atual.anexo_estadual_nome } : null)
+          setAnexoMunicipalAtual(atual.anexo_municipal_path ? { path: atual.anexo_municipal_path, nome: atual.anexo_municipal_nome } : null)
         }
       })
       .catch(() => {})
@@ -1166,12 +1172,24 @@ function ModalCndManual({ cliente, competencia, onClose, onSaved }) {
   const handleSalvar = async () => {
     setSaving(true)
     try {
-      await salvarCndManual(cliente.id, competencia, { situacaoEstadual, situacaoMunicipal, observacao: observacao.trim() })
+      await salvarCndManual(cliente.id, competencia, {
+        situacaoEstadual, situacaoMunicipal, observacao: observacao.trim(),
+        anexoEstadual: novoAnexoEstadual, anexoMunicipal: novoAnexoMunicipal,
+      })
       onSaved()
     } catch (e) {
       show?.('Erro ao salvar: ' + e.message)
     }
     setSaving(false)
+  }
+
+  const baixarAnexo = async (path) => {
+    try {
+      const url = await criarLinkAssinado(path)
+      window.open(url, '_blank')
+    } catch (e) {
+      show?.('Erro ao gerar link: ' + e.message)
+    }
   }
 
   const SeletorSituacao = ({ label, valor, onChange }) => (
@@ -1186,16 +1204,41 @@ function ModalCndManual({ cliente, competencia, onClose, onSaved }) {
     </div>
   )
 
+  const AnexoCertidao = ({ label, anexoAtual, novoAnexo, onEscolher }) => (
+    <div>
+      <label style={{ fontSize:11, color:'var(--text2)', display:'block', marginBottom:4 }}>Certidão {label} (PDF, opcional)</label>
+      {anexoAtual && !novoAnexo && (
+        <div style={{ display:'flex', alignItems:'center', gap:6, marginBottom:5 }}>
+          <FileTextIcon size={12} color="var(--text3)" />
+          <span style={{ fontSize:11, color:'var(--text2)', flex:1, minWidth:0, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{anexoAtual.nome}</span>
+          <button type="button" onClick={() => baixarAnexo(anexoAtual.path)}
+            style={{ background:'none', border:'none', color:'var(--accent)', cursor:'pointer', padding:2, display:'flex' }} title="Baixar">
+            <DownloadIcon size={13} />
+          </button>
+        </div>
+      )}
+      {novoAnexo && (
+        <div style={{ fontSize:11, color:'var(--ok)', marginBottom:5 }}>Novo arquivo selecionado: {novoAnexo.name}</div>
+      )}
+      <input type="file" accept=".pdf,application/pdf" onChange={(e) => onEscolher(e.target.files?.[0] || null)}
+        style={{ width:'100%', fontSize:11 }} />
+    </div>
+  )
+
   return (
     <ModalBase onClose={onClose} titulo={`🛡️ CND Estadual/Municipal — ${cliente.nome.split(' ')[0]}`}>
       {carregando ? (
         <p style={{ fontSize:12, color:'var(--text3)' }}>Carregando...</p>
       ) : (
         <div style={{ display:'flex', flexDirection:'column', gap:12 }}>
-          <p style={{ fontSize:11, color:'var(--text3)' }}>Competência {competencia} — marcação manual, sem upload de certidão.</p>
+          <p style={{ fontSize:11, color:'var(--text3)' }}>Competência {competencia} — marcação manual (sem leitura automática, formato varia demais por estado/prefeitura); o PDF da certidão pode ser anexado como prova.</p>
           <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10 }}>
             <SeletorSituacao label="Estadual" valor={situacaoEstadual} onChange={setSituacaoEstadual} />
             <SeletorSituacao label="Municipal" valor={situacaoMunicipal} onChange={setSituacaoMunicipal} />
+          </div>
+          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10 }}>
+            <AnexoCertidao label="estadual" anexoAtual={anexoEstadualAtual} novoAnexo={novoAnexoEstadual} onEscolher={setNovoAnexoEstadual} />
+            <AnexoCertidao label="municipal" anexoAtual={anexoMunicipalAtual} novoAnexo={novoAnexoMunicipal} onEscolher={setNovoAnexoMunicipal} />
           </div>
           <div>
             <label style={{ fontSize:11, color:'var(--text2)', display:'block', marginBottom:4 }}>Observação (opcional)</label>

@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import {
   WalletIcon, ClipboardListIcon, CheckSquareIcon, PaperclipIcon, BarChart3Icon,
   SearchIcon, CalendarIcon, DownloadIcon, CheckCircleIcon, FileTextIcon, TrendingUpIcon, LayersIcon,
-  ChevronDownIcon, ChevronRightIcon,
+  ChevronDownIcon, ChevronRightIcon, AlertTriangleIcon,
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { listarLancamentosAIdentificar, salvarObservacaoCliente } from '../contabil/contabilApi';
@@ -11,6 +11,7 @@ import { criarLinkAssinado } from '../documentos/documentosApi';
 import {
   obterResumoObrigacoes, obterResumoTarefas, obterResumoFinanceiro, obterDadosGerenciais,
   obterDocumentosDoMes, obterDocumentosPorObrigacao, obterSituacaoFiscal, obterHistoricoFaturamento, obterCndManual,
+  obterPendenciasAnteriores,
 } from './painelApi';
 
 const RECEITA_TIPO_LABEL = { normal: 'Normal', st: 'Com ST', monofasico: 'Monofásico' };
@@ -116,6 +117,7 @@ export default function PainelClientePage({ clienteId, competencia }) {
   const [historicoFaturamento, setHistoricoFaturamento] = useState([]);
   const [situacaoFiscal, setSituacaoFiscal] = useState(null);
   const [cndManual, setCndManual] = useState(null);
+  const [pendenciasAnteriores, setPendenciasAnteriores] = useState({ obrigacoes: [], tarefas: [] });
   const [documentos, setDocumentos] = useState([]);
   const [anexosObrigacao, setAnexosObrigacao] = useState({});
   const [carregando, setCarregando] = useState(true);
@@ -128,7 +130,7 @@ export default function PainelClientePage({ clienteId, competencia }) {
       setErro(null);
       try {
         const { dataInicio, dataFim } = competenciaParaPeriodo(competencia);
-        const [{ data: clienteData, error: errCliente }, resObs, resTarefas, resFinanceiro, itensIdentificar, dadosSimples, historico, situFiscal, cndManualData, docs] = await Promise.all([
+        const [{ data: clienteData, error: errCliente }, resObs, resTarefas, resFinanceiro, itensIdentificar, dadosSimples, historico, situFiscal, cndManualData, docs, pendenciasAnt] = await Promise.all([
           supabase.from('clientes').select('nome, cnpj, regime, carteira').eq('id', clienteId).single(),
           obterResumoObrigacoes(clienteId, competencia),
           obterResumoTarefas(clienteId, competencia),
@@ -142,6 +144,7 @@ export default function PainelClientePage({ clienteId, competencia }) {
           obterSituacaoFiscal(clienteId, competencia).catch(() => null),
           obterCndManual(clienteId, competencia).catch(() => null),
           obterDocumentosDoMes(clienteId, { dataInicio, dataFim }).catch(() => []),
+          obterPendenciasAnteriores(clienteId, competencia).catch(() => ({ obrigacoes: [], tarefas: [] })),
         ]);
         if (errCliente) throw errCliente;
         setCliente(clienteData);
@@ -154,6 +157,7 @@ export default function PainelClientePage({ clienteId, competencia }) {
         setSituacaoFiscal(situFiscal);
         setCndManual(cndManualData);
         setDocumentos(docs);
+        setPendenciasAnteriores(pendenciasAnt);
         const anexos = await obterDocumentosPorObrigacao(resObs.itens.map((o) => o.id)).catch(() => ({}));
         setAnexosObrigacao(anexos);
       } catch (e) {
@@ -247,6 +251,7 @@ export default function PainelClientePage({ clienteId, competencia }) {
                       titulo: o.titulo || o.tipo,
                       departamento: o.departamentos?.nome,
                       vencimento: o.vencimento,
+                      concluido: o.status === 'concluido' || o.status === 'nao_aplica',
                       valor: temValorDas && obrigDas && o.id === obrigDas.id ? gerenciais.valor_das : null,
                     }));
                   const semData = [
@@ -309,6 +314,32 @@ export default function PainelClientePage({ clienteId, competencia }) {
                             </div>
                           </div>
                         )}
+                      </div>
+                    )}
+
+                    {(pendenciasAnteriores.obrigacoes.length > 0 || pendenciasAnteriores.tarefas.length > 0) && (
+                      <div>
+                        <SecaoTitulo icone={<AlertTriangleIcon size={14} />}>Pendências de meses anteriores</SecaoTitulo>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                          {pendenciasAnteriores.obrigacoes.map((o) => {
+                            const dias = diasParaVencer(o.vencimento);
+                            return (
+                              <ItemLista key={o.id} titulo={o.titulo || o.tipo} sub={`${o.departamentos?.nome || 'Geral'} · ${o.competencia}`}
+                                statusLabel={STATUS_OBS_LABEL[o.status]} statusCor={STATUS_OBS_COR[o.status]}
+                                vencimentoTexto={o.vencimento ? `${fmtData(o.vencimento)} · ${fmtDiasParaVencer(dias)}` : null}
+                                vencimentoCor={dias != null && dias < 0 ? 'var(--danger)' : 'var(--text3)'} />
+                            );
+                          })}
+                          {pendenciasAnteriores.tarefas.map((t) => {
+                            const dias = diasParaVencer(t.vencimento);
+                            return (
+                              <ItemLista key={t.id} titulo={t.titulo} sub={`${t.departamento || 'Geral'} · ${t.competencia}`}
+                                statusLabel="Pendente" statusCor={['var(--warn)', 'var(--warn-dim)']}
+                                vencimentoTexto={t.vencimento ? `${fmtData(t.vencimento)} · ${fmtDiasParaVencer(dias)}` : null}
+                                vencimentoCor={dias != null && dias < 0 ? 'var(--danger)' : 'var(--text3)'} />
+                            );
+                          })}
+                        </div>
                       </div>
                     )}
 
@@ -492,8 +523,12 @@ export default function PainelClientePage({ clienteId, competencia }) {
                     <div style={{ marginTop: situacaoFiscal ? 16 : 0 }}>
                       <SecaoTitulo icone={<span>🛡️</span>}>Estadual e Municipal</SecaoTitulo>
                       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 10 }}>
-                        <CardSituacaoCND label="Estadual" situacao={cndManual?.situacao_estadual} />
-                        <CardSituacaoCND label="Municipal" situacao={cndManual?.situacao_municipal} />
+                        <CardSituacaoCND label="Estadual" situacao={cndManual?.situacao_estadual}
+                          anexo={cndManual?.anexo_estadual_path ? { storage_path: cndManual.anexo_estadual_path, nome_arquivo: cndManual.anexo_estadual_nome } : null}
+                          onBaixarAnexo={baixarAnexo} />
+                        <CardSituacaoCND label="Municipal" situacao={cndManual?.situacao_municipal}
+                          anexo={cndManual?.anexo_municipal_path ? { storage_path: cndManual.anexo_municipal_path, nome_arquivo: cndManual.anexo_municipal_nome } : null}
+                          onBaixarAnexo={baixarAnexo} />
                       </div>
                       {cndManual?.observacao && (
                         <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 8 }}>{cndManual.observacao}</div>
@@ -605,7 +640,8 @@ function LinhaDoTempoVencimentos({ itens }) {
         const grupo = porData[data];
         const dias = diasParaVencer(data);
         const totalValor = grupo.reduce((s, it) => s + (it.valor || 0), 0);
-        const cor = dias < 0 ? 'var(--danger)' : dias <= 3 ? 'var(--warn)' : 'var(--accent)';
+        const todosConcluidos = grupo.every((it) => it.concluido);
+        const cor = todosConcluidos ? 'var(--ok)' : dias < 0 ? 'var(--danger)' : dias <= 3 ? 'var(--warn)' : 'var(--accent)';
         return (
           <div key={data} style={{ display: 'flex', gap: 10 }}>
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: 12, flexShrink: 0 }}>
@@ -615,17 +651,18 @@ function LinhaDoTempoVencimentos({ itens }) {
             <div style={{ flex: 1, paddingBottom: i < datas.length - 1 ? 14 : 0, minWidth: 0 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 8 }}>
                 <span style={{ fontSize: 12.5, fontWeight: 700, color: cor }}>
-                  {fmtData(data)} · {fmtDiasParaVencer(dias)}
+                  {fmtData(data)} · {todosConcluidos ? 'concluído' : fmtDiasParaVencer(dias)}
                 </span>
                 {totalValor > 0 && <span style={{ fontSize: 13, fontWeight: 800, color: 'var(--text1)', flexShrink: 0 }}>{fmt(totalValor)}</span>}
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 3, marginTop: 5 }}>
                 {grupo.map((it) => (
-                  <div key={it.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, fontSize: 12, color: 'var(--text2)' }}>
-                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  <div key={it.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, fontSize: 12, color: it.concluido ? 'var(--ok)' : 'var(--text2)' }}>
+                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: 4 }}>
+                      {it.concluido && <CheckCircleIcon size={11} color="var(--ok)" style={{ flexShrink: 0 }} />}
                       {it.titulo}{it.departamento ? ` · ${it.departamento}` : ''}
                     </span>
-                    {it.valor != null && <span style={{ fontWeight: 600, color: 'var(--text1)', flexShrink: 0 }}>{fmt(it.valor)}</span>}
+                    {it.valor != null && <span style={{ fontWeight: 600, color: it.concluido ? 'var(--ok)' : 'var(--text1)', flexShrink: 0 }}>{fmt(it.valor)}</span>}
                   </div>
                 ))}
               </div>
@@ -637,13 +674,22 @@ function LinhaDoTempoVencimentos({ itens }) {
   );
 }
 
-function CardSituacaoCND({ label, situacao }) {
+function CardSituacaoCND({ label, situacao, anexo, onBaixarAnexo }) {
   const cor = situacao === 'regular' ? 'var(--ok)' : situacao === 'pendente' ? 'var(--danger)' : 'var(--text3)';
   const corDim = situacao === 'regular' ? 'var(--ok-dim)' : situacao === 'pendente' ? 'var(--danger-dim)' : 'var(--surface2)';
   const texto = situacao === 'regular' ? 'Regular' : situacao === 'pendente' ? 'Com pendências' : 'Não informado';
   return (
     <div style={{ background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: '10px 12px' }}>
-      <div style={{ fontSize: 10, color: 'var(--text3)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.03em' }}>{label}</div>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6 }}>
+        <div style={{ fontSize: 10, color: 'var(--text3)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.03em' }}>{label}</div>
+        {anexo && (
+          <button onClick={() => onBaixarAnexo(anexo)} title={`Baixar ${anexo.nome_arquivo}`}
+            style={{ background: 'var(--accent-dim)', border: 'none', borderRadius: 99, width: 22, height: 22, flexShrink: 0,
+              display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: 'var(--accent)' }}>
+            <DownloadIcon size={11} />
+          </button>
+        )}
+      </div>
       <span style={{ display: 'inline-block', marginTop: 5, fontSize: 12, fontWeight: 700, borderRadius: 99, padding: '3px 10px', color: cor, background: corDim }}>
         {texto}
       </span>
