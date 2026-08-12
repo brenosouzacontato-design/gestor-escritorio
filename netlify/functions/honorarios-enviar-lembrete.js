@@ -1,9 +1,11 @@
 // netlify/functions/honorarios-enviar-lembrete.js
 //
-// Handler HTTP usado pelo botão "Enviar lembrete agora" na tela de
+// Handler HTTP usado pelo botão "Enviar" da prévia de lembrete na tela de
 // Honorários (honorariosApi.js) — dispara o mesmo envio do cron
 // (lib/honorariosLembrete.js), mas sob demanda, pra uma cobrança
-// específica, sem esperar a execução diária.
+// específica, sem esperar a execução diária. textoPersonalizado (opcional)
+// é o texto que a pessoa editou na prévia antes de confirmar; sem ele,
+// usa o texto composto automaticamente (mesmo comportamento de antes).
 //
 // Variáveis de ambiente necessárias no Netlify: SUPABASE_URL,
 // SUPABASE_SERVICE_KEY, EVOLUTION_API_URL, EVOLUTION_API_KEY,
@@ -22,19 +24,20 @@ exports.handler = async (event) => {
     return resposta(405, { error: 'Método não permitido, use POST.' })
   }
 
-  let honorarioId
+  let honorarioId, textoPersonalizado
   try {
     const body = JSON.parse(event.body)
     honorarioId = body.honorarioId
+    textoPersonalizado = body.textoPersonalizado
   } catch {
-    return resposta(400, { error: 'Body inválido: esperado JSON com { honorarioId }.' })
+    return resposta(400, { error: 'Body inválido: esperado JSON com { honorarioId, textoPersonalizado? }.' })
   }
   if (!honorarioId) {
     return resposta(400, { error: 'honorarioId não informado.' })
   }
 
   try {
-    const resultado = await enviarLembreteHonorario(supabase, honorarioId)
+    const resultado = await enviarLembreteHonorario(supabase, honorarioId, textoPersonalizado)
     if (!resultado.enviado) {
       return resposta(422, { error: resultado.motivo })
     }

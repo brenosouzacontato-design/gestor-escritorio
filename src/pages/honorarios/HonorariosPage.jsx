@@ -1,10 +1,12 @@
 import { useState, useEffect, useMemo } from 'react'
-import { BanknoteIcon, SearchIcon, SendIcon, SettingsIcon, RefreshCwIcon, PencilIcon, InfoIcon } from 'lucide-react'
+import { BanknoteIcon, SearchIcon, SendIcon, SettingsIcon, RefreshCwIcon, PencilIcon, InfoIcon, PlusIcon } from 'lucide-react'
 import { Modal, useToast } from '../../components/shared'
+import { useStore } from '../../store'
+import EmpresaCombobox from '../../components/EmpresaCombobox'
 import {
   listarHonorariosDoMes, gerarHonorariosDoMes, marcarStatusHonorario,
   atualizarHonorario, atualizarConfigCliente, obterConfigPix, salvarConfigPix,
-  enviarLembreteAgora, listarClientesConfigurados,
+  enviarLembreteAgora, obterPreviaLembrete, criarHonorarioAvulso, listarClientesConfigurados,
 } from './honorariosApi'
 
 function competenciaAtual() {
@@ -50,9 +52,10 @@ export default function HonorariosPage() {
   const [busca, setBusca] = useState('')
   const [statusFiltro, setStatusFiltro] = useState('todos')
   const [gerando, setGerando] = useState(false)
-  const [enviandoId, setEnviandoId] = useState(null)
   const [showConfigPix, setShowConfigPix] = useState(false)
+  const [showNovoAvulso, setShowNovoAvulso] = useState(false)
   const [editando, setEditando] = useState(null)
+  const [previaLembrete, setPreviaLembrete] = useState(null) // honorário aberto na prévia
   const { show } = useToast()
 
   const carregar = () => {
@@ -98,17 +101,6 @@ export default function HonorariosPage() {
     }
   }
 
-  const handleEnviarLembrete = async (h) => {
-    setEnviandoId(h.id)
-    try {
-      await enviarLembreteAgora(h.id)
-      show?.(`Lembrete enviado pra ${h.clientes?.nome}`)
-      carregar()
-    } catch (e) {
-      show?.('Não enviou: ' + e.message)
-    }
-    setEnviandoId(null)
-  }
 
   return (
     <div className="page">
@@ -121,9 +113,14 @@ export default function HonorariosPage() {
             Cobrança mensal por cliente, com lembrete automático de WhatsApp trazendo a chave PIX quando vence.
           </p>
         </div>
-        <button className="btn btn-ghost btn-sm" onClick={() => setShowConfigPix(true)}>
-          <SettingsIcon size={13} /> Configurar PIX
-        </button>
+        <div style={{ display: 'flex', gap: 6 }}>
+          <button className="btn btn-ghost btn-sm" onClick={() => setShowNovoAvulso(true)}>
+            <PlusIcon size={13} /> Novo avulso
+          </button>
+          <button className="btn btn-ghost btn-sm" onClick={() => setShowConfigPix(true)}>
+            <SettingsIcon size={13} /> Configurar PIX
+          </button>
+        </div>
       </div>
 
       <div className="tabs" style={{ maxWidth: 340, marginBottom: 14 }}>
@@ -194,7 +191,15 @@ export default function HonorariosPage() {
                     const atraso = h.status === 'pendente' ? diasAtraso(h.vencimento) : 0
                     return (
                       <tr key={h.id} style={{ borderTop: '1px solid var(--border)' }}>
-                        <td style={{ padding: '8px 12px', color: 'var(--text1)', fontWeight: 500, whiteSpace: 'nowrap' }}>{h.clientes?.nome}</td>
+                        <td style={{ padding: '8px 12px', color: 'var(--text1)', fontWeight: 500, whiteSpace: 'nowrap' }}>
+                          {h.clientes?.nome}
+                          {h.tipo === 'avulso' && (
+                            <div style={{ fontSize: 10.5, color: 'var(--text3)', fontWeight: 400, display: 'flex', alignItems: 'center', gap: 4, marginTop: 2 }}>
+                              <span className="badge badge-gray" style={{ fontSize: 9 }}>Avulso</span>
+                              {h.descricao}
+                            </div>
+                          )}
+                        </td>
                         <td style={{ padding: '8px 12px', whiteSpace: 'nowrap' }}>{fmt(h.valor)}</td>
                         <td style={{ padding: '8px 12px', whiteSpace: 'nowrap', color: atraso > 0 ? 'var(--danger)' : 'var(--text2)' }}>
                           {fmtData(h.vencimento)}{atraso > 0 ? ` · ${atraso}d atraso` : ''}
@@ -213,8 +218,8 @@ export default function HonorariosPage() {
                             <PencilIcon size={13} />
                           </button>
                           {h.status === 'pendente' && (
-                            <button className="btn btn-ghost btn-sm" onClick={() => handleEnviarLembrete(h)} disabled={enviandoId === h.id} title="Enviar lembrete agora">
-                              <SendIcon size={13} /> {enviandoId === h.id ? 'Enviando...' : 'Lembrete'}
+                            <button className="btn btn-ghost btn-sm" onClick={() => setPreviaLembrete(h)} title="Conferir e enviar lembrete">
+                              <SendIcon size={13} /> Lembrete
                             </button>
                           )}
                         </td>
@@ -232,6 +237,14 @@ export default function HonorariosPage() {
       {editando && (
         <ModalEditarHonorario honorario={editando} onClose={() => setEditando(null)}
           onSaved={() => { setEditando(null); carregar() }} />
+      )}
+      {showNovoAvulso && (
+        <ModalNovoAvulso onClose={() => setShowNovoAvulso(false)}
+          onSalvo={() => { setShowNovoAvulso(false); carregar() }} />
+      )}
+      {previaLembrete && (
+        <ModalPreviaLembrete honorario={previaLembrete} onClose={() => setPreviaLembrete(null)}
+          onEnviado={() => { setPreviaLembrete(null); carregar() }} />
       )}
     </div>
   )
@@ -392,6 +405,119 @@ function ModalEditarHonorario({ honorario, onClose, onSaved }) {
         {salvando ? 'Salvando...' : 'Salvar'}
       </button>
       <button className="btn btn-ghost" style={{ width: '100%', marginTop: 8 }} onClick={onClose}>Cancelar</button>
+    </Modal>
+  )
+}
+
+// ── Modal novo serviço avulso ────────────────────────────────────────────────
+function ModalNovoAvulso({ onClose, onSalvo }) {
+  const clientes = useStore((s) => s.clientes)
+  const [clienteId, setClienteId] = useState('')
+  const [descricao, setDescricao] = useState('')
+  const [valor, setValor] = useState('')
+  const [vencimento, setVencimento] = useState(() => new Date().toISOString().slice(0, 10))
+  const [salvando, setSalvando] = useState(false)
+  const { show } = useToast()
+
+  const salvar = async () => {
+    if (!clienteId || !descricao.trim() || !valor) { show?.('Preencha cliente, descrição e valor.'); return }
+    setSalvando(true)
+    try {
+      await criarHonorarioAvulso({ clienteId, descricao: descricao.trim(), valor: Number(valor), vencimento })
+      show?.('Serviço avulso lançado')
+      onSalvo()
+    } catch (e) {
+      show?.('Erro ao salvar: ' + e.message)
+    }
+    setSalvando(false)
+  }
+
+  return (
+    <Modal onClose={onClose}>
+      <p className="modal-title">Novo serviço avulso</p>
+      <div className="notice notice-info">
+        <InfoIcon size={14} />
+        <span>Cobrança pontual (ex: abertura de empresa, alteração contratual) — não entra na mensalidade recorrente.</span>
+      </div>
+      <div className="form-field">
+        <label className="form-label">Cliente</label>
+        <EmpresaCombobox empresas={clientes} value={clienteId} onChange={setClienteId} />
+      </div>
+      <div className="form-field">
+        <label className="form-label">Descrição do serviço</label>
+        <input value={descricao} onChange={(e) => setDescricao(e.target.value)} placeholder="Ex: Alteração contratual" />
+      </div>
+      <div className="form-field">
+        <label className="form-label">Valor</label>
+        <input type="number" step="0.01" value={valor} onChange={(e) => setValor(e.target.value)} placeholder="0,00" />
+      </div>
+      <div className="form-field">
+        <label className="form-label">Vencimento</label>
+        <input type="date" value={vencimento} onChange={(e) => setVencimento(e.target.value)} />
+      </div>
+      <button className="btn btn-accent" style={{ width: '100%' }} onClick={salvar} disabled={salvando}>
+        {salvando ? 'Salvando...' : 'Lançar cobrança'}
+      </button>
+      <button className="btn btn-ghost" style={{ width: '100%', marginTop: 8 }} onClick={onClose}>Cancelar</button>
+    </Modal>
+  )
+}
+
+// ── Modal prévia/edição do lembrete antes de enviar ──────────────────────────
+// Busca o texto composto automaticamente (mesmo template do envio de
+// verdade — lib/honorariosLembrete.js), deixa editar à vontade antes de
+// confirmar. Sem isso, o lembrete manual saía direto sem ninguém conferir.
+function ModalPreviaLembrete({ honorario, onClose, onEnviado }) {
+  const [carregando, setCarregando] = useState(true)
+  const [erroPrevia, setErroPrevia] = useState(null)
+  const [numero, setNumero] = useState(null)
+  const [textoEditado, setTextoEditado] = useState('')
+  const [enviando, setEnviando] = useState(false)
+  const { show } = useToast()
+
+  useEffect(() => {
+    obterPreviaLembrete(honorario.id)
+      .then(({ texto, numero, motivoBloqueio }) => {
+        if (motivoBloqueio) setErroPrevia(motivoBloqueio)
+        else { setNumero(numero); setTextoEditado(texto) }
+      })
+      .catch((e) => setErroPrevia(e.message))
+      .finally(() => setCarregando(false))
+  }, [honorario.id])
+
+  const enviar = async () => {
+    setEnviando(true)
+    try {
+      await enviarLembreteAgora(honorario.id, textoEditado)
+      show?.(`Lembrete enviado pra ${honorario.clientes?.nome}`)
+      onEnviado()
+    } catch (e) {
+      show?.('Não enviou: ' + e.message)
+    }
+    setEnviando(false)
+  }
+
+  return (
+    <Modal onClose={onClose}>
+      <p className="modal-title">Lembrete — {honorario.clientes?.nome}</p>
+      {carregando ? <p style={{ fontSize: 12, color: 'var(--text3)' }}>Montando prévia...</p> : erroPrevia ? (
+        <div className="notice" style={{ background: 'var(--danger-dim)', color: 'var(--danger)', display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+          <InfoIcon size={14} style={{ flexShrink: 0, marginTop: 2 }} />
+          <span>{erroPrevia}</span>
+        </div>
+      ) : (
+        <>
+          <div style={{ fontSize: 11, color: 'var(--text3)', marginBottom: 6 }}>Vai pro WhatsApp {numero} — confira e edite se quiser antes de mandar:</div>
+          <div className="form-field">
+            <textarea value={textoEditado} onChange={(e) => setTextoEditado(e.target.value)} rows={8}
+              style={{ fontFamily: 'inherit', fontSize: 12.5 }} />
+          </div>
+          <button className="btn btn-accent" style={{ width: '100%' }} onClick={enviar} disabled={enviando || !textoEditado.trim()}>
+            <SendIcon size={13} /> {enviando ? 'Enviando...' : 'Enviar'}
+          </button>
+        </>
+      )}
+      <button className="btn btn-ghost" style={{ width: '100%', marginTop: 8 }} onClick={onClose}>{erroPrevia ? 'Fechar' : 'Cancelar'}</button>
     </Modal>
   )
 }

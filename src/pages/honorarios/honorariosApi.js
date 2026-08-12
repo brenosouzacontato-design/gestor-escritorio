@@ -13,6 +13,13 @@ function calcularVencimento(competencia, diaVencimento) {
   return `${ano}-${String(mes).padStart(2, '0')}-${String(dia).padStart(2, '0')}`;
 }
 
+// "YYYY-MM-DD" -> "MM/YYYY", só pra filtro/exibição do avulso (não tem
+// índice único por trás, diferente da mensalidade).
+function competenciaDoVencimento(vencimentoIso) {
+  const [ano, mes] = vencimentoIso.split('-');
+  return `${mes}/${ano}`;
+}
+
 // ---------- Honorários do mês ----------
 
 export async function listarHonorariosDoMes(competencia) {
@@ -38,10 +45,13 @@ export async function listarClientesConfigurados() {
   return data;
 }
 
-// Cria a cobrança da competência pra cada cliente com valor_honorario
-// configurado que ainda não tem uma linha nesse mês — ignora quem já tem
-// (não sobrescreve status já marcado como pago, nem redefine o valor de
-// quem já foi cobrado manualmente com outro valor naquele mês).
+// Cria a mensalidade da competência pra cada cliente com valor_honorario
+// configurado que ainda não tem uma linha "mensal" nesse mês — busca quem
+// já tem antes de inserir (em vez de upsert por onConflict) porque o
+// índice único de mensalidade agora é parcial (só tipo='mensal', pra
+// avulso poder repetir cliente+competência à vontade — ver
+// supabase-schema-honorarios-avulso.sql) e o upsert do PostgREST não sabe
+// mirar num índice parcial.
 export async function gerarHonorariosDoMes(competencia) {
   const { data: clientes, error: errClientes } = await supabase
     .from('clientes')
@@ -51,19 +61,47 @@ export async function gerarHonorariosDoMes(competencia) {
   if (errClientes) throw errClientes;
   if (!clientes || clientes.length === 0) return 0;
 
-  const linhas = clientes.map((c) => ({
-    cliente_id: c.id,
-    competencia,
-    valor: c.valor_honorario,
-    vencimento: calcularVencimento(competencia, c.dia_vencimento_honorario),
-  }));
-
-  const { data, error } = await supabase
+  const { data: existentes, error: errExistentes } = await supabase
     .from('honorarios')
-    .upsert(linhas, { onConflict: 'cliente_id,competencia', ignoreDuplicates: true })
-    .select();
+    .select('cliente_id')
+    .eq('competencia', competencia)
+    .eq('tipo', 'mensal');
+  if (errExistentes) throw errExistentes;
+  const jaTem = new Set((existentes || []).map((h) => h.cliente_id));
+
+  const linhas = clientes
+    .filter((c) => !jaTem.has(c.id))
+    .map((c) => ({
+      cliente_id: c.id,
+      competencia,
+      tipo: 'mensal',
+      valor: c.valor_honorario,
+      vencimento: calcularVencimento(competencia, c.dia_vencimento_honorario),
+    }));
+  if (linhas.length === 0) return 0;
+
+  const { data, error } = await supabase.from('honorarios').insert(linhas).select();
   if (error) throw error;
   return data?.length || 0;
+}
+
+// Cobrança pontual (ex: abertura de empresa, alteração contratual) — fora
+// da mensalidade recorrente, pode repetir cliente+competência à vontade.
+export async function criarHonorarioAvulso({ clienteId, descricao, valor, vencimento }) {
+  const { data, error } = await supabase
+    .from('honorarios')
+    .insert({
+      cliente_id: clienteId,
+      competencia: competenciaDoVencimento(vencimento),
+      tipo: 'avulso',
+      descricao,
+      valor,
+      vencimento,
+    })
+    .select('*, clientes(nome, telefone)')
+    .single();
+  if (error) throw error;
+  return data;
 }
 
 export async function marcarStatusHonorario(honorarioId, status) {
@@ -109,11 +147,26 @@ export async function salvarConfigPix({ chavePix, favorecido }) {
 
 // ---------- Envio manual do lembrete (fora do cron) ----------
 
-export async function enviarLembreteAgora(honorarioId) {
-  const resp = await fetch('/.netlify/functions/honorarios-enviar-lembrete', {
+// Monta o texto (mesmo template do envio de verdade) sem mandar nada —
+// alimenta a prévia editável antes de enviar.
+export async function obterPreviaLembrete(honorarioId) {
+  const resp = await fetch('/.netlify/functions/honorarios-prever-lembrete', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ honorarioId }),
+  });
+  const resultado = await resp.json().catch(() => ({}));
+  if (!resp.ok) throw new Error(resultado.error || 'Falha ao montar a prévia.');
+  return resultado; // { texto, numero, motivoBloqueio? }
+}
+
+// textoPersonalizado (opcional) substitui o texto composto automaticamente
+// — usado quando a pessoa edita a mensagem na prévia antes de mandar.
+export async function enviarLembreteAgora(honorarioId, textoPersonalizado) {
+  const resp = await fetch('/.netlify/functions/honorarios-enviar-lembrete', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ honorarioId, textoPersonalizado }),
   });
   const resultado = await resp.json().catch(() => ({}));
   if (!resp.ok) throw new Error(resultado.error || 'Falha ao enviar o lembrete.');

@@ -1,63 +1,86 @@
 // netlify/functions/lib/honorariosLembrete.js
 //
-// Lógica de envio do lembrete de honorário — compartilhada entre o cron
-// diário (honorarios-cron.js) e o envio manual sob demanda
-// (honorarios-enviar-lembrete.js, botão "Enviar lembrete agora" na tela).
-// Diferente de lembretes.js (obrigação/tarefa), esse manda DIRETO pro
-// celular do cliente, não pro grupo interno — por isso a validação de
-// telefone é rígida (ver lib/telefone.js): sem confirmar que o número é
-// mesmo um celular, não envia.
+// Lógica de lembrete de honorário — compartilhada entre o cron diário
+// (honorarios-cron.js), o envio manual sob demanda
+// (honorarios-enviar-lembrete.js) e a prévia editável
+// (honorarios-prever-lembrete.js). Diferente de lembretes.js
+// (obrigação/tarefa), esse manda DIRETO pro celular do cliente, não pro
+// grupo interno — por isso a validação de telefone é rígida (ver
+// lib/telefone.js): sem confirmar que o número é mesmo um celular, não
+// monta número nenhum pra enviar.
+//
+// montarLembreteHonorario faz só a parte "pura" (busca dados, valida,
+// compõe o texto) — sem mandar mensagem nem gravar nada, pra poder ser
+// reaproveitada tanto pela prévia (só mostra) quanto pelo envio de fato
+// (monta + manda + marca enviado).
 
-const { normalizarTelefoneWhatsapp } = require('./telefone');
-const { enviarMensagem } = require('./whatsapp');
+const { normalizarTelefoneWhatsapp } = require('./telefone')
+const { enviarMensagem } = require('./whatsapp')
 
 function fmtMoeda(v) {
-  return Number(v).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+  return Number(v).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 }
 function fmtData(iso) {
-  return new Date(iso + 'T00:00:00').toLocaleDateString('pt-BR');
+  return new Date(iso + 'T00:00:00').toLocaleDateString('pt-BR')
 }
 
-// Retorna { enviado: boolean, motivo?: string } — motivo preenchido só
-// quando enviado=false, explica por que pulou (não é erro fatal).
-async function enviarLembreteHonorario(supabase, honorarioId) {
+// Retorna { honorario, numero, texto, motivoBloqueio? } — motivoBloqueio
+// preenchido quando não dá pra montar um envio válido (telefone inválido,
+// PIX não configurada, já pago); nesses casos `numero`/`texto` vêm null.
+async function montarLembreteHonorario(supabase, honorarioId) {
   const { data: honorario, error: errHon } = await supabase
     .from('honorarios')
-    .select('id, competencia, valor, vencimento, status, clientes(nome, telefone)')
+    .select('id, competencia, tipo, descricao, valor, vencimento, status, clientes(nome, telefone)')
     .eq('id', honorarioId)
-    .single();
-  if (errHon) throw errHon;
-  if (!honorario) return { enviado: false, motivo: 'Honorário não encontrado.' };
-  if (honorario.status !== 'pendente') return { enviado: false, motivo: 'Honorário já está marcado como pago.' };
+    .single()
+  if (errHon) throw errHon
+  if (!honorario) return { honorario: null, numero: null, texto: null, motivoBloqueio: 'Honorário não encontrado.' }
+  if (honorario.status !== 'pendente') {
+    return { honorario, numero: null, texto: null, motivoBloqueio: 'Honorário já está marcado como pago.' }
+  }
 
-  const numero = normalizarTelefoneWhatsapp(honorario.clientes?.telefone);
-  if (!numero) return { enviado: false, motivo: 'Telefone do cliente não é um celular válido (confira em Clientes).' };
+  const numero = normalizarTelefoneWhatsapp(honorario.clientes?.telefone)
+  if (!numero) {
+    return { honorario, numero: null, texto: null, motivoBloqueio: 'Telefone do cliente não é um celular válido (confira em Clientes).' }
+  }
 
   const { data: config, error: errConfig } = await supabase
     .from('configuracoes')
     .select('chave, valor')
-    .in('chave', ['honorarios_pix_chave', 'honorarios_pix_favorecido']);
-  if (errConfig) throw errConfig;
-  const porChave = Object.fromEntries((config || []).map((r) => [r.chave, r.valor]));
-  const chavePix = porChave.honorarios_pix_chave;
-  if (!chavePix) return { enviado: false, motivo: 'Chave PIX não configurada (tela Honorários → Configurar PIX).' };
-  const favorecido = porChave.honorarios_pix_favorecido || '';
+    .in('chave', ['honorarios_pix_chave', 'honorarios_pix_favorecido'])
+  if (errConfig) throw errConfig
+  const porChave = Object.fromEntries((config || []).map((r) => [r.chave, r.valor]))
+  const chavePix = porChave.honorarios_pix_chave
+  if (!chavePix) {
+    return { honorario, numero: null, texto: null, motivoBloqueio: 'Chave PIX não configurada (tela Honorários → Configurar PIX).' }
+  }
+  const favorecido = porChave.honorarios_pix_favorecido || ''
 
+  const referencia = honorario.tipo === 'avulso' ? (honorario.descricao || 'serviço avulso') : `honorário de ${honorario.competencia}`
   const texto = `🧾 *Lembrete de honorário contábil*\n`
-    + `Olá, ${honorario.clientes?.nome || ''}! O honorário de ${honorario.competencia} no valor de ${fmtMoeda(honorario.valor)} venceu em ${fmtData(honorario.vencimento)}.\n\n`
+    + `Olá, ${honorario.clientes?.nome || ''}! O ${referencia} no valor de ${fmtMoeda(honorario.valor)} venceu em ${fmtData(honorario.vencimento)}.\n\n`
     + `💳 Chave PIX: ${chavePix}`
     + (favorecido ? `\n👤 ${favorecido}` : '')
-    + `\n\nSe já pagou, pode desconsiderar. Qualquer dúvida, é só chamar por aqui.`;
+    + `\n\nSe já pagou, pode desconsiderar. Qualquer dúvida, é só chamar por aqui.`
 
-  await enviarMensagem(numero, texto);
+  return { honorario, numero, texto, motivoBloqueio: null }
+}
+
+// textoPersonalizado (opcional) substitui o texto composto automaticamente
+// — usado quando a prévia foi editada antes de confirmar o envio.
+async function enviarLembreteHonorario(supabase, honorarioId, textoPersonalizado) {
+  const { numero, texto, motivoBloqueio } = await montarLembreteHonorario(supabase, honorarioId)
+  if (motivoBloqueio) return { enviado: false, motivo: motivoBloqueio }
+
+  await enviarMensagem(numero, textoPersonalizado?.trim() || texto)
 
   const { error: errUpdate } = await supabase
     .from('honorarios')
     .update({ lembrete_enviado_em: new Date().toISOString() })
-    .eq('id', honorarioId);
-  if (errUpdate) throw errUpdate;
+    .eq('id', honorarioId)
+  if (errUpdate) throw errUpdate
 
-  return { enviado: true };
+  return { enviado: true }
 }
 
-module.exports = { enviarLembreteHonorario };
+module.exports = { montarLembreteHonorario, enviarLembreteHonorario }
