@@ -6,6 +6,7 @@ import { supabase } from '../lib/supabase'
 import { listarDepartamentos, criarDepartamento, gerarObrigacoesRecorrentesCompetencia } from './andamento/andamentoApi'
 import { NovaObrigacaoModal, NovaTarefaModuloModal, ModalTarefasLote, ModalObrigacoesLote, ModalBase } from './andamento/modaisObrigacao'
 import { uploadDeclaracaoSimples, uploadSituacaoFiscal, obterCndManual, salvarCndManual } from './painel/painelApi'
+import PainelViewerModal from './painel/PainelViewerModal'
 import { listarDocumentosPorCliente, criarLinkAssinado } from './documentos/documentosApi'
 import { criarLembrete, listarLembretesPorItens, excluirLembrete } from './andamento/lembretesApi'
 
@@ -136,6 +137,7 @@ export default function Empresas({ onOpenTarefas, clienteInicialId, onClienteIni
   const [tarefaEditando,   setTarefaEditando] = useState(null) // tarefa aberta pro modal de edição
   const [lembreteAlvo,     setLembreteAlvo]   = useState(null) // {obrigacaoId} ou {tarefaId} aberto pro modal de lembrete
   const [showCndManual,   setShowCndManual]   = useState(false) // modal de marcar CND estadual/municipal
+  const [painelViewer,    setPainelViewer]    = useState(null) // {indiceInicial} — abre o carrossel de painéis a partir da empresa do drawer
   const [lembretesPendentes, setLembretesPendentes] = useState([]) // dos itens do drawer aberto
 
   const carregarDepartamentos = () => listarDepartamentos().then(setDepartamentos).catch(() => {})
@@ -278,7 +280,15 @@ export default function Empresas({ onOpenTarefas, clienteInicialId, onClienteIni
   // Link público do painel consolidado (PainelClientePage.jsx via main.jsx)
   const linkPainel = (cliente) => `${window.location.origin}${window.location.pathname}?painel=${cliente.id}&competencia=${encodeURIComponent(compSel)}`
 
-  const handleVisualizarPainel = (cliente) => window.open(linkPainel(cliente), '_blank')
+  // Abre o carrossel interno de painéis (PainelViewerModal) começando na
+  // empresa clicada, na mesma ordem/filtro da visão ativa (cards respeita a
+  // ordem manual arrastada; tabela usa a ordem natural) — dá pra ir
+  // passando pro lado sem voltar pra lista a cada empresa.
+  const handleVisualizarPainel = (cliente) => {
+    const listaAtual = (visualizacao === 'cards' ? rowsCards : rows).map(r => r.c)
+    const indiceInicial = listaAtual.findIndex(c => c.id === cliente.id)
+    setPainelViewer({ clientes: listaAtual, indiceInicial: indiceInicial >= 0 ? indiceInicial : 0 })
+  }
 
   const handleCompartilharPainel = (cliente) => {
     const mensagem = `Olá! Segue o painel de ${cliente.nome} — competência ${compSel} — com obrigações, financeiro e demais informações:\n${linkPainel(cliente)}`
@@ -896,7 +906,7 @@ export default function Empresas({ onOpenTarefas, clienteInicialId, onClienteIni
                 </button>
                 <div style={{ display:'flex', gap:7 }}>
                   <button onClick={() => handleVisualizarPainel(drawer.c)}
-                    title="Abrir o painel do cliente numa aba nova, pra conferir antes de mandar"
+                    title="Ver o painel do cliente aqui dentro, com setas pra ir passando pelas outras empresas"
                     style={{ flex:1, background:'var(--surface2)', border:'1px solid var(--border)', borderRadius:8, padding:'7px', fontSize:11, color:'var(--text2)', fontWeight:500, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', gap:4 }}>
                     <EyeIcon size={12} /> Visualizar painel
                   </button>
@@ -980,6 +990,16 @@ export default function Empresas({ onOpenTarefas, clienteInicialId, onClienteIni
           competencia={compSel}
           onClose={() => setShowCndManual(false)}
           onSaved={() => { setShowCndManual(false); show?.('CND estadual/municipal atualizada') }}
+        />
+      )}
+
+      {/* Carrossel interno de painéis — "Visualizar painel" */}
+      {painelViewer && (
+        <PainelViewerModal
+          clientes={painelViewer.clientes}
+          indiceInicial={painelViewer.indiceInicial}
+          competencia={compSel}
+          onClose={() => setPainelViewer(null)}
         />
       )}
 

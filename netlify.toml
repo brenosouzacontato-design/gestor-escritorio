@@ -8,6 +8,11 @@
 [functions."lembretes-cron"]
   schedule = "*/15 * * * *"
 
+# 12:00 UTC = 9h em Brasília (UTC-3) — uma vez por dia é suficiente, já que
+# lembrete_enviado_em evita reenvio da mesma cobrança em execuções seguintes.
+[functions."honorarios-cron"]
+  schedule = "0 12 * * *"
+
 [[redirects]]
   from = "/*"
   to = "/index.html"
