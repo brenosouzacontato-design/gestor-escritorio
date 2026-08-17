@@ -31,16 +31,24 @@ async function enviarMensagem(numero, texto) {
     console.error(erro)
     return { sucesso: false, erro }
   }
+  const url = `${EVOLUTION_URL}/message/sendText/${EVOLUTION_INSTANCE}`
   try {
-    const resp = await fetch(`${EVOLUTION_URL}/message/sendText/${EVOLUTION_INSTANCE}`, {
+    const resp = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'apikey': EVOLUTION_KEY },
       body: JSON.stringify({ number: numero, text: texto })
     })
     const corpo = await resp.text().catch(() => '')
-    console.log(`Evolution API sendText -> número ${numero}, status ${resp.status}:`, corpo.slice(0, 500))
+    console.log(`Evolution API sendText -> ${url} (número ${numero}), status ${resp.status}:`, corpo.slice(0, 500))
     if (!resp.ok) {
-      return { sucesso: false, erro: `Evolution API respondeu ${resp.status}${corpo ? `: ${corpo.slice(0, 200)}` : ''}` }
+      // Um 404 com corpo em HTML (em vez do JSON de erro que a Evolution API
+      // normalmente devolve) é sinal de que a chamada nem chegou nas rotas
+      // da API — geralmente EVOLUTION_API_URL apontando pro lugar errado
+      // (ex: o Manager/dashboard em vez do servidor da API) ou instância com
+      // nome errado. Por isso a URL vai junto no erro: dá pra comparar com o
+      // que a Evolution API realmente espera.
+      const corpoPareceHtml = corpo.trim().startsWith('<')
+      return { sucesso: false, erro: `Evolution API respondeu ${resp.status} em ${url}${corpoPareceHtml ? ' (página HTML, não a API — confira EVOLUTION_API_URL/EVOLUTION_INSTANCE)' : corpo ? `: ${corpo.slice(0, 200)}` : ''}` }
     }
     // Mesmo com 2xx, algumas instâncias devolvem um erro dentro do corpo
     // (ex: {"error": "..."} ou {"status": "ERROR"}) em vez de um status HTTP
