@@ -36,7 +36,10 @@ async function enviarMensagem(numero, texto) {
     const resp = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'apikey': EVOLUTION_KEY },
-      body: JSON.stringify({ number: numero, text: texto })
+      // Evolution API v1.x (a versão rodando aqui — ver iniciar-gestor.bat)
+      // exige o texto aninhado em textMessage.text; um body { number, text }
+      // solto (formato da v2) volta 400 "instance requires property textMessage".
+      body: JSON.stringify({ number: numero, textMessage: { text: texto } })
     })
     const corpo = await resp.text().catch(() => '')
     console.log(`Evolution API sendText -> ${url} (número ${numero}), status ${resp.status}:`, corpo.slice(0, 500))
