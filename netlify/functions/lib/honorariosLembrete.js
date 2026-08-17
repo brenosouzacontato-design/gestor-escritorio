@@ -72,7 +72,10 @@ async function enviarLembreteHonorario(supabase, honorarioId, textoPersonalizado
   const { numero, texto, motivoBloqueio } = await montarLembreteHonorario(supabase, honorarioId)
   if (motivoBloqueio) return { enviado: false, motivo: motivoBloqueio }
 
-  await enviarMensagem(numero, textoPersonalizado?.trim() || texto)
+  const resultadoEnvio = await enviarMensagem(numero, textoPersonalizado?.trim() || texto)
+  if (!resultadoEnvio.sucesso) {
+    return { enviado: false, motivo: `WhatsApp não confirmou o envio: ${resultadoEnvio.erro}` }
+  }
 
   const { error: errUpdate } = await supabase
     .from('honorarios')
