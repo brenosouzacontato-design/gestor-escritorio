@@ -473,6 +473,7 @@ function ModalPreviaLembrete({ honorario, onClose, onEnviado }) {
   const [numero, setNumero] = useState(null)
   const [textoEditado, setTextoEditado] = useState('')
   const [enviando, setEnviando] = useState(false)
+  const [resultadoEnvio, setResultadoEnvio] = useState(null) // { respostaEvolution } — fica visível pra conferir se a Evolution confirmou entrega de verdade
   const { show } = useToast()
 
   useEffect(() => {
@@ -488,9 +489,9 @@ function ModalPreviaLembrete({ honorario, onClose, onEnviado }) {
   const enviar = async () => {
     setEnviando(true)
     try {
-      await enviarLembreteAgora(honorario.id, textoEditado)
+      const resultado = await enviarLembreteAgora(honorario.id, textoEditado)
       show?.(`Lembrete enviado pra ${honorario.clientes?.nome}`)
-      onEnviado()
+      setResultadoEnvio(resultado)
     } catch (e) {
       show?.('Não enviou: ' + e.message)
     }
@@ -505,6 +506,20 @@ function ModalPreviaLembrete({ honorario, onClose, onEnviado }) {
           <InfoIcon size={14} style={{ flexShrink: 0, marginTop: 2 }} />
           <span>{erroPrevia}</span>
         </div>
+      ) : resultadoEnvio ? (
+        <>
+          <div className="notice notice-info">
+            <InfoIcon size={14} />
+            <span>A Evolution API confirmou o recebimento da chamada. Confira no WhatsApp de {honorario.clientes?.nome} ({numero}) se a mensagem chegou de verdade — esse app não tem confirmação de entrega automática.</span>
+          </div>
+          {resultadoEnvio.respostaEvolution && (
+            <div className="form-field">
+              <label className="form-label">Resposta da Evolution API (pra investigar se não chegar)</label>
+              <textarea readOnly value={resultadoEnvio.respostaEvolution} rows={5}
+                style={{ fontFamily: 'monospace', fontSize: 11, background: 'var(--surface2)' }} />
+            </div>
+          )}
+        </>
       ) : (
         <>
           <div style={{ fontSize: 11, color: 'var(--text3)', marginBottom: 6 }}>Vai pro WhatsApp {numero} — confira e edite se quiser antes de mandar:</div>
@@ -517,7 +532,10 @@ function ModalPreviaLembrete({ honorario, onClose, onEnviado }) {
           </button>
         </>
       )}
-      <button className="btn btn-ghost" style={{ width: '100%', marginTop: 8 }} onClick={onClose}>{erroPrevia ? 'Fechar' : 'Cancelar'}</button>
+      <button className="btn btn-ghost" style={{ width: '100%', marginTop: 8 }}
+        onClick={() => (resultadoEnvio ? onEnviado() : onClose())}>
+        {resultadoEnvio ? 'Fechar' : erroPrevia ? 'Fechar' : 'Cancelar'}
+      </button>
     </Modal>
   )
 }

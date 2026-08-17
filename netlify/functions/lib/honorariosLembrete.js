@@ -83,7 +83,11 @@ async function enviarLembreteHonorario(supabase, honorarioId, textoPersonalizado
     .eq('id', honorarioId)
   if (errUpdate) throw errUpdate
 
-  return { enviado: true }
+  // respostaEvolution vai junto pra tela — se a mensagem não chegar de
+  // verdade mesmo com enviado=true aqui, esse é o dado que mostra o que a
+  // Evolution disse (ex: um "status":"PENDING" que nunca confirma), já que
+  // não tem webhook de confirmação de entrega configurado neste app.
+  return { enviado: true, respostaEvolution: resultadoEnvio.corpo || null }
 }
 
 module.exports = { montarLembreteHonorario, enviarLembreteHonorario }
