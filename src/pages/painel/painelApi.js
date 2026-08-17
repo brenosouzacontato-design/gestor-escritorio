@@ -261,6 +261,22 @@ export async function obterPendenciasAnteriores(clienteId, competenciaAtual) {
   };
 }
 
+// Valor do DAS das competências passadas que aparecem como pendência —
+// obterPendenciasAnteriores não traz valor (obrigacoes não tem coluna de
+// valor), então busca à parte em dados_gerenciais_simples pra quem já
+// enviou a Declaração do Simples daquele mês. Indexado por competência
+// pra lookup rápido no render; só entra quem tem valor_das preenchido.
+export async function obterValoresDasPendencias(clienteId, competencias) {
+  if (!competencias || competencias.length === 0) return {};
+  const { data, error } = await supabase
+    .from('dados_gerenciais_simples')
+    .select('competencia, valor_das')
+    .eq('cliente_id', clienteId)
+    .in('competencia', competencias);
+  if (error) throw error;
+  return Object.fromEntries((data || []).filter((d) => d.valor_das != null).map((d) => [d.competencia, d.valor_das]));
+}
+
 // ---------- Situação Fiscal (RFB) ----------
 
 // Sobe o PDF, chama a IA (netlify/functions/extrair-situacao-fiscal.js) e

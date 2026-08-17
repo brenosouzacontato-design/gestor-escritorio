@@ -11,7 +11,7 @@ import { criarLinkAssinado } from '../documentos/documentosApi';
 import {
   obterResumoObrigacoes, obterResumoTarefas, obterResumoFinanceiro, obterDadosGerenciais,
   obterDocumentosDoMes, obterDocumentosPorObrigacao, obterSituacaoFiscal, obterHistoricoFaturamento, obterCndManual,
-  obterPendenciasAnteriores,
+  obterPendenciasAnteriores, obterValoresDasPendencias,
 } from './painelApi';
 
 const RECEITA_TIPO_LABEL = { normal: 'Normal', st: 'Com ST', monofasico: 'Monofásico' };
@@ -118,6 +118,7 @@ export default function PainelClientePage({ clienteId, competencia }) {
   const [situacaoFiscal, setSituacaoFiscal] = useState(null);
   const [cndManual, setCndManual] = useState(null);
   const [pendenciasAnteriores, setPendenciasAnteriores] = useState({ obrigacoes: [], tarefas: [] });
+  const [valoresDasPendencias, setValoresDasPendencias] = useState({}); // competencia -> valor_das, só das pendências que parecem DAS
   const [documentos, setDocumentos] = useState([]);
   const [anexosObrigacao, setAnexosObrigacao] = useState({});
   const [carregando, setCarregando] = useState(true);
@@ -158,6 +159,13 @@ export default function PainelClientePage({ clienteId, competencia }) {
         setCndManual(cndManualData);
         setDocumentos(docs);
         setPendenciasAnteriores(pendenciasAnt);
+        const competenciasDas = [...new Set(
+          pendenciasAnt.obrigacoes
+            .filter((o) => `${o.titulo || ''} ${o.tipo || ''}`.toLowerCase().includes('das'))
+            .map((o) => o.competencia)
+        )];
+        const valoresDas = await obterValoresDasPendencias(clienteId, competenciasDas).catch(() => ({}));
+        setValoresDasPendencias(valoresDas);
         const anexos = await obterDocumentosPorObrigacao(resObs.itens.map((o) => o.id)).catch(() => ({}));
         setAnexosObrigacao(anexos);
       } catch (e) {
@@ -323,9 +331,11 @@ export default function PainelClientePage({ clienteId, competencia }) {
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                           {pendenciasAnteriores.obrigacoes.map((o) => {
                             const dias = diasParaVencer(o.vencimento);
+                            const valorDas = valoresDasPendencias[o.competencia];
                             return (
                               <ItemLista key={o.id} titulo={o.titulo || o.tipo} sub={`${o.departamentos?.nome || 'Geral'} · ${o.competencia}`}
                                 statusLabel={STATUS_OBS_LABEL[o.status]} statusCor={STATUS_OBS_COR[o.status]}
+                                valorTexto={valorDas != null ? fmt(valorDas) : null}
                                 vencimentoTexto={o.vencimento ? `${fmtData(o.vencimento)} · ${fmtDiasParaVencer(dias)}` : null}
                                 vencimentoCor={dias != null && dias < 0 ? 'var(--danger)' : 'var(--text3)'} />
                             );
@@ -579,7 +589,7 @@ function ResumoCard({ titulo, icone, pct, linha1, alerta }) {
   );
 }
 
-function ItemLista({ titulo, sub, statusLabel, statusCor, vencimentoTexto, vencimentoCor, anexo, onBaixarAnexo }) {
+function ItemLista({ titulo, sub, statusLabel, statusCor, vencimentoTexto, vencimentoCor, valorTexto, anexo, onBaixarAnexo }) {
   const [cor, corDim] = statusCor || [];
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 12px', background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)' }}>
@@ -594,6 +604,9 @@ function ItemLista({ titulo, sub, statusLabel, statusCor, vencimentoTexto, venci
           )}
         </div>
       </div>
+      {valorTexto && (
+        <span style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--text1)', flexShrink: 0 }}>{valorTexto}</span>
+      )}
       {anexo && (
         <button onClick={() => onBaixarAnexo(anexo)} title={`Baixar ${anexo.nome_arquivo}`}
           style={{ background: 'var(--accent-dim)', border: 'none', borderRadius: 99, width: 26, height: 26, flexShrink: 0,
@@ -713,7 +726,13 @@ function Metrica({ label, valor, cor }) {
 function GraficoFaturamento({ dados }) {
   const max = Math.max(...dados.map((d) => d.faturamento_periodo || 0), 1);
   const larguraBarra = 46, gap = 16, altura = 100;
+  // Espaço reservado acima das barras pro rótulo do valor — sem essa margem,
+  // a barra do mês com maior faturamento (a mais alta, geralmente a mais
+  // relevante) empurra o rótulo pra fora do viewBox (y negativo) e o número
+  // simplesmente não aparece.
+  const margemTopo = 16, margemBaixo = 20;
   const larguraTotal = dados.length * (larguraBarra + gap);
+  const alturaSvg = altura + margemTopo + margemBaixo;
 
   const fmtCurto = (v) => {
     if (v >= 1000000) return `${(v / 1000000).toLocaleString('pt-BR', { maximumFractionDigits: 1 })}M`;
@@ -723,19 +742,20 @@ function GraficoFaturamento({ dados }) {
 
   return (
     <div style={{ overflowX: 'auto' }}>
-      <svg viewBox={`0 0 ${larguraTotal} ${altura + 36}`} width="100%" height={altura + 36} style={{ minWidth: larguraTotal, display: 'block' }}>
+      <svg viewBox={`0 0 ${larguraTotal} ${alturaSvg}`} width="100%" height={alturaSvg} style={{ minWidth: larguraTotal, display: 'block' }}>
         {dados.map((d, i) => {
           const valor = d.faturamento_periodo || 0;
           const alturaBarra = max > 0 ? Math.max((valor / max) * altura, 2) : 2;
           const x = i * (larguraBarra + gap);
+          const yBase = margemTopo + altura;
           const [mes, ano] = d.competencia.split('/');
           return (
             <g key={d.competencia}>
-              <text x={x + larguraBarra / 2} y={altura - alturaBarra - 6} textAnchor="middle" fontSize="10" fontWeight="700" fill="var(--text2)">
+              <text x={x + larguraBarra / 2} y={yBase - alturaBarra - 6} textAnchor="middle" fontSize="10" fontWeight="700" fill="var(--text2)">
                 {fmtCurto(valor)}
               </text>
-              <rect x={x} y={altura - alturaBarra} width={larguraBarra} height={alturaBarra} rx="4" fill="var(--accent)" />
-              <text x={x + larguraBarra / 2} y={altura + 16} textAnchor="middle" fontSize="10" fill="var(--text3)">
+              <rect x={x} y={yBase - alturaBarra} width={larguraBarra} height={alturaBarra} rx="4" fill="var(--accent)" />
+              <text x={x + larguraBarra / 2} y={yBase + 16} textAnchor="middle" fontSize="10" fill="var(--text3)">
                 {mes}/{ano.slice(2)}
               </text>
             </g>

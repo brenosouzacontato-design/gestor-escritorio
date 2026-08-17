@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { LayoutDashboardIcon, CheckSquareIcon, UsersIcon, RefreshCwIcon, SettingsIcon, PlusIcon, TargetIcon, BuildingIcon, AppWindowIcon, CalculatorIcon, ChevronsLeftIcon, ChevronsRightIcon, SunIcon, MoonIcon, PaperclipIcon, BellIcon, BanknoteIcon } from 'lucide-react'
+import { LayoutDashboardIcon, CheckSquareIcon, UsersIcon, RefreshCwIcon, SettingsIcon, PlusIcon, TargetIcon, BuildingIcon, AppWindowIcon, CalculatorIcon, ChevronsLeftIcon, ChevronsRightIcon, SunIcon, MoonIcon, PaperclipIcon, BellIcon, BanknoteIcon, MonitorIcon } from 'lucide-react'
 import { useStore } from './store'
 import { ToastContainer } from './components/shared'
 import NovaTarefaModal from './components/NovaTarefaModal'
@@ -16,10 +16,12 @@ import ContabilPage from './pages/contabil/ContabilPage'
 import DocumentosPage from './pages/documentos/DocumentosPage'
 import NotificacoesPage from './pages/Notificacoes'
 import HonorariosPage from './pages/honorarios/HonorariosPage'
+import PaineisPage from './pages/painel/PaineisPage'
 
 const NAV = [
   { id: 'overview',   label: 'Painel',      Icon: LayoutDashboardIcon },
   { id: 'empresas',   label: 'Empresas',    Icon: BuildingIcon },
+  { id: 'paineis',    label: 'Painéis',     Icon: MonitorIcon },
   { id: 'documentos', label: 'Documentos',  Icon: PaperclipIcon },
   { id: 'notificacoes', label: 'Notificações', Icon: BellIcon },
   { id: 'honorarios', label: 'Honorários',  Icon: BanknoteIcon },
@@ -118,6 +120,7 @@ export default function App() {
             {page === 'overview'   && <Overview onAddTarefa={openNewTask} onOpenCliente={(id) => { setSelectedCliente(id); navigate('clientes') }} onOpenEmpresa={(id) => { setClienteAbrirEmpresas(id); navigate('empresas') }} onOpenObrigacoes={() => navigate('empresas')} onOpenTarefas={() => navigate('tarefas')} onOpenContabil={() => navigate('contabil')} />}
             {page === 'empresas'   && <Empresas onOpenTarefas={(clienteId) => { setFiltroClienteTarefas(clienteId ?? null); navigate('tarefas') }}
               clienteInicialId={clienteAbrirEmpresas} onClienteInicialConsumido={() => setClienteAbrirEmpresas(null)} />}
+            {page === 'paineis'    && <PaineisPage />}
             {page === 'documentos' && <DocumentosPage />}
             {page === 'notificacoes' && <NotificacoesPage />}
             {page === 'honorarios' && <HonorariosPage />}
