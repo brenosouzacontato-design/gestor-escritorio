@@ -3,6 +3,7 @@ import { Trash2Icon, CheckIcon, XIcon, SaveIcon, MessageSquareIcon, PlusIcon, Gr
 import { useStore } from '../store'
 import { DeptChip, PriDot, fmtDate, isOverdue } from '../components/shared'
 import { supabase } from '../lib/supabase'
+import { uploadArquivo, criarLinkAssinado } from './documentos/documentosApi'
 
 const DEPTS = [
   { id: 'todos', label: 'Todos' },
@@ -323,6 +324,8 @@ function TarefaModal({ tarefa, clientes, onClose, onSaved }) {
   const [msgTexto,     setMsgTexto]     = useState('')
   const [autor,        setAutor]        = useState(() => localStorage.getItem('gestor_autor') || '')
   const [sendingMsg,   setSendingMsg]   = useState(false)
+  const [imagemColada, setImagemColada] = useState(null) // File colado com Ctrl+V, ainda não enviado
+  const [imagemPreviewUrl, setImagemPreviewUrl] = useState(null)
   const chatEndRef = useRef(null)
 
   useEffect(() => {
@@ -342,18 +345,48 @@ function TarefaModal({ tarefa, clientes, onClose, onSaved }) {
     if (data) setComentarios(data)
   }
 
+  // Cola (Ctrl+V) uma imagem no campo de mensagem — fica em prévia até
+  // "Enviar" (junto com o texto, se houver algum digitado também).
+  const handlePasteMsg = (e) => {
+    const item = Array.from(e.clipboardData?.items || []).find(i => i.type.startsWith('image/'))
+    if (!item) return
+    e.preventDefault()
+    const file = item.getAsFile()
+    if (!file) return
+    if (imagemPreviewUrl) URL.revokeObjectURL(imagemPreviewUrl)
+    setImagemColada(file)
+    setImagemPreviewUrl(URL.createObjectURL(file))
+  }
+
+  const limparImagemColada = () => {
+    if (imagemPreviewUrl) URL.revokeObjectURL(imagemPreviewUrl)
+    setImagemColada(null)
+    setImagemPreviewUrl(null)
+  }
+
   const handleEnviarMsg = async () => {
-    if (!msgTexto.trim() || !autor.trim()) return
+    if ((!msgTexto.trim() && !imagemColada) || !autor.trim()) return
     setSendingMsg(true)
     localStorage.setItem('gestor_autor', autor)
-    const { data, error } = await supabase.from('tarefa_comentarios').insert({
-      tarefa_id: tarefa.id,
-      autor: autor.trim(),
-      mensagem: msgTexto.trim(),
-    }).select().single()
-    if (!error && data) setComentarios(c => [...c, data])
-    setMsgTexto('')
-    setSendingMsg(false)
+    try {
+      let imagemPath = null, imagemNome = null
+      if (imagemColada) {
+        imagemPath = await uploadArquivo(imagemColada)
+        imagemNome = imagemColada.name
+      }
+      const { data, error } = await supabase.from('tarefa_comentarios').insert({
+        tarefa_id: tarefa.id,
+        autor: autor.trim(),
+        mensagem: msgTexto.trim(),
+        imagem_path: imagemPath,
+        imagem_nome: imagemNome,
+      }).select().single()
+      if (!error && data) setComentarios(c => [...c, data])
+      setMsgTexto('')
+      limparImagemColada()
+    } finally {
+      setSendingMsg(false)
+    }
   }
 
   const handleSave = async () => {
@@ -514,13 +547,14 @@ function TarefaModal({ tarefa, clientes, onClose, onSaved }) {
                       <span>{fmtHora(c.created_at)}</span>
                     </div>
                     <div style={{
-                      maxWidth:'80%', padding:'8px 12px', borderRadius: isMe ? '12px 12px 2px 12px' : '12px 12px 12px 2px',
+                      maxWidth:'80%', padding: c.imagem_path ? 6 : '8px 12px', borderRadius: isMe ? '12px 12px 2px 12px' : '12px 12px 12px 2px',
                       background: isMe ? 'var(--accent)' : 'var(--surface2)',
                       color: isMe ? '#fff' : 'var(--text1)',
                       fontSize:13, lineHeight:1.5,
                       border: isMe ? 'none' : '1px solid var(--border)',
                     }}>
-                      {c.mensagem}
+                      {c.imagem_path && <ImagemComentario path={c.imagem_path} nome={c.imagem_nome} />}
+                      {c.mensagem && <div style={{ padding: c.imagem_path ? '6px 6px 0' : 0 }}>{c.mensagem}</div>}
                     </div>
                   </div>
                 )
@@ -539,19 +573,31 @@ function TarefaModal({ tarefa, clientes, onClose, onSaved }) {
                   </button>
                 </div>
               )}
+              {imagemPreviewUrl && (
+                <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:8, background:'var(--surface2)',
+                  border:'1px solid var(--border)', borderRadius:'var(--r-sm)', padding:6 }}>
+                  <img src={imagemPreviewUrl} alt="Prévia" style={{ width:44, height:44, objectFit:'cover', borderRadius:6, flexShrink:0 }} />
+                  <span style={{ fontSize:12, color:'var(--text2)', flex:1 }}>Imagem colada — pronta pra enviar</span>
+                  <button onClick={limparImagemColada} title="Remover imagem"
+                    style={{ background:'none', border:'none', cursor:'pointer', color:'var(--text3)', flexShrink:0 }}>
+                    <XIcon size={14} />
+                  </button>
+                </div>
+              )}
               <div style={{ display:'flex', gap:8 }}>
                 {!autor && (
                   <input placeholder="Seu nome..." value={autor} onChange={e => setAutor(e.target.value)}
                     style={{ width:110, flexShrink:0, padding:'8px 10px', border:'1px solid var(--border)', borderRadius:'var(--r-sm)', fontSize:13, background:'var(--surface)', color:'var(--text1)' }} />
                 )}
                 <input
-                  placeholder="Digite uma mensagem..."
+                  placeholder="Digite ou cole uma imagem (Ctrl+V)..."
                   value={msgTexto}
                   onChange={e => setMsgTexto(e.target.value)}
+                  onPaste={handlePasteMsg}
                   onKeyDown={e => e.key === 'Enter' && !e.shiftKey && handleEnviarMsg()}
                   style={{ flex:1, padding:'8px 10px', border:'1px solid var(--border)', borderRadius:'var(--r-sm)', fontSize:13, background:'var(--surface)', color:'var(--text1)' }} />
-                <button onClick={handleEnviarMsg} disabled={sendingMsg || !msgTexto.trim() || !autor.trim()}
-                  style={{ background:'var(--accent)', border:'none', borderRadius:'var(--r-sm)', padding:'8px 14px', cursor:'pointer', color:'#fff', display:'flex', alignItems:'center', opacity: (!msgTexto.trim() || !autor.trim()) ? .5 : 1 }}>
+                <button onClick={handleEnviarMsg} disabled={sendingMsg || (!msgTexto.trim() && !imagemColada) || !autor.trim()}
+                  style={{ background:'var(--accent)', border:'none', borderRadius:'var(--r-sm)', padding:'8px 14px', cursor:'pointer', color:'#fff', display:'flex', alignItems:'center', opacity: (!msgTexto.trim() && !imagemColada) || !autor.trim() ? .5 : 1 }}>
                   <SendIcon size={15} />
                 </button>
               </div>
@@ -560,5 +606,26 @@ function TarefaModal({ tarefa, clientes, onClose, onSaved }) {
         )}
       </div>
     </div>
+  )
+}
+
+// Imagem colada no chat — o bucket é privado, então precisa de uma signed
+// URL pra exibir (gerada de novo a cada montagem, 30min de validade é de
+// sobra pra uma sessão de chat aberta).
+function ImagemComentario({ path, nome }) {
+  const [url, setUrl] = useState(null)
+
+  useEffect(() => {
+    let ativo = true
+    criarLinkAssinado(path, 60 * 30).then((u) => { if (ativo) setUrl(u) }).catch(() => {})
+    return () => { ativo = false }
+  }, [path])
+
+  if (!url) return <div style={{ fontSize:11, color:'var(--text3)', padding:'4px 6px' }}>Carregando imagem...</div>
+
+  return (
+    <a href={url} target="_blank" rel="noreferrer" title={nome || 'Ver imagem'}>
+      <img src={url} alt={nome || 'imagem anexada'} style={{ maxWidth:220, maxHeight:220, borderRadius:6, display:'block' }} />
+    </a>
   )
 }

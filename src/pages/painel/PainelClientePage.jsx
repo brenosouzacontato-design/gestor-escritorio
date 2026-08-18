@@ -1,12 +1,12 @@
 import { useEffect, useState } from 'react';
 import {
   WalletIcon, ClipboardListIcon, CheckSquareIcon, PaperclipIcon, BarChart3Icon,
-  SearchIcon, CalendarIcon, DownloadIcon, CheckCircleIcon, FileTextIcon, TrendingUpIcon, LayersIcon,
-  ChevronDownIcon, ChevronRightIcon, AlertTriangleIcon,
+  CalendarIcon, DownloadIcon, CheckCircleIcon, FileTextIcon, TrendingUpIcon, LayersIcon,
+  AlertTriangleIcon,
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
-import { listarLancamentosAIdentificar, salvarObservacaoCliente } from '../contabil/contabilApi';
-import LancamentosAgrupados from '../contabil/LancamentosAgrupados';
+import { listarLancamentosAIdentificar } from '../contabil/contabilApi';
+import LancamentosIdentificar from '../contabil/LancamentosIdentificar';
 import { criarLinkAssinado } from '../documentos/documentosApi';
 import {
   obterResumoObrigacoes, obterResumoTarefas, obterResumoFinanceiro, obterDadosGerenciais,
@@ -123,7 +123,6 @@ export default function PainelClientePage({ clienteId, competencia }) {
   const [anexosObrigacao, setAnexosObrigacao] = useState({});
   const [carregando, setCarregando] = useState(true);
   const [erro, setErro] = useState(null);
-  const [concluidosAberto, setConcluidosAberto] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -437,41 +436,12 @@ export default function PainelClientePage({ clienteId, competencia }) {
                         })}
                       </div>
                     )}
-                    {moduloAtual.nome === 'Contábil' && lancamentos.length > 0 && (() => {
-                      const pendentes = lancamentos.filter((l) => !l.observacaoCliente);
-                      const concluidos = lancamentos.filter((l) => l.observacaoCliente);
-                      const forcarAtualizacao = () => setLancamentos((prev) => [...prev]);
-                      return (
-                        <div style={{ marginTop: (obsDoModulo.length > 0 || tarefasDoModulo.length > 0) ? 16 : 0 }}>
-                          {pendentes.length > 0 && (
-                            <div>
-                              <SecaoTitulo icone={<SearchIcon size={14} />}>Lançamentos a identificar</SecaoTitulo>
-                              <p style={{ fontSize: 12, color: 'var(--text2)', marginBottom: 10 }}>
-                                Escreva embaixo de cada lançamento o que foi essa movimentação — a resposta salva sozinha ao sair do campo.
-                              </p>
-                              <LancamentosAgrupados lancamentos={pendentes} LinhaComponent={LinhaIdentificar} onSaved={forcarAtualizacao} />
-                            </div>
-                          )}
-                          {concluidos.length > 0 && (
-                            <div style={{ marginTop: pendentes.length > 0 ? 18 : 0 }}>
-                              <button onClick={() => setConcluidosAberto((a) => !a)}
-                                style={{ display: 'flex', alignItems: 'center', gap: 6, width: '100%', background: 'var(--surface2)',
-                                  border: '1px solid var(--border)', borderRadius: 8, padding: '8px 10px', cursor: 'pointer' }}>
-                                {concluidosAberto ? <ChevronDownIcon size={13} color="var(--text3)" /> : <ChevronRightIcon size={13} color="var(--text3)" />}
-                                <CheckCircleIcon size={13} color="var(--ok)" />
-                                <span style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--text1)' }}>Concluídos</span>
-                                <span style={{ fontSize: 11, color: 'var(--text3)' }}>({concluidos.length})</span>
-                              </button>
-                              {concluidosAberto && (
-                                <div style={{ marginTop: 8, paddingLeft: 4 }}>
-                                  <LancamentosAgrupados lancamentos={concluidos} LinhaComponent={LinhaIdentificar} onSaved={forcarAtualizacao} />
-                                </div>
-                              )}
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })()}
+                    {moduloAtual.nome === 'Contábil' && lancamentos.length > 0 && (
+                      <div style={{ marginTop: (obsDoModulo.length > 0 || tarefasDoModulo.length > 0) ? 16 : 0 }}>
+                        <SecaoTitulo icone={<WalletIcon size={14} />}>Lançamentos a identificar</SecaoTitulo>
+                        <LancamentosIdentificar lancamentos={lancamentos} onSaved={() => setLancamentos((prev) => [...prev])} />
+                      </div>
+                    )}
                   </div>
                 )}
 
@@ -766,46 +736,3 @@ function GraficoFaturamento({ dados }) {
   );
 }
 
-// Mesma lógica de IdentificarLancamentosPage.jsx (autosave no onBlur).
-function LinhaIdentificar({ lancamento, onSaved }) {
-  const [observacao, setObservacao] = useState(lancamento.observacaoCliente);
-  const [status, setStatus] = useState('idle');
-
-  async function salvar() {
-    if (observacao === lancamento.observacaoCliente) return;
-    setStatus('salvando');
-    try {
-      await salvarObservacaoCliente(lancamento.id, observacao);
-      lancamento.observacaoCliente = observacao;
-      setStatus('salvo');
-      onSaved?.();
-    } catch {
-      setStatus('erro');
-    }
-  }
-
-  return (
-    <div style={{ background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: '12px 14px' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
-        <span style={{ fontSize: 12, color: 'var(--text2)' }}>{fmtData(lancamento.data)}</span>
-        <span style={{ fontSize: 13, fontWeight: 700,
-          color: lancamento.natureza === 'saida' ? 'var(--danger)' : lancamento.natureza === 'entrada' ? 'var(--ok)' : 'var(--text1)' }}>
-          {lancamento.natureza === 'entrada' ? '+ ' : lancamento.natureza === 'saida' ? '− ' : ''}{fmt(lancamento.valor)}
-        </span>
-      </div>
-      <div style={{ fontSize: 13.5, color: 'var(--text1)', marginTop: 4, fontWeight: 500 }}>{lancamento.historico}</div>
-      <textarea
-        value={observacao}
-        onChange={(e) => { setObservacao(e.target.value); setStatus('idle'); }}
-        onBlur={salvar}
-        placeholder="O que foi esse lançamento?"
-        rows={2}
-        style={{ width: '100%', marginTop: 8, padding: '7px 9px', border: '1px solid var(--border)', borderRadius: 'var(--r-sm)',
-          fontSize: 12.5, fontFamily: 'inherit', resize: 'vertical' }}
-      />
-      {status === 'salvando' && <div style={{ fontSize: 10.5, color: 'var(--text3)', marginTop: 3 }}>Salvando...</div>}
-      {status === 'salvo' && <div style={{ fontSize: 10.5, color: 'var(--ok)', marginTop: 3 }}>✓ Salvo</div>}
-      {status === 'erro' && <div style={{ fontSize: 10.5, color: 'var(--danger)', marginTop: 3 }}>Erro ao salvar, tente de novo.</div>}
-    </div>
-  );
-}
