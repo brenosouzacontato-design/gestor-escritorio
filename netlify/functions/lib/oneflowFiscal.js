@@ -95,7 +95,12 @@ async function sincronizarDocumentosCliente(supabase, cliente, token, competenci
     modelo: d.modelo || null,
     tipo_movimento: normalizarMovimento(d.tipoMovimento),
     numero: d.numero || null,
-    serie: d.serie || null,
+    // NFS-e não tem "série" (vem "" da API) — NUNCA grava null aqui: o
+    // índice único (cliente_id, modelo, numero, serie) não deduplica linhas
+    // com serie null (regra do SQL, NULL não é igual a NULL), então cada
+    // sincronização criava uma cópia nova da mesma NFS-e em vez de
+    // atualizar a existente.
+    serie: d.serie || '',
     cnpj_cpf_terceiro: d.documentoClienteFornecedor || null,
     razao_social_terceiro: d.razaoSocialClienteFornecedor || null,
     data_emissao: dataBrParaIso(d.dataEmissao),
