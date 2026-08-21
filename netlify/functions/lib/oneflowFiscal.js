@@ -45,10 +45,13 @@ function dataBrParaIso(dataBr) {
   return `${a}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`
 }
 
+// NF-e usa "Entrada"/"Saída"; NFS-e usa um vocabulário diferente pro mesmo
+// conceito: "Tomado" (serviço tomado = entrada) / "Prestado" (serviço
+// prestado = saída).
 function normalizarMovimento(tipoMovimento) {
   const v = (tipoMovimento || '').toLowerCase()
-  if (v.startsWith('entr')) return 'entrada'
-  if (v.startsWith('sa')) return 'saida'
+  if (v.startsWith('entr') || v.startsWith('tomad')) return 'entrada'
+  if (v.startsWith('sa') || v.startsWith('prest')) return 'saida'
   return null
 }
 
