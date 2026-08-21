@@ -52,14 +52,25 @@ function normalizarMovimento(tipoMovimento) {
   return null
 }
 
+// "07/2026" -> "202607" — o resto do app usa MM/YYYY (mesmo formato que a
+// própria API devolve no campo `competencia` de cada documento), mas o
+// PARÂMETRO de consulta desse endpoint espera AAAAMM (documentado assim no
+// Swagger). Passar MM/YYYY não dá erro nenhum — só devolve lista vazia
+// silenciosamente, o que é bem mais traiçoeiro que um 400.
+function competenciaParaAAAAMM(competencia) {
+  const [mes, ano] = competencia.split('/')
+  return `${ano}${mes}`
+}
+
 // Busca todas as páginas de documentos fiscais escriturados numa
 // competência — a API pagina, mas não documenta um jeito confiável de
 // saber quando parar, então segue lendo até vir uma página vazia.
 async function buscarDocumentosFiscais(token, competencia) {
+  const competenciaApi = competenciaParaAAAAMM(competencia)
   let todos = []
   let pagina = 1
   while (pagina <= 50) { // trava de segurança — nunca deve chegar perto disso
-    const r = await chamar(`${ONEFLOW_BASE}/empresa/fiscal/documentos/listar?competencia=${competencia}&pagina=${pagina}`, token)
+    const r = await chamar(`${ONEFLOW_BASE}/empresa/fiscal/documentos/listar?competencia=${competenciaApi}&pagina=${pagina}`, token)
     const documentos = r.result?.documentos || []
     if (documentos.length === 0) break
     todos = todos.concat(documentos)
