@@ -4,6 +4,7 @@ import { useStore } from '../store'
 import { Avatar, ErpBadge } from '../components/shared'
 import { getFolhaStatus, getFiscalStatus, competenciaAtual, competenciaAnterior, tokenExpirado, getAppToken } from '../lib/oneflow'
 import { useToast } from '../components/shared'
+import DocumentosFiscaisTab from './erp/DocumentosFiscaisTab'
 
 export default function FechamentosERP({ onOpenConfig }) {
   const clientes = useStore(s => s.clientes)
@@ -13,6 +14,7 @@ export default function FechamentosERP({ onOpenConfig }) {
   const oneflowConfig = useStore(s => s.oneflowConfig)
   const { show } = useToast()
 
+  const [aba, setAba] = useState('fechamentos') // fechamentos | notasfiscais
   const [syncing, setSyncing] = useState(false)
   const [syncProgress, setSyncProgress] = useState('')
   const [syncLog, setSyncLog] = useState([])
@@ -138,6 +140,11 @@ export default function FechamentosERP({ onOpenConfig }) {
         </div>
       )}
 
+      <div className="tabs" style={{ maxWidth: 320, marginBottom: 14 }}>
+        <button className={`tab-btn ${aba === 'fechamentos' ? 'active' : ''}`} onClick={() => setAba('fechamentos')}>Fechamentos</button>
+        <button className={`tab-btn ${aba === 'notasfiscais' ? 'active' : ''}`} onClick={() => setAba('notasfiscais')}>Notas fiscais</button>
+      </div>
+
       <div style={{ display:'flex', gap:8, alignItems:'center', marginBottom:14 }}>
         <select
           value={competencia}
@@ -151,64 +158,72 @@ export default function FechamentosERP({ onOpenConfig }) {
             return <option key={c} value={c}>{label ? `${label} (${c})` : c}</option>
           })}
         </select>
-        <button className="btn btn-accent" onClick={syncAll} disabled={syncing}>
-          <RefreshCwIcon size={14} className={syncing ? 'spinning' : ''} />
-          {syncing ? 'Sinc...' : 'Sincronizar'}
-        </button>
+        {aba === 'fechamentos' && (
+          <button className="btn btn-accent" onClick={syncAll} disabled={syncing}>
+            <RefreshCwIcon size={14} className={syncing ? 'spinning' : ''} />
+            {syncing ? 'Sinc...' : 'Sincronizar'}
+          </button>
+        )}
       </div>
 
-      {syncing && syncProgress && (
-        <div style={{ fontSize:12, color:'var(--text2)', marginBottom:8, fontStyle:'italic' }}>
-          {syncProgress}
-        </div>
-      )}
+      {aba === 'notasfiscais' && <DocumentosFiscaisTab competencia={competencia} />}
 
-      {clientes.map((c, i) => {
-        const folha = getFechamento(c.id, 'folha')
-        const fiscal = getFechamento(c.id, 'fiscal')
-        const vinculado = !!c.oneflow_token
-        const tokenExp = tokenExpirado(c.oneflow_token_expires_at)
+      {aba === 'fechamentos' && (
+        <>
+          {syncing && syncProgress && (
+            <div style={{ fontSize:12, color:'var(--text2)', marginBottom:8, fontStyle:'italic' }}>
+              {syncProgress}
+            </div>
+          )}
 
-        return (
-          <div key={c.id} className="card" style={{ marginBottom:8 }}>
-            <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:10 }}>
-              <Avatar name={c.nome} size={32} idx={i} />
-              <div style={{ flex:1, minWidth:0 }}>
-                <div style={{ fontSize:13, fontWeight:500, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{c.nome}</div>
-                <div style={{ fontSize:11, color:'var(--text2)' }}>
-                  {vinculado
-                    ? <span style={{ color: tokenExp ? 'var(--warn)' : 'var(--accent)' }}>
-                        {tokenExp ? '⚠ Token expirado' : '● Vinculado ao OneFlow'}
-                      </span>
-                    : <span style={{ color:'var(--text3)' }}>○ Não vinculado</span>
-                  }
+          {clientes.map((c, i) => {
+            const folha = getFechamento(c.id, 'folha')
+            const fiscal = getFechamento(c.id, 'fiscal')
+            const vinculado = !!c.oneflow_token
+            const tokenExp = tokenExpirado(c.oneflow_token_expires_at)
+
+            return (
+              <div key={c.id} className="card" style={{ marginBottom:8 }}>
+                <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:10 }}>
+                  <Avatar name={c.nome} size={32} idx={i} />
+                  <div style={{ flex:1, minWidth:0 }}>
+                    <div style={{ fontSize:13, fontWeight:500, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{c.nome}</div>
+                    <div style={{ fontSize:11, color:'var(--text2)' }}>
+                      {vinculado
+                        ? <span style={{ color: tokenExp ? 'var(--warn)' : 'var(--accent)' }}>
+                            {tokenExp ? '⚠ Token expirado' : '● Vinculado ao OneFlow'}
+                          </span>
+                        : <span style={{ color:'var(--text3)' }}>○ Não vinculado</span>
+                      }
+                    </div>
+                  </div>
+                </div>
+
+                <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:8 }}>
+                  <div style={{ background:'var(--surface2)', borderRadius:'var(--r-sm)', padding:'8px 10px' }}>
+                    <div style={{ fontSize:11, color:'var(--text2)', marginBottom:4 }}>Folha</div>
+                    <ErpBadge status={isMockMode ? (i % 2 === 0 ? 'aberto' : 'fechado') : folha?.status} />
+                    {folha?.sincronizado_em && (
+                      <div style={{ fontSize:10, color:'var(--text3)', marginTop:3 }}>
+                        {new Date(folha.sincronizado_em).toLocaleDateString('pt-BR')}
+                      </div>
+                    )}
+                  </div>
+                  <div style={{ background:'var(--surface2)', borderRadius:'var(--r-sm)', padding:'8px 10px' }}>
+                    <div style={{ fontSize:11, color:'var(--text2)', marginBottom:4 }}>Fiscal</div>
+                    <ErpBadge status={isMockMode ? (i % 3 === 0 ? 'fechado' : 'aberto') : fiscal?.status} />
+                    {fiscal?.sincronizado_em && (
+                      <div style={{ fontSize:10, color:'var(--text3)', marginTop:3 }}>
+                        {new Date(fiscal.sincronizado_em).toLocaleDateString('pt-BR')}
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
-            </div>
-
-            <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:8 }}>
-              <div style={{ background:'var(--surface2)', borderRadius:'var(--r-sm)', padding:'8px 10px' }}>
-                <div style={{ fontSize:11, color:'var(--text2)', marginBottom:4 }}>Folha</div>
-                <ErpBadge status={isMockMode ? (i % 2 === 0 ? 'aberto' : 'fechado') : folha?.status} />
-                {folha?.sincronizado_em && (
-                  <div style={{ fontSize:10, color:'var(--text3)', marginTop:3 }}>
-                    {new Date(folha.sincronizado_em).toLocaleDateString('pt-BR')}
-                  </div>
-                )}
-              </div>
-              <div style={{ background:'var(--surface2)', borderRadius:'var(--r-sm)', padding:'8px 10px' }}>
-                <div style={{ fontSize:11, color:'var(--text2)', marginBottom:4 }}>Fiscal</div>
-                <ErpBadge status={isMockMode ? (i % 3 === 0 ? 'fechado' : 'aberto') : fiscal?.status} />
-                {fiscal?.sincronizado_em && (
-                  <div style={{ fontSize:10, color:'var(--text3)', marginTop:3 }}>
-                    {new Date(fiscal.sincronizado_em).toLocaleDateString('pt-BR')}
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-        )
-      })}
+            )
+          })}
+        </>
+      )}
 
       <style>{`.spinning { animation: spin 1s linear infinite; } @keyframes spin { to { transform: rotate(360deg); } }`}</style>
     </div>

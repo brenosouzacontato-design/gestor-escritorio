@@ -13,6 +13,12 @@
 [functions."honorarios-cron"]
   schedule = "0 12 * * *"
 
+# 13:00 UTC = 10h em Brasília — depois do horário em que o escritório
+# costuma logar de novo no OneFlow de manhã (of_user_token dura ~23h e não
+# renova sozinho), pra ter mais chance de achar o token válido.
+[functions."documentos-fiscais-cron"]
+  schedule = "0 13 * * *"
+
 [[redirects]]
   from = "/*"
   to = "/index.html"
