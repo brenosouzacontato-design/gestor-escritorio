@@ -1,60 +1,63 @@
-import { useState, useEffect, useMemo } from 'react'
-import { RefreshCwIcon, InfoIcon, ArrowDownCircleIcon, ArrowUpCircleIcon } from 'lucide-react'
-import { useStore } from '../../store'
-import { listarDocumentosFiscais, obterUltimaSincronizacao, sincronizarDocumentosFiscaisAgora } from './documentosFiscaisApi'
-import { useToast } from '../../components/shared'
+import { useState, useEffect, useMemo } from 'react';
+import { RefreshCwIcon, InfoIcon, ArrowDownCircleIcon, ArrowUpCircleIcon, FileEditIcon, CheckCircleIcon } from 'lucide-react';
+import { listarDocumentosFiscais, obterUltimaSincronizacao, sincronizarDocumentosFiscaisAgora } from './documentosFiscaisApi';
+import GerarLancamentoModal from './GerarLancamentoModal';
+import { useToast } from '../../components/shared';
 
 function fmt(v) {
-  return Number(v ?? 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
+  return Number(v ?? 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 }
 function fmtData(iso) {
-  if (!iso) return '—'
-  return new Date(iso + 'T00:00:00').toLocaleDateString('pt-BR')
+  if (!iso) return '—';
+  return new Date(iso + 'T00:00:00').toLocaleDateString('pt-BR');
 }
 function fmtDataHora(iso) {
-  if (!iso) return null
-  return new Date(iso).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })
+  if (!iso) return null;
+  return new Date(iso).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' });
+}
+function competenciaAtual() {
+  const d = new Date();
+  return `${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`;
 }
 
 // Notas fiscais (entrada/saída, NF-e/NFS-e) importadas da Omie/OneFlow —
 // sincronizadas sozinhas todo dia (documentos-fiscais-cron.js) ou sob
 // demanda pelo botão aqui. Foco é a nota de ENTRADA (compra/serviço
-// tomado), mas mostra as duas direções com um filtro pra não esconder
-// nada que já foi importado.
-export default function DocumentosFiscaisTab({ competencia }) {
-  const clientes = useStore(s => s.clientes)
-  const { show } = useToast()
+// tomado): dá pra gerar o lançamento contábil direto daqui — crédito
+// sempre vai pra sub-conta do fornecedor (ver documentosFiscaisApi.js).
+export default function DocumentosFiscaisTab({ empresaId }) {
+  const { show } = useToast();
 
-  const [documentos, setDocumentos] = useState(null) // null = carregando
-  const [erro, setErro] = useState(null)
-  const [ultimaSinc, setUltimaSinc] = useState(null)
-  const [sincronizando, setSincronizando] = useState(false)
-  const [clienteFiltro, setClienteFiltro] = useState('todas')
-  const [tipoFiltro, setTipoFiltro] = useState('entrada') // entrada | saida | todos
+  const [competencia, setCompetencia] = useState(competenciaAtual());
+  const [documentos, setDocumentos] = useState(null); // null = carregando
+  const [erro, setErro] = useState(null);
+  const [ultimaSinc, setUltimaSinc] = useState(null);
+  const [sincronizando, setSincronizando] = useState(false);
+  const [tipoFiltro, setTipoFiltro] = useState('entrada'); // entrada | saida | todos
+  const [lancarDocumento, setLancarDocumento] = useState(null);
 
   const carregar = () => {
-    listarDocumentosFiscais({ competencia, clienteId: clienteFiltro !== 'todas' ? clienteFiltro : null,
-      tipoMovimento: tipoFiltro !== 'todos' ? tipoFiltro : null })
+    listarDocumentosFiscais({ competencia, clienteId: empresaId, tipoMovimento: tipoFiltro !== 'todos' ? tipoFiltro : null })
       .then(setDocumentos)
-      .catch((e) => setErro(e.message))
-    obterUltimaSincronizacao().then(setUltimaSinc).catch(() => {})
-  }
+      .catch((e) => setErro(e.message));
+    obterUltimaSincronizacao().then(setUltimaSinc).catch(() => {});
+  };
 
-  useEffect(() => { carregar() }, [competencia, clienteFiltro, tipoFiltro])
+  useEffect(() => { carregar(); }, [empresaId, competencia, tipoFiltro]);
 
   const sincronizarAgora = async () => {
-    setSincronizando(true)
+    setSincronizando(true);
     try {
-      const r = await sincronizarDocumentosFiscaisAgora()
-      show?.(`Sincronizado: ${r.sincronizados}/${r.total} empresas${r.erros?.length ? `, ${r.erros.length} com erro` : ''}${r.motivo ? ` — ${r.motivo}` : ''}`)
-      carregar()
+      const r = await sincronizarDocumentosFiscaisAgora();
+      show?.(`Sincronizado: ${r.sincronizados}/${r.total} empresas${r.erros?.length ? `, ${r.erros.length} com erro` : ''}${r.motivo ? ` — ${r.motivo}` : ''}`);
+      carregar();
     } catch (e) {
-      show?.('Erro ao sincronizar: ' + e.message)
+      show?.('Erro ao sincronizar: ' + e.message);
     }
-    setSincronizando(false)
-  }
+    setSincronizando(false);
+  };
 
-  const totalValor = useMemo(() => (documentos || []).reduce((s, d) => s + Number(d.valor_total || 0), 0), [documentos])
+  const totalValor = useMemo(() => (documentos || []).reduce((s, d) => s + Number(d.valor_total || 0), 0), [documentos]);
 
   return (
     <div>
@@ -62,15 +65,19 @@ export default function DocumentosFiscaisTab({ competencia }) {
         <InfoIcon size={14} />
         <span>
           {ultimaSinc ? `Última sincronização: ${fmtDataHora(ultimaSinc)}` : 'Ainda não sincronizado.'}
-          {' '}— roda sozinho todo dia; se parar de atualizar, o token do OneFlow provavelmente venceu (precisa relogar no modal de configuração).
+          {' '}— roda sozinho todo dia; se parar de atualizar, o token do OneFlow provavelmente venceu (precisa relogar no modal de configuração, aba ERP).
         </span>
       </div>
 
       <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 14, flexWrap: 'wrap' }}>
-        <select value={clienteFiltro} onChange={(e) => setClienteFiltro(e.target.value)}
-          style={{ flex: 1, minWidth: 180, padding: '8px 11px', border: '1px solid var(--border)', borderRadius: 'var(--r-sm)', fontSize: 13, background: 'var(--surface)', color: 'var(--text1)' }}>
-          <option value="todas">Todas as empresas</option>
-          {clientes.map((c) => <option key={c.id} value={c.id}>{c.nome}</option>)}
+        <select value={competencia} onChange={(e) => setCompetencia(e.target.value)}
+          style={{ padding: '8px 11px', border: '1px solid var(--border)', borderRadius: 'var(--r-sm)', fontSize: 13, background: 'var(--surface)', color: 'var(--text1)' }}>
+          {[0, 1, 2, 3].map((i) => {
+            const d = new Date(); d.setMonth(d.getMonth() - i);
+            const c = `${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`;
+            const label = i === 0 ? 'Competência atual' : i === 1 ? 'Competência anterior' : '';
+            return <option key={c} value={c}>{label ? `${label} (${c})` : c}</option>;
+          })}
         </select>
         <div className="tabs" style={{ maxWidth: 280 }}>
           <button className={`tab-btn ${tipoFiltro === 'entrada' ? 'active' : ''}`} onClick={() => setTipoFiltro('entrada')}>Entrada</button>
@@ -108,19 +115,18 @@ export default function DocumentosFiscaisTab({ competencia }) {
             <thead>
               <tr style={{ background: 'var(--surface2)' }}>
                 <th style={thStyle}>Emissão</th>
-                <th style={thStyle}>Empresa</th>
                 <th style={thStyle}>Fornecedor/Cliente</th>
                 <th style={thStyle}>Modelo</th>
                 <th style={thStyle}>Número</th>
                 <th style={{ ...thStyle, textAlign: 'right' }}>Valor</th>
                 <th style={thStyle}>Tipo</th>
+                <th style={thStyle}></th>
               </tr>
             </thead>
             <tbody>
               {documentos.map((d) => (
                 <tr key={d.id} style={{ borderTop: '1px solid var(--border)' }}>
                   <td style={{ ...tdStyle, whiteSpace: 'nowrap', color: 'var(--text2)' }}>{fmtData(d.data_emissao)}</td>
-                  <td style={{ ...tdStyle, color: 'var(--text1)', fontWeight: 500, whiteSpace: 'nowrap' }}>{d.clientes?.nome || '—'}</td>
                   <td style={tdStyle}>{d.razao_social_terceiro || '—'}</td>
                   <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>{d.modelo || '—'}</td>
                   <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>{d.numero}{d.serie ? `/${d.serie}` : ''}</td>
@@ -134,6 +140,19 @@ export default function DocumentosFiscaisTab({ competencia }) {
                       {d.tipo_movimento === 'entrada' ? 'Entrada' : d.tipo_movimento === 'saida' ? 'Saída' : '—'}
                     </span>
                   </td>
+                  <td style={{ ...tdStyle, textAlign: 'center' }}>
+                    {d.lancamento_id ? (
+                      <span title="Já tem lançamento gerado" style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 10.5, fontWeight: 700, color: 'var(--ok)' }}>
+                        <CheckCircleIcon size={13} /> Lançado
+                      </span>
+                    ) : (
+                      <button onClick={() => setLancarDocumento(d)} title="Gerar lançamento contábil"
+                        style={{ background: 'var(--accent-dim)', border: 'none', borderRadius: 99, width: 26, height: 26,
+                          display: 'inline-flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: 'var(--accent)' }}>
+                        <FileEditIcon size={12} />
+                      </button>
+                    )}
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -141,10 +160,14 @@ export default function DocumentosFiscaisTab({ competencia }) {
         </div>
       )}
 
+      {lancarDocumento && (
+        <GerarLancamentoModal documento={lancarDocumento} onClose={() => setLancarDocumento(null)} onGerado={carregar} />
+      )}
+
       <style>{`.spinning { animation: spin 1s linear infinite; } @keyframes spin { to { transform: rotate(360deg); } }`}</style>
     </div>
-  )
+  );
 }
 
-const thStyle = { textAlign: 'left', padding: '9px 12px', fontSize: 10.5, color: 'var(--text3)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.03em' }
-const tdStyle = { padding: '8px 12px' }
+const thStyle = { textAlign: 'left', padding: '9px 12px', fontSize: 10.5, color: 'var(--text3)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.03em' };
+const tdStyle = { padding: '8px 12px' };
