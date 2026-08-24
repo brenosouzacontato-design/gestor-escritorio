@@ -261,6 +261,22 @@ export async function obterPendenciasAnteriores(clienteId, competenciaAtual) {
   };
 }
 
+// ---------- Notas fiscais (entrada/saída, sincronizadas da Omie/OneFlow) ----------
+
+// Documentos fiscais do cliente na competência do painel — mesma tabela
+// alimentada pelo cron diário (netlify/functions/documentos-fiscais-cron.js)
+// e usada na aba Notas Fiscais do Financeiro/visão geral.
+export async function obterDocumentosFiscais(clienteId, competencia) {
+  const { data, error } = await supabase
+    .from('documentos_fiscais_erp')
+    .select('id, modelo, tipo_movimento, numero, serie, razao_social_terceiro, valor_total, data_emissao')
+    .eq('cliente_id', clienteId)
+    .eq('competencia', competencia)
+    .order('data_emissao', { ascending: false });
+  if (error) throw error;
+  return data;
+}
+
 // Valor do DAS das competências passadas que aparecem como pendência —
 // obterPendenciasAnteriores não traz valor (obrigacoes não tem coluna de
 // valor), então busca à parte em dados_gerenciais_simples pra quem já

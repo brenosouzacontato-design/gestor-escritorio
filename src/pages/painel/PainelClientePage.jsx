@@ -11,7 +11,7 @@ import { criarLinkAssinado } from '../documentos/documentosApi';
 import {
   obterResumoObrigacoes, obterResumoTarefas, obterResumoFinanceiro, obterDadosGerenciais,
   obterDocumentosDoMes, obterDocumentosPorObrigacao, obterSituacaoFiscal, obterHistoricoFaturamento, obterCndManual,
-  obterPendenciasAnteriores, obterValoresDasPendencias,
+  obterPendenciasAnteriores, obterValoresDasPendencias, obterDocumentosFiscais,
 } from './painelApi';
 
 const RECEITA_TIPO_LABEL = { normal: 'Normal', st: 'Com ST', monofasico: 'Monofásico' };
@@ -120,6 +120,7 @@ export default function PainelClientePage({ clienteId, competencia }) {
   const [pendenciasAnteriores, setPendenciasAnteriores] = useState({ obrigacoes: [], tarefas: [] });
   const [valoresDasPendencias, setValoresDasPendencias] = useState({}); // competencia -> valor_das, só das pendências que parecem DAS
   const [documentos, setDocumentos] = useState([]);
+  const [documentosFiscais, setDocumentosFiscais] = useState([]);
   const [anexosObrigacao, setAnexosObrigacao] = useState({});
   const [carregando, setCarregando] = useState(true);
   const [erro, setErro] = useState(null);
@@ -130,7 +131,7 @@ export default function PainelClientePage({ clienteId, competencia }) {
       setErro(null);
       try {
         const { dataInicio, dataFim } = competenciaParaPeriodo(competencia);
-        const [{ data: clienteData, error: errCliente }, resObs, resTarefas, resFinanceiro, itensIdentificar, dadosSimples, historico, situFiscal, cndManualData, docs, pendenciasAnt] = await Promise.all([
+        const [{ data: clienteData, error: errCliente }, resObs, resTarefas, resFinanceiro, itensIdentificar, dadosSimples, historico, situFiscal, cndManualData, docs, pendenciasAnt, docsFiscais] = await Promise.all([
           supabase.from('clientes').select('nome, cnpj, regime, carteira').eq('id', clienteId).single(),
           obterResumoObrigacoes(clienteId, competencia),
           obterResumoTarefas(clienteId, competencia),
@@ -145,6 +146,7 @@ export default function PainelClientePage({ clienteId, competencia }) {
           obterCndManual(clienteId, competencia).catch(() => null),
           obterDocumentosDoMes(clienteId, { dataInicio, dataFim }).catch(() => []),
           obterPendenciasAnteriores(clienteId, competencia).catch(() => ({ obrigacoes: [], tarefas: [] })),
+          obterDocumentosFiscais(clienteId, competencia).catch(() => []),
         ]);
         if (errCliente) throw errCliente;
         setCliente(clienteData);
@@ -158,6 +160,7 @@ export default function PainelClientePage({ clienteId, competencia }) {
         setCndManual(cndManualData);
         setDocumentos(docs);
         setPendenciasAnteriores(pendenciasAnt);
+        setDocumentosFiscais(docsFiscais);
         const competenciasDas = [...new Set(
           pendenciasAnt.obrigacoes
             .filter((o) => `${o.titulo || ''} ${o.tipo || ''}`.toLowerCase().includes('das'))
@@ -214,10 +217,10 @@ export default function PainelClientePage({ clienteId, competencia }) {
 
           {!carregando && !erro && (() => {
             const modulos = agruparPorModulo(obs.itens);
-            // Lançamentos a identificar moraram na aba Contábil — garante que a
-            // aba apareça mesmo se não houver obrigação desse módulo na
-            // competência (senão os lançamentos ficariam sem lugar pra aparecer).
-            if (lancamentos.length > 0 && !modulos.some((m) => m.nome === 'Contábil')) {
+            // Lançamentos a identificar e notas fiscais moram na aba Contábil —
+            // garante que a aba apareça mesmo se não houver obrigação desse
+            // módulo na competência (senão ficariam sem lugar pra aparecer).
+            if ((lancamentos.length > 0 || documentosFiscais.length > 0) && !modulos.some((m) => m.nome === 'Contábil')) {
               modulos.push({ nome: 'Contábil', icone: '🧮', s: 'empty', pct: 0, val: '—' });
             }
             const abas = [
@@ -405,7 +408,9 @@ export default function PainelClientePage({ clienteId, competencia }) {
                         {moduloAtual.s === 'empty' ? '—' : `${moduloAtual.pct}%`}
                       </span>
                     </div>
-                    {obsDoModulo.length === 0 && tarefasDoModulo.length === 0 && !(moduloAtual.nome === 'Contábil' && lancamentos.length > 0) && (
+                    {obsDoModulo.length === 0 && tarefasDoModulo.length === 0
+                      && !(moduloAtual.nome === 'Contábil' && lancamentos.length > 0)
+                      && !(moduloAtual.nome === 'Contábil' && documentosFiscais.length > 0) && (
                       <div style={{ textAlign: 'center', color: 'var(--text3)', fontSize: 13, padding: '24px 0' }}>Nada nesse módulo por enquanto.</div>
                     )}
                     {obsDoModulo.length > 0 && (
@@ -436,8 +441,32 @@ export default function PainelClientePage({ clienteId, competencia }) {
                         })}
                       </div>
                     )}
+                    {moduloAtual.nome === 'Contábil' && documentosFiscais.length > 0 && (() => {
+                      const entradas = documentosFiscais.filter((d) => d.tipo_movimento === 'entrada');
+                      const saidas = documentosFiscais.filter((d) => d.tipo_movimento === 'saida');
+                      const totalEntrada = entradas.reduce((s, d) => s + Number(d.valor_total || 0), 0);
+                      const totalSaida = saidas.reduce((s, d) => s + Number(d.valor_total || 0), 0);
+                      return (
+                        <div style={{ marginTop: (obsDoModulo.length > 0 || tarefasDoModulo.length > 0) ? 16 : 0 }}>
+                          <SecaoTitulo icone={<FileTextIcon size={14} />}>Notas fiscais</SecaoTitulo>
+                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 10, marginBottom: 12 }}>
+                            <Metrica label={`Entrada (${entradas.length})`} valor={fmt(totalEntrada)} />
+                            <Metrica label={`Saída (${saidas.length})`} valor={fmt(totalSaida)} />
+                          </div>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                            {documentosFiscais.map((d) => (
+                              <ItemLista key={d.id} titulo={d.razao_social_terceiro || 'Documento fiscal'}
+                                sub={`${d.modelo || ''}${d.numero ? ` ${d.numero}` : ''} · ${fmtData(d.data_emissao)}`}
+                                valorTexto={fmt(d.valor_total)}
+                                statusLabel={d.tipo_movimento === 'entrada' ? 'Entrada' : d.tipo_movimento === 'saida' ? 'Saída' : null}
+                                statusCor={d.tipo_movimento === 'entrada' ? ['var(--ok)', 'var(--ok-dim)'] : ['var(--info)', 'var(--info-dim)']} />
+                            ))}
+                          </div>
+                        </div>
+                      );
+                    })()}
                     {moduloAtual.nome === 'Contábil' && lancamentos.length > 0 && (
-                      <div style={{ marginTop: (obsDoModulo.length > 0 || tarefasDoModulo.length > 0) ? 16 : 0 }}>
+                      <div style={{ marginTop: (obsDoModulo.length > 0 || tarefasDoModulo.length > 0 || documentosFiscais.length > 0) ? 16 : 0 }}>
                         <SecaoTitulo icone={<WalletIcon size={14} />}>Lançamentos a identificar</SecaoTitulo>
                         <LancamentosIdentificar lancamentos={lancamentos} onSaved={() => setLancamentos((prev) => [...prev])} />
                       </div>

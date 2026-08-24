@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { LayoutDashboardIcon, CheckSquareIcon, UsersIcon, RefreshCwIcon, SettingsIcon, PlusIcon, TargetIcon, BuildingIcon, AppWindowIcon, CalculatorIcon, ChevronsLeftIcon, ChevronsRightIcon, SunIcon, MoonIcon, PaperclipIcon, BellIcon, BanknoteIcon, MonitorIcon } from 'lucide-react'
+import { LayoutDashboardIcon, CheckSquareIcon, UsersIcon, RefreshCwIcon, SettingsIcon, PlusIcon, TargetIcon, BuildingIcon, AppWindowIcon, CalculatorIcon, ChevronsLeftIcon, ChevronsRightIcon, SunIcon, MoonIcon, PaperclipIcon, BellIcon, BanknoteIcon, MonitorIcon, ReceiptIcon } from 'lucide-react'
 import { useStore } from './store'
 import { ToastContainer } from './components/shared'
 import NovaTarefaModal from './components/NovaTarefaModal'
@@ -17,6 +17,7 @@ import DocumentosPage from './pages/documentos/DocumentosPage'
 import NotificacoesPage from './pages/Notificacoes'
 import HonorariosPage from './pages/honorarios/HonorariosPage'
 import PaineisPage from './pages/painel/PaineisPage'
+import NotasFiscaisPage from './pages/notasfiscais/NotasFiscaisPage'
 
 const NAV = [
   { id: 'overview',   label: 'Painel',      Icon: LayoutDashboardIcon },
@@ -30,6 +31,7 @@ const NAV = [
   { id: 'prospectos', label: 'Prospectos',  Icon: TargetIcon },
   { id: 'erp',        label: 'ERP',         Icon: RefreshCwIcon },
   { id: 'contabil',   label: 'Financeiro',  Icon: CalculatorIcon },
+  { id: 'notasfiscais', label: 'Notas Fiscais', Icon: ReceiptIcon },
   { id: 'central',    label: 'Central',     Icon: AppWindowIcon },
 ]
 
@@ -130,6 +132,7 @@ export default function App() {
             {page === 'prospectos' && <Prospectos />}
             {page === 'erp'        && <FechamentosERP onOpenConfig={() => setShowConfig(true)} />}
             {page === 'contabil'   && <ContabilPage />}
+            {page === 'notasfiscais' && <NotasFiscaisPage />}
             {page === 'central'    && <Central />}
           </>
         )}
