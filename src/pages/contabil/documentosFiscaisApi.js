@@ -8,17 +8,35 @@
 import { supabase } from '../../lib/supabase';
 import { listarContas, criarContaFilha, criarLancamento, listarRegrasClassificacao, encontrarRegraAplicavel, salvarRegraClassificacao } from './contabilApi';
 
+// O Supabase/PostgREST limita a 1000 linhas por página por padrão — sem
+// paginar, uma competência com mais de 1000 documentos (comum somando
+// todas as empresas do escritório) vinha cortada silenciosamente,
+// derrubando os totais da visão geral sem nenhum erro visível.
+const TAMANHO_PAGINA = 1000;
+async function buscarTudoPaginado(montarQuery) {
+  let todos = [];
+  let pagina = 0;
+  while (true) {
+    const { data, error } = await montarQuery().range(pagina * TAMANHO_PAGINA, pagina * TAMANHO_PAGINA + TAMANHO_PAGINA - 1);
+    if (error) throw error;
+    todos = todos.concat(data || []);
+    if (!data || data.length < TAMANHO_PAGINA) break;
+    pagina++;
+  }
+  return todos;
+}
+
 export async function listarDocumentosFiscais({ competencia, clienteId, tipoMovimento } = {}) {
-  let query = supabase
-    .from('documentos_fiscais_erp')
-    .select('*, clientes(nome)')
-    .order('data_emissao', { ascending: false });
-  if (competencia) query = query.eq('competencia', competencia);
-  if (clienteId) query = query.eq('cliente_id', clienteId);
-  if (tipoMovimento) query = query.eq('tipo_movimento', tipoMovimento);
-  const { data, error } = await query;
-  if (error) throw error;
-  return data;
+  return buscarTudoPaginado(() => {
+    let query = supabase
+      .from('documentos_fiscais_erp')
+      .select('*, clientes(nome)')
+      .order('data_emissao', { ascending: false });
+    if (competencia) query = query.eq('competencia', competencia);
+    if (clienteId) query = query.eq('cliente_id', clienteId);
+    if (tipoMovimento) query = query.eq('tipo_movimento', tipoMovimento);
+    return query;
+  });
 }
 
 export async function obterUltimaSincronizacao() {
@@ -51,10 +69,9 @@ function competenciaOrdinal(c) {
 // têm documento sincronizado (o cron só busca a atual + anterior, então o
 // histórico cresce mês a mês a partir de quando isso foi ligado).
 export async function obterEvolucaoMensal(meses = 6) {
-  const { data, error } = await supabase
+  const data = await buscarTudoPaginado(() => supabase
     .from('documentos_fiscais_erp')
-    .select('competencia, tipo_movimento, valor_total');
-  if (error) throw error;
+    .select('competencia, tipo_movimento, valor_total'));
 
   const porCompetencia = new Map();
   (data || []).forEach((d) => {
