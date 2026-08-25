@@ -39,6 +39,36 @@ export async function sincronizarDocumentosFiscaisAgora() {
   return body;
 }
 
+// "MM/YYYY" -> inteiro comparável (ano*100+mes) — mesma conversão usada em
+// painelApi.js pra ordenar competência-texto cronologicamente.
+function competenciaOrdinal(c) {
+  const [mes, ano] = c.split('/').map(Number);
+  return ano * 100 + mes;
+}
+
+// Totais de entrada/saída por competência, de todas as empresas — alimenta
+// o gráfico de evolução da visão geral. Só cobre as competências que já
+// têm documento sincronizado (o cron só busca a atual + anterior, então o
+// histórico cresce mês a mês a partir de quando isso foi ligado).
+export async function obterEvolucaoMensal(meses = 6) {
+  const { data, error } = await supabase
+    .from('documentos_fiscais_erp')
+    .select('competencia, tipo_movimento, valor_total');
+  if (error) throw error;
+
+  const porCompetencia = new Map();
+  (data || []).forEach((d) => {
+    if (!porCompetencia.has(d.competencia)) porCompetencia.set(d.competencia, { competencia: d.competencia, entrada: 0, saida: 0 });
+    const g = porCompetencia.get(d.competencia);
+    if (d.tipo_movimento === 'entrada') g.entrada += Number(d.valor_total || 0);
+    else if (d.tipo_movimento === 'saida') g.saida += Number(d.valor_total || 0);
+  });
+
+  return [...porCompetencia.values()]
+    .sort((a, b) => competenciaOrdinal(a.competencia) - competenciaOrdinal(b.competencia))
+    .slice(-meses);
+}
+
 // ---------- GERAR LANÇAMENTO A PARTIR DE UM DOCUMENTO ----------
 
 // Acha a sub-conta do fornecedor dentro do grupo sintético "Fornecedores"

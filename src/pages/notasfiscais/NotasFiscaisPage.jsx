@@ -1,8 +1,11 @@
 import { useState, useEffect, useMemo } from 'react';
-import { RefreshCwIcon, InfoIcon, ChevronDownIcon, ChevronRightIcon, ArrowDownCircleIcon, ArrowUpCircleIcon, FileEditIcon, CheckCircleIcon, SearchIcon } from 'lucide-react';
-import { listarDocumentosFiscais, obterUltimaSincronizacao, sincronizarDocumentosFiscaisAgora } from '../contabil/documentosFiscaisApi';
+import { RefreshCwIcon, InfoIcon, ChevronDownIcon, ChevronRightIcon, ArrowDownCircleIcon, ArrowUpCircleIcon, FileEditIcon, CheckCircleIcon, SearchIcon, AlertTriangleIcon, SparklesIcon, TrendingUpIcon } from 'lucide-react';
+import { useStore } from '../../store';
+import { listarDocumentosFiscais, obterUltimaSincronizacao, sincronizarDocumentosFiscaisAgora, obterEvolucaoMensal } from '../contabil/documentosFiscaisApi';
 import GerarLancamentoModal from '../contabil/GerarLancamentoModal';
 import { useToast } from '../../components/shared';
+
+const JANELA_NOVAS_MS = 24 * 60 * 60 * 1000; // documento "novo" = sincronizado nas últimas 24h
 
 function fmt(v) {
   return Number(v ?? 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
@@ -19,14 +22,21 @@ function competenciaAtual() {
   const d = new Date();
   return `${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`;
 }
+function ehRecente(sincronizadoEm) {
+  if (!sincronizadoEm) return false;
+  return Date.now() - new Date(sincronizadoEm).getTime() < JANELA_NOVAS_MS;
+}
 
 // Visão geral de notas fiscais (entrada/saída) de TODAS as empresas numa
 // competência — uma linha por empresa com os totais, expandível pra ver
 // os documentos um a um. Complementa a aba "Notas Fiscais" de dentro do
 // Financeiro (essa é por empresa já selecionada; essa aqui é o panorama
-// do escritório inteiro antes de entrar em cada uma).
+// do escritório inteiro antes de entrar em cada uma). Também mostra a
+// evolução mensal e alerta sobre empresas sem nenhuma nota na competência
+// e documentos sincronizados recentemente.
 export default function NotasFiscaisPage() {
   const { show } = useToast();
+  const clientes = useStore((s) => s.clientes);
 
   const [competencia, setCompetencia] = useState(competenciaAtual());
   const [documentos, setDocumentos] = useState(null); // null = carregando
@@ -36,12 +46,14 @@ export default function NotasFiscaisPage() {
   const [busca, setBusca] = useState('');
   const [expandidos, setExpandidos] = useState(() => new Set());
   const [lancarDocumento, setLancarDocumento] = useState(null);
+  const [evolucao, setEvolucao] = useState([]);
 
   const carregar = () => {
     listarDocumentosFiscais({ competencia })
       .then(setDocumentos)
       .catch((e) => setErro(e.message));
     obterUltimaSincronizacao().then(setUltimaSinc).catch(() => {});
+    obterEvolucaoMensal(6).then(setEvolucao).catch(() => {});
   };
 
   useEffect(() => { carregar(); }, [competencia]);
@@ -63,10 +75,11 @@ export default function NotasFiscaisPage() {
     (documentos || []).forEach((d) => {
       const chave = d.cliente_id;
       if (!grupos.has(chave)) {
-        grupos.set(chave, { clienteId: chave, nome: d.clientes?.nome || 'Empresa sem nome', entradaQtd: 0, entradaValor: 0, saidaQtd: 0, saidaValor: 0, docs: [] });
+        grupos.set(chave, { clienteId: chave, nome: d.clientes?.nome || 'Empresa sem nome', entradaQtd: 0, entradaValor: 0, saidaQtd: 0, saidaValor: 0, docs: [], temNova: false });
       }
       const g = grupos.get(chave);
       g.docs.push(d);
+      if (ehRecente(d.sincronizado_em)) g.temNova = true;
       if (d.tipo_movimento === 'entrada') { g.entradaQtd++; g.entradaValor += Number(d.valor_total || 0); }
       else if (d.tipo_movimento === 'saida') { g.saidaQtd++; g.saidaValor += Number(d.valor_total || 0); }
     });
@@ -79,6 +92,17 @@ export default function NotasFiscaisPage() {
     entradaQtd: acc.entradaQtd + g.entradaQtd, entradaValor: acc.entradaValor + g.entradaValor,
     saidaQtd: acc.saidaQtd + g.saidaQtd, saidaValor: acc.saidaValor + g.saidaValor,
   }), { entradaQtd: 0, entradaValor: 0, saidaQtd: 0, saidaValor: 0 }), [porEmpresa]);
+
+  // Empresas ativas do escritório que não têm NENHUM documento fiscal
+  // sincronizado nessa competência — sinal de que o cron/sync não achou
+  // nada pra ela (ou ela genuinamente não teve movimento, mas vale olhar).
+  const empresasSemNota = useMemo(() => {
+    if (!documentos) return [];
+    const comNota = new Set(documentos.map((d) => d.cliente_id));
+    return clientes.filter((c) => !comNota.has(c.id)).sort((a, b) => a.nome.localeCompare(b.nome));
+  }, [clientes, documentos]);
+
+  const notasNovas = useMemo(() => (documentos || []).filter((d) => ehRecente(d.sincronizado_em)), [documentos]);
 
   const toggle = (clienteId) => setExpandidos((prev) => {
     const next = new Set(prev);
@@ -106,6 +130,22 @@ export default function NotasFiscaisPage() {
           {' '}— roda sozinho todo dia; se parar de atualizar, o token do OneFlow provavelmente venceu (Financeiro → Notas Fiscais → aviso igual esse).
         </span>
       </div>
+
+      {notasNovas.length > 0 && (
+        <div className="notice" style={{ marginBottom: 12, background: 'var(--accent-dim)', color: 'var(--accent)', display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+          <SparklesIcon size={14} style={{ flexShrink: 0, marginTop: 1 }} />
+          <span><strong>{notasNovas.length} nota{notasNovas.length !== 1 ? 's' : ''} nova{notasNovas.length !== 1 ? 's' : ''}</strong> sincronizada{notasNovas.length !== 1 ? 's' : ''} nas últimas 24h — marcadas com 🆕 nas empresas abaixo.</span>
+        </div>
+      )}
+
+      {!erro && documentos && empresasSemNota.length > 0 && (
+        <div className="notice" style={{ marginBottom: 12, background: 'var(--warn-dim)', color: 'var(--warn)', display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+          <AlertTriangleIcon size={14} style={{ flexShrink: 0, marginTop: 1 }} />
+          <span>
+            <strong>{empresasSemNota.length} empresa{empresasSemNota.length !== 1 ? 's' : ''} sem nenhuma nota</strong> em {competencia}: {empresasSemNota.map((c) => c.nome).join(', ')}
+          </span>
+        </div>
+      )}
 
       <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 14, flexWrap: 'wrap' }}>
         <select value={competencia} onChange={(e) => setCompetencia(e.target.value)}
@@ -147,6 +187,15 @@ export default function NotasFiscaisPage() {
         </div>
       )}
 
+      {evolucao.length > 1 && (
+        <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: '14px 16px', marginBottom: 16 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: 'var(--text3)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.03em', marginBottom: 10 }}>
+            <TrendingUpIcon size={13} /> Evolução — entrada x saída
+          </div>
+          <GraficoEvolucao dados={evolucao} />
+        </div>
+      )}
+
       {erro && <p style={{ color: 'var(--danger)' }}>{erro}</p>}
       {!erro && documentos === null && <p style={{ color: 'var(--text2)' }}>Carregando...</p>}
       {!erro && documentos && porEmpresa.length === 0 && (
@@ -165,6 +214,7 @@ export default function NotasFiscaisPage() {
                 <button onClick={() => toggle(g.clienteId)}
                   style={{ display: 'flex', alignItems: 'center', gap: 10, width: '100%', padding: '11px 14px', background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left' }}>
                   {aberto ? <ChevronDownIcon size={14} color="var(--text3)" /> : <ChevronRightIcon size={14} color="var(--text3)" />}
+                  {g.temNova && <span title="Tem nota nova nas últimas 24h">🆕</span>}
                   <span style={{ flex: 1, minWidth: 0, fontSize: 13.5, fontWeight: 600, color: 'var(--text1)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{g.nome}</span>
                   <span style={{ fontSize: 12, color: 'var(--ok)', fontWeight: 700, whiteSpace: 'nowrap' }}>↓ {fmt(g.entradaValor)} <span style={{ color: 'var(--text3)', fontWeight: 500 }}>({g.entradaQtd})</span></span>
                   <span style={{ fontSize: 12, color: 'var(--info)', fontWeight: 700, whiteSpace: 'nowrap' }}>↑ {fmt(g.saidaValor)} <span style={{ color: 'var(--text3)', fontWeight: 500 }}>({g.saidaQtd})</span></span>
@@ -187,7 +237,10 @@ export default function NotasFiscaisPage() {
                       <tbody>
                         {g.docs.map((d) => (
                           <tr key={d.id} style={{ borderTop: '1px solid var(--border)' }}>
-                            <td style={{ ...tdStyle, whiteSpace: 'nowrap', color: 'var(--text2)' }}>{fmtData(d.data_emissao)}</td>
+                            <td style={{ ...tdStyle, whiteSpace: 'nowrap', color: 'var(--text2)' }}>
+                              {ehRecente(d.sincronizado_em) && <span title="Sincronizado nas últimas 24h" style={{ marginRight: 4 }}>🆕</span>}
+                              {fmtData(d.data_emissao)}
+                            </td>
                             <td style={tdStyle}>{d.razao_social_terceiro || '—'}</td>
                             <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>{d.modelo || '—'}</td>
                             <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>{d.numero}{d.serie ? `/${d.serie}` : ''}</td>
@@ -237,3 +290,59 @@ export default function NotasFiscaisPage() {
 
 const thStyle = { textAlign: 'left', padding: '9px 12px', fontSize: 10.5, color: 'var(--text3)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.03em' };
 const tdStyle = { padding: '8px 12px' };
+
+// Gráfico de barras agrupadas (entrada x saída por competência) — SVG à
+// mão, mesmo estilo do gráfico de faturamento do Painel do cliente.
+// Margem no topo evita o rótulo do valor da barra mais alta sair do
+// desenho (mesmo bug já corrigido lá).
+function GraficoEvolucao({ dados }) {
+  const max = Math.max(...dados.flatMap((d) => [d.entrada, d.saida]), 1);
+  const larguraBarra = 20, gapBarras = 4, gapGrupos = 22, altura = 100;
+  const margemTopo = 16, margemBaixo = 20;
+  const larguraGrupo = larguraBarra * 2 + gapBarras;
+  const larguraTotal = dados.length * (larguraGrupo + gapGrupos);
+  const alturaSvg = altura + margemTopo + margemBaixo;
+  const yBase = margemTopo + altura;
+
+  const fmtCurto = (v) => {
+    if (v >= 1000000) return `${(v / 1000000).toLocaleString('pt-BR', { maximumFractionDigits: 1 })}M`;
+    if (v >= 1000) return `${(v / 1000).toLocaleString('pt-BR', { maximumFractionDigits: 1 })}k`;
+    return v.toLocaleString('pt-BR', { maximumFractionDigits: 0 });
+  };
+
+  return (
+    <div style={{ overflowX: 'auto' }}>
+      <svg viewBox={`0 0 ${larguraTotal} ${alturaSvg}`} width="100%" height={alturaSvg} style={{ minWidth: larguraTotal, display: 'block' }}>
+        {dados.map((d, i) => {
+          const alturaEntrada = max > 0 ? Math.max((d.entrada / max) * altura, d.entrada > 0 ? 2 : 0) : 0;
+          const alturaSaida = max > 0 ? Math.max((d.saida / max) * altura, d.saida > 0 ? 2 : 0) : 0;
+          const x = i * (larguraGrupo + gapGrupos);
+          const [mes, ano] = d.competencia.split('/');
+          return (
+            <g key={d.competencia}>
+              {d.entrada > 0 && (
+                <text x={x + larguraBarra / 2} y={yBase - alturaEntrada - 6} textAnchor="middle" fontSize="9.5" fontWeight="700" fill="var(--ok)">
+                  {fmtCurto(d.entrada)}
+                </text>
+              )}
+              <rect x={x} y={yBase - alturaEntrada} width={larguraBarra} height={alturaEntrada} rx="3" fill="var(--ok)" />
+              {d.saida > 0 && (
+                <text x={x + larguraBarra + gapBarras + larguraBarra / 2} y={yBase - alturaSaida - 6} textAnchor="middle" fontSize="9.5" fontWeight="700" fill="var(--info)">
+                  {fmtCurto(d.saida)}
+                </text>
+              )}
+              <rect x={x + larguraBarra + gapBarras} y={yBase - alturaSaida} width={larguraBarra} height={alturaSaida} rx="3" fill="var(--info)" />
+              <text x={x + larguraGrupo / 2} y={yBase + 16} textAnchor="middle" fontSize="10" fill="var(--text3)">
+                {mes}/{ano.slice(2)}
+              </text>
+            </g>
+          );
+        })}
+      </svg>
+      <div style={{ display: 'flex', gap: 14, marginTop: 6, fontSize: 11, color: 'var(--text3)' }}>
+        <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}><span style={{ width: 9, height: 9, borderRadius: 2, background: 'var(--ok)', display: 'inline-block' }} /> Entrada</span>
+        <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}><span style={{ width: 9, height: 9, borderRadius: 2, background: 'var(--info)', display: 'inline-block' }} /> Saída</span>
+      </div>
+    </div>
+  );
+}
