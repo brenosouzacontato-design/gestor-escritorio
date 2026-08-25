@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
-import { RefreshCwIcon, InfoIcon, ChevronDownIcon, ChevronRightIcon, ArrowDownCircleIcon, ArrowUpCircleIcon, FileEditIcon, CheckCircleIcon, SearchIcon, AlertTriangleIcon, SparklesIcon, TrendingUpIcon } from 'lucide-react';
+import { RefreshCwIcon, InfoIcon, ChevronDownIcon, ChevronRightIcon, ArrowDownCircleIcon, ArrowUpCircleIcon, FileEditIcon, CheckCircleIcon, SearchIcon, AlertTriangleIcon, SparklesIcon, TrendingUpIcon, Share2Icon } from 'lucide-react';
 import { useStore } from '../../store';
 import { listarDocumentosFiscais, obterUltimaSincronizacao, sincronizarDocumentosFiscaisAgora, obterEvolucaoMensal } from '../contabil/documentosFiscaisApi';
 import GerarLancamentoModal from '../contabil/GerarLancamentoModal';
@@ -103,6 +103,16 @@ export default function NotasFiscaisPage() {
   }, [clientes, documentos]);
 
   const notasNovas = useMemo(() => (documentos || []).filter((d) => ehRecente(d.sincronizado_em)), [documentos]);
+
+  // Abre o WhatsApp com o link do painel de notas fiscais dessa empresa
+  // (NotasFiscaisCompartilhadoPage.jsx, ver main.jsx) — mesmo modelo do
+  // CompartilharButton.jsx (DRE/Balancete): só o link, sem precisar saber
+  // o telefone do cliente aqui.
+  const compartilharPainel = (g) => {
+    const url = `${window.location.origin}${window.location.pathname}?share=notasfiscais&empresa=${g.clienteId}&competencia=${encodeURIComponent(competencia)}`;
+    const mensagem = `Olá! Seguem as notas fiscais de ${g.nome} — competência ${competencia} — pra conferência:\n${url}`;
+    window.open(`https://wa.me/?text=${encodeURIComponent(mensagem)}`, '_blank');
+  };
 
   const toggle = (clienteId) => setExpandidos((prev) => {
     const next = new Set(prev);
@@ -211,14 +221,21 @@ export default function NotasFiscaisPage() {
             const aberto = expandidos.has(g.clienteId);
             return (
               <div key={g.clienteId} style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', overflow: 'hidden' }}>
-                <button onClick={() => toggle(g.clienteId)}
-                  style={{ display: 'flex', alignItems: 'center', gap: 10, width: '100%', padding: '11px 14px', background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left' }}>
-                  {aberto ? <ChevronDownIcon size={14} color="var(--text3)" /> : <ChevronRightIcon size={14} color="var(--text3)" />}
-                  {g.temNova && <span title="Tem nota nova nas últimas 24h">🆕</span>}
-                  <span style={{ flex: 1, minWidth: 0, fontSize: 13.5, fontWeight: 600, color: 'var(--text1)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{g.nome}</span>
-                  <span style={{ fontSize: 12, color: 'var(--ok)', fontWeight: 700, whiteSpace: 'nowrap' }}>↓ {fmt(g.entradaValor)} <span style={{ color: 'var(--text3)', fontWeight: 500 }}>({g.entradaQtd})</span></span>
-                  <span style={{ fontSize: 12, color: 'var(--info)', fontWeight: 700, whiteSpace: 'nowrap' }}>↑ {fmt(g.saidaValor)} <span style={{ color: 'var(--text3)', fontWeight: 500 }}>({g.saidaQtd})</span></span>
-                </button>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '9px 10px 9px 14px' }}>
+                  <button onClick={() => toggle(g.clienteId)}
+                    style={{ display: 'flex', alignItems: 'center', gap: 10, flex: 1, minWidth: 0, padding: 0, background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left' }}>
+                    {aberto ? <ChevronDownIcon size={14} color="var(--text3)" /> : <ChevronRightIcon size={14} color="var(--text3)" />}
+                    {g.temNova && <span title="Tem nota nova nas últimas 24h">🆕</span>}
+                    <span style={{ flex: 1, minWidth: 0, fontSize: 13.5, fontWeight: 600, color: 'var(--text1)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{g.nome}</span>
+                    <span style={{ fontSize: 12, color: 'var(--ok)', fontWeight: 700, whiteSpace: 'nowrap' }}>↓ {fmt(g.entradaValor)} <span style={{ color: 'var(--text3)', fontWeight: 500 }}>({g.entradaQtd})</span></span>
+                    <span style={{ fontSize: 12, color: 'var(--info)', fontWeight: 700, whiteSpace: 'nowrap' }}>↑ {fmt(g.saidaValor)} <span style={{ color: 'var(--text3)', fontWeight: 500 }}>({g.saidaQtd})</span></span>
+                  </button>
+                  <button onClick={() => compartilharPainel(g)} title="Compartilhar painel de notas fiscais via WhatsApp"
+                    style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 10.5, fontWeight: 600, color: 'var(--ok)',
+                      background: 'var(--ok-dim)', border: 'none', borderRadius: 99, padding: '5px 9px', cursor: 'pointer', flexShrink: 0, whiteSpace: 'nowrap' }}>
+                    <Share2Icon size={11} /> Painel
+                  </button>
+                </div>
 
                 {aberto && (
                   <div style={{ borderTop: '1px solid var(--border)', overflowX: 'auto' }}>
