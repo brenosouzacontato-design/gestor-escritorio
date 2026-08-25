@@ -67,15 +67,24 @@ function competenciaParaAAAAMM(competencia) {
 
 // Busca todas as páginas de documentos fiscais escriturados numa
 // competência — a API pagina, mas não documenta um jeito confiável de
-// saber quando parar, então segue lendo até vir uma página vazia.
+// saber quando parar, então segue lendo até vir uma página vazia. Pra
+// algumas empresas/instâncias, o parâmetro "pagina" é ignorado e a API
+// devolve a MESMA lista de novo em vez de vazio — sem essa checagem, o
+// loop nunca via página vazia e duplicava os documentos até a trava de
+// segurança, quebrando o upsert (Postgres recusa "ON CONFLICT DO UPDATE"
+// tentando atualizar a mesma linha duas vezes no mesmo INSERT).
 async function buscarDocumentosFiscais(token, competencia) {
   const competenciaApi = competenciaParaAAAAMM(competencia)
   let todos = []
   let pagina = 1
+  let assinaturaAnterior = null
   while (pagina <= 50) { // trava de segurança — nunca deve chegar perto disso
     const r = await chamar(`${ONEFLOW_BASE}/empresa/fiscal/documentos/listar?competencia=${competenciaApi}&pagina=${pagina}`, token)
     const documentos = r.result?.documentos || []
     if (documentos.length === 0) break
+    const assinatura = documentos.map((d) => `${d.modelo}|${d.numero}|${d.serie}`).join(',')
+    if (assinatura === assinaturaAnterior) break
+    assinaturaAnterior = assinatura
     todos = todos.concat(documentos)
     pagina++
   }
@@ -116,11 +125,20 @@ async function sincronizarDocumentosCliente(supabase, cliente, token, competenci
     sincronizado_em: new Date().toISOString(),
   }))
 
+  // Defesa extra: garante que não existam duas linhas com o mesmo alvo de
+  // conflito no mesmo upsert (mantém a última ocorrência) — Postgres não
+  // aceita atualizar a mesma linha duas vezes num único INSERT ... ON
+  // CONFLICT, então uma duplicata aqui derrubaria a sincronização inteira
+  // dessa empresa em vez de só ignorar o documento repetido.
+  const porChave = new Map()
+  linhas.forEach((l) => porChave.set(`${l.modelo}|${l.numero}|${l.serie}`, l))
+  const linhasUnicas = [...porChave.values()]
+
   const { error } = await supabase
     .from('documentos_fiscais_erp')
-    .upsert(linhas, { onConflict: 'cliente_id,modelo,numero,serie' })
+    .upsert(linhasUnicas, { onConflict: 'cliente_id,modelo,numero,serie' })
   if (error) throw error
-  return linhas.length
+  return linhasUnicas.length
 }
 
 // Passa por todos os clientes vinculados ao OneFlow e sincroniza cada um
