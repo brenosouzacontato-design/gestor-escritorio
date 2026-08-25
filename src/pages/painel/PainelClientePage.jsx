@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import {
   WalletIcon, ClipboardListIcon, CheckSquareIcon, PaperclipIcon, BarChart3Icon,
   CalendarIcon, DownloadIcon, CheckCircleIcon, FileTextIcon, TrendingUpIcon, LayersIcon,
-  AlertTriangleIcon,
+  AlertTriangleIcon, Share2Icon,
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { listarLancamentosAIdentificar } from '../contabil/contabilApi';
@@ -33,6 +33,23 @@ function fmtPct(v) {
 function fmtData(iso) {
   if (!iso) return '';
   return new Date(iso + 'T00:00:00').toLocaleDateString('pt-BR');
+}
+
+// Monta o texto da mensagem de WhatsApp com as notas fiscais do mês —
+// lista item a item até um limite (clientes de alto volume, tipo varejo,
+// podem ter milhares de notas/mês, o que estouraria o tamanho da URL do
+// wa.me e viraria uma mensagem ilegível), com um resumo do restante.
+const LIMITE_ITENS_MENSAGEM = 40;
+function montarMensagemNotasFiscais({ nomeCliente, competencia, documentos, entradas, saidas, totalEntrada, totalSaida }) {
+  const linhas = documentos.slice(0, LIMITE_ITENS_MENSAGEM).map((d) =>
+    `${d.tipo_movimento === 'entrada' ? '↓' : '↑'} ${fmtData(d.data_emissao)} · ${d.razao_social_terceiro || 'Documento fiscal'} · ${fmt(d.valor_total)}`
+  );
+  const restante = documentos.length - LIMITE_ITENS_MENSAGEM;
+  if (restante > 0) linhas.push(`… e mais ${restante} nota${restante !== 1 ? 's' : ''}.`);
+  return `Olá! Notas fiscais de ${nomeCliente || 'sua empresa'} — competência ${competencia}:\n\n`
+    + `↓ Entrada: ${entradas.length} nota${entradas.length !== 1 ? 's' : ''} — ${fmt(totalEntrada)}\n`
+    + `↑ Saída: ${saidas.length} nota${saidas.length !== 1 ? 's' : ''} — ${fmt(totalSaida)}\n\n`
+    + linhas.join('\n');
 }
 
 // Recalculado a cada carregamento da página a partir da data de hoje —
@@ -446,9 +463,23 @@ export default function PainelClientePage({ clienteId, competencia }) {
                       const saidas = documentosFiscais.filter((d) => d.tipo_movimento === 'saida');
                       const totalEntrada = entradas.reduce((s, d) => s + Number(d.valor_total || 0), 0);
                       const totalSaida = saidas.reduce((s, d) => s + Number(d.valor_total || 0), 0);
+                      const compartilharNotasFiscais = () => {
+                        const mensagem = montarMensagemNotasFiscais({
+                          nomeCliente: cliente?.nome, competencia, documentos: documentosFiscais,
+                          entradas, saidas, totalEntrada, totalSaida,
+                        });
+                        window.open(`https://wa.me/?text=${encodeURIComponent(mensagem)}`, '_blank');
+                      };
                       return (
                         <div style={{ marginTop: (obsDoModulo.length > 0 || tarefasDoModulo.length > 0) ? 16 : 0 }}>
-                          <SecaoTitulo icone={<FileTextIcon size={14} />}>Notas fiscais</SecaoTitulo>
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                            <SecaoTitulo icone={<FileTextIcon size={14} />}>Notas fiscais</SecaoTitulo>
+                            <button type="button" onClick={compartilharNotasFiscais} title="Compartilhar as notas fiscais do mês via WhatsApp"
+                              style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11, fontWeight: 600, color: 'var(--ok)',
+                                background: 'var(--ok-dim)', border: 'none', borderRadius: 99, padding: '5px 10px', cursor: 'pointer', marginBottom: 10 }}>
+                              <Share2Icon size={12} /> WhatsApp
+                            </button>
+                          </div>
                           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 10, marginBottom: 12 }}>
                             <Metrica label={`Entrada (${entradas.length})`} valor={fmt(totalEntrada)} />
                             <Metrica label={`Saída (${saidas.length})`} valor={fmt(totalSaida)} />

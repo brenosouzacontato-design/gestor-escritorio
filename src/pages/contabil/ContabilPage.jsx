@@ -71,7 +71,7 @@ export default function ContabilPage() {
           {abaAtiva === 'balancete' && <BalanceteTab empresaId={empresaIdAtual} periodo={periodo} empresaNome={clientes.find((c) => c.id === empresaIdAtual)?.nome} />}
           {abaAtiva === 'dre' && <DRETab empresaId={empresaIdAtual} periodo={periodo} empresaNome={clientes.find((c) => c.id === empresaIdAtual)?.nome} />}
           {abaAtiva === 'extrato' && <ImportarExtratoTab empresaId={empresaIdAtual} />}
-          {abaAtiva === 'notasfiscais' && <DocumentosFiscaisTab empresaId={empresaIdAtual} />}
+          {abaAtiva === 'notasfiscais' && <DocumentosFiscaisTab empresaId={empresaIdAtual} empresaNome={clientes.find((c) => c.id === empresaIdAtual)?.nome} />}
           {abaAtiva === 'plano' && <PlanoContasTab empresaId={empresaIdAtual} />}
           {abaAtiva === 'regras' && <RegrasTab empresaId={empresaIdAtual} />}
           {abaAtiva === 'precificacao' && <PrecificacaoTab empresaId={empresaIdAtual} periodo={periodo} />}

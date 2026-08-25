@@ -267,14 +267,27 @@ export async function obterPendenciasAnteriores(clienteId, competenciaAtual) {
 // alimentada pelo cron diário (netlify/functions/documentos-fiscais-cron.js)
 // e usada na aba Notas Fiscais do Financeiro/visão geral.
 export async function obterDocumentosFiscais(clienteId, competencia) {
-  const { data, error } = await supabase
-    .from('documentos_fiscais_erp')
-    .select('id, modelo, tipo_movimento, numero, serie, razao_social_terceiro, valor_total, data_emissao')
-    .eq('cliente_id', clienteId)
-    .eq('competencia', competencia)
-    .order('data_emissao', { ascending: false });
-  if (error) throw error;
-  return data;
+  // O Supabase/PostgREST limita a 1000 linhas por página por padrão —
+  // clientes de alto volume (ex: varejo com centenas de vendas/dia) passam
+  // disso numa única competência, então sem paginar o painel mostrava só
+  // uma fração das notas e o valor total ficava errado.
+  const TAMANHO_PAGINA = 1000;
+  let todos = [];
+  let pagina = 0;
+  while (true) {
+    const { data, error } = await supabase
+      .from('documentos_fiscais_erp')
+      .select('id, modelo, tipo_movimento, numero, serie, razao_social_terceiro, valor_total, data_emissao')
+      .eq('cliente_id', clienteId)
+      .eq('competencia', competencia)
+      .order('data_emissao', { ascending: false })
+      .range(pagina * TAMANHO_PAGINA, pagina * TAMANHO_PAGINA + TAMANHO_PAGINA - 1);
+    if (error) throw error;
+    todos = todos.concat(data || []);
+    if (!data || data.length < TAMANHO_PAGINA) break;
+    pagina++;
+  }
+  return todos;
 }
 
 // Valor do DAS das competências passadas que aparecem como pendência —

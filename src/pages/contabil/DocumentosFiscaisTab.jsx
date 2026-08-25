@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
-import { RefreshCwIcon, InfoIcon, ArrowDownCircleIcon, ArrowUpCircleIcon, FileEditIcon, CheckCircleIcon } from 'lucide-react';
+import { RefreshCwIcon, InfoIcon, ArrowDownCircleIcon, ArrowUpCircleIcon, FileEditIcon, CheckCircleIcon, Share2Icon } from 'lucide-react';
 import { listarDocumentosFiscais, obterUltimaSincronizacao, sincronizarDocumentosFiscaisAgora } from './documentosFiscaisApi';
 import GerarLancamentoModal from './GerarLancamentoModal';
 import { useToast } from '../../components/shared';
@@ -25,7 +25,9 @@ function competenciaAtual() {
 // demanda pelo botão aqui. Foco é a nota de ENTRADA (compra/serviço
 // tomado): dá pra gerar o lançamento contábil direto daqui — crédito
 // sempre vai pra sub-conta do fornecedor (ver documentosFiscaisApi.js).
-export default function DocumentosFiscaisTab({ empresaId }) {
+const LIMITE_ITENS_MENSAGEM = 40;
+
+export default function DocumentosFiscaisTab({ empresaId, empresaNome }) {
   const { show } = useToast();
 
   const [competencia, setCompetencia] = useState(competenciaAtual());
@@ -59,6 +61,23 @@ export default function DocumentosFiscaisTab({ empresaId }) {
 
   const totalValor = useMemo(() => (documentos || []).reduce((s, d) => s + Number(d.valor_total || 0), 0), [documentos]);
 
+  // Manda por WhatsApp exatamente o que está na tela (respeita competência
+  // e filtro entrada/saída/todos escolhidos) — lista item a item até um
+  // limite (clientes de alto volume passariam do tamanho útil de uma
+  // mensagem), com um resumo do restante.
+  const compartilharViaWhatsApp = () => {
+    const linhas = (documentos || []).slice(0, LIMITE_ITENS_MENSAGEM).map((d) =>
+      `${d.tipo_movimento === 'entrada' ? '↓' : '↑'} ${fmtData(d.data_emissao)} · ${d.razao_social_terceiro || 'Documento fiscal'} · ${fmt(d.valor_total)}`
+    );
+    const restante = (documentos || []).length - LIMITE_ITENS_MENSAGEM;
+    if (restante > 0) linhas.push(`… e mais ${restante} nota${restante !== 1 ? 's' : ''}.`);
+    const label = tipoFiltro === 'entrada' ? 'de entrada' : tipoFiltro === 'saida' ? 'de saída' : '';
+    const mensagem = `Olá! Notas fiscais ${label} de ${empresaNome || 'sua empresa'} — competência ${competencia}:\n\n`
+      + `${documentos.length} nota${documentos.length !== 1 ? 's' : ''} — ${fmt(totalValor)}\n\n`
+      + linhas.join('\n');
+    window.open(`https://wa.me/?text=${encodeURIComponent(mensagem)}`, '_blank');
+  };
+
   return (
     <div>
       <div className="notice notice-info" style={{ marginBottom: 12 }}>
@@ -88,6 +107,11 @@ export default function DocumentosFiscaisTab({ empresaId }) {
           <RefreshCwIcon size={14} className={sincronizando ? 'spinning' : ''} />
           {sincronizando ? 'Sincronizando...' : 'Sincronizar agora'}
         </button>
+        {documentos && documentos.length > 0 && (
+          <button className="btn btn-ghost" onClick={compartilharViaWhatsApp} title="Compartilhar essas notas via WhatsApp">
+            <Share2Icon size={14} /> Compartilhar
+          </button>
+        )}
       </div>
 
       {documentos && documentos.length > 0 && (
