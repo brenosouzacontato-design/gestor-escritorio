@@ -30,7 +30,7 @@ function fmtData(iso) {
 async function montarLembreteHonorario(supabase, honorarioId) {
   const { data: honorario, error: errHon } = await supabase
     .from('honorarios')
-    .select('id, competencia, tipo, descricao, valor, vencimento, status, clientes(nome, telefone)')
+    .select('id, competencia, tipo, descricao, valor, vencimento, status, nome_avulso, telefone_avulso, clientes(nome, telefone)')
     .eq('id', honorarioId)
     .single()
   if (errHon) throw errHon
@@ -39,9 +39,13 @@ async function montarLembreteHonorario(supabase, honorarioId) {
     return { honorario, numero: null, texto: null, motivoBloqueio: 'Honorário já está marcado como pago.' }
   }
 
-  const numero = normalizarTelefoneWhatsapp(honorario.clientes?.telefone)
+  // Avulso de não cliente não tem linha em "clientes" pra puxar nome/telefone
+  // — usa nome_avulso/telefone_avulso preenchidos na hora de criar a cobrança.
+  const nome = honorario.clientes?.nome || honorario.nome_avulso || ''
+  const numero = normalizarTelefoneWhatsapp(honorario.clientes?.telefone || honorario.telefone_avulso)
   if (!numero) {
-    return { honorario, numero: null, texto: null, motivoBloqueio: 'Telefone do cliente não é um celular válido (confira em Clientes).' }
+    const ondeCorrigir = honorario.clientes ? 'confira em Clientes' : 'edite o honorário avulso'
+    return { honorario, numero: null, texto: null, motivoBloqueio: `Telefone não é um celular válido (${ondeCorrigir}).` }
   }
 
   const { data: config, error: errConfig } = await supabase
@@ -58,7 +62,7 @@ async function montarLembreteHonorario(supabase, honorarioId) {
 
   const referencia = honorario.tipo === 'avulso' ? (honorario.descricao || 'serviço avulso') : `honorário de ${honorario.competencia}`
   const texto = `🧾 *Lembrete de honorário contábil*\n`
-    + `Olá, ${honorario.clientes?.nome || ''}! O ${referencia} no valor de ${fmtMoeda(honorario.valor)} venceu em ${fmtData(honorario.vencimento)}.\n\n`
+    + `Olá, ${nome}! O ${referencia} no valor de ${fmtMoeda(honorario.valor)} venceu em ${fmtData(honorario.vencimento)}.\n\n`
     + `💳 Chave PIX: ${chavePix}`
     + (favorecido ? `\n👤 ${favorecido}` : '')
     + `\n\nSe já pagou, pode desconsiderar. Qualquer dúvida, é só chamar por aqui.`

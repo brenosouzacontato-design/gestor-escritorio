@@ -87,11 +87,16 @@ export async function gerarHonorariosDoMes(competencia) {
 
 // Cobrança pontual (ex: abertura de empresa, alteração contratual) — fora
 // da mensalidade recorrente, pode repetir cliente+competência à vontade.
-export async function criarHonorarioAvulso({ clienteId, descricao, valor, vencimento }) {
+// Pra quem ainda não é cliente cadastrado, passa nomeAvulso (e
+// telefoneAvulso opcional, só se quiser poder mandar o lembrete de
+// WhatsApp) em vez de clienteId — ver supabase-schema-honorarios-nao-cliente.sql.
+export async function criarHonorarioAvulso({ clienteId, nomeAvulso, telefoneAvulso, descricao, valor, vencimento }) {
   const { data, error } = await supabase
     .from('honorarios')
     .insert({
-      cliente_id: clienteId,
+      cliente_id: clienteId || null,
+      nome_avulso: clienteId ? null : nomeAvulso,
+      telefone_avulso: clienteId ? null : (telefoneAvulso || null),
       competencia: competenciaDoVencimento(vencimento),
       tipo: 'avulso',
       descricao,

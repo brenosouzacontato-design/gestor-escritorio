@@ -70,7 +70,7 @@ export default function HonorariosPage() {
     if (statusFiltro !== 'todos') lista = lista.filter((h) => h.status === statusFiltro)
     if (busca.trim()) {
       const termo = busca.trim().toLowerCase()
-      lista = lista.filter((h) => h.clientes?.nome?.toLowerCase().includes(termo))
+      lista = lista.filter((h) => (h.clientes?.nome || h.nome_avulso || '').toLowerCase().includes(termo))
     }
     return lista
   }, [honorarios, busca, statusFiltro])
@@ -192,10 +192,11 @@ export default function HonorariosPage() {
                     return (
                       <tr key={h.id} style={{ borderTop: '1px solid var(--border)' }}>
                         <td style={{ padding: '8px 12px', color: 'var(--text1)', fontWeight: 500, whiteSpace: 'nowrap' }}>
-                          {h.clientes?.nome}
+                          {h.clientes?.nome || h.nome_avulso}
                           {h.tipo === 'avulso' && (
                             <div style={{ fontSize: 10.5, color: 'var(--text3)', fontWeight: 400, display: 'flex', alignItems: 'center', gap: 4, marginTop: 2 }}>
                               <span className="badge badge-gray" style={{ fontSize: 9 }}>Avulso</span>
+                              {!h.clientes && <span className="badge badge-gray" style={{ fontSize: 9 }}>Não cliente</span>}
                               {h.descricao}
                             </div>
                           )}
@@ -392,7 +393,7 @@ function ModalEditarHonorario({ honorario, onClose, onSaved }) {
 
   return (
     <Modal onClose={onClose}>
-      <p className="modal-title">Editar honorário — {honorario.clientes?.nome}</p>
+      <p className="modal-title">Editar honorário — {(honorario.clientes?.nome || honorario.nome_avulso)}</p>
       <div className="form-field">
         <label className="form-label">Valor</label>
         <input type="number" step="0.01" value={valor} onChange={(e) => setValor(e.target.value)} />
@@ -410,9 +411,16 @@ function ModalEditarHonorario({ honorario, onClose, onSaved }) {
 }
 
 // ── Modal novo serviço avulso ────────────────────────────────────────────────
+// Aceita tanto cliente já cadastrado quanto "não cliente" (alguém sem linha
+// em "clientes" — ex: abertura de empresa nova que ainda não virou cliente
+// recorrente) — nesse caso pede nome (obrigatório) e telefone (opcional, só
+// necessário se quiser poder mandar o lembrete de WhatsApp depois).
 function ModalNovoAvulso({ onClose, onSalvo }) {
   const clientes = useStore((s) => s.clientes)
+  const [quemE, setQuemE] = useState('cliente') // 'cliente' | 'nao_cliente'
   const [clienteId, setClienteId] = useState('')
+  const [nomeAvulso, setNomeAvulso] = useState('')
+  const [telefoneAvulso, setTelefoneAvulso] = useState('')
   const [descricao, setDescricao] = useState('')
   const [valor, setValor] = useState('')
   const [vencimento, setVencimento] = useState(() => new Date().toISOString().slice(0, 10))
@@ -420,10 +428,17 @@ function ModalNovoAvulso({ onClose, onSalvo }) {
   const { show } = useToast()
 
   const salvar = async () => {
-    if (!clienteId || !descricao.trim() || !valor) { show?.('Preencha cliente, descrição e valor.'); return }
+    if (quemE === 'cliente' && !clienteId) { show?.('Selecione o cliente.'); return }
+    if (quemE === 'nao_cliente' && !nomeAvulso.trim()) { show?.('Preencha o nome.'); return }
+    if (!descricao.trim() || !valor) { show?.('Preencha descrição e valor.'); return }
     setSalvando(true)
     try {
-      await criarHonorarioAvulso({ clienteId, descricao: descricao.trim(), valor: Number(valor), vencimento })
+      await criarHonorarioAvulso({
+        clienteId: quemE === 'cliente' ? clienteId : null,
+        nomeAvulso: quemE === 'nao_cliente' ? nomeAvulso.trim() : null,
+        telefoneAvulso: quemE === 'nao_cliente' ? telefoneAvulso.trim() : null,
+        descricao: descricao.trim(), valor: Number(valor), vencimento,
+      })
       show?.('Serviço avulso lançado')
       onSalvo()
     } catch (e) {
@@ -439,10 +454,27 @@ function ModalNovoAvulso({ onClose, onSalvo }) {
         <InfoIcon size={14} />
         <span>Cobrança pontual (ex: abertura de empresa, alteração contratual) — não entra na mensalidade recorrente.</span>
       </div>
-      <div className="form-field">
-        <label className="form-label">Cliente</label>
-        <EmpresaCombobox empresas={clientes} value={clienteId} onChange={setClienteId} />
+      <div className="tabs" style={{ marginBottom: 12 }}>
+        <button className={`tab-btn ${quemE === 'cliente' ? 'active' : ''}`} onClick={() => setQuemE('cliente')}>Cliente cadastrado</button>
+        <button className={`tab-btn ${quemE === 'nao_cliente' ? 'active' : ''}`} onClick={() => setQuemE('nao_cliente')}>Não cliente</button>
       </div>
+      {quemE === 'cliente' ? (
+        <div className="form-field">
+          <label className="form-label">Cliente</label>
+          <EmpresaCombobox empresas={clientes} value={clienteId} onChange={setClienteId} />
+        </div>
+      ) : (
+        <>
+          <div className="form-field">
+            <label className="form-label">Nome</label>
+            <input value={nomeAvulso} onChange={(e) => setNomeAvulso(e.target.value)} placeholder="Nome de quem tá sendo cobrado" />
+          </div>
+          <div className="form-field">
+            <label className="form-label">Telefone (opcional)</label>
+            <input value={telefoneAvulso} onChange={(e) => setTelefoneAvulso(e.target.value)} placeholder="(00) 00000-0000 — só se quiser poder mandar lembrete" />
+          </div>
+        </>
+      )}
       <div className="form-field">
         <label className="form-label">Descrição do serviço</label>
         <input value={descricao} onChange={(e) => setDescricao(e.target.value)} placeholder="Ex: Alteração contratual" />
@@ -490,7 +522,7 @@ function ModalPreviaLembrete({ honorario, onClose, onEnviado }) {
     setEnviando(true)
     try {
       const resultado = await enviarLembreteAgora(honorario.id, textoEditado)
-      show?.(`Lembrete enviado pra ${honorario.clientes?.nome}`)
+      show?.(`Lembrete enviado pra ${(honorario.clientes?.nome || honorario.nome_avulso)}`)
       setResultadoEnvio(resultado)
     } catch (e) {
       show?.('Não enviou: ' + e.message)
@@ -500,7 +532,7 @@ function ModalPreviaLembrete({ honorario, onClose, onEnviado }) {
 
   return (
     <Modal onClose={onClose}>
-      <p className="modal-title">Lembrete — {honorario.clientes?.nome}</p>
+      <p className="modal-title">Lembrete — {(honorario.clientes?.nome || honorario.nome_avulso)}</p>
       {carregando ? <p style={{ fontSize: 12, color: 'var(--text3)' }}>Montando prévia...</p> : erroPrevia ? (
         <div className="notice" style={{ background: 'var(--danger-dim)', color: 'var(--danger)', display: 'flex', gap: 8, alignItems: 'flex-start' }}>
           <InfoIcon size={14} style={{ flexShrink: 0, marginTop: 2 }} />
@@ -510,7 +542,7 @@ function ModalPreviaLembrete({ honorario, onClose, onEnviado }) {
         <>
           <div className="notice notice-info">
             <InfoIcon size={14} />
-            <span>A Evolution API confirmou o recebimento da chamada. Confira no WhatsApp de {honorario.clientes?.nome} ({numero}) se a mensagem chegou de verdade — esse app não tem confirmação de entrega automática.</span>
+            <span>A Evolution API confirmou o recebimento da chamada. Confira no WhatsApp de {(honorario.clientes?.nome || honorario.nome_avulso)} ({numero}) se a mensagem chegou de verdade — esse app não tem confirmação de entrega automática.</span>
           </div>
           {resultadoEnvio.respostaEvolution && (
             <div className="form-field">
