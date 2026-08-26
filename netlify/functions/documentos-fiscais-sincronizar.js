@@ -1,15 +1,19 @@
 // netlify/functions/documentos-fiscais-sincronizar.js
 //
 // Handler HTTP usado pelo botão "Sincronizar agora" na tela ERP → Notas
-// fiscais — dispara a mesma sincronização do cron
-// (lib/oneflowFiscal.js sincronizarTodosClientes), mas sob demanda, sem
-// esperar a execução diária.
+// fiscais — só valida rápido se o OneFlow está conectado e dispara a
+// sincronização de verdade numa Background Function
+// (documentos-fiscais-sincronizar-background.js). Sincronizar sozinho aqui
+// dentro sempre estourava o limite de execução de uma function síncrona
+// (10-26s) muito antes de terminar as ~30 empresas, e a tela só via
+// "Falha ao sincronizar" mesmo quando a sincronização completava certinho
+// no servidor.
 //
 // Variáveis de ambiente necessárias no Netlify: SUPABASE_URL,
 // SUPABASE_SERVICE_KEY.
 
 const { createClient } = require('@supabase/supabase-js')
-const { sincronizarTodosClientes, competenciaAtual, competenciaAnterior } = require('./lib/oneflowFiscal')
+const { dispararSincronizacaoBackground } = require('./lib/oneflowFiscal')
 
 const supabase = createClient(
   process.env.SUPABASE_URL,
@@ -32,11 +36,11 @@ exports.handler = async (event) => {
   }
 
   try {
-    const resultado = await sincronizarTodosClientes(supabase, cfg.valor, [competenciaAtual(), competenciaAnterior()])
-    return resposta(200, resultado)
+    await dispararSincronizacaoBackground()
   } catch (e) {
-    return resposta(500, { error: e.message })
+    return resposta(500, { error: 'Falha ao disparar a sincronização: ' + e.message })
   }
+  return resposta(202, { iniciado: true })
 }
 
 function resposta(statusCode, body) {

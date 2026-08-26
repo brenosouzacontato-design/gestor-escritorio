@@ -50,8 +50,8 @@ export default function DocumentosFiscaisTab({ empresaId, empresaNome }) {
   const sincronizarAgora = async () => {
     setSincronizando(true);
     try {
-      const r = await sincronizarDocumentosFiscaisAgora();
-      show?.(`Sincronizado: ${r.sincronizados}/${r.total} empresas${r.erros?.length ? `, ${r.erros.length} com erro` : ''}${r.motivo ? ` — ${r.motivo}` : ''}`);
+      await sincronizarDocumentosFiscaisAgora();
+      show?.('Sincronização iniciada em segundo plano — leva alguns minutos pra todas as empresas. Atualize a página daqui a pouco pra ver as notas novas.');
       carregar();
     } catch (e) {
       show?.('Erro ao sincronizar: ' + e.message);

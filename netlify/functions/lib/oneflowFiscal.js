@@ -179,7 +179,20 @@ function competenciaAnterior() {
   return `${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`
 }
 
+// Dispara a sincronização de verdade numa Background Function (até 15min de
+// execução) em vez de rodar inline — sincronizar ~30 empresas, cada uma com
+// várias páginas de API, estoura de longe o limite de execução de uma
+// function síncrona (10-26s conforme o plano do Netlify). Tanto o cron
+// diário quanto o botão manual só disparam esse gatilho e voltam na hora —
+// sem isso, a chamada HTTP sempre acabava batendo o "Inactivity Timeout" do
+// proxy antes da function terminar, mesmo com a sincronização em si
+// completando certinho no servidor.
+async function dispararSincronizacaoBackground() {
+  const base = process.env.URL
+  await fetch(`${base}/.netlify/functions/documentos-fiscais-sincronizar-background`, { method: 'POST' })
+}
+
 module.exports = {
   renovarTokenEmpresa, buscarDocumentosFiscais, sincronizarDocumentosCliente, sincronizarTodosClientes,
-  dataBrParaIso, normalizarMovimento, competenciaAtual, competenciaAnterior,
+  dataBrParaIso, normalizarMovimento, competenciaAtual, competenciaAnterior, dispararSincronizacaoBackground,
 }
