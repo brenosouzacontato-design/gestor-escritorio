@@ -17,6 +17,7 @@ export default function ClienteFormModal({ onClose, cliente = null }) {
     email: cliente?.email || '',
     telefone: cliente?.telefone || '',
     responsavel: cliente?.responsavel || '',
+    socio_nome: cliente?.socio_nome || '',
     carteira: cliente?.carteira || '',
   })
   const [loading, setLoading] = useState(false)
@@ -90,9 +91,19 @@ export default function ClienteFormModal({ onClose, cliente = null }) {
         <label className="form-label">Responsável / Contato</label>
         <input
           type="text"
-          placeholder="Nome do sócio ou responsável"
+          placeholder="Quem contatar no dia a dia"
           value={form.responsavel}
           onChange={e => set('responsavel', e.target.value)}
+        />
+      </div>
+
+      <div className="form-field">
+        <label className="form-label">Sócio (assinatura)</label>
+        <input
+          type="text"
+          placeholder="Nome de quem assina pelo cliente em documentos (ex: Comprovante de Faturamento)"
+          value={form.socio_nome}
+          onChange={e => set('socio_nome', e.target.value)}
         />
       </div>
 

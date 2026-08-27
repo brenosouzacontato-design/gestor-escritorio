@@ -5,6 +5,11 @@ import { obterHistoricoFaturamento } from './painelApi';
 const MES_ABREV = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
 const MES_EXTENSO = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'];
 
+// Contador padrão do escritório — assina todo Comprovante de Faturamento
+// junto com o sócio do cliente (campo "Sócio (assinatura)" no cadastro,
+// ver ClienteFormModal.jsx).
+const CONTADOR = { nome: 'Nelson Alves dos Santos', cpf: '372.303.016-53', crc: 'CRC/MG 084614' };
+
 function fmtMoeda(v) {
   return Number(v ?? 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 }
@@ -46,7 +51,7 @@ export default function ComprovanteFaturamentoPage({ empresaId }) {
       setErro(null);
       try {
         const [{ data: c, error: errCliente }, hist] = await Promise.all([
-          supabase.from('clientes').select('nome, cnpj, regime, municipio, data_abertura').eq('id', empresaId).single(),
+          supabase.from('clientes').select('nome, cnpj, regime, municipio, data_abertura, socio_nome').eq('id', empresaId).single(),
           obterHistoricoFaturamento(empresaId),
         ]);
         if (errCliente) throw errCliente;
@@ -125,9 +130,30 @@ export default function ComprovanteFaturamentoPage({ empresaId }) {
             <div style={{ textAlign: 'right', fontSize: 13, color: 'var(--text2)', marginTop: 8 }}>
               {cliente?.municipio ? `${cliente.municipio}, ` : ''}{fmtHoje()}.
             </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 24, marginTop: 56 }}>
+              <BlocoAssinatura nome={CONTADOR.nome} linhas={[CONTADOR.cpf, CONTADOR.crc]} papel="Contador" />
+              <BlocoAssinatura nome={cliente?.socio_nome} linhas={[]} papel="Sócio" />
+            </div>
           </>
         )}
       </div>
+    </div>
+  );
+}
+
+// Linha em branco pra assinatura física (documento impresso) — nome vem
+// preenchido em cima da linha quando já souber quem assina (contador
+// sempre; sócio só se o cadastro do cliente tiver "Sócio (assinatura)"
+// preenchido, ver ClienteFormModal.jsx), senão fica só o espaço mesmo.
+function BlocoAssinatura({ nome, linhas, papel }) {
+  return (
+    <div style={{ textAlign: 'center' }}>
+      <div style={{ borderTop: '1px solid var(--text2)', paddingTop: 6, minHeight: 14 }}>
+        {nome && <div style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--text1)' }}>{nome}</div>}
+      </div>
+      {linhas.map((l, i) => <div key={i} style={{ fontSize: 11, color: 'var(--text3)' }}>{l}</div>)}
+      <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 2 }}>{papel}</div>
     </div>
   );
 }
