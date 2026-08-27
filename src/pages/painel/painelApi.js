@@ -171,7 +171,33 @@ export async function uploadDeclaracaoSimples(arquivo, competenciaFallback, { cl
     ? await backfillHistoricoFaturamento(clienteFinal, competencia, extraido.historicoReceita).catch(() => 0)
     : 0;
 
+  if (extraido.municipio || extraido.dataAbertura) {
+    await backfillDadosCadastraisCliente(clienteFinal, extraido).catch(() => {});
+  }
+
   return { ...data, clienteDetectado: !clienteId, historicoPreenchido };
+}
+
+// Preenche município/data de abertura no cadastro do cliente a partir do
+// que a IA achou na declaração — só quando o cliente ainda não tem esses
+// dados (nunca sobrescreve o que já foi preenchido, seja de um upload
+// anterior ou de correção manual). Alimenta o Comprovante de Faturamento
+// (ComprovanteFaturamentoPage.jsx).
+async function backfillDadosCadastraisCliente(clienteId, { municipio, dataAbertura }) {
+  const { data: atual, error: errAtual } = await supabase
+    .from('clientes')
+    .select('municipio, data_abertura')
+    .eq('id', clienteId)
+    .maybeSingle();
+  if (errAtual) throw errAtual;
+
+  const patch = {};
+  if (municipio && !atual?.municipio) patch.municipio = municipio;
+  if (dataAbertura && !atual?.data_abertura) patch.data_abertura = dataAbertura;
+  if (Object.keys(patch).length === 0) return;
+
+  const { error } = await supabase.from('clientes').update(patch).eq('id', clienteId);
+  if (error) throw error;
 }
 
 // Preenche automaticamente competências anteriores que ainda não têm

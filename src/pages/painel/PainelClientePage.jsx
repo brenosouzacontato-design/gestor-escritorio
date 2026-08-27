@@ -291,7 +291,18 @@ export default function PainelClientePage({ clienteId, competencia }) {
 
                     {gerenciais && (
                       <div>
-                        <SecaoTitulo icone={<BarChart3Icon size={14} />}>Informações gerenciais — Simples Nacional</SecaoTitulo>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                          <SecaoTitulo icone={<BarChart3Icon size={14} />}>Informações gerenciais — Simples Nacional</SecaoTitulo>
+                          {historicoFaturamento.length > 0 && (
+                            <button type="button"
+                              onClick={() => window.open(`${window.location.origin}${window.location.pathname}?share=faturamento&empresa=${clienteId}`, '_blank')}
+                              title="Gerar comprovante de faturamento (declaração pra banco, financiamento etc.)"
+                              style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11, fontWeight: 600, color: 'var(--accent)',
+                                background: 'var(--accent-dim)', border: 'none', borderRadius: 99, padding: '5px 10px', cursor: 'pointer', marginBottom: 10, whiteSpace: 'nowrap' }}>
+                              <FileTextIcon size={12} /> Comprovante de faturamento
+                            </button>
+                          )}
+                        </div>
                         {historicoFaturamento.length > 0 && (
                           <div style={{ marginBottom: 14 }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 10.5, color: 'var(--text3)', fontWeight: 600, marginBottom: 6 }}>

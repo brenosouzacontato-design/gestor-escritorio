@@ -6,6 +6,7 @@ import NotasFiscaisCompartilhadoPage from './pages/contabil/NotasFiscaisComparti
 import IdentificarLancamentosPage from './pages/contabil/IdentificarLancamentosPage.jsx'
 import DocumentoCompartilhadoPage from './pages/documentos/DocumentoCompartilhadoPage.jsx'
 import PainelClientePage from './pages/painel/PainelClientePage.jsx'
+import ComprovanteFaturamentoPage from './pages/painel/ComprovanteFaturamentoPage.jsx'
 import './styles.css'
 
 // Links compartilhados (Balancete/DRE e identificação de lançamentos via
@@ -31,6 +32,8 @@ if (share === 'dre' || share === 'balancete') {
     empresaId={params.get('empresa')}
     competencia={params.get('competencia')}
   />
+} else if (share === 'faturamento') {
+  raiz = <ComprovanteFaturamentoPage empresaId={params.get('empresa')} />
 } else if (identificar === '1') {
   raiz = <IdentificarLancamentosPage
     empresaId={params.get('empresa')}
