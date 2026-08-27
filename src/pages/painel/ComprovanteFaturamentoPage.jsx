@@ -69,19 +69,25 @@ export default function ComprovanteFaturamentoPage({ empresaId }) {
     : '';
 
   return (
-    <div style={{ minHeight: '100vh', background: 'var(--bg)', padding: '32px 16px' }}>
-      <div style={{ maxWidth: 680, margin: '0 auto', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 12, padding: '32px 36px' }}>
+    <div className="comprovante-pagina" style={{ minHeight: '100vh', background: 'var(--bg)', padding: '24px 16px', display: 'flex', justifyContent: 'center' }}>
+      {/* Tamanho A4 fixo (210x297mm) — tanto na tela (fica igual uma folha)
+          quanto impresso, onde @page casa exatamente esse tamanho pra sair
+          sempre em 1 página só, mesmo com os 12 meses cheios de histórico
+          (teto de obterHistoricoFaturamento). page-break-inside:avoid nos
+          blocos evita que um vire pra página 2 sozinho se algo estourar por
+          pouco (ex: nome de município grande demais quebrando linha). */}
+      <div className="comprovante-folha" style={{ width: '210mm', minHeight: '297mm', boxSizing: 'border-box', background: 'var(--surface)', border: '1px solid var(--border)', padding: '10mm 16mm' }}>
         {historico === null && !erro && <p style={{ color: 'var(--text2)' }}>Carregando...</p>}
         {erro && <p style={{ color: 'var(--danger)' }}>{erro}</p>}
 
         {historico !== null && !erro && (
           <>
-            <div style={{ textAlign: 'center', marginBottom: 22 }}>
-              <div style={{ fontSize: 20, fontWeight: 800, color: 'var(--text1)', letterSpacing: '.02em' }}>DECLARAÇÃO DE FATURAMENTO</div>
-              <div style={{ fontSize: 13, color: 'var(--text3)', marginTop: 4 }}>Simples Nacional — Receitas Brutas Mensais</div>
+            <div style={{ textAlign: 'center', marginBottom: 10 }}>
+              <div style={{ fontSize: 18, fontWeight: 800, color: 'var(--text1)', letterSpacing: '.02em' }}>DECLARAÇÃO DE FATURAMENTO</div>
+              <div style={{ fontSize: 12, color: 'var(--text3)', marginTop: 3 }}>Simples Nacional — Receitas Brutas Mensais</div>
             </div>
 
-            <div style={{ border: '1px solid var(--border)', borderRadius: 10, overflow: 'hidden', marginBottom: 20 }}>
+            <div style={{ border: '1px solid var(--border)', borderRadius: 10, overflow: 'hidden', marginBottom: 10, breakInside: 'avoid' }}>
               <LinhaInfo label="Razão Social" valor={cliente?.nome} />
               <LinhaInfo label="CNPJ" valor={fmtCnpj(cliente?.cnpj)} />
               {cliente?.municipio && <LinhaInfo label="Município" valor={cliente.municipio} />}
@@ -96,13 +102,13 @@ export default function ComprovanteFaturamentoPage({ empresaId }) {
               </p>
             ) : (
               <>
-                <p style={{ fontSize: 13, color: 'var(--text2)', lineHeight: 1.6, marginBottom: 16 }}>
+                <p style={{ fontSize: 12, color: 'var(--text2)', lineHeight: 1.4, marginBottom: 8 }}>
                   Declaro, para os devidos fins, que a empresa acima identificada apresentou as seguintes receitas
                   brutas mensais no período de {periodo}, conforme apurado pelo PGDAS-D — Programa Gerador do
                   Documento de Arrecadação do Simples Nacional Declaratório.
                 </p>
 
-                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, marginBottom: 16 }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12, marginBottom: 8, breakInside: 'avoid' }}>
                   <thead>
                     <tr style={{ background: 'var(--surface2)' }}>
                       <th style={th}>Mês de Referência</th>
@@ -127,17 +133,28 @@ export default function ComprovanteFaturamentoPage({ empresaId }) {
               </>
             )}
 
-            <div style={{ textAlign: 'right', fontSize: 13, color: 'var(--text2)', marginTop: 8 }}>
+            <div style={{ textAlign: 'right', fontSize: 12, color: 'var(--text2)', marginTop: 4 }}>
               {cliente?.municipio ? `${cliente.municipio}, ` : ''}{fmtHoje()}.
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 24, marginTop: 56 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 24, marginTop: 26, breakInside: 'avoid' }}>
               <BlocoAssinatura nome={CONTADOR.nome} linhas={[CONTADOR.cpf, CONTADOR.crc]} papel="Contador" />
               <BlocoAssinatura nome={cliente?.socio_nome} linhas={[]} papel="Sócio" />
             </div>
           </>
         )}
       </div>
+
+      {/* @page casa o tamanho da .comprovante-folha — impresso sai exatamente
+          1 página A4, sem a moldura/fundo cinza que só faz sentido na tela. */}
+      <style>{`
+        @media print {
+          @page { size: A4; margin: 0; }
+          body { background: #fff !important; }
+          .comprovante-pagina { min-height: 0 !important; padding: 0 !important; background: #fff !important; display: block !important; }
+          .comprovante-folha { border: none !important; width: 210mm !important; min-height: 297mm !important; }
+        }
+      `}</style>
     </div>
   );
 }
@@ -160,12 +177,12 @@ function BlocoAssinatura({ nome, linhas, papel }) {
 
 function LinhaInfo({ label, valor, ultima }) {
   return (
-    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, padding: '9px 14px', borderBottom: ultima ? 'none' : '1px solid var(--border)' }}>
+    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, padding: '5px 14px', borderBottom: ultima ? 'none' : '1px solid var(--border)' }}>
       <span style={{ fontSize: 11.5, color: 'var(--text3)', fontWeight: 600 }}>{label}</span>
       <span style={{ fontSize: 12.5, color: 'var(--text1)', fontWeight: 600, textAlign: 'right' }}>{valor || '—'}</span>
     </div>
   );
 }
 
-const th = { textAlign: 'left', padding: '8px 12px', fontSize: 10.5, color: 'var(--text3)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.03em' };
-const td = { padding: '7px 12px', color: 'var(--text1)' };
+const th = { textAlign: 'left', padding: '5px 12px', fontSize: 10, color: 'var(--text3)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.03em' };
+const td = { padding: '3.5px 12px', color: 'var(--text1)' };
