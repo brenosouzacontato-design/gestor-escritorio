@@ -76,7 +76,7 @@ export default function ComprovanteFaturamentoPage({ empresaId }) {
           (teto de obterHistoricoFaturamento). page-break-inside:avoid nos
           blocos evita que um vire pra página 2 sozinho se algo estourar por
           pouco (ex: nome de município grande demais quebrando linha). */}
-      <div className="comprovante-folha" style={{ width: '210mm', minHeight: '297mm', boxSizing: 'border-box', background: 'var(--surface)', border: '1px solid var(--border)', padding: '10mm 16mm' }}>
+      <div className="comprovante-folha" style={{ width: '210mm', minHeight: '297mm', boxSizing: 'border-box', background: 'var(--surface)', border: '1px solid var(--border)', padding: '10mm 16mm', display: 'flex', flexDirection: 'column' }}>
         {historico === null && !erro && <p style={{ color: 'var(--text2)' }}>Carregando...</p>}
         {erro && <p style={{ color: 'var(--danger)' }}>{erro}</p>}
 
@@ -137,7 +137,12 @@ export default function ComprovanteFaturamentoPage({ empresaId }) {
               {cliente?.municipio ? `${cliente.municipio}, ` : ''}{fmtHoje()}.
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 24, marginTop: 26, breakInside: 'avoid' }}>
+            {/* marginTop: auto empurra a assinatura pro rodapé da folha
+                (flex column no .comprovante-folha) — sobra o espaço em
+                branco entre a tabela e aqui pra carimbo de assinatura com
+                certificado digital (ex: gov.br, DocuSign), que costuma
+                entrar por cima ou logo acima da linha de assinatura. */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 24, marginTop: 'auto', paddingTop: 40, breakInside: 'avoid' }}>
               <BlocoAssinatura nome={CONTADOR.nome} linhas={[CONTADOR.cpf, CONTADOR.crc]} papel="Contador" />
               <BlocoAssinatura nome={cliente?.socio_nome} linhas={[]} papel="Sócio" />
             </div>
