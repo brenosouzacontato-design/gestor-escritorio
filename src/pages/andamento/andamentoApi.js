@@ -220,6 +220,33 @@ export async function criarObrigacaoComEtapas({ clienteId, tipoObrigacaoId, depa
   return obrigacao;
 }
 
+// ---------- TIPOS DE OBRIGAÇÃO QUE NÃO SE APLICAM A UM CLIENTE ----------
+// Ex: cliente sem folha de pagamento não tem Folha/eSocial; cliente que não
+// emite nota de serviço não tem NFS-e — gerarObrigacoesRecorrentesCompetencia
+// pula esses tipos na hora de gerar, em vez de criar a obrigação à toa.
+
+export async function listarTiposObrigacaoExcluidos(clienteId) {
+  const { data, error } = await supabase
+    .from('cliente_tipos_obrigacao_excluidos')
+    .select('tipo_obrigacao_id')
+    .eq('cliente_id', clienteId);
+  if (error) throw error;
+  return (data || []).map((r) => r.tipo_obrigacao_id);
+}
+
+// Substitui a lista inteira de exclusões desse cliente pela informada.
+export async function definirTiposObrigacaoExcluidos(clienteId, tipoObrigacaoIds) {
+  const { error: errDel } = await supabase
+    .from('cliente_tipos_obrigacao_excluidos')
+    .delete()
+    .eq('cliente_id', clienteId);
+  if (errDel) throw errDel;
+  if (!tipoObrigacaoIds || tipoObrigacaoIds.length === 0) return;
+  const linhas = tipoObrigacaoIds.map((tipoObrigacaoId) => ({ cliente_id: clienteId, tipo_obrigacao_id: tipoObrigacaoId }));
+  const { error } = await supabase.from('cliente_tipos_obrigacao_excluidos').insert(linhas);
+  if (error) throw error;
+}
+
 const JANELA_MESES_POR_PERIODICIDADE = { mensal: 1, trimestral: 3, semestral: 6, anual: 12 };
 
 function competenciaParaOrdinal(comp) {
@@ -258,6 +285,13 @@ export async function gerarObrigacoesRecorrentesCompetencia(competencia, cliente
     .in('cliente_id', clienteIds);
   if (errExist) throw errExist;
 
+  const { data: excluidos, error: errExcl } = await supabase
+    .from('cliente_tipos_obrigacao_excluidos')
+    .select('cliente_id, tipo_obrigacao_id')
+    .in('cliente_id', clienteIds);
+  if (errExcl) throw errExcl;
+  const excluidoSet = new Set((excluidos || []).map((e) => `${e.cliente_id}|${e.tipo_obrigacao_id}`));
+
   const alvo = competenciaParaOrdinal(competencia);
   const dataInicio = primeiroDiaCompetencia(competencia);
   let criadas = 0;
@@ -268,6 +302,7 @@ export async function gerarObrigacoesRecorrentesCompetencia(competencia, cliente
       ? calcularVencimento(competencia, tipo.mes_vencimento || 'mesmo', tipo.dia_vencimento)
       : null;
     for (const clienteId of clienteIds) {
+      if (excluidoSet.has(`${clienteId}|${tipo.id}`)) continue;
       const jaTemNaJanela = existentes.some((o) => {
         if (o.tipo_obrigacao_id !== tipo.id || o.cliente_id !== clienteId) return false;
         const diff = alvo - competenciaParaOrdinal(o.competencia);

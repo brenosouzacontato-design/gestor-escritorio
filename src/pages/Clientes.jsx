@@ -4,7 +4,7 @@ import { useStore } from '../store'
 import { Avatar, StatusDots, DeptChip, ErpBadge, PriDot, fmtDate, isOverdue, clientTaskStatus, useToast } from '../components/shared'
 import ClienteFormModal from '../components/ClienteFormModal'
 import { supabase } from '../lib/supabase'
-import { listarDepartamentos } from './andamento/andamentoApi'
+import { listarDepartamentos, listarTiposObrigacao, listarTiposObrigacaoExcluidos, definirTiposObrigacaoExcluidos } from './andamento/andamentoApi'
 import { NovaObrigacaoModal, ModalObrigacoesLote } from './andamento/modaisObrigacao'
 
 const DEPTS = ['fiscal','folha','societario','contabil','geral']
@@ -106,6 +106,7 @@ function ClienteDetalhe({ cliente, tarefas, fechamentos, onBack, onAddTarefa }) 
   const { show } = useToast()
 
   const [showEdit, setShowEdit] = useState(false)
+  const [showObrigacoesAplicaveis, setShowObrigacoesAplicaveis] = useState(false)
   const [showLote, setShowLote] = useState(false)
   const [showBaixa, setShowBaixa] = useState(false)
   const [competencia, setCompetencia] = useState(competenciaAnterior())
@@ -152,6 +153,9 @@ function ClienteDetalhe({ cliente, tarefas, fechamentos, onBack, onAddTarefa }) 
           <div style={{ fontSize:11, color:'var(--text2)' }}>{cliente.cnpj} · {cliente.regime}</div>
           {cliente.oneflow_token && <div style={{ fontSize:10, color:'var(--accent)' }}>● Vinculado ao OneFlow</div>}
         </div>
+        <button className="btn btn-icon btn-ghost" title="Obrigações que essa empresa tem" onClick={() => setShowObrigacoesAplicaveis(true)}>
+          <ClipboardListIcon size={16} />
+        </button>
         <button className="btn btn-icon btn-ghost" onClick={() => setShowEdit(true)}>
           <PencilIcon size={16} />
         </button>
@@ -349,6 +353,9 @@ function ClienteDetalhe({ cliente, tarefas, fechamentos, onBack, onAddTarefa }) 
 
       {/* Modals */}
       {showEdit && <ClienteFormModal cliente={cliente} onClose={() => setShowEdit(false)} />}
+      {showObrigacoesAplicaveis && (
+        <ModalObrigacoesAplicaveis cliente={cliente} onClose={() => setShowObrigacoesAplicaveis(false)} />
+      )}
 
       {showLote && (
         <ModalLote
@@ -633,6 +640,71 @@ function TarefaDetalheModal({ tarefa, onClose, onSaved }) {
 }
 
 // ── Modal Base ───────────────────────────────────────────────────────────────
+// ── Modal Obrigações que essa empresa tem ────────────────────────────────────
+// Marca quais tipos de obrigação recorrente NÃO se aplicam a esse cliente
+// (ex: sem folha de pagamento não tem Folha/eSocial) — persistido em
+// cliente_tipos_obrigacao_excluidos, respeitado por
+// gerarObrigacoesRecorrentesCompetencia daqui pra frente: as obrigações
+// desmarcadas simplesmente não são mais criadas em nenhuma competência
+// nova, em vez de nascer "pendente" e precisar marcar "não aplica" à mão.
+function ModalObrigacoesAplicaveis({ cliente, onClose }) {
+  const [tipos, setTipos] = useState(null)
+  const [aplicaveis, setAplicaveis] = useState(new Set())
+  const [salvando, setSalvando] = useState(false)
+  const { show } = useToast()
+
+  useEffect(() => {
+    Promise.all([
+      listarTiposObrigacao().then((t) => t.filter((x) => x.recorrente)),
+      listarTiposObrigacaoExcluidos(cliente.id),
+    ]).then(([todosTipos, excluidosIds]) => {
+      const excluidoSet = new Set(excluidosIds)
+      setTipos(todosTipos)
+      setAplicaveis(new Set(todosTipos.filter((t) => !excluidoSet.has(t.id)).map((t) => t.id)))
+    }).catch((e) => show?.('Erro ao carregar: ' + e.message))
+  }, [cliente.id])
+
+  const toggle = (id) => setAplicaveis((prev) => {
+    const next = new Set(prev)
+    if (next.has(id)) next.delete(id); else next.add(id)
+    return next
+  })
+
+  const salvar = async () => {
+    setSalvando(true)
+    try {
+      const excluidos = tipos.filter((t) => !aplicaveis.has(t.id)).map((t) => t.id)
+      await definirTiposObrigacaoExcluidos(cliente.id, excluidos)
+      show?.('Obrigações atualizadas')
+      onClose()
+    } catch (e) {
+      show?.('Erro ao salvar: ' + e.message)
+    }
+    setSalvando(false)
+  }
+
+  return (
+    <ModalBase onClose={onClose} titulo={`Obrigações — ${cliente.nome.split(' ')[0]}`}>
+      <div style={{ fontSize:12, color:'var(--text2)', marginBottom:12 }}>
+        Desmarque o que essa empresa não tem — deixa de ser gerado nas próximas competências (não precisa mais marcar "não aplica" à mão).
+      </div>
+      {tipos === null && <p style={{ fontSize:12, color:'var(--text3)' }}>Carregando...</p>}
+      {tipos && tipos.map((t) => (
+        <label key={t.id} style={{ display:'flex', alignItems:'center', gap:8, padding:'7px 0', cursor:'pointer' }}>
+          <input type="checkbox" checked={aplicaveis.has(t.id)} onChange={() => toggle(t.id)} />
+          <span style={{ fontSize:13 }}>{t.nome}</span>
+        </label>
+      ))}
+      {tipos && (
+        <button className="btn btn-accent" onClick={salvar} disabled={salvando}
+          style={{ width:'100%', marginTop:16, padding:'10px' }}>
+          {salvando ? 'Salvando...' : 'Salvar'}
+        </button>
+      )}
+    </ModalBase>
+  )
+}
+
 function ModalBase({ onClose, titulo, children }) {
   return (
     <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.5)', zIndex:1000, display:'flex', alignItems:'flex-end', justifyContent:'center' }}
