@@ -72,6 +72,19 @@ function fmtDiasParaVencer(dias) {
 // "MM/YYYY" -> primeiro/último dia do mês (formato usado por
 // calcularDREPorConta/listarLancamentosAIdentificar, que trabalham com
 // intervalo de datas, não competência-texto).
+// Algumas competências pra trás e uma pra frente da que veio no link
+// (ver opcoesCompetencia no seletor do cabeçalho) — o cliente pode querer
+// olhar um mês anterior sem precisar de um link novo pra cada competência.
+function opcoesCompetencia(base) {
+  const [mesBase, anoBase] = base.split('/').map(Number);
+  const opcoes = [];
+  for (let i = 4; i >= -1; i--) {
+    const d = new Date(anoBase, mesBase - 1 - i, 1);
+    opcoes.push(`${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`);
+  }
+  return opcoes;
+}
+
 function competenciaParaPeriodo(competencia) {
   const [mes, ano] = competencia.split('/').map(Number);
   const dataInicio = `${ano}-${String(mes).padStart(2, '0')}-01`;
@@ -124,7 +137,9 @@ function moduloCND(situacaoFiscal, cndManual) {
 // (quando enviados). Acessada via ?painel=<clienteId>&competencia=MM/YYYY
 // (ver main.jsx). Mesmo padrão visual de RelatorioCompartilhadoPage.jsx /
 // IdentificarLancamentosPage.jsx.
-export default function PainelClientePage({ clienteId, competencia }) {
+export default function PainelClientePage({ clienteId, competencia: competenciaInicial }) {
+  const [competencia, setCompetencia] = useState(competenciaInicial);
+  const opcoesComp = opcoesCompetencia(competenciaInicial);
   const [cliente, setCliente] = useState(null); // {nome, cnpj, regime, carteira}
   const [aba, setAba] = useState('resumo'); // 'resumo' | nome do módulo | 'cnd'
   const [obs, setObs] = useState(null);
@@ -209,7 +224,11 @@ export default function PainelClientePage({ clienteId, competencia }) {
             📋 Painel do cliente
           </div>
           <div style={{ fontSize: 19, color: '#fff', fontWeight: 700, marginTop: 4 }}>{carregando ? '...' : cliente?.nome}</div>
-          <div style={{ fontSize: 12, color: 'var(--navy-text)', marginTop: 2 }}>Competência {competencia}</div>
+          <select value={competencia} onChange={(e) => setCompetencia(e.target.value)}
+            style={{ marginTop: 6, fontSize: 12, color: '#fff', background: 'rgba(255,255,255,.1)', border: '1px solid rgba(255,255,255,.2)',
+              borderRadius: 6, padding: '3px 8px', fontWeight: 600 }}>
+            {opcoesComp.map((c) => <option key={c} value={c} style={{ color: '#000' }}>Competência {c}</option>)}
+          </select>
           {cliente && (
             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 10 }}>
               {cliente.cnpj && (
