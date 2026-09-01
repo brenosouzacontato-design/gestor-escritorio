@@ -5,6 +5,7 @@ import {
   AlertTriangleIcon, Share2Icon,
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
+import { calcularAliquotaNominal } from '../../lib/simplesNacional';
 import { listarLancamentosAIdentificar } from '../contabil/contabilApi';
 import LancamentosIdentificar from '../contabil/LancamentosIdentificar';
 import { criarLinkAssinado } from '../documentos/documentosApi';
@@ -311,12 +312,43 @@ export default function PainelClientePage({ clienteId, competencia }) {
                             <GraficoFaturamento dados={historicoFaturamento} />
                           </div>
                         )}
-                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 10 }}>
-                          <Metrica label="Faturamento do período" valor={fmt(gerenciais.faturamento_periodo)} />
-                          <Metrica label="RBT12" valor={fmt(gerenciais.rbt12)} />
-                          <Metrica label="Alíquota efetiva" valor={fmtPct(gerenciais.aliquota_efetiva)} />
-                          <Metrica label="DAS a pagar" valor={fmt(gerenciais.valor_das)} />
-                        </div>
+                        {(() => {
+                          const aliquotaReal = calcularAliquotaNominal(gerenciais.anexo, gerenciais.rbt12);
+                          return (
+                            <>
+                              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 10 }}>
+                                <Metrica label="Faturamento do período" valor={fmt(gerenciais.faturamento_periodo)} />
+                                <Metrica label="RBT12" valor={fmt(gerenciais.rbt12)} />
+                                <Metrica label="Alíquota efetiva" valor={fmtPct(gerenciais.aliquota_efetiva)} />
+                                <Metrica label="DAS a pagar" valor={fmt(gerenciais.valor_das)} />
+                                {aliquotaReal != null && (
+                                  <Metrica label="Alíquota real (tabela, sem redução)" valor={fmtPct(aliquotaReal)} />
+                                )}
+                              </div>
+                              {aliquotaReal != null && gerenciais.faturamento_periodo > 0 && gerenciais.valor_das != null && (() => {
+                                const simplesCheio = gerenciais.faturamento_periodo * (aliquotaReal / 100);
+                                const simplesPago = gerenciais.valor_das;
+                                const economia = simplesCheio - simplesPago;
+                                return (
+                                  <div style={{ marginTop: 12, background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: '10px 12px' }}>
+                                    <div style={{ fontSize: 10, color: 'var(--text3)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.03em', marginBottom: 8 }}>
+                                      Simples "cheio" (tabela) x Simples pago
+                                    </div>
+                                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 10 }}>
+                                      <Metrica label={`Cheio (${fmtPct(aliquotaReal)} sobre o total)`} valor={fmt(simplesCheio)} />
+                                      <Metrica label="Pago (DAS real)" valor={fmt(simplesPago)} cor="var(--ok)" />
+                                    </div>
+                                    {Math.abs(economia) > 0.01 && (
+                                      <div style={{ fontSize: 11.5, color: economia > 0 ? 'var(--ok)' : 'var(--text2)', fontWeight: 600, marginTop: 8 }}>
+                                        {economia > 0 ? `Economia de ${fmt(economia)} nessa competência (aproveitamento de crédito/segregação de receita).` : `${fmt(-economia)} a mais que o "cheio" nessa competência.`}
+                                      </div>
+                                    )}
+                                  </div>
+                                );
+                              })()}
+                            </>
+                          );
+                        })()}
                         {gerenciais.anexo && (
                           <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 8 }}>Enquadrado no Anexo {gerenciais.anexo} do Simples Nacional.</div>
                         )}

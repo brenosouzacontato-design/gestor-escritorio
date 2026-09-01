@@ -19,6 +19,7 @@ export default function ClienteFormModal({ onClose, cliente = null }) {
     responsavel: cliente?.responsavel || '',
     socio_nome: cliente?.socio_nome || '',
     carteira: cliente?.carteira || '',
+    observacoes: cliente?.observacoes || '',
   })
   const [loading, setLoading] = useState(false)
 
@@ -142,6 +143,17 @@ export default function ClienteFormModal({ onClose, cliente = null }) {
             {carteirasExistentes.map(c => <option key={c} value={c} />)}
           </datalist>
         </div>
+      </div>
+
+      <div className="form-field">
+        <label className="form-label">Informações complementares</label>
+        <textarea
+          rows={3}
+          placeholder="Ex: nome fantasia, particularidades do contrato, observações do cadastro..."
+          value={form.observacoes}
+          onChange={e => set('observacoes', e.target.value)}
+          style={{ fontFamily: 'inherit', resize: 'vertical' }}
+        />
       </div>
 
       <div style={{ display:'flex', gap:8, justifyContent:'flex-end', marginTop:4 }}>

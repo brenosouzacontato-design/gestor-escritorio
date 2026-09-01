@@ -157,6 +157,12 @@ function ClienteDetalhe({ cliente, tarefas, fechamentos, onBack, onAddTarefa }) 
         </button>
       </div>
 
+      {cliente.observacoes && (
+        <div className="notice notice-info" style={{ marginBottom:16, whiteSpace:'pre-wrap' }}>
+          {cliente.observacoes}
+        </div>
+      )}
+
       {/* Cards de stats */}
       <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:8, marginBottom:14 }}>
         <div className="metric" style={{ padding:'10px 12px' }}>
