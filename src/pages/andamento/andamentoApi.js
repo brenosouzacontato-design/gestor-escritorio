@@ -327,7 +327,11 @@ export async function gerarObrigacoesRecorrentesCompetencia(competencia, cliente
 // não automática por periodicidade. Pula clientes que já têm essa
 // obrigação nessa competência (idempotente, mesmo índice parcial usado
 // pela geração automática).
-export async function criarObrigacoesLote({ clienteIds, tipoObrigacaoId, departamentoId, titulo, competencia, mesVencimento, diaVencimento }) {
+// vencimentoExplicito (data "YYYY-MM-DD" escolhida à mão na tela, ver
+// ModalObrigacoesLote) tem prioridade sobre mesVencimento/diaVencimento —
+// esses só calculam automaticamente quando ninguém escolheu uma data
+// direto ("Data de entrega" em branco).
+export async function criarObrigacoesLote({ clienteIds, tipoObrigacaoId, departamentoId, titulo, competencia, mesVencimento, diaVencimento, vencimentoExplicito }) {
   if (!clienteIds || clienteIds.length === 0) return { criadas: 0, jaExistiam: 0 };
 
   const { data: existentes, error: errExist } = await supabase
@@ -340,7 +344,7 @@ export async function criarObrigacoesLote({ clienteIds, tipoObrigacaoId, departa
   const jaTem = new Set(existentes.map((o) => o.cliente_id));
 
   const dataInicio = primeiroDiaCompetencia(competencia);
-  const vencimentoUnico = diaVencimento ? calcularVencimento(competencia, mesVencimento || 'mesmo', diaVencimento) : null;
+  const vencimentoUnico = vencimentoExplicito || (diaVencimento ? calcularVencimento(competencia, mesVencimento || 'mesmo', diaVencimento) : null);
   let criadas = 0;
   for (const clienteId of clienteIds) {
     if (jaTem.has(clienteId)) continue;

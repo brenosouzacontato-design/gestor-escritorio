@@ -346,6 +346,7 @@ export function ModalObrigacoesLote({ departamentos, clientes, competenciaInicia
   const [diasLembrete,   setDiasLembrete]   = useState(3)
   const [prazoDias,      setPrazoDias]      = useState(15) // usado só quando não é recorrente
   const [competencia,    setCompetencia]    = useState(competenciaInicial)
+  const [dataEntrega,    setDataEntrega]    = useState('')
   const [busca,          setBusca]          = useState('')
   const [clientesSel,    setClientesSel]    = useState([])
   const [saving,         setSaving]         = useState(false)
@@ -389,6 +390,7 @@ export function ModalObrigacoesLote({ departamentos, clientes, competenciaInicia
         clienteIds: clientesSel, tipoObrigacaoId, departamentoId,
         titulo: nomeTipo || 'Obrigação', competencia,
         mesVencimento: mesVencimentoFinal, diaVencimento: diaVencimentoFinal,
+        vencimentoExplicito: dataEntrega || null,
       })
       onSaved(resultado)
     } catch (e) { setErro(e.message) }
@@ -411,6 +413,13 @@ export function ModalObrigacoesLote({ departamentos, clientes, competenciaInicia
             <input value={competencia} onChange={e => setCompetencia(e.target.value)} placeholder="MM/AAAA"
               style={{ width:'100%', background:'var(--surface2)', border:'1px solid var(--border)', borderRadius:8, padding:'8px 10px', fontSize:13, color:'var(--text1)', outline:'none' }} />
           </div>
+        </div>
+
+        <div>
+          <label style={{ fontSize:11, color:'var(--text2)', display:'block', marginBottom:4 }}>Data de entrega (opcional)</label>
+          <input type="date" value={dataEntrega} onChange={e => setDataEntrega(e.target.value)}
+            style={{ width:'100%', background:'var(--surface2)', border:'1px solid var(--border)', borderRadius:8, padding:'8px 10px', fontSize:13, color:'var(--text1)', outline:'none' }} />
+          <div style={{ fontSize:10.5, color:'var(--text3)', marginTop:3 }}>Em branco, usa o vencimento padrão do tipo escolhido (quando houver).</div>
         </div>
 
         {!criandoNovo && (
