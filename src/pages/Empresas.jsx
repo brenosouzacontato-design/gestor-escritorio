@@ -1023,7 +1023,7 @@ export default function Empresas({ onOpenTarefas, clienteInicialId, onClienteIni
           onSaved={async (resultado) => {
             setShowLoteObs(false)
             await fetchObrigacoes()
-            show?.(`${resultado.criadas} criada${resultado.criadas!==1?'s':''}${resultado.jaExistiam ? `, ${resultado.jaExistiam} já existia${resultado.jaExistiam!==1?'m':''}` : ''}`)
+            show?.(`${resultado.criadas} criada${resultado.criadas!==1?'s':''}${resultado.reativadas ? `, ${resultado.reativadas} reativada${resultado.reativadas!==1?'s':''} (estava${resultado.reativadas!==1?'m':''} "não aplica")` : ''}${resultado.jaExistiam ? `, ${resultado.jaExistiam} já existia${resultado.jaExistiam!==1?'m':''}` : ''}`)
           }}
         />
       )}

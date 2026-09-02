@@ -336,22 +336,43 @@ export async function criarObrigacoesLote({ clienteIds, tipoObrigacaoId, departa
 
   const { data: existentes, error: errExist } = await supabase
     .from('obrigacoes')
-    .select('cliente_id')
+    .select('id, cliente_id, status')
     .eq('tipo_obrigacao_id', tipoObrigacaoId)
     .eq('competencia', competencia)
     .in('cliente_id', clienteIds);
   if (errExist) throw errExist;
-  const jaTem = new Set(existentes.map((o) => o.cliente_id));
 
   const dataInicio = primeiroDiaCompetencia(competencia);
   const vencimentoUnico = vencimentoExplicito || (diaVencimento ? calcularVencimento(competencia, mesVencimento || 'mesmo', diaVencimento) : null);
+
+  // Quem já tinha uma linha marcada "não aplica" (ex: veio da lista de
+  // exceções por cliente) e agora tá sendo escolhido de propósito aqui —
+  // reativa em vez de tentar inserir de novo e esbarrar no índice único
+  // (cliente_id, tipo_obrigacao_id, competencia). Também tira da lista de
+  // exceções, senão a próxima "Gerar competência" volta a pular esse tipo
+  // pra esse cliente.
+  const paraReativar = existentes.filter((o) => o.status === 'nao_aplica');
+  if (paraReativar.length > 0) {
+    const { error: errReativar } = await supabase
+      .from('obrigacoes')
+      .update({ status: 'pendente', vencimento: vencimentoUnico })
+      .in('id', paraReativar.map((o) => o.id));
+    if (errReativar) throw errReativar;
+    await supabase
+      .from('cliente_tipos_obrigacao_excluidos')
+      .delete()
+      .eq('tipo_obrigacao_id', tipoObrigacaoId)
+      .in('cliente_id', paraReativar.map((o) => o.cliente_id));
+  }
+
+  const jaTem = new Set(existentes.map((o) => o.cliente_id));
   let criadas = 0;
   for (const clienteId of clienteIds) {
     if (jaTem.has(clienteId)) continue;
     await criarObrigacaoComEtapas({ clienteId, tipoObrigacaoId, departamentoId, titulo, competencia, dataInicio, vencimentoUnico });
     criadas++;
   }
-  return { criadas, jaExistiam: jaTem.size };
+  return { criadas, jaExistiam: jaTem.size - paraReativar.length, reativadas: paraReativar.length };
 }
 
 // Marca "entregue" / "a entregar" — independente do progresso das etapas
