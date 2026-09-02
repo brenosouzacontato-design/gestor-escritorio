@@ -695,33 +695,37 @@ export default function Empresas({ onOpenTarefas, clienteInicialId, onClienteIni
                       </div>
                     )}
 
-                    <div style={{ display:'flex', gap:5, flexWrap:'wrap', marginBottom:10 }}>
+                    <div style={{ display:'flex', flexDirection:'column', gap:5, marginBottom:10 }}>
                       {departamentos.map(d => {
                         const dd = deptData[d.id] || { s:'empty', val:'—' }
                         return (
-                          <span key={d.id} title={d.nome}
-                            style={{ display:'flex', alignItems:'center', gap:3, borderRadius:6, padding:'3px 7px', flexShrink:0,
-                              fontSize:10.5, fontWeight:700,
-                              background:completo?'rgba(255,255,255,.5)':S_BG[dd.s],
-                              color:completo?'var(--text1)':S_COLOR[dd.s] }}>
-                            <span>{d.icone || '📋'}</span><span>{dd.val}</span>
-                          </span>
+                          <button key={d.id} onClick={(e) => { e.stopPropagation(); openDrawer(c, d) }}
+                            title={`Abrir ${d.nome}`}
+                            style={{ width:'100%', display:'flex', alignItems:'center', justifyContent:'space-between', gap:6,
+                              background:completo?'rgba(255,255,255,.5)':'var(--surface2)', border:'1px solid var(--border)', borderRadius:8,
+                              padding:'6px 10px', cursor:'pointer' }}>
+                            <span style={{ fontSize:11, color:'var(--text2)', display:'flex', alignItems:'center', gap:5, fontWeight:500 }}>
+                              <span>{d.icone || '📋'}</span> {d.nome}
+                            </span>
+                            <span style={{ fontSize:11, fontWeight:700, color: completo ? 'var(--text1)' : S_COLOR[dd.s] }}>
+                              {dd.val}
+                            </span>
+                          </button>
                         )
                       })}
+                      <button onClick={(e) => { e.stopPropagation(); onOpenTarefas?.(c.id) }}
+                        title="Abrir tarefas dessa empresa no módulo de Tarefas"
+                        style={{ width:'100%', display:'flex', alignItems:'center', justifyContent:'space-between', gap:6,
+                          background:completo?'rgba(255,255,255,.5)':'var(--surface2)', border:'1px solid var(--border)', borderRadius:8,
+                          padding:'6px 10px', cursor:'pointer' }}>
+                        <span style={{ fontSize:11, color:'var(--text2)', display:'flex', alignItems:'center', gap:5, fontWeight:500 }}>
+                          <CheckSquareIcon size={12} /> Tarefas
+                        </span>
+                        <span style={{ fontSize:11, fontWeight:700, color: tasksCliente.length===0 ? 'var(--text3)' : tasksPend>0 ? 'var(--warn)' : 'var(--ok)' }}>
+                          {tasksCliente.length===0 ? '—' : `${tasksCliente.length-tasksPend}/${tasksCliente.length}`}
+                        </span>
+                      </button>
                     </div>
-
-                    <button onClick={(e) => { e.stopPropagation(); onOpenTarefas?.(c.id) }}
-                      title="Abrir tarefas dessa empresa no módulo de Tarefas"
-                      style={{ width:'100%', display:'flex', alignItems:'center', justifyContent:'space-between', gap:6,
-                        background:completo?'rgba(255,255,255,.5)':'var(--surface2)', border:'1px solid var(--border)', borderRadius:8,
-                        padding:'6px 10px', cursor:'pointer' }}>
-                      <span style={{ fontSize:11, color:'var(--text2)', display:'flex', alignItems:'center', gap:5, fontWeight:500 }}>
-                        <CheckSquareIcon size={12} /> Tarefas
-                      </span>
-                      <span style={{ fontSize:11, fontWeight:700, color: tasksCliente.length===0 ? 'var(--text3)' : tasksPend>0 ? 'var(--warn)' : 'var(--ok)' }}>
-                        {tasksCliente.length===0 ? '—' : `${tasksCliente.length-tasksPend}/${tasksCliente.length}`}
-                      </span>
-                    </button>
                   </div>
                 )
               })}
