@@ -644,7 +644,9 @@ export default function Empresas({ onOpenTarefas, clienteInicialId, onClienteIni
                     onDrop={e => { e.preventDefault(); e.stopPropagation(); handleDropCard(c.id) }}
                     onDragEnd={() => setArrastandoId(null)}
                     style={{ background:`color-mix(in srgb, var(--surface), var(--ok-dim) ${progressoGeral}%)`,
-                      border:`1px solid ${completo?'var(--ok)':resS==='danger'?'var(--danger)':'var(--border)'}`, borderRadius:'var(--r-lg)',
+                      border:`1px solid ${completo?'var(--ok)':resS==='danger'?'var(--danger)':resS==='venc_breve'?COR_VENCENDO:'var(--border)'}`,
+                      borderLeft:`4px solid ${completo?'var(--ok)':resS==='danger'?'var(--danger)':resS==='venc_breve'?COR_VENCENDO:resS==='warn'?'var(--warn)':'var(--border)'}`,
+                      borderRadius:'var(--r-lg)',
                       padding:11, cursor:'grab', transition:'transform .1s, box-shadow .1s, opacity .1s', boxShadow:'var(--shadow-sm)',
                       opacity:arrastando?.4:1 }}
                     onMouseEnter={e => { e.currentTarget.style.transform='translateY(-2px)'; e.currentTarget.style.boxShadow='var(--shadow-md)' }}
@@ -669,24 +671,43 @@ export default function Empresas({ onOpenTarefas, clienteInicialId, onClienteIni
                       </div>
                     ) : (
                       <div style={{ marginBottom:12 }}>
+                        {resVenc > 0 && (
+                          <div style={{ display:'flex', alignItems:'center', gap:5, background:'var(--danger-dim)', color:'var(--danger)',
+                            borderRadius:7, padding:'6px 8px', marginBottom:7, fontSize:11.5, fontWeight:700 }}>
+                            <AlertCircleIcon size={13} style={{ flexShrink:0 }} /> {resVenc} vencida{resVenc!==1?'s':''}
+                          </div>
+                        )}
+                        {resVenc === 0 && resVencendo && (
+                          <div style={{ display:'flex', alignItems:'center', gap:5, background:'rgba(194,65,12,.12)', color:COR_VENCENDO,
+                            borderRadius:7, padding:'6px 8px', marginBottom:7, fontSize:11.5, fontWeight:700 }}>
+                            <ClockIcon size={13} style={{ flexShrink:0 }} /> Vence em breve
+                          </div>
+                        )}
                         <div style={{ display:'flex', justifyContent:'space-between', alignItems:'baseline', marginBottom:5 }}>
-                          <span style={{ fontSize:19, fontWeight:800, color:S_COLOR[resS] }}>{resPct}%</span>
-                          <span style={{ fontSize:10, color:'var(--text3)', textTransform:'uppercase', letterSpacing:.3 }}>obrigações</span>
+                          <span style={{ fontSize:13, fontWeight:700, color:'var(--text1)' }}>
+                            {resOk}/{obsTotal.length || 0} <span style={{ fontWeight:500, color:'var(--text3)', fontSize:10.5 }}>concluídas</span>
+                          </span>
+                          <span style={{ fontSize:17, fontWeight:800, color:S_COLOR[resS] }}>{resPct}%</span>
                         </div>
-                        <div style={{ height:10, background:'var(--surface2)', borderRadius:99, overflow:'hidden' }}>
+                        <div style={{ height:9, background:'var(--surface2)', borderRadius:99, overflow:'hidden' }}>
                           <div style={{ height:'100%', width:`${resPct}%`, background:S_COLOR[resS], borderRadius:99, transition:'width .3s' }} />
                         </div>
                       </div>
                     )}
 
                     <div style={{ display:'flex', gap:5, flexWrap:'wrap', marginBottom:10 }}>
-                      {departamentos.map(d => (
-                        <span key={d.id} title={`${d.nome}: ${deptData[d.id]?.val || '—'}`}
-                          style={{ width:22, height:22, borderRadius:6, display:'flex', alignItems:'center', justifyContent:'center',
-                            fontSize:11, background:completo?'rgba(255,255,255,.5)':S_BG[deptData[d.id]?.s || 'empty'], flexShrink:0 }}>
-                          {d.icone || '📋'}
-                        </span>
-                      ))}
+                      {departamentos.map(d => {
+                        const dd = deptData[d.id] || { s:'empty', val:'—' }
+                        return (
+                          <span key={d.id} title={d.nome}
+                            style={{ display:'flex', alignItems:'center', gap:3, borderRadius:6, padding:'3px 7px', flexShrink:0,
+                              fontSize:10.5, fontWeight:700,
+                              background:completo?'rgba(255,255,255,.5)':S_BG[dd.s],
+                              color:completo?'var(--text1)':S_COLOR[dd.s] }}>
+                            <span>{d.icone || '📋'}</span><span>{dd.val}</span>
+                          </span>
+                        )
+                      })}
                     </div>
 
                     <button onClick={(e) => { e.stopPropagation(); onOpenTarefas?.(c.id) }}
