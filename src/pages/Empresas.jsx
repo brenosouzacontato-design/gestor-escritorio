@@ -187,6 +187,65 @@ export default function Empresas({ onOpenTarefas, clienteInicialId, onClienteIni
     })
   }, [rows, ordemCards])
 
+  // Lista plana de tarefas + obrigações com vencimento, de todas as
+  // empresas (filtradas por busca/carteira, igual às outras visualizações)
+  // — junta os dois tipos de item num só worklist ordenado por data, pra
+  // dar pra ver "o que vence quando" no escritório inteiro de uma vez, em
+  // vez de abrir empresa por empresa. Só o que ainda precisa de ação
+  // (pendente/vencido) — concluído e não aplica não aparecem aqui.
+  const itensPorVencimento = useMemo(() => {
+    const termo = busca.toLowerCase()
+    const clientesFiltrados = clientes.filter(c => {
+      if (termo && !c.nome.toLowerCase().includes(termo) && !c.cnpj?.includes(termo)) return false
+      if (carteira !== 'todas' && c.carteira !== carteira) return false
+      return true
+    })
+    const clienteById = new Map(clientesFiltrados.map(c => [c.id, c]))
+    const deptById = new Map(departamentos.map(d => [d.id, d]))
+
+    const itensObrig = obrigacoes
+      .filter(o => o.competencia === compSel && o.vencimento && clienteById.has(o.cliente_id)
+        && o.status !== 'nao_aplica' && o.status !== 'concluido')
+      .map(o => ({
+        id: `ob-${o.id}`, cliente: clienteById.get(o.cliente_id), titulo: o.titulo || o.tipo,
+        dept: deptById.get(o.departamento_id) || null, vencimento: o.vencimento,
+        vencida: o.status === 'vencido' || isOverdue(o.vencimento),
+        origem: 'obrigacao', obrigacao: o,
+      }))
+
+    const itensTarefa = tarefas
+      .filter(t => !t.concluida && t.vencimento && clienteById.has(t.cliente_id))
+      .map(t => ({
+        id: `tf-${t.id}`, cliente: clienteById.get(t.cliente_id), titulo: t.titulo,
+        dept: deptById.get(t.departamento_id) || null, vencimento: t.vencimento,
+        vencida: isOverdue(t.vencimento),
+        origem: 'tarefa', tarefa: t,
+      }))
+
+    return [...itensObrig, ...itensTarefa].sort((a, b) => a.vencimento.localeCompare(b.vencimento))
+  }, [clientes, obrigacoes, tarefas, compSel, busca, carteira, departamentos])
+
+  // Agrupa a lista plana por data — "Atrasado" primeiro (mais recente
+  // atrasada por último, pra não enterrar o mais urgente lá embaixo),
+  // depois "Hoje", depois um cabeçalho por data seguinte.
+  const gruposPorVencimento = useMemo(() => {
+    const hojeIso = new Date().toISOString().slice(0, 10)
+    const atrasados = itensPorVencimento.filter(i => i.vencimento < hojeIso)
+    const futuros = itensPorVencimento.filter(i => i.vencimento >= hojeIso)
+    const grupos = []
+    if (atrasados.length > 0) grupos.push({ chave: 'atrasado', label: `Atrasado (${atrasados.length})`, itens: [...atrasados].sort((a,b) => b.vencimento.localeCompare(a.vencimento)) })
+    const porData = new Map()
+    futuros.forEach(i => {
+      if (!porData.has(i.vencimento)) porData.set(i.vencimento, [])
+      porData.get(i.vencimento).push(i)
+    })
+    ;[...porData.keys()].sort().forEach(data => {
+      const label = data === hojeIso ? 'Hoje' : new Date(data + 'T00:00:00').toLocaleDateString('pt-BR', { weekday:'short', day:'2-digit', month:'long' })
+      grupos.push({ chave: data, label: label.charAt(0).toUpperCase() + label.slice(1), itens: porData.get(data) })
+    })
+    return grupos
+  }, [itensPorVencimento])
+
   const handleDropCard = (targetId) => {
     const arrastado = arrastandoId
     setArrastandoId(null)
@@ -432,6 +491,11 @@ export default function Empresas({ onOpenTarefas, clienteInicialId, onClienteIni
             style={{ display:'flex', alignItems:'center', gap:4, background:visualizacao==='cards'?'var(--surface)':'none', boxShadow:visualizacao==='cards'?'var(--shadow-sm)':'none',
               border:'none', borderRadius:6, padding:'5px 9px', fontSize:11, color:visualizacao==='cards'?'var(--text1)':'var(--text3)', cursor:'pointer', fontWeight:500 }}>
             <LayoutGridIcon size={12} /> Cards
+          </button>
+          <button onClick={() => escolherVisualizacao('vencimento')} title="Lista de tarefas e obrigações por vencimento, de todas as empresas"
+            style={{ display:'flex', alignItems:'center', gap:4, background:visualizacao==='vencimento'?'var(--surface)':'none', boxShadow:visualizacao==='vencimento'?'var(--shadow-sm)':'none',
+              border:'none', borderRadius:6, padding:'5px 9px', fontSize:11, color:visualizacao==='vencimento'?'var(--text1)':'var(--text3)', cursor:'pointer', fontWeight:500 }}>
+            <CalendarIcon size={12} /> Vencimentos
           </button>
         </div>
         <div style={{ marginLeft:'auto', display:'flex', alignItems:'center', gap:8 }}>
@@ -729,6 +793,52 @@ export default function Empresas({ onOpenTarefas, clienteInicialId, onClienteIni
                   </div>
                 )
               })}
+            </div>
+          </div>
+        )}
+
+        {visualizacao === 'vencimento' && (
+          <div style={{ flex:1, overflow:'auto', padding:'16px' }}>
+            {gruposPorVencimento.length === 0 && (
+              <div style={{ padding:40, textAlign:'center', color:'var(--text3)', fontSize:13 }}>
+                Nada pendente com vencimento pra {compSel} — tudo em dia ou sem data marcada.
+              </div>
+            )}
+            <div style={{ display:'flex', flexDirection:'column', gap:18, maxWidth:640 }}>
+              {gruposPorVencimento.map(grupo => (
+                <div key={grupo.chave}>
+                  <div style={{ fontSize:11.5, fontWeight:700, textTransform:'uppercase', letterSpacing:.4, marginBottom:8,
+                    color: grupo.chave==='atrasado' ? 'var(--danger)' : grupo.chave==='hoje'||grupo.label==='Hoje' ? 'var(--accent)' : 'var(--text3)' }}>
+                    {grupo.label}
+                  </div>
+                  <div style={{ display:'flex', flexDirection:'column', gap:6 }}>
+                    {grupo.itens.map(item => {
+                      const s = item.vencida ? 'danger' : 'warn'
+                      const Icon = S_ICON[s]
+                      return (
+                        <button key={item.id}
+                          onClick={() => { setDrawer({ c:item.cliente, dept:item.dept }); setDrawerTab(item.origem==='tarefa' ? 'tarefas' : 'obrig') }}
+                          style={{ width:'100%', display:'flex', alignItems:'center', gap:10, textAlign:'left', cursor:'pointer',
+                            background:'var(--surface)', border:'1px solid var(--border)', borderLeft:`3px solid ${S_COLOR[s]}`,
+                            borderRadius:8, padding:'9px 12px' }}>
+                          {Icon && <Icon size={14} color={S_COLOR[s]} style={{ flexShrink:0 }} />}
+                          <div style={{ minWidth:0, flex:1 }}>
+                            <div style={{ fontSize:12.5, fontWeight:600, color:'var(--text1)', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
+                              {item.cliente?.nome}
+                            </div>
+                            <div style={{ fontSize:11, color:'var(--text3)', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
+                              {item.dept?.icone ? `${item.dept.icone} ${item.dept.nome} · ` : ''}{item.titulo}
+                            </div>
+                          </div>
+                          <span style={{ fontSize:10.5, fontWeight:700, color:S_COLOR[s], flexShrink:0, whiteSpace:'nowrap' }}>
+                            {fmtDate(item.vencimento)}
+                          </span>
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+              ))}
             </div>
           </div>
         )}
