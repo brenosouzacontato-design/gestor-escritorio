@@ -215,16 +215,37 @@ export default function PainelClientePage({ clienteId, competencia: competenciaI
     await abrirLinkAssinado(documento.storage_path).catch(() => null);
   };
 
+  // Status geral pra o selo em destaque no cabeçalho — "atrasado" pesa mais
+  // que "pendente" (uma pendência de mês anterior sempre entra no cálculo,
+  // o painel é histórico até ser resolvida, ver obterPendenciasAnteriores).
+  // Calculado aqui em cima (não só dentro da aba Resumo) porque o selo mora
+  // no cabeçalho, visível em qualquer aba.
+  const heroStatus = (obs && pendenciasAnteriores) ? (() => {
+    const vencidasAnteriores = pendenciasAnteriores.obrigacoes.filter((o) => o.status === 'vencido').length;
+    const totalVencidas = obs.vencido + vencidasAnteriores;
+    const totalPendentesAnteriores = pendenciasAnteriores.obrigacoes.length + pendenciasAnteriores.tarefas.length;
+    return totalVencidas > 0
+      ? { s: 'danger', titulo: 'Atenção', sub: `${totalVencidas} ${totalVencidas === 1 ? 'pendência vencida' : 'pendências vencidas'}` }
+      : (obs.pendente > 0 || totalPendentesAnteriores > 0)
+        ? { s: 'warn', titulo: 'Pendências em aberto', sub: `${obs.pendente + totalPendentesAnteriores} ${(obs.pendente + totalPendentesAnteriores) === 1 ? 'item pendente' : 'itens pendentes'}` }
+        : { s: 'ok', titulo: 'Tudo em dia', sub: 'Nenhuma pendência nessa competência' };
+  })() : null;
+
   return (
     <div style={{ minHeight: '100vh', background: 'var(--bg)', padding: '32px 16px' }}>
       <div style={{ maxWidth: 720, margin: '0 auto', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--r-xl)', overflow: 'hidden' }}>
         <div style={{ padding: '20px 26px', background: 'var(--navy)' }}>
-          <div style={{ fontSize: 11, color: 'var(--navy-text)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.04em' }}>
-            📋 Painel do cliente
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, flexWrap: 'wrap' }}>
+            <div>
+              <div style={{ fontSize: 11, color: 'var(--navy-text)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.04em' }}>
+                📋 Painel do cliente
+              </div>
+              <div style={{ fontSize: 19, color: '#fff', fontWeight: 700, marginTop: 4 }}>{carregando ? '...' : cliente?.nome}</div>
+            </div>
+            {heroStatus && <StatusBadge {...heroStatus} />}
           </div>
-          <div style={{ fontSize: 19, color: '#fff', fontWeight: 700, marginTop: 4 }}>{carregando ? '...' : cliente?.nome}</div>
           <select value={competencia} onChange={(e) => setCompetencia(e.target.value)}
-            style={{ marginTop: 6, fontSize: 12, color: '#fff', background: 'rgba(255,255,255,.1)', border: '1px solid rgba(255,255,255,.2)',
+            style={{ marginTop: 12, fontSize: 12, color: '#fff', background: 'rgba(255,255,255,.1)', border: '1px solid rgba(255,255,255,.2)',
               borderRadius: 6, padding: '3px 8px', fontWeight: 600 }}>
             {opcoesComp.map((c) => <option key={c} value={c} style={{ color: '#000' }}>Competência {c}</option>)}
           </select>
@@ -270,19 +291,6 @@ export default function PainelClientePage({ clienteId, competencia: competenciaI
             const obsDoModulo = moduloAtual ? obs.itens.filter((o) => (o.departamentos?.nome || 'Geral') === abaAtiva) : [];
             const tarefasDoModulo = moduloAtual ? tarefas.itens.filter((t) => (t.departamento || '').toLowerCase() === abaAtiva.toLowerCase()) : [];
 
-            // Status geral pra o card de destaque do Resumo e o indicador da
-            // trilha lateral — "atrasado" pesa mais que "pendente" (uma
-            // pendência de mês anterior sempre entra no cálculo, o painel é
-            // histórico até ser resolvida, ver obterPendenciasAnteriores).
-            const vencidasAnteriores = pendenciasAnteriores.obrigacoes.filter((o) => o.status === 'vencido').length;
-            const totalVencidas = obs.vencido + vencidasAnteriores;
-            const totalPendentesAnteriores = pendenciasAnteriores.obrigacoes.length + pendenciasAnteriores.tarefas.length;
-            const heroStatus = totalVencidas > 0
-              ? { s: 'danger', titulo: 'Atenção', sub: `${totalVencidas} ${totalVencidas === 1 ? 'pendência vencida' : 'pendências vencidas'}` }
-              : (obs.pendente > 0 || totalPendentesAnteriores > 0)
-                ? { s: 'warn', titulo: 'Pendências em aberto', sub: `${obs.pendente + totalPendentesAnteriores} ${(obs.pendente + totalPendentesAnteriores) === 1 ? 'item pendente' : 'itens pendentes'}` }
-                : { s: 'ok', titulo: 'Tudo em dia', sub: 'Nenhuma pendência nessa competência' };
-
             return (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
 
@@ -318,10 +326,23 @@ export default function PainelClientePage({ clienteId, competencia: competenciaI
                     ...(situacaoFiscal?.debitos || []).map((d) => ({ titulo: d.tributo, sub: d.situacao, valor: d.valor })),
                   ];
 
+                  const aliquotaReal = gerenciais ? calcularAliquotaNominal(gerenciais.anexo, gerenciais.rbt12) : null;
+
                   return (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 22 }}>
 
-                    <HeroStatus {...heroStatus} />
+                    {gerenciais && (
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 10 }}>
+                        <Metrica label="Faturamento do período" valor={fmt(gerenciais.faturamento_periodo)} />
+                        <Metrica label="RBT12" valor={fmt(gerenciais.rbt12)} />
+                        <Metrica label="Alíquota efetiva" valor={fmtPct(gerenciais.aliquota_efetiva)} cor="var(--accent)" />
+                        <Metrica label="DAS a pagar" valor={fmt(gerenciais.valor_das)} />
+                      </div>
+                    )}
+
+                    {aliquotaReal != null && gerenciais.faturamento_periodo > 0 && gerenciais.valor_das != null && (
+                      <ComparativoDas aliquotaReal={aliquotaReal} faturamento={gerenciais.faturamento_periodo} dasPago={gerenciais.valor_das} />
+                    )}
 
                     {(itensImpostos.length > 0 || semData.length > 0) && (
                       <div>
@@ -362,45 +383,13 @@ export default function PainelClientePage({ clienteId, competencia: competenciaI
                             <GraficoFaturamento dados={historicoFaturamento} />
                           </div>
                         )}
-                        {(() => {
-                          const aliquotaReal = calcularAliquotaNominal(gerenciais.anexo, gerenciais.rbt12);
-                          return (
-                            <>
-                              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 10 }}>
-                                <Metrica label="Faturamento do período" valor={fmt(gerenciais.faturamento_periodo)} />
-                                <Metrica label="RBT12" valor={fmt(gerenciais.rbt12)} />
-                                <Metrica label="Alíquota efetiva" valor={fmtPct(gerenciais.aliquota_efetiva)} />
-                                <Metrica label="DAS a pagar" valor={fmt(gerenciais.valor_das)} />
-                                {aliquotaReal != null && (
-                                  <Metrica label="Alíquota real (tabela, sem redução)" valor={fmtPct(aliquotaReal)} />
-                                )}
-                              </div>
-                              {aliquotaReal != null && gerenciais.faturamento_periodo > 0 && gerenciais.valor_das != null && (() => {
-                                const simplesCheio = gerenciais.faturamento_periodo * (aliquotaReal / 100);
-                                const simplesPago = gerenciais.valor_das;
-                                const economia = simplesCheio - simplesPago;
-                                return (
-                                  <div style={{ marginTop: 12, background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: '10px 12px' }}>
-                                    <div style={{ fontSize: 10, color: 'var(--text3)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.03em', marginBottom: 8 }}>
-                                      Simples "cheio" (tabela) x Simples pago
-                                    </div>
-                                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 10 }}>
-                                      <Metrica label={`Cheio (${fmtPct(aliquotaReal)} sobre o total)`} valor={fmt(simplesCheio)} />
-                                      <Metrica label="Pago (DAS real)" valor={fmt(simplesPago)} cor="var(--ok)" />
-                                    </div>
-                                    {Math.abs(economia) > 0.01 && (
-                                      <div style={{ fontSize: 11.5, color: economia > 0 ? 'var(--ok)' : 'var(--text2)', fontWeight: 600, marginTop: 8 }}>
-                                        {economia > 0 ? `Economia de ${fmt(economia)} nessa competência (aproveitamento de crédito/segregação de receita).` : `${fmt(-economia)} a mais que o "cheio" nessa competência.`}
-                                      </div>
-                                    )}
-                                  </div>
-                                );
-                              })()}
-                            </>
-                          );
-                        })()}
+                        {aliquotaReal != null && (
+                          <div style={{ fontSize: 11, color: 'var(--text3)' }}>
+                            Alíquota real (tabela do Simples, sem redução): <b style={{ color: 'var(--text2)' }}>{fmtPct(aliquotaReal)}</b>
+                          </div>
+                        )}
                         {gerenciais.anexo && (
-                          <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 8 }}>Enquadrado no Anexo {gerenciais.anexo} do Simples Nacional.</div>
+                          <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 4 }}>Enquadrado no Anexo {gerenciais.anexo} do Simples Nacional.</div>
                         )}
                         {gerenciais.receita_por_tipo?.length > 0 && (
                           <div style={{ marginTop: 12 }}>
@@ -756,20 +745,56 @@ function AbaPill({ icone, label, badge, s, ativo, onClick }) {
 
 const HERO_ICON = { ok: CheckCircleIcon, warn: ClockIcon, danger: AlertTriangleIcon };
 
-// Card de destaque no topo do Resumo — a resposta que o cliente mais
-// procura ("tá tudo certo?") antes de qualquer número.
-function HeroStatus({ s, titulo, sub }) {
+// Selo de status em destaque no cabeçalho escuro — a resposta que o
+// cliente mais procura ("tá tudo certo?") já ao lado do nome da empresa,
+// visível em qualquer aba.
+function StatusBadge({ s, titulo, sub }) {
   const Icone = HERO_ICON[s];
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 12, background: MODULO_DIM[s], borderRadius: 'var(--r-lg)', padding: '14px 16px' }}>
-      <div style={{ width: 36, height: 36, borderRadius: '50%', background: MODULO_COR[s], color: '#fff',
+    <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'rgba(255,255,255,.08)',
+      border: '1px solid rgba(255,255,255,.15)', borderRadius: 99, padding: '7px 14px 7px 8px', flexShrink: 0 }}>
+      <div style={{ width: 24, height: 24, borderRadius: '50%', background: MODULO_COR[s], color: '#fff',
         display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-        <Icone size={18} />
+        <Icone size={13} />
       </div>
       <div>
-        <div style={{ fontSize: 14, fontWeight: 700, color: MODULO_COR[s] }}>{titulo}</div>
-        <div style={{ fontSize: 11.5, color: 'var(--text2)', marginTop: 1 }}>{sub}</div>
+        <div style={{ fontSize: 12.5, fontWeight: 700, color: '#fff' }}>{titulo}</div>
+        <div style={{ fontSize: 9.5, color: 'var(--navy-text-dim)' }}>{sub}</div>
       </div>
+    </div>
+  );
+}
+
+// Comparação "Simples cheio x pago" em barras — mais fácil de comparar de
+// relance do que dois números lado a lado.
+function ComparativoDas({ aliquotaReal, faturamento, dasPago }) {
+  const cheio = faturamento * (aliquotaReal / 100);
+  const max = Math.max(cheio, dasPago, 1);
+  const economia = cheio - dasPago;
+  return (
+    <div style={{ background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: '12px 14px' }}>
+      <div style={{ fontSize: 10, color: 'var(--text3)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.03em', marginBottom: 9 }}>
+        Simples "cheio" (tabela) x Simples pago
+      </div>
+      <BarraComparativa label={`Cheio (${fmtPct(aliquotaReal)})`} valor={cheio} pct={(cheio / max) * 100} cor="var(--text3)" />
+      <BarraComparativa label="Pago (DAS real)" valor={dasPago} pct={(dasPago / max) * 100} cor="var(--ok)" />
+      {Math.abs(economia) > 0.01 && (
+        <div style={{ fontSize: 11.5, color: economia > 0 ? 'var(--ok)' : 'var(--text2)', fontWeight: 600, marginTop: 9 }}>
+          {economia > 0 ? `Economia de ${fmt(economia)} nessa competência (aproveitamento de crédito/segregação de receita).` : `${fmt(-economia)} a mais que o "cheio" nessa competência.`}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function BarraComparativa({ label, valor, pct, cor }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 7 }}>
+      <span style={{ fontSize: 11, color: 'var(--text2)', width: 104, flexShrink: 0 }}>{label}</span>
+      <div style={{ flex: 1, height: 8, background: 'var(--surface3)', borderRadius: 99, overflow: 'hidden' }}>
+        <div style={{ height: '100%', borderRadius: 99, width: `${pct}%`, background: cor }} />
+      </div>
+      <span style={{ fontSize: 12, fontWeight: 700, width: 86, textAlign: 'right', flexShrink: 0 }}>{fmt(valor)}</span>
     </div>
   );
 }
