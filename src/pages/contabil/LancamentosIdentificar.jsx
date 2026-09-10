@@ -29,18 +29,37 @@ function corNatureza(natureza) {
 // re-render já que o objeto do lançamento é mutado em memória aqui).
 export default function LancamentosIdentificar({ lancamentos, onSaved }) {
   const [editando, setEditando] = useState(null);
+  const [filtro, setFiltro] = useState('');
 
-  const pendentes = lancamentos.filter((l) => !l.observacaoCliente);
-  const identificados = lancamentos.filter((l) => l.observacaoCliente);
+  const termo = filtro.trim().toLowerCase();
+  const lancamentosFiltrados = termo
+    ? lancamentos.filter((l) => `${l.historico || ''} ${l.numeroDocumento || ''} ${l.observacaoCliente || ''}`.toLowerCase().includes(termo))
+    : lancamentos;
+
+  const pendentes = lancamentosFiltrados.filter((l) => !l.observacaoCliente);
+  const identificados = lancamentosFiltrados.filter((l) => l.observacaoCliente);
   const totalPendente = pendentes.reduce((s, l) => s + (l.valor || 0), 0);
   const totalIdentificado = identificados.reduce((s, l) => s + (l.valor || 0), 0);
 
   return (
     <div>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 10, marginBottom: 16 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 10, marginBottom: 12 }}>
         <CardResumo icone={<AlertTriangleIcon size={13} />} label="A identificar" valor={fmt(totalPendente)} qtd={pendentes.length} cor="var(--warn)" />
         <CardResumo icone={<CheckCircleIcon size={13} />} label="Identificados" valor={fmt(totalIdentificado)} qtd={identificados.length} cor="var(--ok)" />
       </div>
+
+      {lancamentos.length > 5 && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 5, background: 'var(--surface2)', border: '1px solid var(--border)',
+          borderRadius: 8, padding: '6px 10px', marginBottom: 14, maxWidth: 280 }}>
+          <span style={{ fontSize: 12, color: 'var(--text3)' }}>🔍</span>
+          <input value={filtro} onChange={(e) => setFiltro(e.target.value)} placeholder="Filtrar por texto do lançamento..."
+            style={{ background: 'none', border: 'none', outline: 'none', fontSize: 11.5, color: 'var(--text2)', width: '100%' }} />
+        </div>
+      )}
+
+      {termo && lancamentosFiltrados.length === 0 && (
+        <div style={{ textAlign: 'center', color: 'var(--text3)', fontSize: 12.5, padding: '20px 0' }}>Nenhum lançamento com "{filtro}".</div>
+      )}
 
       {pendentes.length > 0 && (
         <div style={{ marginBottom: identificados.length > 0 ? 20 : 0 }}>

@@ -11,4 +11,5 @@ alter table tipos_obrigacao
 
 update tipos_obrigacao set eh_imposto = true
   where nome in ('PGDAS', 'PGMEI', 'PARCELAMENTO MEI', 'PARCELAMENTO SIMPLES',
-                 'PARCELAMENTO SIMPLIFICADO RFB', 'RECALCULO INSS', 'RECALCULO PGDAS');
+                 'PARCELAMENTO SIMPLIFICADO RFB', 'RECALCULO INSS', 'RECALCULO PGDAS',
+                 'INSS Mensal');

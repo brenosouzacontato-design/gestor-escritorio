@@ -30,6 +30,7 @@ const STATUS_OBS_COR = {
 const NOMES_IMPOSTO = new Set([
   'PGDAS', 'PGMEI', 'PARCELAMENTO MEI', 'PARCELAMENTO SIMPLES',
   'PARCELAMENTO SIMPLIFICADO RFB', 'RECALCULO INSS', 'RECALCULO PGDAS',
+  'INSS MENSAL',
 ]);
 function ehImposto(o) {
   return o.tipos_obrigacao?.eh_imposto || NOMES_IMPOSTO.has((o.tipo || '').toUpperCase());
