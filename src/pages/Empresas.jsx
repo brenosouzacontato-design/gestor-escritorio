@@ -138,6 +138,11 @@ export default function Empresas({ onOpenTarefas, clienteInicialId, onClienteIni
     try { return JSON.parse(localStorage.getItem('empresas-ordem-cards') || '[]') } catch { return [] }
   })
   const [arrastandoId, setArrastandoId] = useState(null)
+  // Sinalização manual "entreguei o mês desse cliente" (kanban da visão
+  // Cards) — independente do % de obrigações concluídas, ver
+  // supabase-schema-cliente-entrega-competencia.sql. Guarda só quem está
+  // entregue na competência atual; todo o resto cai em "A entregar".
+  const [entregues, setEntregues] = useState(new Set())
   const [departamentos,setDepartamentos] = useState([])
   const [showAddDept, setShowAddDept] = useState(false)
   const [novoDept,    setNovoDept]    = useState('')
@@ -159,6 +164,25 @@ export default function Empresas({ onOpenTarefas, clienteInicialId, onClienteIni
 
   const carregarDepartamentos = () => listarDepartamentos().then(setDepartamentos).catch(() => {})
   useEffect(() => { carregarDepartamentos() }, [])
+
+  useEffect(() => {
+    supabase.from('cliente_entrega_competencia').select('cliente_id')
+      .eq('competencia', compSel).eq('entregue', true)
+      .then(({ data }) => setEntregues(new Set((data || []).map(r => r.cliente_id))))
+  }, [compSel])
+
+  // Arrastar um card pra outra coluna (ou soltar em cima de outro card já
+  // na coluna de destino) muda a sinalização de entrega — não mexe em
+  // nenhuma obrigação/tarefa, é só uma marcação manual do escritório.
+  const handleMudarEntrega = async (clienteId, entregue) => {
+    setEntregues(prev => {
+      const nova = new Set(prev)
+      if (entregue) nova.add(clienteId); else nova.delete(clienteId)
+      return nova
+    })
+    await supabase.from('cliente_entrega_competencia')
+      .upsert({ cliente_id: clienteId, competencia: compSel, entregue, atualizado_em: new Date().toISOString() }, { onConflict: 'cliente_id,competencia' })
+  }
 
   const carteiras = useMemo(() => {
     const s = new Set(clientes.map(c => c.carteira).filter(Boolean))
@@ -263,10 +287,18 @@ export default function Empresas({ onOpenTarefas, clienteInicialId, onClienteIni
     return grupos
   }, [itensPorVencimento])
 
-  const handleDropCard = (targetId) => {
+  // `colunaAlvo` só vem preenchido na visão em kanban (Cards) — solta em
+  // cima de outro card muda a entrega (se mudou de coluna) e reordena;
+  // solta no vazio da coluna (handleDropNaColuna) só muda a entrega.
+  const handleDropCard = (targetId, colunaAlvo) => {
     const arrastado = arrastandoId
     setArrastandoId(null)
-    if (!arrastado || arrastado === targetId) return
+    if (!arrastado) return
+    if (colunaAlvo) {
+      const entregueAlvo = colunaAlvo === 'entregue'
+      if (entregues.has(arrastado) !== entregueAlvo) handleMudarEntrega(arrastado, entregueAlvo)
+    }
+    if (arrastado === targetId) return
     const ids = rowsCards.map(r => r.c.id)
     const de = ids.indexOf(arrastado)
     const para = ids.indexOf(targetId)
@@ -276,6 +308,14 @@ export default function Empresas({ onOpenTarefas, clienteInicialId, onClienteIni
     nova.splice(para, 0, arrastado)
     setOrdemCards(nova)
     localStorage.setItem('empresas-ordem-cards', JSON.stringify(nova))
+  }
+
+  const handleDropNaColuna = (colunaAlvo) => {
+    const arrastado = arrastandoId
+    setArrastandoId(null)
+    if (!arrastado) return
+    const entregueAlvo = colunaAlvo === 'entregue'
+    if (entregues.has(arrastado) !== entregueAlvo) handleMudarEntrega(arrastado, entregueAlvo)
   }
 
   // Drawer: leitura direta do store (sem useMemo) para refletir mudanças imediatas
@@ -692,13 +732,32 @@ export default function Empresas({ onOpenTarefas, clienteInicialId, onClienteIni
         </div>
         )}
 
-        {visualizacao === 'cards' && (
+        {visualizacao === 'cards' && (() => {
+          const colunas = [
+            { id:'a_entregar', label:'A entregar', cor:'var(--warn)', itens: rowsCards.filter(r => !entregues.has(r.c.id)) },
+            { id:'entregue',   label:'Entregue',   cor:'var(--ok)',   itens: rowsCards.filter(r => entregues.has(r.c.id)) },
+          ]
+          return (
           <div style={{ flex:1, overflow:'auto', padding:'16px' }}>
             {rows.length === 0 && (
               <div style={{ padding:40, textAlign:'center', color:'var(--text3)', fontSize:13 }}>Nenhuma empresa encontrada</div>
             )}
-            <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(195px, 1fr))', gap:10 }}>
-              {rowsCards.map(({ c, deptData }, ri) => {
+            {rows.length > 0 && (
+            <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:16, alignItems:'start' }}>
+              {colunas.map(coluna => (
+                <div key={coluna.id}
+                  onDragOver={e => e.preventDefault()}
+                  onDrop={e => { e.preventDefault(); handleDropNaColuna(coluna.id) }}
+                  style={{ background:'var(--surface2)', border:'1px dashed var(--border2)', borderRadius:'var(--r-lg)', padding:12, minHeight:120 }}>
+                  <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:10 }}>
+                    <span style={{ fontSize:12, fontWeight:700, color:'var(--text2)', textTransform:'uppercase', letterSpacing:'.03em' }}>{coluna.label}</span>
+                    <span style={{ background:coluna.cor+'22', color:coluna.cor, borderRadius:99, padding:'2px 9px', fontSize:11, fontWeight:700 }}>{coluna.itens.length}</span>
+                  </div>
+                  {coluna.itens.length === 0 && (
+                    <div style={{ textAlign:'center', color:'var(--text3)', fontSize:12, padding:'20px 0' }}>Arraste uma empresa pra cá</div>
+                  )}
+                  <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(195px, 1fr))', gap:10 }}>
+                    {coluna.itens.map(({ c, deptData }, ri) => {
                 const [bg, tc] = AVATAR_COLORS[ri % AVATAR_COLORS.length]
                 const initials = c.nome.split(' ').slice(0,2).map(w=>w[0]).join('').toUpperCase()
                 const obsTotal = obrigacoes.filter(o => o.cliente_id===c.id && o.competencia===compSel)
@@ -722,7 +781,7 @@ export default function Empresas({ onOpenTarefas, clienteInicialId, onClienteIni
                     draggable
                     onDragStart={e => { e.stopPropagation(); setArrastandoId(c.id) }}
                     onDragOver={e => e.preventDefault()}
-                    onDrop={e => { e.preventDefault(); e.stopPropagation(); handleDropCard(c.id) }}
+                    onDrop={e => { e.preventDefault(); e.stopPropagation(); handleDropCard(c.id, coluna.id) }}
                     onDragEnd={() => setArrastandoId(null)}
                     style={{ background:`color-mix(in srgb, var(--surface), var(--ok-dim) ${progressoGeral}%)`,
                       border:`1px solid ${completo?'var(--ok)':resS==='danger'?'var(--danger)':resS==='venc_breve'?COR_VENCENDO:'var(--border)'}`,
@@ -810,9 +869,14 @@ export default function Empresas({ onOpenTarefas, clienteInicialId, onClienteIni
                   </div>
                 )
               })}
+                  </div>
+                </div>
+              ))}
             </div>
+            )}
           </div>
-        )}
+          )
+        })()}
 
         {visualizacao === 'vencimento' && (
           <div style={{ flex:1, overflow:'auto', padding:'16px' }}>

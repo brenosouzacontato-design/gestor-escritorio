@@ -5,6 +5,7 @@ import {
   AlertTriangleIcon, Share2Icon, ClockIcon, SettingsIcon, EyeIcon, EyeOffIcon,
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
+import { calcularAliquotaNominal } from '../../lib/simplesNacional';
 import { listarLancamentosAIdentificar } from '../contabil/contabilApi';
 import LancamentosIdentificar from '../contabil/LancamentosIdentificar';
 import { abrirLinkAssinado } from '../documentos/documentosApi';
@@ -380,6 +381,7 @@ export default function PainelClientePage({ clienteId, competencia: competenciaI
                   ];
 
                   const propsSecao = { secoesOcultas, editando: admin && editandoPainel, onToggle: toggleSecao };
+                  const aliquotaReal = gerenciais ? calcularAliquotaNominal(gerenciais.anexo, gerenciais.rbt12) : null;
 
                   return (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 22 }}>
@@ -392,6 +394,12 @@ export default function PainelClientePage({ clienteId, competencia: competenciaI
                           <Metrica label="Alíquota efetiva" valor={fmtPct(gerenciais.aliquota_efetiva)} cor="var(--accent)" />
                           <Metrica label="DAS a pagar" valor={fmt(gerenciais.valor_das)} />
                         </div>
+                      </SecaoToggleable>
+                    )}
+
+                    {aliquotaReal != null && gerenciais.faturamento_periodo > 0 && gerenciais.valor_das != null && (
+                      <SecaoToggleable chave="comparativo" {...propsSecao}>
+                        <ComparativoDas aliquotaReal={aliquotaReal} faturamento={gerenciais.faturamento_periodo} dasPago={gerenciais.valor_das} />
                       </SecaoToggleable>
                     )}
 
@@ -838,6 +846,40 @@ function RingCard({ nome, icone, s, pct, val, onClick }) {
       <div style={{ fontSize: 9.5, color: 'var(--text3)', fontWeight: 700, marginTop: 5,
         whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{icone} {nome}</div>
       <div style={{ fontSize: 9, color: 'var(--text3)', marginTop: 1 }}>{val}</div>
+    </div>
+  );
+}
+
+// Comparação "Simples cheio x pago" em barras — mais fácil de comparar de
+// relance do que dois números lado a lado.
+function ComparativoDas({ aliquotaReal, faturamento, dasPago }) {
+  const cheio = faturamento * (aliquotaReal / 100);
+  const max = Math.max(cheio, dasPago, 1);
+  const economia = cheio - dasPago;
+  return (
+    <div style={{ background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: '12px 14px' }}>
+      <div style={{ fontSize: 10, color: 'var(--text3)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.03em', marginBottom: 9 }}>
+        Simples "cheio" (tabela) x Simples pago
+      </div>
+      <BarraComparativa label={`Cheio (${fmtPct(aliquotaReal)})`} valor={cheio} pct={(cheio / max) * 100} cor="var(--text3)" />
+      <BarraComparativa label="Pago (DAS real)" valor={dasPago} pct={(dasPago / max) * 100} cor="var(--ok)" />
+      {Math.abs(economia) > 0.01 && (
+        <div style={{ fontSize: 11.5, color: economia > 0 ? 'var(--ok)' : 'var(--text2)', fontWeight: 600, marginTop: 9 }}>
+          {economia > 0 ? `Economia de ${fmt(economia)} nessa competência (aproveitamento de crédito/segregação de receita).` : `${fmt(-economia)} a mais que o "cheio" nessa competência.`}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function BarraComparativa({ label, valor, pct, cor }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 7 }}>
+      <span style={{ fontSize: 11, color: 'var(--text2)', width: 104, flexShrink: 0 }}>{label}</span>
+      <div style={{ flex: 1, height: 8, background: 'var(--surface3)', borderRadius: 99, overflow: 'hidden' }}>
+        <div style={{ height: '100%', borderRadius: 99, width: `${pct}%`, background: cor }} />
+      </div>
+      <span style={{ fontSize: 12, fontWeight: 700, width: 86, textAlign: 'right', flexShrink: 0 }}>{fmt(valor)}</span>
     </div>
   );
 }
