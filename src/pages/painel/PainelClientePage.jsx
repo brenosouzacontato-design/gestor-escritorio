@@ -217,7 +217,7 @@ export default function PainelClientePage({ clienteId, competencia: competenciaI
 
   return (
     <div style={{ minHeight: '100vh', background: 'var(--bg)', padding: '32px 16px' }}>
-      <div style={{ maxWidth: 880, margin: '0 auto', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--r-xl)', overflow: 'hidden' }}>
+      <div style={{ maxWidth: 720, margin: '0 auto', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--r-xl)', overflow: 'hidden' }}>
         <div style={{ padding: '20px 26px', background: 'var(--navy)' }}>
           <div style={{ fontSize: 11, color: 'var(--navy-text)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.04em' }}>
             📋 Painel do cliente
@@ -247,9 +247,9 @@ export default function PainelClientePage({ clienteId, competencia: competenciaI
           )}
         </div>
 
-        <div>
-          {carregando && <p style={{ color: 'var(--text2)', padding: 26 }}>Carregando...</p>}
-          {erro && <p style={{ color: 'var(--danger)', padding: 26 }}>{erro}</p>}
+        <div style={{ padding: 26 }}>
+          {carregando && <p style={{ color: 'var(--text2)' }}>Carregando...</p>}
+          {erro && <p style={{ color: 'var(--danger)' }}>{erro}</p>}
 
           {!carregando && !erro && (() => {
             const modulos = agruparPorModulo(obs.itens);
@@ -284,33 +284,19 @@ export default function PainelClientePage({ clienteId, competencia: competenciaI
                 : { s: 'ok', titulo: 'Tudo em dia', sub: 'Nenhuma pendência nessa competência' };
 
             return (
-              <div className="painel-shell">
-                <style>{`
-                  .painel-shell { display: flex; }
-                  .painel-rail { width: 176px; flex-shrink: 0; background: var(--surface2); border-right: 1px solid var(--border); padding: 14px 8px; display: flex; flex-direction: column; gap: 2px; }
-                  .painel-main { flex: 1; min-width: 0; padding: 22px 24px; }
-                  .rail-item { width: 100%; }
-                  @media (max-width: 680px) {
-                    .painel-shell { flex-direction: column; }
-                    .painel-rail { width: 100%; flex-direction: row; overflow-x: auto; border-right: none; border-bottom: 1px solid var(--border); }
-                    .rail-item { width: auto; }
-                    .painel-main { padding: 18px 16px; }
-                  }
-                `}</style>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
 
-                {/* Trilha lateral — Resumo + um módulo por área com obrigação na competência + CND, cada um com o status em destaque */}
-                <nav className="painel-rail">
+                {/* Barra de abas — Resumo + um módulo por área com obrigação na competência + CND, cada uma com o status em destaque */}
+                <div style={{ display: 'flex', gap: 6, overflowX: 'auto', paddingBottom: 2 }}>
                   {abas.map((a) => {
                     const m = a.id === 'cnd' ? cnd : modulos.find((mm) => mm.nome === a.id);
                     return (
-                      <RailItem key={a.id} icone={a.icone} label={a.label}
+                      <AbaPill key={a.id} icone={a.icone} label={a.label}
                         badge={a.id === 'resumo' ? null : m?.val} s={a.id === 'resumo' ? heroStatus.s : m?.s}
                         ativo={abaAtiva === a.id} onClick={() => setAba(a.id)} />
                     );
                   })}
-                </nav>
-
-                <div className="painel-main">
+                </div>
 
                 {/* ── Aba Resumo ── */}
                 {abaAtiva === 'resumo' && (() => {
@@ -325,6 +311,7 @@ export default function PainelClientePage({ clienteId, competencia: competenciaI
                       vencimento: o.vencimento,
                       concluido: o.status === 'concluido' || o.status === 'nao_aplica',
                       valor: temValorDas && obrigDas && o.id === obrigDas.id ? gerenciais.valor_das : null,
+                      anexo: anexosObrigacao[o.id] || null,
                     }));
                   const semData = [
                     ...(temValorDas && !obrigDas ? [{ titulo: 'DAS — Simples Nacional', sub: 'Vencimento não cadastrado', valor: gerenciais.valor_das }] : []),
@@ -335,6 +322,23 @@ export default function PainelClientePage({ clienteId, competencia: competenciaI
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 22 }}>
 
                     <HeroStatus {...heroStatus} />
+
+                    {(itensImpostos.length > 0 || semData.length > 0) && (
+                      <div>
+                        <SecaoTitulo icone={<CalendarIcon size={14} />}>Impostos a vencer</SecaoTitulo>
+                        {itensImpostos.length > 0 && <ImpostosAVencer itens={itensImpostos} onBaixarAnexo={baixarAnexo} />}
+                        {semData.length > 0 && (
+                          <div style={{ marginTop: itensImpostos.length > 0 ? 14 : 0 }}>
+                            <div style={{ fontSize: 10.5, color: 'var(--text3)', fontWeight: 600, marginBottom: 6 }}>Sem vencimento definido</div>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                              {semData.map((it, i) => (
+                                <ItemLista key={i} titulo={it.titulo} sub={it.sub} statusLabel={fmt(it.valor)} statusCor={['var(--warn)', 'var(--warn-dim)']} />
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
 
                     {gerenciais && (
                       <div>
@@ -410,23 +414,6 @@ export default function PainelClientePage({ clienteId, competencia: competenciaI
                             </div>
                             <div style={{ fontSize: 10.5, color: 'var(--text3)', marginTop: 6 }}>
                               A alíquota efetiva acima é sobre o total da competência — parte dessa receita já teve imposto retido antes (ST/monofásico).
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    )}
-
-                    {(itensImpostos.length > 0 || semData.length > 0) && (
-                      <div>
-                        <SecaoTitulo icone={<CalendarIcon size={14} />}>Impostos a vencer</SecaoTitulo>
-                        {itensImpostos.length > 0 && <ImpostosAVencer itens={itensImpostos} />}
-                        {semData.length > 0 && (
-                          <div style={{ marginTop: itensImpostos.length > 0 ? 14 : 0 }}>
-                            <div style={{ fontSize: 10.5, color: 'var(--text3)', fontWeight: 600, marginBottom: 6 }}>Sem vencimento definido</div>
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                              {semData.map((it, i) => (
-                                <ItemLista key={i} titulo={it.titulo} sub={it.sub} statusLabel={fmt(it.valor)} statusCor={['var(--warn)', 'var(--warn-dim)']} />
-                              ))}
                             </div>
                           </div>
                         )}
@@ -665,7 +652,6 @@ export default function PainelClientePage({ clienteId, competencia: competenciaI
                     </div>
                   </div>
                 )}
-                </div>
               </div>
             );
           })()}
@@ -746,18 +732,18 @@ function ItemLista({ titulo, sub, statusLabel, statusCor, vencimentoTexto, venci
 const MODULO_COR = { ok: 'var(--ok)', warn: 'var(--warn)', danger: 'var(--danger)', empty: 'var(--text3)' };
 const MODULO_DIM = { ok: 'var(--ok-dim)', warn: 'var(--warn-dim)', danger: 'var(--danger-dim)', empty: 'var(--surface3)' };
 
-// Item da trilha lateral — ícone + nome + selo com o estado do módulo
-// (fração "3/4", "Com CND"/"Sem CND" etc, já vindo pronto de
+// Aba em pílula — ícone + nome + selo com o estado do módulo (fração
+// "3/4", "Com CND"/"Sem CND" etc, já vindo pronto de
 // agruparPorModulo/moduloCND). O Resumo não tem selo próprio, o estado
 // geral já aparece em destaque no HeroStatus dentro do conteúdo.
-function RailItem({ icone, label, badge, s, ativo, onClick }) {
+function AbaPill({ icone, label, badge, s, ativo, onClick }) {
   return (
-    <button className="rail-item" onClick={onClick} style={{ display: 'flex', alignItems: 'center', gap: 8,
-      padding: '8px 9px', borderRadius: 'var(--r-md)', border: 'none',
-      background: ativo ? 'var(--navy)' : 'transparent', color: ativo ? '#fff' : 'var(--text2)',
-      cursor: 'pointer', fontSize: 12.5, fontWeight: 600, textAlign: 'left' }}>
-      <span style={{ fontSize: 14, width: 16, textAlign: 'center', flexShrink: 0 }}>{icone}</span>
-      <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{label}</span>
+    <button onClick={onClick} style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: 6,
+      background: ativo ? 'var(--navy)' : 'var(--surface2)',
+      border: `1px solid ${ativo ? 'var(--navy)' : 'var(--border)'}`,
+      borderRadius: 99, padding: '6px 12px', fontSize: 12, fontWeight: 600,
+      color: ativo ? '#fff' : 'var(--text2)', cursor: 'pointer', whiteSpace: 'nowrap' }}>
+      <span>{icone}</span> {label}
       {badge && (
         <span style={{ fontSize: 9.5, fontWeight: 700, borderRadius: 99, padding: '2px 7px', flexShrink: 0,
           background: ativo ? 'rgba(255,255,255,.15)' : MODULO_DIM[s], color: ativo ? '#fff' : MODULO_COR[s] }}>
@@ -815,7 +801,7 @@ function RingCard({ nome, icone, s, pct, val, onClick }) {
 // imposto (já filtrado por tipos_obrigacao.eh_imposto), ordenados por data,
 // com prazo e valor em destaque em vez de misturado numa lista com o resto
 // das obrigações do mês.
-function ImpostosAVencer({ itens }) {
+function ImpostosAVencer({ itens, onBaixarAnexo }) {
   const ordenados = [...itens].sort((a, b) => a.vencimento.localeCompare(b.vencimento));
   return (
     <div style={{ display: 'flex', gap: 10, overflowX: 'auto', paddingBottom: 4 }}>
@@ -824,15 +810,24 @@ function ImpostosAVencer({ itens }) {
         const statusKey = it.concluido ? 'concluido' : dias < 0 ? 'vencido' : 'pendente';
         const [cor, corDim] = dias > 3 && !it.concluido ? ['var(--text3)', 'var(--surface3)'] : STATUS_OBS_COR[statusKey];
         return (
-          <div key={it.id} style={{ flexShrink: 0, width: 152, background: 'var(--surface2)',
+          <div key={it.id} style={{ flexShrink: 0, width: 156, background: 'var(--surface2)',
             borderLeft: `3px solid ${cor}`, borderRadius: 'var(--r-md)', padding: '11px 12px 11px 10px' }}>
             <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--text1)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{it.titulo}</div>
             {it.departamento && <div style={{ fontSize: 9.5, color: 'var(--text3)', marginTop: 1 }}>{it.departamento}</div>}
             <div style={{ fontSize: 10, color: 'var(--text3)', marginTop: 5 }}>{fmtData(it.vencimento)}</div>
             {it.valor != null && <div style={{ fontSize: 14, fontWeight: 800, marginTop: 6, color: 'var(--text1)' }}>{fmt(it.valor)}</div>}
-            <span style={{ display: 'inline-block', fontSize: 9.5, fontWeight: 700, borderRadius: 99, padding: '2px 8px', marginTop: 7, color: cor, background: corDim }}>
-              {it.concluido ? 'concluído' : fmtDiasParaVencer(dias)}
-            </span>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6, marginTop: 7 }}>
+              <span style={{ fontSize: 9.5, fontWeight: 700, borderRadius: 99, padding: '2px 8px', color: cor, background: corDim }}>
+                {it.concluido ? 'concluído' : fmtDiasParaVencer(dias)}
+              </span>
+              {it.anexo && (
+                <button onClick={() => onBaixarAnexo(it.anexo)} title={`Baixar ${it.anexo.nome_arquivo}`}
+                  style={{ background: 'var(--accent-dim)', border: 'none', borderRadius: 99, width: 22, height: 22, flexShrink: 0,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: 'var(--accent)' }}>
+                  <DownloadIcon size={11} />
+                </button>
+              )}
+            </div>
           </div>
         );
       })}
