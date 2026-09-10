@@ -265,7 +265,7 @@ export async function obterPendenciasAnteriores(clienteId, competenciaAtual) {
   const [{ data: obrigacoes, error: errObs }, { data: tarefas, error: errTar }] = await Promise.all([
     supabase
       .from('obrigacoes')
-      .select('id, titulo, tipo, status, vencimento, competencia, departamento_id, departamentos(nome, icone)')
+      .select('id, titulo, tipo, status, vencimento, competencia, departamento_id, departamentos(nome, icone), tipos_obrigacao(eh_imposto)')
       .eq('cliente_id', clienteId)
       .in('status', ['pendente', 'vencido']),
     supabase

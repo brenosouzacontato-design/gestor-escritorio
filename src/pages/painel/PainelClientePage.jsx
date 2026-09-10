@@ -25,6 +25,19 @@ const STATUS_OBS_COR = {
   vencido: ['var(--danger)', 'var(--danger-dim)'],
 };
 
+// Mesma lista de nomes marcada como eh_imposto em tipos_obrigacao (ver
+// supabase-schema-tipos-obrigacao-imposto.sql), usada aqui como fallback
+// pra obrigações antigas que não têm tipo_obrigacao_id (modelo legado,
+// anterior à recorrência por tipo — ver supabase-schema-andamento-
+// recorrencia.sql) e por isso não têm como resolver o join.
+const NOMES_IMPOSTO = new Set([
+  'PGDAS', 'PGMEI', 'PARCELAMENTO MEI', 'PARCELAMENTO SIMPLES',
+  'PARCELAMENTO SIMPLIFICADO RFB', 'RECALCULO INSS', 'RECALCULO PGDAS',
+]);
+function ehImposto(o) {
+  return o.tipos_obrigacao?.eh_imposto || NOMES_IMPOSTO.has((o.tipo || '').toUpperCase());
+}
+
 function fmt(v) {
   return Number(v ?? 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 }
@@ -310,17 +323,34 @@ export default function PainelClientePage({ clienteId, competencia: competenciaI
                 {abaAtiva === 'resumo' && (() => {
                   const obrigDas = obs.itens.find((o) => `${o.titulo || ''} ${o.tipo || ''}`.toLowerCase().includes('das'));
                   const temValorDas = gerenciais?.valor_das != null && gerenciais.valor_das > 0;
-                  const itensImpostos = obs.itens
-                    .filter((o) => o.vencimento && o.tipos_obrigacao?.eh_imposto)
-                    .map((o) => ({
+                  // Impostos da competência atual + impostos vencidos de competências
+                  // anteriores (pendenciasAnteriores) — sem isso um DAS vencido há
+                  // meses (comum em obrigação legada sem tipo_obrigacao_id, que só
+                  // aparecia na lista genérica de pendências) não entrava aqui.
+                  const impostosPendentesAnteriores = pendenciasAnteriores.obrigacoes.filter((o) => o.vencimento && ehImposto(o));
+                  const idsImpostosAnteriores = new Set(impostosPendentesAnteriores.map((o) => o.id));
+                  const itensImpostos = [
+                    ...impostosPendentesAnteriores.map((o) => ({
                       id: o.id,
                       titulo: o.titulo || o.tipo,
-                      departamento: o.departamentos?.nome,
+                      departamento: `${o.departamentos?.nome || 'Geral'} · ${o.competencia}`,
                       vencimento: o.vencimento,
-                      concluido: o.status === 'concluido' || o.status === 'nao_aplica',
-                      valor: temValorDas && obrigDas && o.id === obrigDas.id ? gerenciais.valor_das : null,
-                      anexo: anexosObrigacao[o.id] || null,
-                    }));
+                      concluido: false,
+                      valor: valoresDasPendencias[o.competencia] ?? null,
+                      anexo: null,
+                    })),
+                    ...obs.itens
+                      .filter((o) => o.vencimento && ehImposto(o))
+                      .map((o) => ({
+                        id: o.id,
+                        titulo: o.titulo || o.tipo,
+                        departamento: o.departamentos?.nome,
+                        vencimento: o.vencimento,
+                        concluido: o.status === 'concluido' || o.status === 'nao_aplica',
+                        valor: temValorDas && obrigDas && o.id === obrigDas.id ? gerenciais.valor_das : null,
+                        anexo: anexosObrigacao[o.id] || null,
+                      })),
+                  ];
                   const semData = [
                     ...(temValorDas && !obrigDas ? [{ titulo: 'DAS — Simples Nacional', sub: 'Vencimento não cadastrado', valor: gerenciais.valor_das }] : []),
                     ...(situacaoFiscal?.debitos || []).map((d) => ({ titulo: d.tributo, sub: d.situacao, valor: d.valor })),
@@ -409,11 +439,17 @@ export default function PainelClientePage({ clienteId, competencia: competenciaI
                       </div>
                     )}
 
-                    {(pendenciasAnteriores.obrigacoes.length > 0 || pendenciasAnteriores.tarefas.length > 0) && (
+                    {(() => {
+                      // Obrigações vencidas já promovidas pra "Impostos a vencer"
+                      // não repetem aqui embaixo — essa lista é só o restante
+                      // (não-imposto) das pendências de competências anteriores.
+                      const obrigacoesRestantes = pendenciasAnteriores.obrigacoes.filter((o) => !idsImpostosAnteriores.has(o.id));
+                      if (obrigacoesRestantes.length === 0 && pendenciasAnteriores.tarefas.length === 0) return null;
+                      return (
                       <div>
                         <SecaoTitulo icone={<AlertTriangleIcon size={14} />}>Pendências de meses anteriores</SecaoTitulo>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                          {pendenciasAnteriores.obrigacoes.map((o) => {
+                          {obrigacoesRestantes.map((o) => {
                             const dias = diasParaVencer(o.vencimento);
                             const valorDas = valoresDasPendencias[o.competencia];
                             return (
@@ -435,7 +471,8 @@ export default function PainelClientePage({ clienteId, competencia: competenciaI
                           })}
                         </div>
                       </div>
-                    )}
+                      );
+                    })()}
 
                     <div>
                       <SecaoTitulo icone={<LayersIcon size={14} />}>Módulos</SecaoTitulo>
