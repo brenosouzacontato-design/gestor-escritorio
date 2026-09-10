@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import {
   WalletIcon, ClipboardListIcon, CheckSquareIcon, PaperclipIcon, BarChart3Icon,
   CalendarIcon, DownloadIcon, CheckCircleIcon, FileTextIcon, TrendingUpIcon, LayersIcon,
-  AlertTriangleIcon, Share2Icon,
+  AlertTriangleIcon, Share2Icon, ClockIcon,
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { calcularAliquotaNominal } from '../../lib/simplesNacional';
@@ -217,7 +217,7 @@ export default function PainelClientePage({ clienteId, competencia: competenciaI
 
   return (
     <div style={{ minHeight: '100vh', background: 'var(--bg)', padding: '32px 16px' }}>
-      <div style={{ maxWidth: 720, margin: '0 auto', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--r-xl)', overflow: 'hidden' }}>
+      <div style={{ maxWidth: 880, margin: '0 auto', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--r-xl)', overflow: 'hidden' }}>
         <div style={{ padding: '20px 26px', background: 'var(--navy)' }}>
           <div style={{ fontSize: 11, color: 'var(--navy-text)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.04em' }}>
             📋 Painel do cliente
@@ -247,9 +247,9 @@ export default function PainelClientePage({ clienteId, competencia: competenciaI
           )}
         </div>
 
-        <div style={{ padding: 26 }}>
-          {carregando && <p style={{ color: 'var(--text2)' }}>Carregando...</p>}
-          {erro && <p style={{ color: 'var(--danger)' }}>{erro}</p>}
+        <div>
+          {carregando && <p style={{ color: 'var(--text2)', padding: 26 }}>Carregando...</p>}
+          {erro && <p style={{ color: 'var(--danger)', padding: 26 }}>{erro}</p>}
 
           {!carregando && !erro && (() => {
             const modulos = agruparPorModulo(obs.itens);
@@ -259,6 +259,7 @@ export default function PainelClientePage({ clienteId, competencia: competenciaI
             if ((lancamentos.length > 0 || documentosFiscais.length > 0) && !modulos.some((m) => m.nome === 'Contábil')) {
               modulos.push({ nome: 'Contábil', icone: '🧮', s: 'empty', pct: 0, val: '—' });
             }
+            const cnd = moduloCND(situacaoFiscal, cndManual);
             const abas = [
               { id: 'resumo', label: 'Resumo', icone: '🏠' },
               ...modulos.map((m) => ({ id: m.nome, label: m.nome, icone: m.icone })),
@@ -269,28 +270,53 @@ export default function PainelClientePage({ clienteId, competencia: competenciaI
             const obsDoModulo = moduloAtual ? obs.itens.filter((o) => (o.departamentos?.nome || 'Geral') === abaAtiva) : [];
             const tarefasDoModulo = moduloAtual ? tarefas.itens.filter((t) => (t.departamento || '').toLowerCase() === abaAtiva.toLowerCase()) : [];
 
-            return (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+            // Status geral pra o card de destaque do Resumo e o indicador da
+            // trilha lateral — "atrasado" pesa mais que "pendente" (uma
+            // pendência de mês anterior sempre entra no cálculo, o painel é
+            // histórico até ser resolvida, ver obterPendenciasAnteriores).
+            const vencidasAnteriores = pendenciasAnteriores.obrigacoes.filter((o) => o.status === 'vencido').length;
+            const totalVencidas = obs.vencido + vencidasAnteriores;
+            const totalPendentesAnteriores = pendenciasAnteriores.obrigacoes.length + pendenciasAnteriores.tarefas.length;
+            const heroStatus = totalVencidas > 0
+              ? { s: 'danger', titulo: 'Atenção', sub: `${totalVencidas} ${totalVencidas === 1 ? 'pendência vencida' : 'pendências vencidas'}` }
+              : (obs.pendente > 0 || totalPendentesAnteriores > 0)
+                ? { s: 'warn', titulo: 'Pendências em aberto', sub: `${obs.pendente + totalPendentesAnteriores} ${(obs.pendente + totalPendentesAnteriores) === 1 ? 'item pendente' : 'itens pendentes'}` }
+                : { s: 'ok', titulo: 'Tudo em dia', sub: 'Nenhuma pendência nessa competência' };
 
-                {/* Barra de abas — Resumo + um módulo por área com obrigação na competência + CND */}
-                <div style={{ display: 'flex', gap: 6, overflowX: 'auto', paddingBottom: 2 }}>
-                  {abas.map((a) => (
-                    <button key={a.id} onClick={() => setAba(a.id)}
-                      style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: 5,
-                        background: abaAtiva === a.id ? 'var(--navy)' : 'var(--surface2)',
-                        border: `1px solid ${abaAtiva === a.id ? 'var(--navy)' : 'var(--border)'}`,
-                        borderRadius: 99, padding: '6px 13px', fontSize: 12, fontWeight: 600,
-                        color: abaAtiva === a.id ? '#fff' : 'var(--text2)', cursor: 'pointer', whiteSpace: 'nowrap' }}>
-                      <span>{a.icone}</span> {a.label}
-                    </button>
-                  ))}
-                </div>
+            return (
+              <div className="painel-shell">
+                <style>{`
+                  .painel-shell { display: flex; }
+                  .painel-rail { width: 176px; flex-shrink: 0; background: var(--surface2); border-right: 1px solid var(--border); padding: 14px 8px; display: flex; flex-direction: column; gap: 2px; }
+                  .painel-main { flex: 1; min-width: 0; padding: 22px 24px; }
+                  .rail-item { width: 100%; }
+                  @media (max-width: 680px) {
+                    .painel-shell { flex-direction: column; }
+                    .painel-rail { width: 100%; flex-direction: row; overflow-x: auto; border-right: none; border-bottom: 1px solid var(--border); }
+                    .rail-item { width: auto; }
+                    .painel-main { padding: 18px 16px; }
+                  }
+                `}</style>
+
+                {/* Trilha lateral — Resumo + um módulo por área com obrigação na competência + CND, cada um com o status em destaque */}
+                <nav className="painel-rail">
+                  {abas.map((a) => {
+                    const m = a.id === 'cnd' ? cnd : modulos.find((mm) => mm.nome === a.id);
+                    return (
+                      <RailItem key={a.id} icone={a.icone} label={a.label}
+                        badge={a.id === 'resumo' ? null : m?.val} s={a.id === 'resumo' ? heroStatus.s : m?.s}
+                        ativo={abaAtiva === a.id} onClick={() => setAba(a.id)} />
+                    );
+                  })}
+                </nav>
+
+                <div className="painel-main">
 
                 {/* ── Aba Resumo ── */}
                 {abaAtiva === 'resumo' && (() => {
                   const obrigDas = obs.itens.find((o) => `${o.titulo || ''} ${o.tipo || ''}`.toLowerCase().includes('das'));
                   const temValorDas = gerenciais?.valor_das != null && gerenciais.valor_das > 0;
-                  const itensTimeline = obs.itens
+                  const itensImpostos = obs.itens
                     .filter((o) => o.vencimento && o.tipos_obrigacao?.eh_imposto)
                     .map((o) => ({
                       id: o.id,
@@ -306,7 +332,9 @@ export default function PainelClientePage({ clienteId, competencia: competenciaI
                   ];
 
                   return (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 22 }}>
+
+                    <HeroStatus {...heroStatus} />
 
                     {gerenciais && (
                       <div>
@@ -388,12 +416,12 @@ export default function PainelClientePage({ clienteId, competencia: competenciaI
                       </div>
                     )}
 
-                    {(itensTimeline.length > 0 || semData.length > 0) && (
+                    {(itensImpostos.length > 0 || semData.length > 0) && (
                       <div>
                         <SecaoTitulo icone={<CalendarIcon size={14} />}>Impostos a vencer</SecaoTitulo>
-                        {itensTimeline.length > 0 && <LinhaDoTempoVencimentos itens={itensTimeline} />}
+                        {itensImpostos.length > 0 && <ImpostosAVencer itens={itensImpostos} />}
                         {semData.length > 0 && (
-                          <div style={{ marginTop: itensTimeline.length > 0 ? 14 : 0 }}>
+                          <div style={{ marginTop: itensImpostos.length > 0 ? 14 : 0 }}>
                             <div style={{ fontSize: 10.5, color: 'var(--text3)', fontWeight: 600, marginBottom: 6 }}>Sem vencimento definido</div>
                             <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                               {semData.map((it, i) => (
@@ -435,9 +463,9 @@ export default function PainelClientePage({ clienteId, competencia: competenciaI
 
                     <div>
                       <SecaoTitulo icone={<LayersIcon size={14} />}>Módulos</SecaoTitulo>
-                      <div style={{ display: 'grid', gridTemplateColumns: `repeat(auto-fit, minmax(72px, 1fr))`, gap: 8 }}>
-                        {[...modulos, moduloCND(situacaoFiscal, cndManual)].map((m) => (
-                          <ModuloCard key={m.nome} {...m} onClick={() => setAba(m.nome === 'CND' ? 'cnd' : m.nome)} />
+                      <div style={{ display: 'grid', gridTemplateColumns: `repeat(auto-fit, minmax(70px, 1fr))`, gap: 8 }}>
+                        {[...modulos, cnd].map((m) => (
+                          <RingCard key={m.nome} {...m} onClick={() => setAba(m.nome === 'CND' ? 'cnd' : m.nome)} />
                         ))}
                       </div>
                     </div>
@@ -637,6 +665,7 @@ export default function PainelClientePage({ clienteId, competencia: competenciaI
                     </div>
                   </div>
                 )}
+                </div>
               </div>
             );
           })()}
@@ -715,62 +744,95 @@ function ItemLista({ titulo, sub, statusLabel, statusCor, vencimentoTexto, venci
 }
 
 const MODULO_COR = { ok: 'var(--ok)', warn: 'var(--warn)', danger: 'var(--danger)', empty: 'var(--text3)' };
+const MODULO_DIM = { ok: 'var(--ok-dim)', warn: 'var(--warn-dim)', danger: 'var(--danger-dim)', empty: 'var(--surface3)' };
 
-function ModuloCard({ nome, icone, s, pct, val, onClick }) {
-  const cor = MODULO_COR[s];
+// Item da trilha lateral — ícone + nome + selo com o estado do módulo
+// (fração "3/4", "Com CND"/"Sem CND" etc, já vindo pronto de
+// agruparPorModulo/moduloCND). O Resumo não tem selo próprio, o estado
+// geral já aparece em destaque no HeroStatus dentro do conteúdo.
+function RailItem({ icone, label, badge, s, ativo, onClick }) {
   return (
-    <div onClick={onClick} style={{ background: 'var(--bg)', border: `1px solid ${s === 'empty' ? 'var(--border)' : cor}`,
-      borderRadius: 'var(--r-md)', padding: '10px 6px', textAlign: 'center', cursor: onClick ? 'pointer' : 'default' }}>
-      <div style={{ fontSize: 16, marginBottom: 3 }}>{icone}</div>
-      <div style={{ fontSize: 9, color: 'var(--text3)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.02em', marginBottom: 4,
-        whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{nome}</div>
-      <div style={{ fontSize: 14, fontWeight: 800, color: cor }}>{s === 'empty' ? '—' : `${pct}%`}</div>
-      <div style={{ fontSize: 9, color: 'var(--text3)', marginTop: 2 }}>{val}</div>
+    <button className="rail-item" onClick={onClick} style={{ display: 'flex', alignItems: 'center', gap: 8,
+      padding: '8px 9px', borderRadius: 'var(--r-md)', border: 'none',
+      background: ativo ? 'var(--navy)' : 'transparent', color: ativo ? '#fff' : 'var(--text2)',
+      cursor: 'pointer', fontSize: 12.5, fontWeight: 600, textAlign: 'left' }}>
+      <span style={{ fontSize: 14, width: 16, textAlign: 'center', flexShrink: 0 }}>{icone}</span>
+      <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{label}</span>
+      {badge && (
+        <span style={{ fontSize: 9.5, fontWeight: 700, borderRadius: 99, padding: '2px 7px', flexShrink: 0,
+          background: ativo ? 'rgba(255,255,255,.15)' : MODULO_DIM[s], color: ativo ? '#fff' : MODULO_COR[s] }}>
+          {badge}
+        </span>
+      )}
+    </button>
+  );
+}
+
+const HERO_ICON = { ok: CheckCircleIcon, warn: ClockIcon, danger: AlertTriangleIcon };
+
+// Card de destaque no topo do Resumo — a resposta que o cliente mais
+// procura ("tá tudo certo?") antes de qualquer número.
+function HeroStatus({ s, titulo, sub }) {
+  const Icone = HERO_ICON[s];
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 12, background: MODULO_DIM[s], borderRadius: 'var(--r-lg)', padding: '14px 16px' }}>
+      <div style={{ width: 36, height: 36, borderRadius: '50%', background: MODULO_COR[s], color: '#fff',
+        display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+        <Icone size={18} />
+      </div>
+      <div>
+        <div style={{ fontSize: 14, fontWeight: 700, color: MODULO_COR[s] }}>{titulo}</div>
+        <div style={{ fontSize: 11.5, color: 'var(--text2)', marginTop: 1 }}>{sub}</div>
+      </div>
     </div>
   );
 }
 
-// Linha do tempo vertical dos vencimentos da competência — `itens` já vem
-// filtrado (só o que tem vencimento) e com `valor` preenchido quando
-// conhecido (hoje só o DAS, casado por heurística de título em obs.itens).
-function LinhaDoTempoVencimentos({ itens }) {
-  const porData = {};
-  itens.forEach((it) => { (porData[it.vencimento] ||= []).push(it); });
-  const datas = Object.keys(porData).sort();
-
+// Anel de progresso do módulo — mesma leitura da lista de "Tarefas" (ok/N),
+// só que como card clicável pra abrir o módulo na trilha lateral.
+function RingCard({ nome, icone, s, pct, val, onClick }) {
+  const cor = MODULO_COR[s];
+  const R = 22, C = 2 * Math.PI * R;
+  const offset = s === 'empty' ? C : C - (pct / 100) * C;
   return (
-    <div style={{ display: 'flex', flexDirection: 'column' }}>
-      {datas.map((data, i) => {
-        const grupo = porData[data];
-        const dias = diasParaVencer(data);
-        const totalValor = grupo.reduce((s, it) => s + (it.valor || 0), 0);
-        const todosConcluidos = grupo.every((it) => it.concluido);
-        const cor = todosConcluidos ? 'var(--ok)' : dias < 0 ? 'var(--danger)' : dias <= 3 ? 'var(--warn)' : 'var(--accent)';
+    <div onClick={onClick} style={{ textAlign: 'center', padding: '6px 2px', cursor: onClick ? 'pointer' : 'default' }}>
+      <svg viewBox="0 0 56 56" width="50" height="50" style={{ display: 'block', margin: '0 auto' }}>
+        <circle cx="28" cy="28" r={R} fill="none" stroke="var(--surface3)" strokeWidth="5" />
+        <circle cx="28" cy="28" r={R} fill="none" stroke={cor} strokeWidth="5" strokeLinecap="round"
+          strokeDasharray={C} strokeDashoffset={offset} transform="rotate(-90 28 28)" />
+        <text x="28" y="32" textAnchor="middle" fontSize="11" fontWeight="800" fill="var(--text1)">
+          {s === 'empty' ? '—' : `${pct}%`}
+        </text>
+      </svg>
+      <div style={{ fontSize: 9.5, color: 'var(--text3)', fontWeight: 700, marginTop: 5,
+        whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{icone} {nome}</div>
+      <div style={{ fontSize: 9, color: 'var(--text3)', marginTop: 1 }}>{val}</div>
+    </div>
+  );
+}
+
+// Esteira rolável de impostos a vencer da competência — um cartão por
+// imposto (já filtrado por tipos_obrigacao.eh_imposto), ordenados por data,
+// com prazo e valor em destaque em vez de misturado numa lista com o resto
+// das obrigações do mês.
+function ImpostosAVencer({ itens }) {
+  const ordenados = [...itens].sort((a, b) => a.vencimento.localeCompare(b.vencimento));
+  return (
+    <div style={{ display: 'flex', gap: 10, overflowX: 'auto', paddingBottom: 4 }}>
+      {ordenados.map((it) => {
+        const dias = diasParaVencer(it.vencimento);
+        const statusKey = it.concluido ? 'concluido' : dias < 0 ? 'vencido' : 'pendente';
+        const [cor, corDim] = dias > 3 && !it.concluido ? ['var(--text3)', 'var(--surface3)'] : STATUS_OBS_COR[statusKey];
         return (
-          <div key={data} style={{ display: 'flex', gap: 10 }}>
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: 12, flexShrink: 0 }}>
-              <div style={{ width: 10, height: 10, borderRadius: '50%', background: cor, flexShrink: 0, marginTop: 3 }} />
-              {i < datas.length - 1 && <div style={{ width: 2, flex: 1, background: 'var(--border)', marginTop: 4 }} />}
-            </div>
-            <div style={{ flex: 1, paddingBottom: i < datas.length - 1 ? 14 : 0, minWidth: 0 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 8 }}>
-                <span style={{ fontSize: 12.5, fontWeight: 700, color: cor }}>
-                  {fmtData(data)} · {todosConcluidos ? 'concluído' : fmtDiasParaVencer(dias)}
-                </span>
-                {totalValor > 0 && <span style={{ fontSize: 13, fontWeight: 800, color: 'var(--text1)', flexShrink: 0 }}>{fmt(totalValor)}</span>}
-              </div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 3, marginTop: 5 }}>
-                {grupo.map((it) => (
-                  <div key={it.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, fontSize: 12, color: it.concluido ? 'var(--ok)' : 'var(--text2)' }}>
-                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: 4 }}>
-                      {it.concluido && <CheckCircleIcon size={11} color="var(--ok)" style={{ flexShrink: 0 }} />}
-                      {it.titulo}{it.departamento ? ` · ${it.departamento}` : ''}
-                    </span>
-                    {it.valor != null && <span style={{ fontWeight: 600, color: it.concluido ? 'var(--ok)' : 'var(--text1)', flexShrink: 0 }}>{fmt(it.valor)}</span>}
-                  </div>
-                ))}
-              </div>
-            </div>
+          <div key={it.id} style={{ flexShrink: 0, width: 152, background: 'var(--surface2)',
+            borderLeft: `3px solid ${cor}`, borderRadius: 'var(--r-md)', padding: '11px 12px 11px 10px' }}>
+            <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--text1)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{it.titulo}</div>
+            {it.departamento && <div style={{ fontSize: 9.5, color: 'var(--text3)', marginTop: 1 }}>{it.departamento}</div>}
+            <div style={{ fontSize: 10, color: 'var(--text3)', marginTop: 5 }}>{fmtData(it.vencimento)}</div>
+            {it.valor != null && <div style={{ fontSize: 14, fontWeight: 800, marginTop: 6, color: 'var(--text1)' }}>{fmt(it.valor)}</div>}
+            <span style={{ display: 'inline-block', fontSize: 9.5, fontWeight: 700, borderRadius: 99, padding: '2px 8px', marginTop: 7, color: cor, background: corDim }}>
+              {it.concluido ? 'concluído' : fmtDiasParaVencer(dias)}
+            </span>
           </div>
         );
       })}
