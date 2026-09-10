@@ -1,21 +1,18 @@
 import { useEffect, useState } from 'react';
 import {
-  WalletIcon, ClipboardListIcon, CheckSquareIcon, PaperclipIcon, BarChart3Icon,
+  WalletIcon, ClipboardListIcon, CheckSquareIcon, BarChart3Icon,
   CalendarIcon, DownloadIcon, CheckCircleIcon, FileTextIcon, TrendingUpIcon, LayersIcon,
   AlertTriangleIcon, Share2Icon, ClockIcon,
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
-import { calcularAliquotaNominal } from '../../lib/simplesNacional';
 import { listarLancamentosAIdentificar } from '../contabil/contabilApi';
 import LancamentosIdentificar from '../contabil/LancamentosIdentificar';
 import { abrirLinkAssinado } from '../documentos/documentosApi';
 import {
   obterResumoObrigacoes, obterResumoTarefas, obterResumoFinanceiro, obterDadosGerenciais,
-  obterDocumentosDoMes, obterDocumentosPorObrigacao, obterSituacaoFiscal, obterHistoricoFaturamento, obterCndManual,
+  obterDocumentosPorObrigacao, obterSituacaoFiscal, obterHistoricoFaturamento, obterCndManual,
   obterPendenciasAnteriores, obterValoresDasPendencias, obterDocumentosFiscais,
 } from './painelApi';
-
-const RECEITA_TIPO_LABEL = { normal: 'Normal', st: 'Com ST', monofasico: 'Monofásico' };
 
 const STATUS_OBS_LABEL = { pendente: 'Pendente', concluido: 'Concluído', nao_aplica: 'N/A', vencido: 'Vencido' };
 const STATUS_OBS_COR = {
@@ -165,7 +162,6 @@ export default function PainelClientePage({ clienteId, competencia: competenciaI
   const [cndManual, setCndManual] = useState(null);
   const [pendenciasAnteriores, setPendenciasAnteriores] = useState({ obrigacoes: [], tarefas: [] });
   const [valoresDasPendencias, setValoresDasPendencias] = useState({}); // competencia -> valor_das, só das pendências que parecem DAS
-  const [documentos, setDocumentos] = useState([]);
   const [documentosFiscais, setDocumentosFiscais] = useState([]);
   const [anexosObrigacao, setAnexosObrigacao] = useState({});
   const [carregando, setCarregando] = useState(true);
@@ -177,7 +173,7 @@ export default function PainelClientePage({ clienteId, competencia: competenciaI
       setErro(null);
       try {
         const { dataInicio, dataFim } = competenciaParaPeriodo(competencia);
-        const [{ data: clienteData, error: errCliente }, resObs, resTarefas, resFinanceiro, itensIdentificar, dadosSimples, historico, situFiscal, cndManualData, docs, pendenciasAnt, docsFiscais] = await Promise.all([
+        const [{ data: clienteData, error: errCliente }, resObs, resTarefas, resFinanceiro, itensIdentificar, dadosSimples, historico, situFiscal, cndManualData, pendenciasAnt, docsFiscais] = await Promise.all([
           supabase.from('clientes').select('nome, cnpj, regime, carteira').eq('id', clienteId).single(),
           obterResumoObrigacoes(clienteId, competencia),
           obterResumoTarefas(clienteId, competencia),
@@ -190,7 +186,6 @@ export default function PainelClientePage({ clienteId, competencia: competenciaI
           obterHistoricoFaturamento(clienteId).catch(() => []),
           obterSituacaoFiscal(clienteId, competencia).catch(() => null),
           obterCndManual(clienteId, competencia).catch(() => null),
-          obterDocumentosDoMes(clienteId, { dataInicio, dataFim }).catch(() => []),
           obterPendenciasAnteriores(clienteId, competencia).catch(() => ({ obrigacoes: [], tarefas: [] })),
           obterDocumentosFiscais(clienteId, competencia).catch(() => []),
         ]);
@@ -204,7 +199,6 @@ export default function PainelClientePage({ clienteId, competencia: competenciaI
         setHistoricoFaturamento(historico);
         setSituacaoFiscal(situFiscal);
         setCndManual(cndManualData);
-        setDocumentos(docs);
         setPendenciasAnteriores(pendenciasAnt);
         setDocumentosFiscais(docsFiscais);
         const competenciasDas = [...new Set(
@@ -328,7 +322,6 @@ export default function PainelClientePage({ clienteId, competencia: competenciaI
                   // meses (comum em obrigação legada sem tipo_obrigacao_id, que só
                   // aparecia na lista genérica de pendências) não entrava aqui.
                   const impostosPendentesAnteriores = pendenciasAnteriores.obrigacoes.filter((o) => o.vencimento && ehImposto(o));
-                  const idsImpostosAnteriores = new Set(impostosPendentesAnteriores.map((o) => o.id));
                   const itensImpostos = [
                     ...impostosPendentesAnteriores.map((o) => ({
                       id: o.id,
@@ -356,8 +349,6 @@ export default function PainelClientePage({ clienteId, competencia: competenciaI
                     ...(situacaoFiscal?.debitos || []).map((d) => ({ titulo: d.tributo, sub: d.situacao, valor: d.valor })),
                   ];
 
-                  const aliquotaReal = gerenciais ? calcularAliquotaNominal(gerenciais.anexo, gerenciais.rbt12) : null;
-
                   return (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 22 }}>
 
@@ -370,109 +361,23 @@ export default function PainelClientePage({ clienteId, competencia: competenciaI
                       </div>
                     )}
 
-                    {aliquotaReal != null && gerenciais.faturamento_periodo > 0 && gerenciais.valor_das != null && (
-                      <ComparativoDas aliquotaReal={aliquotaReal} faturamento={gerenciais.faturamento_periodo} dasPago={gerenciais.valor_das} />
-                    )}
-
-                    {(itensImpostos.length > 0 || semData.length > 0) && (
+                    {historicoFaturamento.length > 0 && (
                       <div>
-                        <SecaoTitulo icone={<CalendarIcon size={14} />}>Impostos a vencer</SecaoTitulo>
-                        {itensImpostos.length > 0 && <ImpostosAVencer itens={itensImpostos} onBaixarAnexo={baixarAnexo} />}
-                        {semData.length > 0 && (
-                          <div style={{ marginTop: itensImpostos.length > 0 ? 14 : 0 }}>
-                            <div style={{ fontSize: 10.5, color: 'var(--text3)', fontWeight: 600, marginBottom: 6 }}>Sem vencimento definido</div>
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                              {semData.map((it, i) => (
-                                <ItemLista key={i} titulo={it.titulo} sub={it.sub} statusLabel={fmt(it.valor)} statusCor={['var(--warn)', 'var(--warn-dim)']} />
-                              ))}
-                            </div>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 6 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 10.5, color: 'var(--text3)', fontWeight: 600 }}>
+                            <TrendingUpIcon size={12} /> Evolução do faturamento
                           </div>
-                        )}
-                      </div>
-                    )}
-
-                    {gerenciais && (
-                      <div>
-                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-                          <SecaoTitulo icone={<BarChart3Icon size={14} />}>Informações gerenciais — Simples Nacional</SecaoTitulo>
-                          {historicoFaturamento.length > 0 && (
-                            <button type="button"
-                              onClick={() => window.open(`${window.location.origin}${window.location.pathname}?share=faturamento&empresa=${clienteId}`, '_blank')}
-                              title="Gerar comprovante de faturamento (declaração pra banco, financiamento etc.)"
-                              style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11, fontWeight: 600, color: 'var(--accent)',
-                                background: 'var(--accent-dim)', border: 'none', borderRadius: 99, padding: '5px 10px', cursor: 'pointer', marginBottom: 10, whiteSpace: 'nowrap' }}>
-                              <FileTextIcon size={12} /> Comprovante de faturamento
-                            </button>
-                          )}
+                          <button type="button"
+                            onClick={() => window.open(`${window.location.origin}${window.location.pathname}?share=faturamento&empresa=${clienteId}`, '_blank')}
+                            title="Gerar comprovante de faturamento (declaração pra banco, financiamento etc.)"
+                            style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11, fontWeight: 600, color: 'var(--accent)',
+                              background: 'var(--accent-dim)', border: 'none', borderRadius: 99, padding: '5px 10px', cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                            <FileTextIcon size={12} /> Comprovante de faturamento
+                          </button>
                         </div>
-                        {historicoFaturamento.length > 0 && (
-                          <div style={{ marginBottom: 14 }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 10.5, color: 'var(--text3)', fontWeight: 600, marginBottom: 6 }}>
-                              <TrendingUpIcon size={12} /> Evolução do faturamento
-                            </div>
-                            <GraficoFaturamento dados={historicoFaturamento} />
-                          </div>
-                        )}
-                        {aliquotaReal != null && (
-                          <div style={{ fontSize: 11, color: 'var(--text3)' }}>
-                            Alíquota real (tabela do Simples, sem redução): <b style={{ color: 'var(--text2)' }}>{fmtPct(aliquotaReal)}</b>
-                          </div>
-                        )}
-                        {gerenciais.anexo && (
-                          <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 4 }}>Enquadrado no Anexo {gerenciais.anexo} do Simples Nacional.</div>
-                        )}
-                        {gerenciais.receita_por_tipo?.length > 0 && (
-                          <div style={{ marginTop: 12 }}>
-                            <div style={{ fontSize: 10.5, color: 'var(--text3)', fontWeight: 600, marginBottom: 6 }}>Receita por tipo</div>
-                            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                              {gerenciais.receita_por_tipo.map((r, i) => (
-                                <span key={i} style={{ fontSize: 11, fontWeight: 600, color: 'var(--text2)', background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 99, padding: '4px 10px' }}>
-                                  {RECEITA_TIPO_LABEL[r.tipo] || r.tipo}: {fmt(r.valor)}
-                                </span>
-                              ))}
-                            </div>
-                            <div style={{ fontSize: 10.5, color: 'var(--text3)', marginTop: 6 }}>
-                              A alíquota efetiva acima é sobre o total da competência — parte dessa receita já teve imposto retido antes (ST/monofásico).
-                            </div>
-                          </div>
-                        )}
+                        <GraficoFaturamento dados={historicoFaturamento} />
                       </div>
                     )}
-
-                    {(() => {
-                      // Obrigações vencidas já promovidas pra "Impostos a vencer"
-                      // não repetem aqui embaixo — essa lista é só o restante
-                      // (não-imposto) das pendências de competências anteriores.
-                      const obrigacoesRestantes = pendenciasAnteriores.obrigacoes.filter((o) => !idsImpostosAnteriores.has(o.id));
-                      if (obrigacoesRestantes.length === 0 && pendenciasAnteriores.tarefas.length === 0) return null;
-                      return (
-                      <div>
-                        <SecaoTitulo icone={<AlertTriangleIcon size={14} />}>Pendências de meses anteriores</SecaoTitulo>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                          {obrigacoesRestantes.map((o) => {
-                            const dias = diasParaVencer(o.vencimento);
-                            const valorDas = valoresDasPendencias[o.competencia];
-                            return (
-                              <ItemLista key={o.id} titulo={o.titulo || o.tipo} sub={`${o.departamentos?.nome || 'Geral'} · ${o.competencia}`}
-                                statusLabel={STATUS_OBS_LABEL[o.status]} statusCor={STATUS_OBS_COR[o.status]}
-                                valorTexto={valorDas != null ? fmt(valorDas) : null}
-                                vencimentoTexto={o.vencimento ? `${fmtData(o.vencimento)} · ${fmtDiasParaVencer(dias)}` : null}
-                                vencimentoCor={dias != null && dias < 0 ? 'var(--danger)' : 'var(--text3)'} />
-                            );
-                          })}
-                          {pendenciasAnteriores.tarefas.map((t) => {
-                            const dias = diasParaVencer(t.vencimento);
-                            return (
-                              <ItemLista key={t.id} titulo={t.titulo} sub={`${t.departamento || 'Geral'} · ${t.competencia}`}
-                                statusLabel="Pendente" statusCor={['var(--warn)', 'var(--warn-dim)']}
-                                vencimentoTexto={t.vencimento ? `${fmtData(t.vencimento)} · ${fmtDiasParaVencer(dias)}` : null}
-                                vencimentoCor={dias != null && dias < 0 ? 'var(--danger)' : 'var(--text3)'} />
-                            );
-                          })}
-                        </div>
-                      </div>
-                      );
-                    })()}
 
                     <div>
                       <SecaoTitulo icone={<LayersIcon size={14} />}>Módulos</SecaoTitulo>
@@ -493,33 +398,35 @@ export default function PainelClientePage({ clienteId, competencia: competenciaI
                       </div>
                     </div>
 
-                    {documentos.length > 0 && (
+                    {(itensImpostos.length > 0 || semData.length > 0) && (
                       <div>
-                        <SecaoTitulo icone={<PaperclipIcon size={14} />}>Documentos do mês</SecaoTitulo>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                          {documentos.map((d) => (
-                            <ItemLista key={d.id} titulo={d.tipo_documento_sugerido || d.nome_arquivo} sub={fmtData(d.created_at?.slice(0, 10))}
-                              anexo={d} onBaixarAnexo={baixarAnexo} />
-                          ))}
-                        </div>
+                        <SecaoTitulo icone={<CalendarIcon size={14} />}>Impostos a pagar</SecaoTitulo>
+                        {itensImpostos.length > 0 && <ImpostosAVencer itens={itensImpostos} onBaixarAnexo={baixarAnexo} />}
+                        {semData.length > 0 && (
+                          <div style={{ marginTop: itensImpostos.length > 0 ? 14 : 0 }}>
+                            <div style={{ fontSize: 10.5, color: 'var(--text3)', fontWeight: 600, marginBottom: 6 }}>Sem vencimento definido</div>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                              {semData.map((it, i) => (
+                                <ItemLista key={i} titulo={it.titulo} sub={it.sub} statusLabel={fmt(it.valor)} statusCor={['var(--warn)', 'var(--warn-dim)']} />
+                              ))}
+                            </div>
+                          </div>
+                        )}
                       </div>
                     )}
-
-                    <div>
-                      <SecaoTitulo icone={<WalletIcon size={14} />}>Financeiro</SecaoTitulo>
-                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10 }}>
-                        <Metrica label="Conciliados" valor={financeiro.conciliados} />
-                        <Metrica label="A conciliar" valor={financeiro.aConciliar} cor={financeiro.aConciliar > 0 ? 'var(--warn)' : 'var(--ok)'} />
-                        <Metrica label="Resultado do período" valor={financeiro.resultado != null ? fmt(financeiro.resultado) : '—'}
-                          cor={financeiro.resultado < 0 ? 'var(--danger)' : 'var(--ok)'} />
-                      </div>
-                    </div>
                   </div>
                   );
                 })()}
 
                 {/* ── Aba de módulo (Fiscal/Folha/Legalização/Contábil/...) ── */}
-                {moduloAtual && (
+                {moduloAtual && (() => {
+                  // Contábil volta pro formato em linha de antes — os cards em
+                  // grade (bons pra obrigação isolada) ficam apertados quando
+                  // misturados com o resumo financeiro de conciliação.
+                  const isContabil = moduloAtual.nome === 'Contábil';
+                  const ItemComp = isContabil ? ItemLista : ObrigacaoCard;
+                  const wrapStyle = isContabil ? { display: 'flex', flexDirection: 'column', gap: 6 } : CARDS_GRID;
+                  return (
                   <div>
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
                       <SecaoTitulo icone={<span>{moduloAtual.icone}</span>}>{moduloAtual.nome}</SecaoTitulo>
@@ -527,18 +434,26 @@ export default function PainelClientePage({ clienteId, competencia: competenciaI
                         {moduloAtual.s === 'empty' ? '—' : `${moduloAtual.pct}%`}
                       </span>
                     </div>
+                    {isContabil && (
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10, marginBottom: 14 }}>
+                        <Metrica label="Conciliados" valor={financeiro.conciliados} />
+                        <Metrica label="A conciliar" valor={financeiro.aConciliar} cor={financeiro.aConciliar > 0 ? 'var(--warn)' : 'var(--ok)'} />
+                        <Metrica label="Resultado do período" valor={financeiro.resultado != null ? fmt(financeiro.resultado) : '—'}
+                          cor={financeiro.resultado < 0 ? 'var(--danger)' : 'var(--ok)'} />
+                      </div>
+                    )}
                     {obsDoModulo.length === 0 && tarefasDoModulo.length === 0
                       && !(moduloAtual.nome === 'Contábil' && lancamentos.length > 0)
                       && !(moduloAtual.nome === 'Contábil' && documentosFiscais.length > 0) && (
                       <div style={{ textAlign: 'center', color: 'var(--text3)', fontSize: 13, padding: '24px 0' }}>Nada nesse módulo por enquanto.</div>
                     )}
                     {obsDoModulo.length > 0 && (
-                      <div style={{ ...CARDS_GRID, marginBottom: tarefasDoModulo.length > 0 ? 10 : 0 }}>
+                      <div style={{ ...wrapStyle, marginBottom: tarefasDoModulo.length > 0 ? 10 : 0 }}>
                         {obsDoModulo.map((o) => {
                           const dias = diasParaVencer(o.vencimento);
                           const anexo = anexosObrigacao[o.id];
                           return (
-                            <ObrigacaoCard key={o.id} titulo={o.titulo || o.tipo} sub={o.departamentos?.nome}
+                            <ItemComp key={o.id} titulo={o.titulo || o.tipo} sub={o.departamentos?.nome}
                               statusLabel={STATUS_OBS_LABEL[o.status]} statusCor={STATUS_OBS_COR[o.status]}
                               vencimentoTexto={o.vencimento ? `${fmtData(o.vencimento)} · ${fmtDiasParaVencer(dias)}` : null}
                               vencimentoCor={dias != null && dias < 0 ? 'var(--danger)' : dias != null && dias <= 3 ? 'var(--warn)' : 'var(--text3)'}
@@ -548,11 +463,11 @@ export default function PainelClientePage({ clienteId, competencia: competenciaI
                       </div>
                     )}
                     {tarefasDoModulo.length > 0 && (
-                      <div style={CARDS_GRID}>
+                      <div style={wrapStyle}>
                         {tarefasDoModulo.map((t) => {
                           const dias = diasParaVencer(t.vencimento);
                           return (
-                            <ObrigacaoCard key={t.id} titulo={t.titulo} sub={t.departamento}
+                            <ItemComp key={t.id} titulo={t.titulo} sub={t.departamento}
                               statusLabel={t.concluida ? 'Concluída' : 'Pendente'} statusCor={t.concluida ? ['var(--ok)', 'var(--ok-dim)'] : ['var(--warn)', 'var(--warn-dim)']}
                               vencimentoTexto={t.vencimento && !t.concluida ? `${fmtData(t.vencimento)} · ${fmtDiasParaVencer(dias)}` : null}
                               vencimentoCor={dias != null && dias < 0 ? 'var(--danger)' : dias != null && dias <= 3 ? 'var(--warn)' : 'var(--text3)'} />
@@ -586,9 +501,9 @@ export default function PainelClientePage({ clienteId, competencia: competenciaI
                             <Metrica label={`Entrada (${entradas.length})`} valor={fmt(totalEntrada)} />
                             <Metrica label={`Saída (${saidas.length})`} valor={fmt(totalSaida)} />
                           </div>
-                          <div style={CARDS_GRID}>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                             {documentosFiscais.map((d) => (
-                              <ObrigacaoCard key={d.id} titulo={d.razao_social_terceiro || 'Documento fiscal'}
+                              <ItemLista key={d.id} titulo={d.razao_social_terceiro || 'Documento fiscal'}
                                 sub={`${d.modelo || ''}${d.numero ? ` ${d.numero}` : ''} · ${fmtData(d.data_emissao)}`}
                                 valorTexto={fmt(d.valor_total)}
                                 statusLabel={d.tipo_movimento === 'entrada' ? 'Entrada' : d.tipo_movimento === 'saida' ? 'Saída' : null}
@@ -605,7 +520,8 @@ export default function PainelClientePage({ clienteId, competencia: competenciaI
                       </div>
                     )}
                   </div>
-                )}
+                  );
+                })()}
 
                 {/* ── Aba CND ── */}
                 {abaAtiva === 'cnd' && (
@@ -835,40 +751,6 @@ function StatusBadge({ s, titulo, sub }) {
         <div style={{ fontSize: 12.5, fontWeight: 700, color: '#fff' }}>{titulo}</div>
         <div style={{ fontSize: 9.5, color: 'var(--navy-text-dim)' }}>{sub}</div>
       </div>
-    </div>
-  );
-}
-
-// Comparação "Simples cheio x pago" em barras — mais fácil de comparar de
-// relance do que dois números lado a lado.
-function ComparativoDas({ aliquotaReal, faturamento, dasPago }) {
-  const cheio = faturamento * (aliquotaReal / 100);
-  const max = Math.max(cheio, dasPago, 1);
-  const economia = cheio - dasPago;
-  return (
-    <div style={{ background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: '12px 14px' }}>
-      <div style={{ fontSize: 10, color: 'var(--text3)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.03em', marginBottom: 9 }}>
-        Simples "cheio" (tabela) x Simples pago
-      </div>
-      <BarraComparativa label={`Cheio (${fmtPct(aliquotaReal)})`} valor={cheio} pct={(cheio / max) * 100} cor="var(--text3)" />
-      <BarraComparativa label="Pago (DAS real)" valor={dasPago} pct={(dasPago / max) * 100} cor="var(--ok)" />
-      {Math.abs(economia) > 0.01 && (
-        <div style={{ fontSize: 11.5, color: economia > 0 ? 'var(--ok)' : 'var(--text2)', fontWeight: 600, marginTop: 9 }}>
-          {economia > 0 ? `Economia de ${fmt(economia)} nessa competência (aproveitamento de crédito/segregação de receita).` : `${fmt(-economia)} a mais que o "cheio" nessa competência.`}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function BarraComparativa({ label, valor, pct, cor }) {
-  return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 7 }}>
-      <span style={{ fontSize: 11, color: 'var(--text2)', width: 104, flexShrink: 0 }}>{label}</span>
-      <div style={{ flex: 1, height: 8, background: 'var(--surface3)', borderRadius: 99, overflow: 'hidden' }}>
-        <div style={{ height: '100%', borderRadius: 99, width: `${pct}%`, background: cor }} />
-      </div>
-      <span style={{ fontSize: 12, fontWeight: 700, width: 86, textAlign: 'right', flexShrink: 0 }}>{fmt(valor)}</span>
     </div>
   );
 }
