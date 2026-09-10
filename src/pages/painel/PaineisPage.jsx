@@ -67,7 +67,7 @@ export default function PaineisPage() {
         </div>
       )}
 
-      {clienteAtual && <PainelClientePage key={clienteAtual.id} clienteId={clienteAtual.id} competencia={compSel} />}
+      {clienteAtual && <PainelClientePage key={clienteAtual.id} clienteId={clienteAtual.id} competencia={compSel} admin />}
     </div>
   )
 }

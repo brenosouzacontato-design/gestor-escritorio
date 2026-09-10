@@ -226,6 +226,15 @@ async function backfillHistoricoFaturamento(clienteId, competenciaAtual, histori
   return data?.length || 0;
 }
 
+// Quais seções do Resumo o escritório escondeu do cliente (edição só
+// aparece pra quem abre o painel de dentro do app logado — ver prop
+// `admin` de PainelClientePage). Grava a lista inteira a cada mudança
+// (simples de mais pra precisar de upsert por chave).
+export async function definirSecoesOcultasPainel(clienteId, secoesOcultas) {
+  const { error } = await supabase.from('clientes').update({ painel_secoes_ocultas: secoesOcultas }).eq('id', clienteId);
+  if (error) throw error;
+}
+
 export async function obterDadosGerenciais(clienteId, competencia) {
   const { data, error } = await supabase
     .from('dados_gerenciais_simples')

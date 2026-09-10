@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import {
   WalletIcon, ClipboardListIcon, CheckSquareIcon, BarChart3Icon,
   CalendarIcon, DownloadIcon, CheckCircleIcon, FileTextIcon, TrendingUpIcon, LayersIcon,
-  AlertTriangleIcon, Share2Icon, ClockIcon,
+  AlertTriangleIcon, Share2Icon, ClockIcon, SettingsIcon, EyeIcon, EyeOffIcon,
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { listarLancamentosAIdentificar } from '../contabil/contabilApi';
@@ -11,7 +11,7 @@ import { abrirLinkAssinado } from '../documentos/documentosApi';
 import {
   obterResumoObrigacoes, obterResumoTarefas, obterResumoFinanceiro, obterDadosGerenciais,
   obterDocumentosPorObrigacao, obterSituacaoFiscal, obterHistoricoFaturamento, obterCndManual,
-  obterPendenciasAnteriores, obterValoresDasPendencias, obterDocumentosFiscais,
+  obterPendenciasAnteriores, obterValoresDasPendencias, obterDocumentosFiscais, definirSecoesOcultasPainel,
 } from './painelApi';
 
 const STATUS_OBS_LABEL = { pendente: 'Pendente', concluido: 'Concluído', nao_aplica: 'N/A', vencido: 'Vencido' };
@@ -148,10 +148,16 @@ function moduloCND(situacaoFiscal, cndManual) {
 // (quando enviados). Acessada via ?painel=<clienteId>&competencia=MM/YYYY
 // (ver main.jsx). Mesmo padrão visual de RelatorioCompartilhadoPage.jsx /
 // IdentificarLancamentosPage.jsx.
-export default function PainelClientePage({ clienteId, competencia: competenciaInicial }) {
+//
+// `admin` só vem true quando aberto de dentro do app logado (ver
+// PainelViewerModal.jsx/PaineisPage.jsx) — habilita o modo de edição que
+// mostra/esconde seções do Resumo pro cliente. No link público (main.jsx)
+// essa prop nunca é passada, então o cliente nunca vê o controle.
+export default function PainelClientePage({ clienteId, competencia: competenciaInicial, admin = false }) {
   const [competencia, setCompetencia] = useState(competenciaInicial);
   const opcoesComp = opcoesCompetencia(competenciaInicial);
-  const [cliente, setCliente] = useState(null); // {nome, cnpj, regime, carteira}
+  const [cliente, setCliente] = useState(null); // {nome, cnpj, regime, carteira, painel_secoes_ocultas}
+  const [editandoPainel, setEditandoPainel] = useState(false);
   const [aba, setAba] = useState('resumo'); // 'resumo' | nome do módulo | 'cnd'
   const [obs, setObs] = useState(null);
   const [tarefas, setTarefas] = useState(null);
@@ -175,7 +181,7 @@ export default function PainelClientePage({ clienteId, competencia: competenciaI
       try {
         const { dataInicio, dataFim } = competenciaParaPeriodo(competencia);
         const [{ data: clienteData, error: errCliente }, resObs, resTarefas, resFinanceiro, itensIdentificar, dadosSimples, historico, situFiscal, cndManualData, pendenciasAnt, docsFiscais] = await Promise.all([
-          supabase.from('clientes').select('nome, cnpj, regime, carteira').eq('id', clienteId).single(),
+          supabase.from('clientes').select('nome, cnpj, regime, carteira, painel_secoes_ocultas').eq('id', clienteId).single(),
           obterResumoObrigacoes(clienteId, competencia),
           obterResumoTarefas(clienteId, competencia),
           obterResumoFinanceiro(clienteId, { dataInicio, dataFim }),
@@ -223,6 +229,13 @@ export default function PainelClientePage({ clienteId, competencia: competenciaI
     await abrirLinkAssinado(documento.storage_path).catch(() => null);
   };
 
+  const secoesOcultas = cliente?.painel_secoes_ocultas || [];
+  const toggleSecao = async (chave) => {
+    const proxima = secoesOcultas.includes(chave) ? secoesOcultas.filter((s) => s !== chave) : [...secoesOcultas, chave];
+    setCliente((c) => ({ ...c, painel_secoes_ocultas: proxima }));
+    await definirSecoesOcultasPainel(clienteId, proxima).catch(() => {});
+  };
+
   // Status geral pra o selo em destaque no cabeçalho — "atrasado" pesa mais
   // que "pendente" (uma pendência de mês anterior sempre entra no cálculo,
   // o painel é histórico até ser resolvida, ver obterPendenciasAnteriores).
@@ -250,13 +263,29 @@ export default function PainelClientePage({ clienteId, competencia: competenciaI
               </div>
               <div style={{ fontSize: 19, color: '#fff', fontWeight: 700, marginTop: 4 }}>{carregando ? '...' : cliente?.nome}</div>
             </div>
-            {heroStatus && <StatusBadge {...heroStatus} />}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+              {heroStatus && <StatusBadge {...heroStatus} />}
+              {admin && (
+                <button type="button" onClick={() => setEditandoPainel((v) => !v)}
+                  title={editandoPainel ? 'Sair do modo de edição' : 'Editar quais seções o cliente vê'}
+                  style={{ width: 34, height: 34, borderRadius: '50%', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    cursor: 'pointer', border: `1px solid ${editandoPainel ? 'var(--accent)' : 'rgba(255,255,255,.15)'}`,
+                    background: editandoPainel ? 'var(--accent)' : 'rgba(255,255,255,.08)', color: '#fff' }}>
+                  <SettingsIcon size={15} />
+                </button>
+              )}
+            </div>
           </div>
           <select value={competencia} onChange={(e) => setCompetencia(e.target.value)}
             style={{ marginTop: 12, fontSize: 12, color: '#fff', background: 'rgba(255,255,255,.1)', border: '1px solid rgba(255,255,255,.2)',
               borderRadius: 6, padding: '3px 8px', fontWeight: 600 }}>
             {opcoesComp.map((c) => <option key={c} value={c} style={{ color: '#000' }}>Competência {c}</option>)}
           </select>
+          {admin && editandoPainel && (
+            <div style={{ marginTop: 10, fontSize: 11, color: 'var(--navy-text)', background: 'rgba(255,255,255,.08)', borderRadius: 6, padding: '6px 10px' }}>
+              Modo de edição — só você vê isso. Use o ícone {'👁'} em cada seção pra escolher o que o cliente enxerga no Resumo.
+            </div>
+          )}
           {cliente && (
             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 10 }}>
               {cliente.cnpj && (
@@ -350,70 +379,82 @@ export default function PainelClientePage({ clienteId, competencia: competenciaI
                     ...(situacaoFiscal?.debitos || []).map((d) => ({ titulo: d.tributo, sub: d.situacao, valor: d.valor })),
                   ];
 
+                  const propsSecao = { secoesOcultas, editando: admin && editandoPainel, onToggle: toggleSecao };
+
                   return (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 22 }}>
 
                     {gerenciais && (
-                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 10 }}>
-                        <Metrica label="Faturamento do período" valor={fmt(gerenciais.faturamento_periodo)} />
-                        <Metrica label="RBT12" valor={fmt(gerenciais.rbt12)} />
-                        <Metrica label="Alíquota efetiva" valor={fmtPct(gerenciais.aliquota_efetiva)} cor="var(--accent)" />
-                        <Metrica label="DAS a pagar" valor={fmt(gerenciais.valor_das)} />
-                      </div>
+                      <SecaoToggleable chave="kpis" {...propsSecao}>
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 10 }}>
+                          <Metrica label="Faturamento do período" valor={fmt(gerenciais.faturamento_periodo)} />
+                          <Metrica label="RBT12" valor={fmt(gerenciais.rbt12)} />
+                          <Metrica label="Alíquota efetiva" valor={fmtPct(gerenciais.aliquota_efetiva)} cor="var(--accent)" />
+                          <Metrica label="DAS a pagar" valor={fmt(gerenciais.valor_das)} />
+                        </div>
+                      </SecaoToggleable>
                     )}
 
                     {historicoFaturamento.length > 0 && (
-                      <div>
-                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 6 }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 10.5, color: 'var(--text3)', fontWeight: 600 }}>
-                            <TrendingUpIcon size={12} /> Evolução do faturamento
+                      <SecaoToggleable chave="grafico" {...propsSecao}>
+                        <div>
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 6 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 10.5, color: 'var(--text3)', fontWeight: 600 }}>
+                              <TrendingUpIcon size={12} /> Evolução do faturamento
+                            </div>
+                            <button type="button"
+                              onClick={() => window.open(`${window.location.origin}${window.location.pathname}?share=faturamento&empresa=${clienteId}`, '_blank')}
+                              title="Gerar comprovante de faturamento (declaração pra banco, financiamento etc.)"
+                              style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11, fontWeight: 600, color: 'var(--accent)',
+                                background: 'var(--accent-dim)', border: 'none', borderRadius: 99, padding: '5px 10px', cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                              <FileTextIcon size={12} /> Comprovante de faturamento
+                            </button>
                           </div>
-                          <button type="button"
-                            onClick={() => window.open(`${window.location.origin}${window.location.pathname}?share=faturamento&empresa=${clienteId}`, '_blank')}
-                            title="Gerar comprovante de faturamento (declaração pra banco, financiamento etc.)"
-                            style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11, fontWeight: 600, color: 'var(--accent)',
-                              background: 'var(--accent-dim)', border: 'none', borderRadius: 99, padding: '5px 10px', cursor: 'pointer', whiteSpace: 'nowrap' }}>
-                            <FileTextIcon size={12} /> Comprovante de faturamento
-                          </button>
+                          <GraficoFaturamento dados={historicoFaturamento} />
                         </div>
-                        <GraficoFaturamento dados={historicoFaturamento} />
-                      </div>
+                      </SecaoToggleable>
                     )}
 
-                    <div>
-                      <SecaoTitulo icone={<LayersIcon size={14} />}>Módulos</SecaoTitulo>
-                      <div style={{ display: 'grid', gridTemplateColumns: `repeat(auto-fit, minmax(70px, 1fr))`, gap: 8 }}>
-                        {[...modulos, cnd].map((m) => (
-                          <RingCard key={m.nome} {...m} onClick={() => setAba(m.nome === 'CND' ? 'cnd' : m.nome)} />
-                        ))}
+                    <SecaoToggleable chave="modulos" {...propsSecao}>
+                      <div>
+                        <SecaoTitulo icone={<LayersIcon size={14} />}>Módulos</SecaoTitulo>
+                        <div style={{ display: 'grid', gridTemplateColumns: `repeat(auto-fit, minmax(70px, 1fr))`, gap: 8 }}>
+                          {[...modulos, cnd].map((m) => (
+                            <RingCard key={m.nome} {...m} onClick={() => setAba(m.nome === 'CND' ? 'cnd' : m.nome)} />
+                          ))}
+                        </div>
                       </div>
-                    </div>
+                    </SecaoToggleable>
 
-                    <div>
-                      <SecaoTitulo icone={<ClipboardListIcon size={14} />}>Visão geral do mês</SecaoTitulo>
-                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-                        <ResumoCard titulo="Obrigações" icone={<ClipboardListIcon size={13} />} pct={obs.total ? Math.round((obs.ok / obs.total) * 100) : 0}
-                          linha1={`${obs.ok}/${obs.total} concluídas`} alerta={obs.vencido > 0 ? `${obs.vencido} vencida${obs.vencido !== 1 ? 's' : ''}` : null} />
-                        <ResumoCard titulo="Tarefas" icone={<CheckSquareIcon size={13} />} pct={tarefas.total ? Math.round((tarefas.concluidas / tarefas.total) * 100) : 0}
-                          linha1={`${tarefas.concluidas}/${tarefas.total} concluídas`} alerta={null} />
+                    <SecaoToggleable chave="visao_geral" {...propsSecao}>
+                      <div>
+                        <SecaoTitulo icone={<ClipboardListIcon size={14} />}>Visão geral do mês</SecaoTitulo>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                          <ResumoCard titulo="Obrigações" icone={<ClipboardListIcon size={13} />} pct={obs.total ? Math.round((obs.ok / obs.total) * 100) : 0}
+                            linha1={`${obs.ok}/${obs.total} concluídas`} alerta={obs.vencido > 0 ? `${obs.vencido} vencida${obs.vencido !== 1 ? 's' : ''}` : null} />
+                          <ResumoCard titulo="Tarefas" icone={<CheckSquareIcon size={13} />} pct={tarefas.total ? Math.round((tarefas.concluidas / tarefas.total) * 100) : 0}
+                            linha1={`${tarefas.concluidas}/${tarefas.total} concluídas`} alerta={null} />
+                        </div>
                       </div>
-                    </div>
+                    </SecaoToggleable>
 
                     {(itensImpostos.length > 0 || semData.length > 0) && (
-                      <div>
-                        <SecaoTitulo icone={<CalendarIcon size={14} />}>Impostos a pagar</SecaoTitulo>
-                        {itensImpostos.length > 0 && <ImpostosAVencer itens={itensImpostos} onBaixarAnexo={baixarAnexo} />}
-                        {semData.length > 0 && (
-                          <div style={{ marginTop: itensImpostos.length > 0 ? 14 : 0 }}>
-                            <div style={{ fontSize: 10.5, color: 'var(--text3)', fontWeight: 600, marginBottom: 6 }}>Sem vencimento definido</div>
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                              {semData.map((it, i) => (
-                                <ItemLista key={i} titulo={it.titulo} sub={it.sub} statusLabel={fmt(it.valor)} statusCor={['var(--warn)', 'var(--warn-dim)']} />
-                              ))}
+                      <SecaoToggleable chave="impostos" {...propsSecao}>
+                        <div>
+                          <SecaoTitulo icone={<CalendarIcon size={14} />}>Impostos a pagar</SecaoTitulo>
+                          {itensImpostos.length > 0 && <ImpostosAVencer itens={itensImpostos} onBaixarAnexo={baixarAnexo} />}
+                          {semData.length > 0 && (
+                            <div style={{ marginTop: itensImpostos.length > 0 ? 14 : 0 }}>
+                              <div style={{ fontSize: 10.5, color: 'var(--text3)', fontWeight: 600, marginBottom: 6 }}>Sem vencimento definido</div>
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                                {semData.map((it, i) => (
+                                  <ItemLista key={i} titulo={it.titulo} sub={it.sub} statusLabel={fmt(it.valor)} statusCor={['var(--warn)', 'var(--warn-dim)']} />
+                                ))}
+                              </div>
                             </div>
-                          </div>
-                        )}
-                      </div>
+                          )}
+                        </div>
+                      </SecaoToggleable>
                     )}
                   </div>
                   );
@@ -612,6 +653,28 @@ function SecaoTitulo({ children, icone }) {
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.04em', marginBottom: 10 }}>
       {icone} {children}
+    </div>
+  );
+}
+
+// Envolve uma seção do Resumo pra deixá-la mostrável/ocultável só pro
+// administrador (`editando` só vem true quando `admin` e o modo de edição
+// do cabeçalho estão ligados). Fora do modo de edição — inclusive pro
+// cliente, que nunca tem `editando` true — uma seção oculta simplesmente
+// não renderiza nada, igual antes dessa feature existir.
+function SecaoToggleable({ chave, secoesOcultas, editando, onToggle, children }) {
+  const oculta = secoesOcultas.includes(chave);
+  if (!editando) return oculta ? null : children;
+  return (
+    <div style={{ position: 'relative', opacity: oculta ? 0.4 : 1, border: '1px dashed var(--border2)', borderRadius: 'var(--r-md)', padding: 10 }}>
+      <button type="button" onClick={() => onToggle(chave)}
+        title={oculta ? 'Mostrar essa seção pro cliente' : 'Ocultar essa seção pro cliente'}
+        style={{ position: 'absolute', top: 8, right: 8, zIndex: 1, width: 26, height: 26, borderRadius: 99, border: 'none',
+          display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer',
+          background: oculta ? 'var(--surface3)' : 'var(--accent-dim)', color: oculta ? 'var(--text3)' : 'var(--accent)' }}>
+        {oculta ? <EyeOffIcon size={13} /> : <EyeIcon size={13} />}
+      </button>
+      {children}
     </div>
   );
 }

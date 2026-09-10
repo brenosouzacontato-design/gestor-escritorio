@@ -76,7 +76,7 @@ export default function PainelViewerModal({ clientes, indiceInicial, competencia
         </button>
       </div>
       <div style={{ flex: 1, overflowY: 'auto' }} onTouchStart={onTouchStart} onTouchEnd={onTouchEnd}>
-        <PainelClientePage key={clienteAtual.id} clienteId={clienteAtual.id} competencia={competencia} />
+        <PainelClientePage key={clienteAtual.id} clienteId={clienteAtual.id} competencia={competencia} admin />
       </div>
     </div>
   );

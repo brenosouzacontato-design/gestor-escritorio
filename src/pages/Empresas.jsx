@@ -98,6 +98,23 @@ function DeptPill({ data, onClick }) {
   )
 }
 
+// Cabeçalho de cada coluna do modal da empresa (obrigações/tarefas "a
+// entregar" x "entregue") — só o nome e a contagem, o filtro em si já vem
+// pronto de fora (aEntregar/entregues).
+function ColunaTitulo({ label, qtd, cor }) {
+  return (
+    <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:6,
+      fontSize:10.5, fontWeight:700, color:'var(--text3)', textTransform:'uppercase', letterSpacing:'.03em' }}>
+      {label}
+      <span style={{ background:cor+'22', color:cor, borderRadius:99, padding:'1px 7px', fontSize:10 }}>{qtd}</span>
+    </div>
+  )
+}
+
+function VazioColuna({ texto }) {
+  return <div style={{ textAlign:'center', color:'var(--text3)', fontSize:11, padding:'16px 0' }}>{texto}</div>
+}
+
 export default function Empresas({ onOpenTarefas, clienteInicialId, onClienteInicialConsumido }) {
   const clientes        = useStore(s => s.clientes)
   const obrigacoes      = useStore(s => s.obrigacoes || [])
@@ -903,18 +920,17 @@ export default function Empresas({ onOpenTarefas, clienteInicialId, onClienteIni
               {/* Body */}
               <div style={{ flex:1, overflowY:'auto', padding:'10px 14px', display:'flex', flexDirection:'column', gap:7, background:'var(--bg)' }}>
 
-                {/* ── Obrigações ── */}
-                {drawerTab === 'obrig' && <>
-                  {drawerObs.length === 0 && (
-                    <div style={{ textAlign:'center', color:'var(--text3)', fontSize:12, padding:'24px 0' }}>Sem obrigações registradas</div>
-                  )}
-                  {drawerObs.map(o => {
+                {/* ── Obrigações — duas colunas: a entregar (pendente/vencido) x entregue (concluído/n.a.) ── */}
+                {drawerTab === 'obrig' && (() => {
+                  const aEntregar = drawerObs.filter(o => o.status === 'pendente' || o.status === 'vencido')
+                  const entregues = drawerObs.filter(o => o.status === 'concluido' || o.status === 'nao_aplica')
+                  const CardObs = ({ o }) => {
                     const cfg = STATUS_OBS_COLOR[o.status] || STATUS_OBS_COLOR.pendente
                     const busy = updatingId === o.id
                     const vencendo = isVencendo(o)
                     const lembrete = lembreteDoItem(o.id, null)
                     return (
-                      <div key={o.id} style={{ background:'var(--surface)', border:'1px solid var(--border)',
+                      <div style={{ background:'var(--surface)', border:'1px solid var(--border)',
                         borderLeft: vencendo ? `3px solid ${COR_VENCENDO}` : '1px solid var(--border)', borderRadius:8, padding:'10px 12px' }}>
                         <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:6, marginBottom: o.vencimento ? 6 : 0 }}>
                           <span style={{ fontSize:12, fontWeight:500, color:'var(--text1)' }}>{o.titulo || o.tipo}</span>
@@ -947,22 +963,35 @@ export default function Empresas({ onOpenTarefas, clienteInicialId, onClienteIni
                         )}
                       </div>
                     )
-                  })}
-                </>}
+                  }
+                  return (
+                    <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10 }}>
+                      <div style={{ display:'flex', flexDirection:'column', gap:7, minWidth:0 }}>
+                        <ColunaTitulo label="A entregar" qtd={aEntregar.length} cor="var(--warn)" />
+                        {aEntregar.length === 0 && <VazioColuna texto="Nada pendente" />}
+                        {aEntregar.map(o => <CardObs key={o.id} o={o} />)}
+                      </div>
+                      <div style={{ display:'flex', flexDirection:'column', gap:7, minWidth:0 }}>
+                        <ColunaTitulo label="Entregue" qtd={entregues.length} cor="var(--ok)" />
+                        {entregues.length === 0 && <VazioColuna texto="Nada entregue ainda" />}
+                        {entregues.map(o => <CardObs key={o.id} o={o} />)}
+                      </div>
+                    </div>
+                  )
+                })()}
 
-                {/* ── Tarefas ── */}
-                {drawerTab === 'tarefas' && <>
-                  {drawerTasks.length === 0 && (
-                    <div style={{ textAlign:'center', color:'var(--text3)', fontSize:12, padding:'24px 0' }}>Sem tarefas</div>
-                  )}
-                  {drawerTasks.map(t => {
+                {/* ── Tarefas — duas colunas: a entregar x entregue ── */}
+                {drawerTab === 'tarefas' && (() => {
+                  const aEntregar = drawerTasks.filter(t => !t.concluida)
+                  const entregues = drawerTasks.filter(t => t.concluida)
+                  const CardTask = ({ t }) => {
                     const overdue = isOverdue(t.vencimento) && !t.concluida
                     const altaPrioridade = t.prioridade === 'alta' && !t.concluida
                     const corStatus = overdue ? 'var(--danger)' : altaPrioridade ? 'var(--warn)' : 'transparent'
                     const busy = updatingId === t.id
                     const lembrete = lembreteDoItem(null, t.id)
                     return (
-                      <div key={t.id} style={{ background:'var(--surface2)', border:'1px solid var(--border)',
+                      <div style={{ background:'var(--surface2)', border:'1px solid var(--border)',
                         borderLeft:`3px solid ${corStatus}`, borderRadius:8, padding:'10px 12px' }}>
                         <div style={{ display:'flex', alignItems:'flex-start', gap:8 }}>
                           <button onClick={() => handleToggleTask(t)} disabled={busy}
@@ -1004,8 +1033,22 @@ export default function Empresas({ onOpenTarefas, clienteInicialId, onClienteIni
                         </div>
                       </div>
                     )
-                  })}
-                </>}
+                  }
+                  return (
+                    <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10 }}>
+                      <div style={{ display:'flex', flexDirection:'column', gap:7, minWidth:0 }}>
+                        <ColunaTitulo label="A entregar" qtd={aEntregar.length} cor="var(--warn)" />
+                        {aEntregar.length === 0 && <VazioColuna texto="Nada pendente" />}
+                        {aEntregar.map(t => <CardTask key={t.id} t={t} />)}
+                      </div>
+                      <div style={{ display:'flex', flexDirection:'column', gap:7, minWidth:0 }}>
+                        <ColunaTitulo label="Entregue" qtd={entregues.length} cor="var(--ok)" />
+                        {entregues.length === 0 && <VazioColuna texto="Nada entregue ainda" />}
+                        {entregues.map(t => <CardTask key={t.id} t={t} />)}
+                      </div>
+                    </div>
+                  )
+                })()}
 
                 {/* ── Anexos ── */}
                 {drawerTab === 'anexos' && <AbaAnexosEmpresa clienteId={drawer.c.id} />}
