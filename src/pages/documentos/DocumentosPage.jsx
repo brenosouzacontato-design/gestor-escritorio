@@ -5,7 +5,7 @@ import { useToast } from '../../components/shared'
 import {
   uploadArquivo, listarCandidatos, criarDocumento, confirmarDocumento,
   listarDocumentosConfirmados, listarDocumentosPendentes, excluirDocumento,
-  criarLinkAssinado, itemResolvido, listarUploadsWhatsapp,
+  abrirLinkAssinado, itemResolvido, listarUploadsWhatsapp,
 } from './documentosApi'
 
 const ACCEPT = '.pdf,.jpg,.jpeg,.png,.webp,application/pdf,image/jpeg,image/png,image/webp'
@@ -302,8 +302,7 @@ function AbaRevisar() {
 
   const baixar = async (doc) => {
     try {
-      const url = await criarLinkAssinado(doc.storage_path)
-      window.open(url, '_blank')
+      await abrirLinkAssinado(doc.storage_path)
     } catch (e) {
       show?.('Erro ao gerar link: ' + e.message)
     }
@@ -423,8 +422,7 @@ function AbaConcluidos() {
 
   const baixar = async (doc) => {
     try {
-      const url = await criarLinkAssinado(doc.storage_path)
-      window.open(url, '_blank')
+      await abrirLinkAssinado(doc.storage_path)
     } catch (e) {
       show?.('Erro ao gerar link: ' + e.message)
     }

@@ -23,7 +23,7 @@ function competenciaOrdinal(c) {
 export async function obterResumoObrigacoes(clienteId, competencia) {
   const { data, error } = await supabase
     .from('obrigacoes')
-    .select('id, titulo, tipo, status, vencimento, departamento_id, departamentos(nome, icone)')
+    .select('id, titulo, tipo, status, vencimento, departamento_id, departamentos(nome, icone), tipos_obrigacao(eh_imposto)')
     .eq('cliente_id', clienteId)
     .eq('competencia', competencia);
   if (error) throw error;

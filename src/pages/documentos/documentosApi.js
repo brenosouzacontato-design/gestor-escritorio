@@ -154,6 +154,27 @@ export async function criarLinkAssinado(storagePath, segundos = 60 * 5) {
   return data.signedUrl;
 }
 
+// Abre o anexo numa aba nova a partir de um clique. Não dá pra só fazer
+// `await criarLinkAssinado(...)` e depois `window.open(url)` — o navegador
+// só reconhece um `window.open` como iniciado pelo usuário se ele rodar
+// *síncrono* dentro do handler de clique; depois de um `await` (a ida ao
+// Storage pra assinar a URL) a aba já não conta mais como gesto do usuário
+// e é bloqueada como pop-up, silenciosamente (sem erro pra cair no catch) —
+// por isso os anexos pareciam simplesmente não baixar. Abrindo a aba em
+// branco antes do await e só preenchendo o destino depois contorna isso.
+export async function abrirLinkAssinado(storagePath, segundos = 60 * 5) {
+  const aba = window.open('', '_blank');
+  try {
+    const url = await criarLinkAssinado(storagePath, segundos);
+    if (aba) aba.location.href = url;
+    else window.open(url, '_blank');
+    return url;
+  } catch (e) {
+    aba?.close();
+    throw e;
+  }
+}
+
 // Usado pela página pública de compartilhamento (DocumentoCompartilhadoPage,
 // acessada via ?doc=<id> — ver main.jsx). Gera uma signed URL nova a cada
 // acesso (o bucket é privado, não dá pra usar getPublicUrl) — o link

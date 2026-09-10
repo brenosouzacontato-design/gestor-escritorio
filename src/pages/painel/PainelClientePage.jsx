@@ -8,7 +8,7 @@ import { supabase } from '../../lib/supabase';
 import { calcularAliquotaNominal } from '../../lib/simplesNacional';
 import { listarLancamentosAIdentificar } from '../contabil/contabilApi';
 import LancamentosIdentificar from '../contabil/LancamentosIdentificar';
-import { criarLinkAssinado } from '../documentos/documentosApi';
+import { abrirLinkAssinado } from '../documentos/documentosApi';
 import {
   obterResumoObrigacoes, obterResumoTarefas, obterResumoFinanceiro, obterDadosGerenciais,
   obterDocumentosDoMes, obterDocumentosPorObrigacao, obterSituacaoFiscal, obterHistoricoFaturamento, obterCndManual,
@@ -212,8 +212,7 @@ export default function PainelClientePage({ clienteId, competencia: competenciaI
   }, [clienteId, competencia]);
 
   const baixarAnexo = async (documento) => {
-    const url = await criarLinkAssinado(documento.storage_path).catch(() => null);
-    if (url) window.open(url, '_blank');
+    await abrirLinkAssinado(documento.storage_path).catch(() => null);
   };
 
   return (
@@ -292,7 +291,7 @@ export default function PainelClientePage({ clienteId, competencia: competenciaI
                   const obrigDas = obs.itens.find((o) => `${o.titulo || ''} ${o.tipo || ''}`.toLowerCase().includes('das'));
                   const temValorDas = gerenciais?.valor_das != null && gerenciais.valor_das > 0;
                   const itensTimeline = obs.itens
-                    .filter((o) => o.vencimento)
+                    .filter((o) => o.vencimento && o.tipos_obrigacao?.eh_imposto)
                     .map((o) => ({
                       id: o.id,
                       titulo: o.titulo || o.tipo,
@@ -391,7 +390,7 @@ export default function PainelClientePage({ clienteId, competencia: competenciaI
 
                     {(itensTimeline.length > 0 || semData.length > 0) && (
                       <div>
-                        <SecaoTitulo icone={<CalendarIcon size={14} />}>Vencimentos do mês</SecaoTitulo>
+                        <SecaoTitulo icone={<CalendarIcon size={14} />}>Impostos a vencer</SecaoTitulo>
                         {itensTimeline.length > 0 && <LinhaDoTempoVencimentos itens={itensTimeline} />}
                         {semData.length > 0 && (
                           <div style={{ marginTop: itensTimeline.length > 0 ? 14 : 0 }}>

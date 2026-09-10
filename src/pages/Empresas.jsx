@@ -7,7 +7,7 @@ import { listarDepartamentos, criarDepartamento, gerarObrigacoesRecorrentesCompe
 import { NovaObrigacaoModal, NovaTarefaModuloModal, ModalTarefasLote, ModalObrigacoesLote, ModalBase } from './andamento/modaisObrigacao'
 import { uploadDeclaracaoSimples, uploadSituacaoFiscal, obterCndManual, salvarCndManual } from './painel/painelApi'
 import PainelViewerModal from './painel/PainelViewerModal'
-import { listarDocumentosPorCliente, criarLinkAssinado } from './documentos/documentosApi'
+import { listarDocumentosPorCliente, abrirLinkAssinado } from './documentos/documentosApi'
 import { criarLembrete, listarLembretesPorItens, excluirLembrete } from './andamento/lembretesApi'
 
 // Casamento histórico tipo-texto → departamento, só pra competências
@@ -1182,8 +1182,7 @@ function AbaAnexosEmpresa({ clienteId }) {
 
   const baixar = async (doc) => {
     try {
-      const url = await criarLinkAssinado(doc.storage_path)
-      window.open(url, '_blank')
+      await abrirLinkAssinado(doc.storage_path)
     } catch (e) {
       show?.('Erro ao gerar link: ' + e.message)
     }
@@ -1340,8 +1339,7 @@ function ModalCndManual({ cliente, competencia, onClose, onSaved }) {
 
   const baixarAnexo = async (path) => {
     try {
-      const url = await criarLinkAssinado(path)
-      window.open(url, '_blank')
+      await abrirLinkAssinado(path)
     } catch (e) {
       show?.('Erro ao gerar link: ' + e.message)
     }
