@@ -533,12 +533,12 @@ export default function PainelClientePage({ clienteId, competencia: competenciaI
                       <div style={{ textAlign: 'center', color: 'var(--text3)', fontSize: 13, padding: '24px 0' }}>Nada nesse módulo por enquanto.</div>
                     )}
                     {obsDoModulo.length > 0 && (
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: tarefasDoModulo.length > 0 ? 10 : 0 }}>
+                      <div style={{ ...CARDS_GRID, marginBottom: tarefasDoModulo.length > 0 ? 10 : 0 }}>
                         {obsDoModulo.map((o) => {
                           const dias = diasParaVencer(o.vencimento);
                           const anexo = anexosObrigacao[o.id];
                           return (
-                            <ItemLista key={o.id} titulo={o.titulo || o.tipo} sub={o.departamentos?.nome}
+                            <ObrigacaoCard key={o.id} titulo={o.titulo || o.tipo} sub={o.departamentos?.nome}
                               statusLabel={STATUS_OBS_LABEL[o.status]} statusCor={STATUS_OBS_COR[o.status]}
                               vencimentoTexto={o.vencimento ? `${fmtData(o.vencimento)} · ${fmtDiasParaVencer(dias)}` : null}
                               vencimentoCor={dias != null && dias < 0 ? 'var(--danger)' : dias != null && dias <= 3 ? 'var(--warn)' : 'var(--text3)'}
@@ -548,11 +548,11 @@ export default function PainelClientePage({ clienteId, competencia: competenciaI
                       </div>
                     )}
                     {tarefasDoModulo.length > 0 && (
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                      <div style={CARDS_GRID}>
                         {tarefasDoModulo.map((t) => {
                           const dias = diasParaVencer(t.vencimento);
                           return (
-                            <ItemLista key={t.id} titulo={t.titulo} sub={t.departamento}
+                            <ObrigacaoCard key={t.id} titulo={t.titulo} sub={t.departamento}
                               statusLabel={t.concluida ? 'Concluída' : 'Pendente'} statusCor={t.concluida ? ['var(--ok)', 'var(--ok-dim)'] : ['var(--warn)', 'var(--warn-dim)']}
                               vencimentoTexto={t.vencimento && !t.concluida ? `${fmtData(t.vencimento)} · ${fmtDiasParaVencer(dias)}` : null}
                               vencimentoCor={dias != null && dias < 0 ? 'var(--danger)' : dias != null && dias <= 3 ? 'var(--warn)' : 'var(--text3)'} />
@@ -586,9 +586,9 @@ export default function PainelClientePage({ clienteId, competencia: competenciaI
                             <Metrica label={`Entrada (${entradas.length})`} valor={fmt(totalEntrada)} />
                             <Metrica label={`Saída (${saidas.length})`} valor={fmt(totalSaida)} />
                           </div>
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                          <div style={CARDS_GRID}>
                             {documentosFiscais.map((d) => (
-                              <ItemLista key={d.id} titulo={d.razao_social_terceiro || 'Documento fiscal'}
+                              <ObrigacaoCard key={d.id} titulo={d.razao_social_terceiro || 'Documento fiscal'}
                                 sub={`${d.modelo || ''}${d.numero ? ` ${d.numero}` : ''} · ${fmtData(d.data_emissao)}`}
                                 valorTexto={fmt(d.valor_total)}
                                 statusLabel={d.tipo_movimento === 'entrada' ? 'Entrada' : d.tipo_movimento === 'saida' ? 'Saída' : null}
@@ -754,6 +754,43 @@ function ItemLista({ titulo, sub, statusLabel, statusCor, vencimentoTexto, venci
     </div>
   );
 }
+
+// Card de obrigação/tarefa/nota fiscal dentro de uma aba de módulo — grade
+// em vez da lista empilhada, faixa colorida na lateral já indica o status
+// sem precisar ler o selo (mesma linguagem visual dos cartões do Resumo).
+function ObrigacaoCard({ titulo, sub, statusLabel, statusCor, vencimentoTexto, vencimentoCor, valorTexto, anexo, onBaixarAnexo }) {
+  const [cor, corDim] = statusCor || ['var(--border2)', 'var(--surface3)'];
+  return (
+    <div style={{ background: 'var(--surface2)', borderLeft: `3px solid ${cor}`, borderRadius: 'var(--r-md)', padding: '12px 14px' }}>
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8 }}>
+        <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text1)', lineHeight: 1.3 }}>{titulo}</div>
+        {anexo && (
+          <button onClick={() => onBaixarAnexo(anexo)} title={`Baixar ${anexo.nome_arquivo}`}
+            style={{ background: 'var(--accent-dim)', border: 'none', borderRadius: 99, width: 24, height: 24, flexShrink: 0,
+              display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: 'var(--accent)' }}>
+            <DownloadIcon size={12} />
+          </button>
+        )}
+      </div>
+      {sub && <div style={{ fontSize: 10.5, color: 'var(--text3)', marginTop: 3 }}>{sub}</div>}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginTop: 10, flexWrap: 'wrap' }}>
+        {vencimentoTexto ? (
+          <span style={{ fontSize: 10.5, color: vencimentoCor, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 3 }}>
+            <CalendarIcon size={10} /> {vencimentoTexto}
+          </span>
+        ) : <span />}
+        {valorTexto && <span style={{ fontSize: 12.5, fontWeight: 800, color: 'var(--text1)' }}>{valorTexto}</span>}
+      </div>
+      {statusLabel && (
+        <span style={{ display: 'inline-block', marginTop: 8, fontSize: 10, fontWeight: 700, color: cor, background: corDim, borderRadius: 99, padding: '3px 9px' }}>
+          {statusLabel}
+        </span>
+      )}
+    </div>
+  );
+}
+
+const CARDS_GRID = { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 8 };
 
 const MODULO_COR = { ok: 'var(--ok)', warn: 'var(--warn)', danger: 'var(--danger)', empty: 'var(--text3)' };
 const MODULO_DIM = { ok: 'var(--ok-dim)', warn: 'var(--warn-dim)', danger: 'var(--danger-dim)', empty: 'var(--surface3)' };
