@@ -60,16 +60,37 @@ async function extrairTransacoesDoPDF(arquivo, nomeArquivo) {
   return resp.json();
 }
 
-// Extratos longos (bancos com muita movimentação, 15+ páginas) demoram demais
-// pro Claude ler o PDF inteiro e gerar o JSON numa única chamada — a função
-// do Netlify estoura o tempo de execução e cai num 504 antes de responder.
-// Pra evitar isso, quebra o PDF em partes de poucas páginas e manda cada uma
-// numa chamada separada; as partes usam 1 página de sobreposição pra não
-// perder transação que atravesse a quebra de página, e eventuais duplicatas
-// resultantes disso são descartadas depois pelo índice único de
-// extrato_referencia no banco (ver criarLancamentosEmLote).
-const PAGINAS_POR_PARTE = 4;
-const PARTES_SIMULTANEAS = 3;
+// O Netlify roda funções síncronas atrás de um API Gateway que mata a
+// conexão com "Inactivity Timeout" (504) depois de ~29s sem resposta — um
+// limite fixo, não dá pra configurar/aumentar pelo netlify.toml. Medindo
+// contra extratos reais, cada página processada pelo Claude leva de 5 a 14s
+// dependendo da densidade de transações, então até um extrato de só 4
+// páginas processado numa chamada só (limite antigo) estourava esse teto.
+// Por isso o corte é 1 página por parte: mesmo com a sobreposição de 1
+// página (abaixo), cada chamada processa no máximo 2 páginas por vez —
+// testado entre 16 e 20s, com folga segura do limite de 29s.
+// Eventuais duplicatas resultantes da sobreposição são descartadas depois
+// pelo índice único de extrato_referencia no banco (ver
+// criarLancamentosEmLote) e, antes disso, pelo dedupBySobreposicao abaixo.
+const PAGINAS_POR_PARTE = 1;
+// chamadas concorrentes competem por recursos e ficam mais lentas entre si
+// (testado: 3 simultâneas levou uma parte a 29.7s, quase no limite) — 2 dá
+// mais margem de segurança sem esperar cada parte terminar antes de
+// começar a próxima
+const PARTES_SIMULTANEAS = 2;
+
+// remove duplicatas geradas pela sobreposição de 1 página entre partes
+// (a mesma transação pode aparecer em duas chamadas quando cai bem na
+// página de sobreposição) -- mesma chave usada depois pra extratoReferencia
+function dedupBySobreposicao(transacoes) {
+  const vistos = new Set();
+  return transacoes.filter((t) => {
+    const chave = [t.data, t.tipo, Number(t.valor).toFixed(2), t.identificador || t.descricao.trim()].join('|');
+    if (vistos.has(chave)) return false;
+    vistos.add(chave);
+    return true;
+  });
+}
 
 async function extrairTransacoesComDivisao(arquivo) {
   const bytes = await arquivo.arrayBuffer();
@@ -119,7 +140,7 @@ async function extrairTransacoesComDivisao(arquivo) {
   }
 
   if (falhas.length > 0) truncado = true;
-  return { transacoes, truncado, falhas: falhas.length > 0 ? falhas : undefined };
+  return { transacoes: dedupBySobreposicao(transacoes), truncado, falhas: falhas.length > 0 ? falhas : undefined };
 }
 
 // Sugere uma conta pra transação olhando lançamentos anteriores com
