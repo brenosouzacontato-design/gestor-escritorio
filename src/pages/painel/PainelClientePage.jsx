@@ -364,7 +364,11 @@ export default function PainelClientePage({ clienteId, competencia: competenciaI
                       anexo: null,
                     })),
                     ...obs.itens
-                      .filter((o) => o.vencimento && ehImposto(o))
+                      // sem vencimento cadastrado só entra se já tiver a guia anexada —
+                      // senão o imposto simplesmente sumia do painel (nem aqui, nem na
+                      // lista "sem vencimento definido" abaixo, que é só pra outra fonte
+                      // de dados, situacaoFiscal.debitos)
+                      .filter((o) => ehImposto(o) && (o.vencimento || anexosObrigacao[o.id]))
                       .map((o) => ({
                         id: o.id,
                         titulo: o.titulo || o.tipo,
@@ -889,23 +893,25 @@ function BarraComparativa({ label, valor, pct, cor }) {
 // com prazo e valor em destaque em vez de misturado numa lista com o resto
 // das obrigações do mês.
 function ImpostosAVencer({ itens, onBaixarAnexo }) {
-  const ordenados = [...itens].sort((a, b) => a.vencimento.localeCompare(b.vencimento));
+  // itens sem vencimento (imposto só identificado pela guia anexada, sem
+  // data cadastrada) vão pro fim da esteira em vez de quebrar a ordenação
+  const ordenados = [...itens].sort((a, b) => (a.vencimento || '9999-99-99').localeCompare(b.vencimento || '9999-99-99'));
   return (
     <div style={{ display: 'flex', gap: 10, overflowX: 'auto', paddingBottom: 4 }}>
       {ordenados.map((it) => {
         const dias = diasParaVencer(it.vencimento);
-        const statusKey = it.concluido ? 'concluido' : dias < 0 ? 'vencido' : 'pendente';
-        const [cor, corDim] = dias > 3 && !it.concluido ? ['var(--text3)', 'var(--surface3)'] : STATUS_OBS_COR[statusKey];
+        const statusKey = it.concluido ? 'concluido' : dias != null && dias < 0 ? 'vencido' : 'pendente';
+        const [cor, corDim] = dias != null && dias > 3 && !it.concluido ? ['var(--text3)', 'var(--surface3)'] : STATUS_OBS_COR[statusKey];
         return (
           <div key={it.id} style={{ flexShrink: 0, width: 156, background: 'var(--surface2)',
             borderLeft: `3px solid ${cor}`, borderRadius: 'var(--r-md)', padding: '11px 12px 11px 10px' }}>
             <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--text1)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{it.titulo}</div>
             {it.departamento && <div style={{ fontSize: 9.5, color: 'var(--text3)', marginTop: 1 }}>{it.departamento}</div>}
-            <div style={{ fontSize: 10, color: 'var(--text3)', marginTop: 5 }}>{fmtData(it.vencimento)}</div>
+            <div style={{ fontSize: 10, color: 'var(--text3)', marginTop: 5 }}>{it.vencimento ? fmtData(it.vencimento) : 'Sem vencimento'}</div>
             {it.valor != null && <div style={{ fontSize: 14, fontWeight: 800, marginTop: 6, color: 'var(--text1)' }}>{fmt(it.valor)}</div>}
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6, marginTop: 7 }}>
               <span style={{ fontSize: 9.5, fontWeight: 700, borderRadius: 99, padding: '2px 8px', color: cor, background: corDim }}>
-                {it.concluido ? 'concluído' : fmtDiasParaVencer(dias)}
+                {it.concluido ? 'concluído' : it.vencimento ? fmtDiasParaVencer(dias) : 'guia anexada'}
               </span>
               {it.anexo && (
                 <button onClick={() => onBaixarAnexo(it.anexo)} title={`Baixar ${it.anexo.nome_arquivo}`}
