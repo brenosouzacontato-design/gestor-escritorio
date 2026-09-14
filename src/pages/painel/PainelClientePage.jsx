@@ -216,7 +216,11 @@ export default function PainelClientePage({ clienteId, competencia: competenciaI
         )];
         const valoresDas = await obterValoresDasPendencias(clienteId, competenciasDas).catch(() => ({}));
         setValoresDasPendencias(valoresDas);
-        const anexos = await obterDocumentosPorObrigacao(resObs.itens.map((o) => o.id)).catch(() => ({}));
+        // inclui também as obrigações vencidas de competências anteriores
+        // (pendenciasAnt) -- senão a guia anexada a um imposto vencido (ex:
+        // PGDAS de um mês passado) nunca aparecia disponível pra download
+        const idsParaAnexo = [...resObs.itens.map((o) => o.id), ...pendenciasAnt.obrigacoes.map((o) => o.id)];
+        const anexos = await obterDocumentosPorObrigacao(idsParaAnexo).catch(() => ({}));
         setAnexosObrigacao(anexos);
       } catch (e) {
         setErro(e.message);
@@ -361,7 +365,7 @@ export default function PainelClientePage({ clienteId, competencia: competenciaI
                       vencimento: o.vencimento,
                       concluido: false,
                       valor: valoresDasPendencias[o.competencia] ?? null,
-                      anexo: null,
+                      anexo: anexosObrigacao[o.id] || null,
                     })),
                     ...obs.itens
                       // sem vencimento cadastrado só entra se já tiver a guia anexada —

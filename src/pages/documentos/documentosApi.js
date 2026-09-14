@@ -31,6 +31,35 @@ export async function uploadArquivo(arquivo) {
   return path;
 }
 
+async function arquivoParaBase64(arquivo) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result.split(',')[1]);
+    reader.onerror = () => reject(new Error('Falha ao ler o arquivo.'));
+    reader.readAsDataURL(arquivo);
+  });
+}
+
+// Chama netlify/functions/identificar-documento.js -- a IA sugere tipo de
+// documento, cliente e qual candidato (etapa de obrigação ou tarefa em
+// aberto) ele resolve. candidatos: [{id, clienteId, clienteNome, rotulo}],
+// ver listarCandidatos abaixo (reaproveitada tanto pela fila de upload
+// genérica de DocumentosPage.jsx quanto pelo atalho por empresa em
+// Empresas.jsx, que já filtra os candidatos pro cliente do card aberto).
+export async function identificarDocumento(arquivo, candidatos) {
+  const arquivoBase64 = await arquivoParaBase64(arquivo);
+  const resp = await fetch('/.netlify/functions/identificar-documento', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ arquivoBase64, filename: arquivo.name, mimeType: arquivo.type, candidatos }),
+  });
+  if (!resp.ok) {
+    const erro = await resp.json().catch(() => ({}));
+    throw new Error(erro.error || 'Falha ao identificar o documento.');
+  }
+  return resp.json();
+}
+
 // ---------- CANDIDATOS (obrigações/tarefas em aberto pra IA escolher) ----------
 
 // Só entram candidatos com cliente_id preenchido — sem empresa não dá pra

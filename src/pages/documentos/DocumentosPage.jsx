@@ -3,35 +3,12 @@ import { PaperclipIcon, UploadCloudIcon, CheckCircle2Icon, Loader2Icon, FileIcon
 import { useStore } from '../../store'
 import { useToast } from '../../components/shared'
 import {
-  uploadArquivo, listarCandidatos, criarDocumento, confirmarDocumento,
+  uploadArquivo, listarCandidatos, identificarDocumento, criarDocumento, confirmarDocumento,
   listarDocumentosConfirmados, listarDocumentosPendentes, excluirDocumento,
   abrirLinkAssinado, itemResolvido, listarUploadsWhatsapp,
 } from './documentosApi'
 
 const ACCEPT = '.pdf,.jpg,.jpeg,.png,.webp,application/pdf,image/jpeg,image/png,image/webp'
-
-async function arquivoParaBase64(arquivo) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader()
-    reader.onload = () => resolve(reader.result.split(',')[1])
-    reader.onerror = () => reject(new Error('Falha ao ler o arquivo.'))
-    reader.readAsDataURL(arquivo)
-  })
-}
-
-async function identificarDocumento(arquivo, candidatos) {
-  const arquivoBase64 = await arquivoParaBase64(arquivo)
-  const resp = await fetch('/.netlify/functions/identificar-documento', {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ arquivoBase64, filename: arquivo.name, mimeType: arquivo.type, candidatos }),
-  })
-  if (!resp.ok) {
-    const erro = await resp.json().catch(() => ({}))
-    throw new Error(erro.error || 'Falha ao identificar o documento.')
-  }
-  return resp.json()
-}
 
 const CONFIANCA_BADGE = { alta: 'badge-ok', media: 'badge-warn', baixa: 'badge-gray' }
 

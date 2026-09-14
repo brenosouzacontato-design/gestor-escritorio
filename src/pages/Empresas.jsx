@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect } from 'react'
-import { PlusIcon, XIcon, CheckCircleIcon, ClockIcon, AlertCircleIcon, MinusCircleIcon, ChevronRightIcon, CalendarIcon, CheckIcon, ZapIcon, RefreshCwIcon, Trash2Icon, ListIcon, LayoutGridIcon, BarChart3Icon, Share2Icon, EyeIcon, CheckSquareIcon, FileIcon, DownloadIcon, PencilIcon, FileTextIcon, GripVerticalIcon, BellIcon, BellRingIcon } from 'lucide-react'
+import { PlusIcon, XIcon, CheckCircleIcon, ClockIcon, AlertCircleIcon, MinusCircleIcon, ChevronRightIcon, CalendarIcon, CheckIcon, ZapIcon, RefreshCwIcon, Trash2Icon, ListIcon, LayoutGridIcon, BarChart3Icon, Share2Icon, EyeIcon, CheckSquareIcon, FileIcon, DownloadIcon, PencilIcon, FileTextIcon, GripVerticalIcon, BellIcon, BellRingIcon, UploadCloudIcon, Loader2Icon, SparklesIcon } from 'lucide-react'
 import { useStore } from '../store'
 import { DeptChip, PriDot, fmtDate, isOverdue, useToast } from '../components/shared'
 import { supabase } from '../lib/supabase'
@@ -7,7 +7,10 @@ import { listarDepartamentos, criarDepartamento, gerarObrigacoesRecorrentesCompe
 import { NovaObrigacaoModal, NovaTarefaModuloModal, ModalTarefasLote, ModalObrigacoesLote, ModalBase } from './andamento/modaisObrigacao'
 import { uploadDeclaracaoSimples, uploadSituacaoFiscal, obterCndManual, salvarCndManual } from './painel/painelApi'
 import PainelViewerModal from './painel/PainelViewerModal'
-import { listarDocumentosPorCliente, abrirLinkAssinado } from './documentos/documentosApi'
+import {
+  listarDocumentosPorCliente, abrirLinkAssinado, uploadArquivo, listarCandidatos,
+  identificarDocumento, criarDocumento, confirmarDocumento,
+} from './documentos/documentosApi'
 import { criarLembrete, listarLembretesPorItens, excluirLembrete } from './andamento/lembretesApi'
 
 // Casamento histórico tipo-texto → departamento, só pra competências
@@ -1276,15 +1279,31 @@ export default function Empresas({ onOpenTarefas, clienteInicialId, onClienteIni
 // ── Aba Anexos (modal de empresa) ────────────────────────────────────────────
 // Documentos da tabela "documentos" (upload manual + IA, ver documentosApi.js)
 // filtrados pra esse cliente — reaproveita o mesmo bucket/URL assinada
-// usados na aba "Concluídos" de DocumentosPage.jsx.
+// usados na aba "Concluídos" de DocumentosPage.jsx. Também é o atalho pra
+// enviar um documento novo e já rodar a identificação por IA sem sair do
+// card da empresa (mesmo fluxo de DocumentosPage.jsx, só que com o cliente
+// já sabido — nem precisa perguntar "de qual empresa é").
 function AbaAnexosEmpresa({ clienteId }) {
   const [docs, setDocs] = useState(null) // null = carregando
   const [erro, setErro] = useState(null)
   const { show } = useToast()
+  const fetchObrigacoes = useStore(s => s.fetchObrigacoes)
+  const fetchTarefas = useStore(s => s.fetchTarefas)
+
+  const [candidatos, setCandidatos] = useState([])
+  const [fila, setFila] = useState([]) // [{id, arquivo, status, storagePath, sugestao, candidatoId, ignorar, erro}]
+  const [arrastando, setArrastando] = useState(false)
+  const [confirmando, setConfirmando] = useState(false)
+
+  const recarregarDocs = () => listarDocumentosPorCliente(clienteId).then(setDocs).catch(e => setErro(e.message))
 
   useEffect(() => {
     setDocs(null)
-    listarDocumentosPorCliente(clienteId).then(setDocs).catch(e => setErro(e.message))
+    setFila([])
+    recarregarDocs()
+    // só os candidatos desse cliente -- fora de reduzir ruído na IA, também
+    // dispensa um seletor de empresa na revisão (já sabido pelo card aberto)
+    listarCandidatos().then(cs => setCandidatos(cs.filter(c => c.clienteId === clienteId))).catch(() => {})
   }, [clienteId])
 
   const baixar = async (doc) => {
@@ -1295,14 +1314,134 @@ function AbaAnexosEmpresa({ clienteId }) {
     }
   }
 
-  if (erro) return <p style={{ color:'var(--danger)', fontSize:12 }}>{erro}</p>
-  if (!docs) return <p style={{ color:'var(--text3)', fontSize:12 }}>Carregando...</p>
-  if (docs.length === 0) return (
-    <div style={{ textAlign:'center', color:'var(--text3)', fontSize:12, padding:'24px 0' }}>Nenhum anexo pra essa empresa</div>
-  )
+  const processarArquivo = async (arquivo) => {
+    const id = crypto.randomUUID()
+    setFila(prev => [...prev, { id, arquivo, status: 'enviando' }])
+    try {
+      const storagePath = await uploadArquivo(arquivo)
+      setFila(prev => prev.map(it => it.id === id ? { ...it, status: 'processando', storagePath } : it))
+      const sugestao = await identificarDocumento(arquivo, candidatos)
+      setFila(prev => prev.map(it => it.id === id ? {
+        ...it, status: 'pronto', sugestao, candidatoId: sugestao.candidatoId || '', ignorar: false,
+      } : it))
+    } catch (e) {
+      setFila(prev => prev.map(it => it.id === id ? { ...it, status: 'erro', erro: e.message } : it))
+    }
+  }
+
+  const adicionarArquivos = (fileList) => Array.from(fileList || []).forEach(processarArquivo)
+  const onDrop = (e) => { e.preventDefault(); setArrastando(false); adicionarArquivos(e.dataTransfer.files) }
+
+  const prontos = fila.filter(it => it.status === 'pronto' && !it.ignorar)
+
+  const confirmar = async () => {
+    if (prontos.length === 0) return
+    setConfirmando(true)
+    let confirmados = 0, comBaixa = 0
+    const falhas = []
+    for (const it of prontos) {
+      try {
+        const candidato = it.candidatoId ? candidatos.find(c => c.id === it.candidatoId) : null
+        const doc = await criarDocumento({
+          nomeArquivo: it.arquivo.name, storagePath: it.storagePath,
+          tipoMime: it.arquivo.type, tamanhoBytes: it.arquivo.size, sugestao: it.sugestao,
+        })
+        await confirmarDocumento(doc.id, { clienteId, candidato })
+        confirmados++
+        if (candidato) comBaixa++
+      } catch (e) {
+        falhas.push(`${it.arquivo.name}: ${e.message}`)
+      }
+    }
+    setFila(prev => prev.filter(it => !prontos.some(p => p.id === it.id)))
+    await Promise.all([recarregarDocs(), fetchObrigacoes(), fetchTarefas()])
+    setConfirmando(false)
+    show?.(
+      falhas.length > 0
+        ? `${confirmados} confirmado${confirmados !== 1 ? 's' : ''}, ${falhas.length} falhou/falharam: ${falhas.join('; ')}`
+        : `${confirmados} documento${confirmados !== 1 ? 's' : ''} confirmado${confirmados !== 1 ? 's' : ''}${comBaixa > 0 ? `, ${comBaixa} deu baixa numa obrigação/tarefa` : ''}`
+    )
+  }
 
   return <>
-    {docs.map(doc => (
+    <div
+      onDragOver={e => { e.preventDefault(); setArrastando(true) }}
+      onDragLeave={() => setArrastando(false)}
+      onDrop={onDrop}
+      style={{
+        border: `1.5px dashed ${arrastando ? 'var(--accent)' : 'var(--border2)'}`, borderRadius: 8,
+        padding: '14px 10px', textAlign: 'center', background: arrastando ? 'var(--accent-dim)' : 'var(--surface2)',
+      }}
+    >
+      <UploadCloudIcon size={18} color="var(--text3)" style={{ marginBottom: 4 }} />
+      <div style={{ fontSize: 11.5, color: 'var(--text2)' }}>
+        <SparklesIcon size={11} style={{ verticalAlign: -1, marginRight: 2 }} />
+        Solte um comprovante/guia aqui, ou{' '}
+        <label style={{ color: 'var(--accent)', cursor: 'pointer', textDecoration: 'underline', fontWeight: 600 }}>
+          selecione
+          <input type="file" accept=".pdf,.jpg,.jpeg,.png,.webp,application/pdf,image/jpeg,image/png,image/webp" multiple
+            style={{ display: 'none' }} onChange={e => { adicionarArquivos(e.target.files); e.target.value = '' }} />
+        </label>
+        {' '}— a IA identifica e já sugere dar baixa na obrigação/tarefa
+      </div>
+    </div>
+
+    {fila.map(it => (
+      <div key={it.id} style={{ background:'var(--surface)', border:'1px solid var(--border)', borderRadius:8, padding:'9px 11px' }}>
+        <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom: it.status === 'pronto' ? 7 : 0 }}>
+          <FileIcon size={13} color="var(--text3)" style={{ flexShrink:0 }} />
+          <span style={{ fontSize:11.5, fontWeight:600, color:'var(--text1)', flex:1, minWidth:0, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
+            {it.arquivo.name}
+          </span>
+          {(it.status === 'enviando' || it.status === 'processando') && (
+            <span style={{ display:'flex', alignItems:'center', gap:4, fontSize:10.5, color:'var(--text3)' }}>
+              <Loader2Icon size={12} style={{ animation:'spin 0.8s linear infinite' }} />
+              {it.status === 'enviando' ? 'Enviando...' : 'Identificando...'}
+            </span>
+          )}
+          {it.status === 'erro' && <span style={{ fontSize:10.5, color:'var(--danger)' }}>{it.erro}</span>}
+          {it.status === 'pronto' && (
+            <span className={`badge ${CONFIANCA_BADGE_EMPRESA[it.sugestao.confianca] || 'badge-gray'}`}>{it.sugestao.confianca}</span>
+          )}
+        </div>
+        {it.status === 'pronto' && (
+          <div style={{ display:'flex', gap:8, alignItems:'end' }}>
+            <div style={{ flex:1, minWidth:0 }}>
+              <div style={{ fontSize:9.5, color:'var(--text3)', marginBottom:2, textTransform:'uppercase', letterSpacing:.4 }}>Tipo (IA)</div>
+              <div style={{ fontSize:11, color:'var(--text2)', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{it.sugestao.tipoDocumento}</div>
+            </div>
+            <div style={{ flex:1, minWidth:0 }}>
+              <div style={{ fontSize:9.5, color:'var(--text3)', marginBottom:2, textTransform:'uppercase', letterSpacing:.4 }}>Dar baixa em</div>
+              <select value={it.candidatoId}
+                onChange={e => setFila(prev => prev.map(x => x.id === it.id ? { ...x, candidatoId: e.target.value } : x))}
+                style={{ width:'100%', fontSize:11, padding:'4px 6px' }}>
+                <option value="">Nenhuma correspondência</option>
+                {candidatos.map(c => <option key={c.id} value={c.id}>{c.rotulo}</option>)}
+              </select>
+            </div>
+          </div>
+        )}
+        {it.sugestao?.observacao && it.status === 'pronto' && (
+          <div style={{ fontSize:10.5, color:'var(--text3)', marginTop:5, fontStyle:'italic' }}>"{it.sugestao.observacao}"</div>
+        )}
+      </div>
+    ))}
+
+    {prontos.length > 0 && (
+      <button className="btn btn-accent" style={{ fontSize:12 }} onClick={confirmar} disabled={confirmando}>
+        <CheckIcon size={13} />
+        {confirmando ? 'Confirmando...' : `Confirmar ${prontos.length} documento${prontos.length !== 1 ? 's' : ''}`}
+      </button>
+    )}
+
+    <style>{'@keyframes spin { to { transform: rotate(360deg); } }'}</style>
+
+    {erro && <p style={{ color:'var(--danger)', fontSize:12 }}>{erro}</p>}
+    {!erro && docs == null && <p style={{ color:'var(--text3)', fontSize:12 }}>Carregando...</p>}
+    {!erro && docs != null && docs.length === 0 && (
+      <div style={{ textAlign:'center', color:'var(--text3)', fontSize:12, padding:'24px 0' }}>Nenhum anexo pra essa empresa</div>
+    )}
+    {docs?.map(doc => (
       <div key={doc.id} style={{ background:'var(--surface2)', border:'1px solid var(--border)', borderRadius:8,
         padding:'10px 12px', display:'flex', alignItems:'center', gap:10 }}>
         <FileIcon size={14} color="var(--text3)" style={{ flexShrink:0 }} />
@@ -1322,6 +1461,8 @@ function AbaAnexosEmpresa({ clienteId }) {
     ))}
   </>
 }
+
+const CONFIANCA_BADGE_EMPRESA = { alta: 'badge-ok', media: 'badge-warn', baixa: 'badge-gray' }
 
 // ── Modal marcar lembrete ────────────────────────────────────────────────────
 // Data/hora própria (independente do vencimento) numa obrigação ou tarefa —
