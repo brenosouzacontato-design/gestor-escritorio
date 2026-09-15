@@ -41,6 +41,7 @@ if (share === 'dre' || share === 'balancete') {
     dataInicio={params.get('inicio')}
     dataFim={params.get('fim')}
     ids={idsParam ? idsParam.split(',') : null}
+    linkId={params.get('link')}
   />
 } else if (doc) {
   raiz = <DocumentoCompartilhadoPage documentoId={doc} />

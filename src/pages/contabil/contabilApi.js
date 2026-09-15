@@ -496,6 +496,34 @@ export async function listarLancamentos(empresaId, { dataInicio, dataFim } = {})
   return data;
 }
 
+// Link curto pra identificação de uma lista específica de lançamentos
+// (filtro aplicado ou seleção manual em LancamentosTab.jsx) — listar um
+// UUID por lançamento direto na URL (?ids=id1,id2,...) deixava o link
+// enorme (uma centena de lançamentos já passa de 10 mil caracteres), então
+// a lista fica guardada em lancamentos_identificacao_links (ver
+// supabase-schema-lancamentos-identificacao-links.sql) e a URL leva só o
+// id curto dessa linha (?link=<id>), resolvido de volta pra lista completa
+// em obterLancamentoIdsDoLink.
+export async function criarLinkIdentificacao(empresaId, lancamentoIds) {
+  const { data, error } = await supabase
+    .from('lancamentos_identificacao_links')
+    .insert({ empresa_id: empresaId, lancamento_ids: lancamentoIds })
+    .select('id')
+    .single();
+  if (error) throw error;
+  return data.id;
+}
+
+export async function obterLancamentoIdsDoLink(linkId) {
+  const { data, error } = await supabase
+    .from('lancamentos_identificacao_links')
+    .select('lancamento_ids')
+    .eq('id', linkId)
+    .single();
+  if (error) throw error;
+  return data.lancamento_ids;
+}
+
 // Lançamentos pra "enviar pro cliente pra identificação": ele recebe essa
 // lista (sem precisar logar, mesmo modelo do link de compartilhamento do
 // Balancete/DRE) e preenche o que foi cada um; a resposta fica em

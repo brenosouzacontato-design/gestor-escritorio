@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { PencilIcon } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
-import { listarLancamentosAIdentificar } from './contabilApi';
+import { listarLancamentosAIdentificar, obterLancamentoIdsDoLink } from './contabilApi';
 import LancamentosIdentificar from './LancamentosIdentificar';
 
 function fmtData(iso) {
@@ -14,21 +14,27 @@ function fmtData(iso) {
 // resumo, tabela dos pendentes com popup de identificação e cards dos já
 // identificados — tudo isso vem de LancamentosIdentificar.jsx, o mesmo
 // componente usado na aba Contábil do Painel do cliente. Acessada via
-// ?identificar=1&empresa=<id>&inicio=&fim= (período inteiro) ou
-// ?identificar=1&empresa=<id>&ids=<id1,id2,...> (seleção manual feita em
-// LancamentosTab.jsx) — ver main.jsx.
-export default function IdentificarLancamentosPage({ empresaId, dataInicio, dataFim, ids }) {
+// ?identificar=1&empresa=<id>&inicio=&fim= (período inteiro),
+// ?identificar=1&empresa=<id>&link=<id> (link curto que resolve pra lista
+// de ids em lancamentos_identificacao_links — ver
+// criarLinkIdentificacao/obterLancamentoIdsDoLink em contabilApi.js) ou,
+// pra compatibilidade com links já mandados antes do link curto existir,
+// ?identificar=1&empresa=<id>&ids=<id1,id2,...> — ver main.jsx.
+export default function IdentificarLancamentosPage({ empresaId, dataInicio, dataFim, ids, linkId }) {
   const [empresaNome, setEmpresaNome] = useState('');
   const [lancamentos, setLancamentos] = useState([]);
+  const [totalFiltrado, setTotalFiltrado] = useState(ids?.length ?? 0);
   const [carregando, setCarregando] = useState(true);
   const [erro, setErro] = useState(null);
 
   const carregar = async () => {
     setErro(null);
     try {
+      const idsResolvidos = linkId ? await obterLancamentoIdsDoLink(linkId) : ids;
+      setTotalFiltrado(idsResolvidos?.length ?? 0);
       const [{ data: cliente, error: errCliente }, itens] = await Promise.all([
         supabase.from('clientes').select('nome').eq('id', empresaId).single(),
-        listarLancamentosAIdentificar(empresaId, { dataInicio, dataFim, ids }),
+        listarLancamentosAIdentificar(empresaId, { dataInicio, dataFim, ids: idsResolvidos }),
       ]);
       if (errCliente) throw errCliente;
       setEmpresaNome(cliente?.nome ?? '');
@@ -40,7 +46,7 @@ export default function IdentificarLancamentosPage({ empresaId, dataInicio, data
     }
   };
 
-  useEffect(() => { carregar() }, [empresaId, dataInicio, dataFim, ids?.join(',')]);
+  useEffect(() => { carregar() }, [empresaId, dataInicio, dataFim, linkId, ids?.join(',')]);
 
   return (
     <div style={{ minHeight: '100vh', background: 'var(--bg)', padding: '32px 16px' }}>
@@ -51,8 +57,8 @@ export default function IdentificarLancamentosPage({ empresaId, dataInicio, data
           </div>
           <div style={{ fontSize: 18, color: '#fff', fontWeight: 700, marginTop: 4 }}>{empresaNome || '...'}</div>
           <div style={{ fontSize: 12, color: 'var(--navy-text)', marginTop: 2 }}>
-            {ids && ids.length > 0
-              ? `${ids.length} lançamento${ids.length > 1 ? 's' : ''} selecionado${ids.length > 1 ? 's' : ''}`
+            {linkId || (ids && ids.length > 0)
+              ? `${totalFiltrado} lançamento${totalFiltrado > 1 ? 's' : ''} selecionado${totalFiltrado > 1 ? 's' : ''}`
               : `Período de ${fmtData(dataInicio)} até ${fmtData(dataFim)}`}
           </div>
         </div>
@@ -68,7 +74,7 @@ export default function IdentificarLancamentosPage({ empresaId, dataInicio, data
 
           {!carregando && !erro && lancamentos.length === 0 && (
             <p style={{ color: 'var(--text3)', textAlign: 'center', padding: '24px 0' }}>
-              Nenhum lançamento pendente de identificação {ids && ids.length > 0 ? 'nessa seleção' : 'nesse período'}.
+              Nenhum lançamento pendente de identificação {linkId || (ids && ids.length > 0) ? 'nessa seleção' : 'nesse período'}.
             </p>
           )}
 

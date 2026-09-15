@@ -1,6 +1,7 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { HelpCircleIcon, LinkIcon } from 'lucide-react';
 import { useToast } from '../../components/shared';
+import { criarLinkIdentificacao } from './contabilApi';
 
 function fmtData(iso) {
   return new Date(iso + 'T00:00:00').toLocaleDateString('pt-BR');
@@ -9,11 +10,14 @@ function fmtData(iso) {
 // Mesmo modelo do CompartilharButton: monta o link público (ver
 // IdentificarLancamentosPage.jsx + main.jsx) pra mandar via WhatsApp ou só
 // copiar. Sem lancamentoIds (array vazio), manda o período inteiro (todos
-// os pendentes de identificação de dataInicio a dataFim); com lancamentoIds
-// (LancamentosTab.jsx manda o que está filtrado na tela — busca, conta,
-// natureza, status — ou a seleção manual via checkbox, o que for mais
-// específico), manda só esses — útil quando o cliente já respondeu o resto
-// do período e falta perguntar de novo só por um punhado de lançamentos.
+// os pendentes de identificação de dataInicio a dataFim) — URL curta, só
+// datas, sem round-trip ao banco. Com lancamentoIds (LancamentosTab.jsx
+// manda o que está filtrado na tela — busca, conta, natureza, status — ou
+// a seleção manual via checkbox, o que for mais específico), a lista fica
+// guardada em lancamentos_identificacao_links (criarLinkIdentificacao) e a
+// URL leva só o id curto dessa linha — listar um UUID por lançamento direto
+// na URL (formato antigo) passava de 10 mil caracteres com uma centena de
+// lançamentos.
 //
 // Um botão só, sempre no mesmo lugar (LancamentosTab.jsx não tem mais um
 // segundo botão que aparecia junto com a seleção) — dois botões parecidos
@@ -22,11 +26,12 @@ function fmtData(iso) {
 // com a tela filtrada.
 export default function EnviarIdentificacaoButton({ empresaId, empresaNome, periodo, lancamentoIds }) {
   const { show } = useToast();
+  const [processando, setProcessando] = useState(false);
   const temFiltro = lancamentoIds && lancamentoIds.length > 0;
 
-  function montarUrlEMensagem() {
+  async function montarUrlEMensagem() {
     const url = temFiltro
-      ? `${window.location.origin}${window.location.pathname}?identificar=1&empresa=${empresaId}&ids=${lancamentoIds.join(',')}`
+      ? `${window.location.origin}${window.location.pathname}?identificar=1&empresa=${empresaId}&link=${await criarLinkIdentificacao(empresaId, lancamentoIds)}`
       : `${window.location.origin}${window.location.pathname}?identificar=1&empresa=${empresaId}&inicio=${periodo.dataInicio}&fim=${periodo.dataFim}`;
     const descricaoPeriodo = temFiltro
       ? `${lancamentoIds.length} movimentaç${lancamentoIds.length > 1 ? 'ões' : 'ão'}`
@@ -35,18 +40,40 @@ export default function EnviarIdentificacaoButton({ empresaId, empresaNome, peri
     return { url, mensagem };
   }
 
-  function enviarWhatsapp() {
-    const { mensagem } = montarUrlEMensagem();
-    window.open(`https://wa.me/?text=${encodeURIComponent(mensagem)}`, '_blank');
+  async function enviarWhatsapp() {
+    // abre a aba já no clique (o navegador bloqueia popup criado depois de
+    // um await, já que perde a associação com o gesto do usuário) e só
+    // preenche a URL quando o link (com filtro) estiver pronto
+    const janela = window.open('', '_blank');
+    setProcessando(true);
+    try {
+      const { mensagem } = await montarUrlEMensagem();
+      if (janela) janela.location.href = `https://wa.me/?text=${encodeURIComponent(mensagem)}`;
+    } catch (e) {
+      janela?.close();
+      show?.('Não consegui gerar o link: ' + e.message);
+    } finally {
+      setProcessando(false);
+    }
   }
 
   async function copiarLink() {
-    const { url } = montarUrlEMensagem();
+    setProcessando(true);
+    let url;
+    try {
+      ({ url } = await montarUrlEMensagem());
+    } catch (e) {
+      setProcessando(false);
+      show?.('Não consegui gerar o link: ' + e.message);
+      return;
+    }
     try {
       await navigator.clipboard.writeText(url);
       show?.('Link copiado!');
     } catch {
       show?.('Não consegui copiar automaticamente — copie manualmente: ' + url);
+    } finally {
+      setProcessando(false);
     }
   }
 
@@ -54,11 +81,11 @@ export default function EnviarIdentificacaoButton({ empresaId, empresaNome, peri
 
   return (
     <div style={{ display: 'inline-flex' }}>
-      <button type="button" className="btn-ghost" onClick={enviarWhatsapp}
+      <button type="button" className="btn-ghost" onClick={enviarWhatsapp} disabled={processando}
         style={{ fontSize: '0.8rem', display: 'inline-flex', alignItems: 'center', gap: 5, borderTopRightRadius: 0, borderBottomRightRadius: 0 }}>
-        <HelpCircleIcon size={13} /> {rotulo}
+        <HelpCircleIcon size={13} /> {processando ? 'Gerando link...' : rotulo}
       </button>
-      <button type="button" className="btn-ghost" onClick={copiarLink} title="Copiar link pra compartilhar por fora do WhatsApp"
+      <button type="button" className="btn-ghost" onClick={copiarLink} disabled={processando} title="Copiar link pra compartilhar por fora do WhatsApp"
         style={{ fontSize: '0.8rem', display: 'inline-flex', alignItems: 'center', padding: '0 8px', borderTopLeftRadius: 0, borderBottomLeftRadius: 0, borderLeft: '1px solid var(--border)' }}>
         <LinkIcon size={13} />
       </button>
