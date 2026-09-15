@@ -245,7 +245,11 @@ export default function LancamentosTab({ empresaId, periodo, empresaNome }) {
           <button className="btn-ghost" onClick={exportarCSV} disabled={lancamentosFiltrados.length === 0}>
             Exportar Excel
           </button>
-          <EnviarIdentificacaoButton empresaId={empresaId} empresaNome={empresaNome} periodo={periodo} />
+          {/* mesmo botão sempre no mesmo lugar: sem seleção manda o período
+              inteiro, com seleção manda só os selecionados -- ter dois
+              botões (um fixo + um só na barra de seleção) confundia, dava
+              pra clicar no errado achando que ia respeitar a seleção */}
+          <EnviarIdentificacaoButton empresaId={empresaId} empresaNome={empresaNome} periodo={periodo} lancamentoIds={selecionadosAIdentificar} />
         </div>
         {erro && <p style={{ color: 'var(--danger)', margin: 0 }}>{erro}</p>}
       </div>
@@ -275,9 +279,6 @@ export default function LancamentosTab({ empresaId, periodo, empresaNome }) {
           <button type="button" className="btn-danger" onClick={excluirSelecionados} disabled={aplicandoLote || excluindoLote}>
             {excluindoLote ? 'Excluindo...' : confirmandoExclusaoLote ? 'Sim, excluir' : 'Excluir selecionados'}
           </button>
-          {selecionadosAIdentificar.length > 0 && (
-            <EnviarIdentificacaoButton empresaId={empresaId} empresaNome={empresaNome} periodo={periodo} lancamentoIds={selecionadosAIdentificar} />
-          )}
           {confirmandoExclusaoLote && (
             <button type="button" className="btn-ghost" onClick={() => setConfirmandoExclusaoLote(false)} disabled={excluindoLote}>
               Cancelar
