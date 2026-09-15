@@ -35,10 +35,12 @@ if (share === 'dre' || share === 'balancete') {
 } else if (share === 'faturamento') {
   raiz = <ComprovanteFaturamentoPage empresaId={params.get('empresa')} />
 } else if (identificar === '1') {
+  const idsParam = params.get('ids')
   raiz = <IdentificarLancamentosPage
     empresaId={params.get('empresa')}
     dataInicio={params.get('inicio')}
     dataFim={params.get('fim')}
+    ids={idsParam ? idsParam.split(',') : null}
   />
 } else if (doc) {
   raiz = <DocumentoCompartilhadoPage documentoId={doc} />

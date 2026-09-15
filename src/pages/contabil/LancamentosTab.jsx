@@ -136,6 +136,12 @@ export default function LancamentosTab({ empresaId, periodo, empresaNome }) {
   );
   const todosSelecionados = lancamentosFiltrados.length > 0
     && lancamentosFiltrados.every((l) => selecionados.has(l.id));
+  // só os selecionados que ainda fazem sentido mandar pra identificação —
+  // um já conciliado não tem o que identificar
+  const selecionadosAIdentificar = useMemo(
+    () => lancamentosFiltrados.filter((l) => selecionados.has(l.id) && !l.conciliado).map((l) => l.id),
+    [lancamentosFiltrados, selecionados]
+  );
 
   function toggleSelecionado(id) {
     setConfirmandoExclusaoLote(false);
@@ -269,6 +275,9 @@ export default function LancamentosTab({ empresaId, periodo, empresaNome }) {
           <button type="button" className="btn-danger" onClick={excluirSelecionados} disabled={aplicandoLote || excluindoLote}>
             {excluindoLote ? 'Excluindo...' : confirmandoExclusaoLote ? 'Sim, excluir' : 'Excluir selecionados'}
           </button>
+          {selecionadosAIdentificar.length > 0 && (
+            <EnviarIdentificacaoButton empresaId={empresaId} empresaNome={empresaNome} periodo={periodo} lancamentoIds={selecionadosAIdentificar} />
+          )}
           {confirmandoExclusaoLote && (
             <button type="button" className="btn-ghost" onClick={() => setConfirmandoExclusaoLote(false)} disabled={excluindoLote}>
               Cancelar

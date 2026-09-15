@@ -501,15 +501,22 @@ export async function listarLancamentos(empresaId, { dataInicio, dataFim } = {})
 // mesmo modelo do link de compartilhamento do Balancete/DRE) e preenche o
 // que foi cada um; a resposta fica em observacao_cliente pra ajudar a
 // classificar depois.
-export async function listarLancamentosAIdentificar(empresaId, { dataInicio, dataFim }) {
+// ids: quando informado (seleção manual em LancamentosTab.jsx, pra mandar
+// só esses lançamentos pra identificação em vez do período inteiro),
+// filtra só por eles e ignora dataInicio/dataFim.
+export async function listarLancamentosAIdentificar(empresaId, { dataInicio, dataFim, ids } = {}) {
   let query = supabase
     .from('lancamentos_contabeis')
     .select('id, data, historico, numero_documento, observacao_cliente, partidas_contabeis(tipo, valor, contas_contabeis(codigo))')
     .eq('empresa_id', empresaId)
     .eq('conciliado', false)
     .order('data');
-  if (dataInicio) query = query.gte('data', dataInicio);
-  if (dataFim) query = query.lte('data', dataFim);
+  if (ids && ids.length > 0) {
+    query = query.in('id', ids);
+  } else {
+    if (dataInicio) query = query.gte('data', dataInicio);
+    if (dataFim) query = query.lte('data', dataFim);
+  }
 
   const { data, error } = await query;
   if (error) throw error;
