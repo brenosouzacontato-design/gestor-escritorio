@@ -139,15 +139,18 @@ export default function LancamentosTab({ empresaId, periodo, empresaNome }) {
   // Lançamentos a mandar pra identificação: se tem seleção manual
   // (checkbox), usa só essa; senão usa o que está filtrado na tela (busca
   // de histórico/conta, natureza, status — os filtros no cabeçalho da
-  // tabela). Só cai pro período inteiro (sem listar id por id, URL mais
-  // compacta) quando não há filtro nenhum aplicado e nada selecionado —
-  // mesmo comportamento de sempre pro caso comum. Sem isso, "Enviar pra
-  // identificação" ignorava os filtros da tela e sempre mandava tudo do
-  // período, mesmo com a tabela filtrada.
+  // tabela). Manda exatamente o que a tela decidiu, conciliado ou não —
+  // ex: "só as entradas do extrato" pra identificar, independente de já
+  // estarem conciliadas — quem filtra decide, o botão não filtra de novo
+  // por conciliado por conta própria (isso já foi um bug: dropava do envio
+  // qualquer selecionado/filtrado que já estivesse conciliado). Só cai pro
+  // período inteiro (sem listar id por id, URL mais compacta, e aí sim só
+  // os ainda não conciliados) quando não há filtro nenhum aplicado e nada
+  // selecionado — mesmo comportamento de sempre pro caso comum.
   const semFiltroAplicado = filtroHistorico === '' && filtroContas === '' && filtroNatureza === '' && filtroStatus === '';
   const idsParaIdentificar = useMemo(
     () => (selecionados.size > 0 ? lancamentosFiltrados.filter((l) => selecionados.has(l.id)) : lancamentosFiltrados)
-      .filter((l) => !l.conciliado).map((l) => l.id),
+      .map((l) => l.id),
     [lancamentosFiltrados, selecionados]
   );
 

@@ -496,24 +496,26 @@ export async function listarLancamentos(empresaId, { dataInicio, dataFim } = {})
   return data;
 }
 
-// Lançamentos ainda não conciliados de um período — base do "enviar pro
-// cliente pra identificação": ele recebe essa lista (sem precisar logar,
-// mesmo modelo do link de compartilhamento do Balancete/DRE) e preenche o
-// que foi cada um; a resposta fica em observacao_cliente pra ajudar a
-// classificar depois.
-// ids: quando informado (seleção manual em LancamentosTab.jsx, pra mandar
-// só esses lançamentos pra identificação em vez do período inteiro),
-// filtra só por eles e ignora dataInicio/dataFim.
+// Lançamentos pra "enviar pro cliente pra identificação": ele recebe essa
+// lista (sem precisar logar, mesmo modelo do link de compartilhamento do
+// Balancete/DRE) e preenche o que foi cada um; a resposta fica em
+// observacao_cliente pra ajudar a classificar depois.
+// ids: quando informado (LancamentosTab.jsx manda o que está filtrado/
+// selecionado na tela), filtra só por eles, ignora dataInicio/dataFim e
+// NÃO restringe por conciliado — quem decidiu o que mandar foi a tela (ex:
+// "só as entradas", independente de já estarem conciliadas ou não); sem
+// ids, cai pro período inteiro e aí sim só os ainda não conciliados (é o
+// que faz sentido perguntar quando não há filtro nenhum aplicado).
 export async function listarLancamentosAIdentificar(empresaId, { dataInicio, dataFim, ids } = {}) {
   let query = supabase
     .from('lancamentos_contabeis')
     .select('id, data, historico, numero_documento, observacao_cliente, partidas_contabeis(tipo, valor, contas_contabeis(codigo))')
     .eq('empresa_id', empresaId)
-    .eq('conciliado', false)
     .order('data');
   if (ids && ids.length > 0) {
     query = query.in('id', ids);
   } else {
+    query = query.eq('conciliado', false);
     if (dataInicio) query = query.gte('data', dataInicio);
     if (dataFim) query = query.lte('data', dataFim);
   }
