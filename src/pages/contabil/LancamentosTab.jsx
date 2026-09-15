@@ -136,10 +136,18 @@ export default function LancamentosTab({ empresaId, periodo, empresaNome }) {
   );
   const todosSelecionados = lancamentosFiltrados.length > 0
     && lancamentosFiltrados.every((l) => selecionados.has(l.id));
-  // só os selecionados que ainda fazem sentido mandar pra identificação —
-  // um já conciliado não tem o que identificar
-  const selecionadosAIdentificar = useMemo(
-    () => lancamentosFiltrados.filter((l) => selecionados.has(l.id) && !l.conciliado).map((l) => l.id),
+  // Lançamentos a mandar pra identificação: se tem seleção manual
+  // (checkbox), usa só essa; senão usa o que está filtrado na tela (busca
+  // de histórico/conta, natureza, status — os filtros no cabeçalho da
+  // tabela). Só cai pro período inteiro (sem listar id por id, URL mais
+  // compacta) quando não há filtro nenhum aplicado e nada selecionado —
+  // mesmo comportamento de sempre pro caso comum. Sem isso, "Enviar pra
+  // identificação" ignorava os filtros da tela e sempre mandava tudo do
+  // período, mesmo com a tabela filtrada.
+  const semFiltroAplicado = filtroHistorico === '' && filtroContas === '' && filtroNatureza === '' && filtroStatus === '';
+  const idsParaIdentificar = useMemo(
+    () => (selecionados.size > 0 ? lancamentosFiltrados.filter((l) => selecionados.has(l.id)) : lancamentosFiltrados)
+      .filter((l) => !l.conciliado).map((l) => l.id),
     [lancamentosFiltrados, selecionados]
   );
 
@@ -245,11 +253,14 @@ export default function LancamentosTab({ empresaId, periodo, empresaNome }) {
           <button className="btn-ghost" onClick={exportarCSV} disabled={lancamentosFiltrados.length === 0}>
             Exportar Excel
           </button>
-          {/* mesmo botão sempre no mesmo lugar: sem seleção manda o período
-              inteiro, com seleção manda só os selecionados -- ter dois
-              botões (um fixo + um só na barra de seleção) confundia, dava
-              pra clicar no errado achando que ia respeitar a seleção */}
-          <EnviarIdentificacaoButton empresaId={empresaId} empresaNome={empresaNome} periodo={periodo} lancamentoIds={selecionadosAIdentificar} />
+          {/* mesmo botão sempre no mesmo lugar: sem filtro/seleção manda o
+              período inteiro; com filtro aplicado na tabela (busca, conta,
+              natureza, status) ou seleção manual, manda só o que está
+              sendo mostrado -- ter dois botões (um fixo + um só na barra de
+              seleção) confundia, e ignorar os filtros da tela mandava tudo
+              do período mesmo com a tabela filtrada */}
+          <EnviarIdentificacaoButton empresaId={empresaId} empresaNome={empresaNome} periodo={periodo}
+            lancamentoIds={semFiltroAplicado && selecionados.size === 0 ? [] : idsParaIdentificar} />
         </div>
         {erro && <p style={{ color: 'var(--danger)', margin: 0 }}>{erro}</p>}
       </div>
