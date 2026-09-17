@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect } from 'react'
-import { PlusIcon, XIcon, CheckCircleIcon, ClockIcon, AlertCircleIcon, MinusCircleIcon, ChevronRightIcon, CalendarIcon, CheckIcon, ZapIcon, RefreshCwIcon, Trash2Icon, ListIcon, LayoutGridIcon, Rows3Icon, BarChart3Icon, Share2Icon, EyeIcon, CheckSquareIcon, FileIcon, DownloadIcon, PencilIcon, FileTextIcon, GripVerticalIcon, BellIcon, BellRingIcon, UploadCloudIcon, Loader2Icon, SparklesIcon } from 'lucide-react'
+import { PlusIcon, XIcon, CheckCircleIcon, ClockIcon, AlertCircleIcon, MinusCircleIcon, ChevronRightIcon, CalendarIcon, CheckIcon, ZapIcon, RefreshCwIcon, Trash2Icon, ListIcon, LayoutGridIcon, Rows3Icon, ClipboardListIcon, BarChart3Icon, Share2Icon, EyeIcon, CheckSquareIcon, FileIcon, DownloadIcon, PencilIcon, FileTextIcon, GripVerticalIcon, BellIcon, BellRingIcon, UploadCloudIcon, Loader2Icon, SparklesIcon } from 'lucide-react'
 import { useStore } from '../store'
 import { DeptChip, PriDot, fmtDate, isOverdue, useToast } from '../components/shared'
 import { supabase } from '../lib/supabase'
@@ -164,7 +164,7 @@ export default function Empresas({ onOpenTarefas, clienteInicialId, onClienteIni
   const [showCndManual,   setShowCndManual]   = useState(false) // modal de marcar CND estadual/municipal
   const [painelViewer,    setPainelViewer]    = useState(null) // {indiceInicial} — abre o carrossel de painéis a partir da empresa do drawer
   const [lembretesPendentes, setLembretesPendentes] = useState([]) // dos itens do drawer aberto
-  const [celulaTarefa, setCelulaTarefa] = useState(null) // {titulo, statusLabel, itens} — modal da visão Tarefas ao clicar numa contagem
+  const [celulaObrigacao, setCelulaObrigacao] = useState(null) // {titulo, statusLabel, itens} — modal da visão Obrigações ao clicar numa contagem
 
   const carregarDepartamentos = () => listarDepartamentos().then(setDepartamentos).catch(() => {})
   useEffect(() => { carregarDepartamentos() }, [])
@@ -291,15 +291,17 @@ export default function Empresas({ onOpenTarefas, clienteInicialId, onClienteIni
     return grupos
   }, [itensPorVencimento])
 
-  // Visão "Tarefas": agrupa todas as tarefas (de todas as empresas
-  // filtradas) pelo título — útil pra tarefa criada em lote pra vários
-  // clientes (ModalTarefasLote), onde o mesmo título se repete empresa a
-  // empresa e faz sentido enxergar o andamento agregado ("quantas empresas
-  // já concluíram essa tarefa") em vez de abrir cliente por cliente. Cada
-  // contagem é de EMPRESAS distintas (não de linhas de tarefa) — se por
-  // algum motivo uma empresa tiver duas tarefas com o mesmo título, conta
-  // uma vez só em cada balde de status.
-  const tarefasAgrupadas = useMemo(() => {
+  // Visão "Obrigações": agrupa as obrigações da competência atual (de
+  // todas as empresas filtradas) pelo título/tipo — mesmo tipo recorrente
+  // (PGDAS, FGTS Digital, DCTFWeb...) se repete empresa a empresa, então
+  // faz mais sentido enxergar o andamento agregado ("quantas empresas já
+  // entregaram esse tipo") do que abrir cliente por cliente. Cada
+  // contagem é de EMPRESAS distintas (não de linhas de obrigação) — se por
+  // algum motivo uma empresa tiver duas obrigações com o mesmo título,
+  // conta uma vez só em cada balde de status. O ícone vem do departamento
+  // dono do tipo (🧾 Fiscal, 👥 Folha etc.), pra diferenciar visualmente de
+  // relance a quem pertence cada linha.
+  const obrigacoesAgrupadas = useMemo(() => {
     const termo = busca.toLowerCase()
     const clientesFiltrados = clientes.filter(c => {
       if (termo && !c.nome.toLowerCase().includes(termo) && !c.cnpj?.includes(termo)) return false
@@ -307,28 +309,29 @@ export default function Empresas({ onOpenTarefas, clienteInicialId, onClienteIni
       return true
     })
     const clienteById = new Map(clientesFiltrados.map(c => [c.id, c]))
+    const deptById = new Map(departamentos.map(d => [d.id, d]))
 
     const porTitulo = new Map()
-    tarefas.forEach(t => {
-      const cliente = clienteById.get(t.cliente_id)
+    obrigacoes.filter(o => o.competencia === compSel).forEach(o => {
+      const cliente = clienteById.get(o.cliente_id)
       if (!cliente) return
-      const chave = (t.titulo || '(sem título)').trim()
-      if (!porTitulo.has(chave)) porTitulo.set(chave, { titulo: chave, pendentes: [], vencidas: [], concluidas: [] })
-      const grupo = porTitulo.get(chave)
-      const item = { cliente, tarefa: t }
-      if (t.concluida) {
-        // uma empresa só entra uma vez por balde, mesmo com >1 tarefa igual
-        if (!grupo.concluidas.some(x => x.cliente.id === cliente.id)) grupo.concluidas.push(item)
-      } else {
-        if (!grupo.pendentes.some(x => x.cliente.id === cliente.id)) grupo.pendentes.push(item)
-        if (t.vencimento && isOverdue(t.vencimento) && !grupo.vencidas.some(x => x.cliente.id === cliente.id)) grupo.vencidas.push(item)
+      const chave = (o.titulo || o.tipo || '(sem título)').trim()
+      if (!porTitulo.has(chave)) {
+        porTitulo.set(chave, { titulo: chave, dept: deptById.get(o.departamento_id) || null, pendentes: [], vencidas: [], concluidas: [], naoAplica: [] })
       }
+      const grupo = porTitulo.get(chave)
+      if (!grupo.dept && o.departamento_id) grupo.dept = deptById.get(o.departamento_id) || null
+      const item = { cliente, obrigacao: o }
+      // uma empresa só entra uma vez por balde, mesmo com >1 obrigação igual
+      const balde = o.status === 'concluido' ? grupo.concluidas : o.status === 'vencido' ? grupo.vencidas
+        : o.status === 'nao_aplica' ? grupo.naoAplica : grupo.pendentes
+      if (!balde.some(x => x.cliente.id === cliente.id)) balde.push(item)
     })
 
     return [...porTitulo.values()]
-      .map(g => ({ ...g, total: new Set([...g.pendentes, ...g.concluidas].map(x => x.cliente.id)).size }))
+      .map(g => ({ ...g, total: new Set([...g.pendentes, ...g.vencidas, ...g.concluidas, ...g.naoAplica].map(x => x.cliente.id)).size }))
       .sort((a, b) => b.total - a.total || a.titulo.localeCompare(b.titulo))
-  }, [clientes, tarefas, busca, carteira])
+  }, [clientes, obrigacoes, compSel, busca, carteira, departamentos])
 
   // `colunaAlvo` só vem preenchido na visão em kanban (Cards) — solta em
   // cima de outro card muda a entrega (se mudou de coluna) e reordena;
@@ -602,10 +605,10 @@ export default function Empresas({ onOpenTarefas, clienteInicialId, onClienteIni
               border:'none', borderRadius:6, padding:'5px 9px', fontSize:11, color:visualizacao==='lista'?'var(--text1)':'var(--text3)', cursor:'pointer', fontWeight:500 }}>
             <Rows3Icon size={12} /> Lista
           </button>
-          <button onClick={() => escolherVisualizacao('tarefas')} title="Tarefas agrupadas por título, com o andamento (nº de empresas) em cada status"
-            style={{ display:'flex', alignItems:'center', gap:4, background:visualizacao==='tarefas'?'var(--surface)':'none', boxShadow:visualizacao==='tarefas'?'var(--shadow-sm)':'none',
-              border:'none', borderRadius:6, padding:'5px 9px', fontSize:11, color:visualizacao==='tarefas'?'var(--text1)':'var(--text3)', cursor:'pointer', fontWeight:500 }}>
-            <CheckSquareIcon size={12} /> Tarefas
+          <button onClick={() => escolherVisualizacao('obrigacoes')} title="Obrigações agrupadas por título, com o andamento (nº de empresas) em cada status"
+            style={{ display:'flex', alignItems:'center', gap:4, background:visualizacao==='obrigacoes'?'var(--surface)':'none', boxShadow:visualizacao==='obrigacoes'?'var(--shadow-sm)':'none',
+              border:'none', borderRadius:6, padding:'5px 9px', fontSize:11, color:visualizacao==='obrigacoes'?'var(--text1)':'var(--text3)', cursor:'pointer', fontWeight:500 }}>
+            <ClipboardListIcon size={12} /> Obrigações
           </button>
         </div>
         <div style={{ marginLeft:'auto', display:'flex', alignItems:'center', gap:8 }}>
@@ -1065,31 +1068,35 @@ export default function Empresas({ onOpenTarefas, clienteInicialId, onClienteIni
           )
         })()}
 
-        {/* Tarefas agrupadas por título (ex: tarefa criada em lote pra várias
-            empresas via ModalTarefasLote) — cada coluna é uma contagem de
-            EMPRESAS distintas naquele status; clicar abre a lista de
-            empresas daquele balde, e clicar numa empresa ali abre o drawer
-            dela direto na aba Tarefas. */}
-        {visualizacao === 'tarefas' && (
+        {/* Obrigações da competência atual, agrupadas por título/tipo (ex:
+            PGDAS, FGTS Digital — o mesmo tipo recorrente em várias empresas)
+            — cada coluna é uma contagem de EMPRESAS distintas naquele
+            status; clicar abre a lista de empresas daquele balde, e clicar
+            numa empresa ali abre o drawer dela direto na aba Obrigações.
+            O ícone antes do título é o do departamento dono do tipo, pra
+            diferenciar de relance a quem pertence cada linha. */}
+        {visualizacao === 'obrigacoes' && (
           <div style={{ flex:1, overflow:'auto', padding:'16px' }}>
-            {tarefasAgrupadas.length === 0 && (
-              <div style={{ padding:40, textAlign:'center', color:'var(--text3)', fontSize:13 }}>Nenhuma tarefa encontrada</div>
+            {obrigacoesAgrupadas.length === 0 && (
+              <div style={{ padding:40, textAlign:'center', color:'var(--text3)', fontSize:13 }}>Nenhuma obrigação encontrada em {compSel}</div>
             )}
-            {tarefasAgrupadas.length > 0 && (
-            <div style={{ maxWidth:760, border:'1px solid var(--border)', borderRadius:'var(--r-md)', overflow:'hidden', background:'var(--surface)' }}>
+            {obrigacoesAgrupadas.length > 0 && (
+            <div style={{ maxWidth:820, border:'1px solid var(--border)', borderRadius:'var(--r-md)', overflow:'hidden', background:'var(--surface)' }}>
               <div style={{ display:'flex', alignItems:'center', gap:8, padding:'6px 10px', background:'var(--surface2)', borderBottom:'1px solid var(--border)' }}>
-                <span style={{ flex:1, minWidth:0, fontSize:10, fontWeight:700, color:'var(--text3)', textTransform:'uppercase', letterSpacing:.4 }}>Tarefa</span>
-                <span style={{ width:78, flexShrink:0, fontSize:10, fontWeight:700, color:'var(--text3)', textTransform:'uppercase', letterSpacing:.4, textAlign:'center' }}>Pendentes</span>
-                <span style={{ width:78, flexShrink:0, fontSize:10, fontWeight:700, color:'var(--text3)', textTransform:'uppercase', letterSpacing:.4, textAlign:'center' }}>Vencidas</span>
-                <span style={{ width:78, flexShrink:0, fontSize:10, fontWeight:700, color:'var(--text3)', textTransform:'uppercase', letterSpacing:.4, textAlign:'center' }}>Concluídas</span>
-                <span style={{ width:78, flexShrink:0, fontSize:10, fontWeight:700, color:'var(--text3)', textTransform:'uppercase', letterSpacing:.4, textAlign:'center' }}>Empresas</span>
+                <span style={{ flex:1, minWidth:0, fontSize:10, fontWeight:700, color:'var(--text3)', textTransform:'uppercase', letterSpacing:.4 }}>Obrigação</span>
+                <span style={{ width:74, flexShrink:0, fontSize:10, fontWeight:700, color:'var(--warn)', textTransform:'uppercase', letterSpacing:.4, textAlign:'center' }}>Pendentes</span>
+                <span style={{ width:74, flexShrink:0, fontSize:10, fontWeight:700, color:'var(--danger)', textTransform:'uppercase', letterSpacing:.4, textAlign:'center' }}>Vencidas</span>
+                <span style={{ width:74, flexShrink:0, fontSize:10, fontWeight:700, color:'var(--ok)', textTransform:'uppercase', letterSpacing:.4, textAlign:'center' }}>Concluídas</span>
+                <span style={{ width:74, flexShrink:0, fontSize:10, fontWeight:700, color:'var(--info)', textTransform:'uppercase', letterSpacing:.4, textAlign:'center' }}>N/A</span>
+                <span style={{ width:74, flexShrink:0, fontSize:10, fontWeight:700, color:'var(--text3)', textTransform:'uppercase', letterSpacing:.4, textAlign:'center' }}>Empresas</span>
               </div>
-              {tarefasAgrupadas.map((g, gi) => {
-                const ultima = gi === tarefasAgrupadas.length - 1
+              {obrigacoesAgrupadas.map((g, gi) => {
+                const ultima = gi === obrigacoesAgrupadas.length - 1
                 const celulas = [
                   { valor: g.pendentes.length, itens: g.pendentes, cor: 'var(--warn)', statusLabel: 'Pendente' },
                   { valor: g.vencidas.length, itens: g.vencidas, cor: 'var(--danger)', statusLabel: 'Vencida' },
                   { valor: g.concluidas.length, itens: g.concluidas, cor: 'var(--ok)', statusLabel: 'Concluída' },
+                  { valor: g.naoAplica.length, itens: g.naoAplica, cor: 'var(--info)', statusLabel: 'Não se aplica' },
                 ]
                 return (
                   <div key={g.titulo}
@@ -1097,20 +1104,21 @@ export default function Empresas({ onOpenTarefas, clienteInicialId, onClienteIni
                     onMouseLeave={e => { e.currentTarget.style.background = 'transparent' }}
                     style={{ display:'flex', alignItems:'center', gap:8, padding:'7px 10px',
                       borderBottom: ultima ? 'none' : '1px solid var(--border)', transition:'background .1s' }}>
-                    <span style={{ flex:1, minWidth:0, fontSize:12, fontWeight:600, color:'var(--text1)', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }} title={g.titulo}>
-                      {g.titulo}
+                    <span style={{ flex:1, minWidth:0, display:'flex', alignItems:'center', gap:6, fontSize:12, fontWeight:600, color:'var(--text1)', overflow:'hidden' }} title={g.dept ? `${g.titulo} · ${g.dept.nome}` : g.titulo}>
+                      <span style={{ flexShrink:0 }}>{g.dept?.icone || '📋'}</span>
+                      <span style={{ overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{g.titulo}</span>
                     </span>
                     {celulas.map(cel => (
-                      <button key={cel.statusLabel} onClick={() => { if (cel.itens.length > 0) setCelulaTarefa({ titulo: g.titulo, statusLabel: cel.statusLabel, itens: cel.itens }) }}
+                      <button key={cel.statusLabel} onClick={() => { if (cel.itens.length > 0) setCelulaObrigacao({ titulo: g.titulo, statusLabel: cel.statusLabel, itens: cel.itens }) }}
                         disabled={cel.itens.length === 0}
-                        style={{ width:78, flexShrink:0, textAlign:'center', background:'none', border:'none', padding:0,
+                        style={{ width:74, flexShrink:0, textAlign:'center', background:'none', border:'none', padding:0,
                           cursor: cel.itens.length > 0 ? 'pointer' : 'default', fontSize:12.5, fontWeight:700,
                           color: cel.itens.length > 0 ? cel.cor : 'var(--text3)', textDecoration: cel.itens.length > 0 ? 'underline' : 'none',
                           textDecorationColor: cel.itens.length > 0 ? `color-mix(in srgb, ${cel.cor}, transparent 60%)` : 'transparent' }}>
                         {cel.valor}
                       </button>
                     ))}
-                    <span style={{ width:78, flexShrink:0, textAlign:'center', fontSize:12.5, fontWeight:700, color:'var(--text2)' }}>{g.total}</span>
+                    <span style={{ width:74, flexShrink:0, textAlign:'center', fontSize:12.5, fontWeight:700, color:'var(--text2)' }}>{g.total}</span>
                   </div>
                 )
               })}
@@ -1466,15 +1474,15 @@ export default function Empresas({ onOpenTarefas, clienteInicialId, onClienteIni
         />
       )}
 
-      {/* Modal "lista de empresas" — ao clicar numa contagem na visão Tarefas */}
-      {celulaTarefa && (
-        <ModalBase titulo={`${celulaTarefa.titulo} — ${celulaTarefa.statusLabel} (${celulaTarefa.itens.length})`} onClose={() => setCelulaTarefa(null)}>
+      {/* Modal "lista de empresas" — ao clicar numa contagem na visão Obrigações */}
+      {celulaObrigacao && (
+        <ModalBase titulo={`${celulaObrigacao.titulo} — ${celulaObrigacao.statusLabel} (${celulaObrigacao.itens.length})`} onClose={() => setCelulaObrigacao(null)}>
           <div style={{ display:'flex', flexDirection:'column', gap:6 }}>
-            {celulaTarefa.itens.map(({ cliente }) => (
+            {celulaObrigacao.itens.map(({ cliente }) => (
               <button key={cliente.id} onClick={() => {
-                  setCelulaTarefa(null)
+                  setCelulaObrigacao(null)
                   setDrawer({ c: cliente, dept: null })
-                  setDrawerTab('tarefas')
+                  setDrawerTab('obrig')
                 }}
                 style={{ width:'100%', display:'flex', alignItems:'center', justifyContent:'space-between', gap:8, textAlign:'left',
                   background:'var(--surface2)', border:'1px solid var(--border)', borderRadius:8, padding:'8px 10px', cursor:'pointer' }}>
