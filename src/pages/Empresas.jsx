@@ -164,6 +164,7 @@ export default function Empresas({ onOpenTarefas, clienteInicialId, onClienteIni
   const [showCndManual,   setShowCndManual]   = useState(false) // modal de marcar CND estadual/municipal
   const [painelViewer,    setPainelViewer]    = useState(null) // {indiceInicial} — abre o carrossel de painéis a partir da empresa do drawer
   const [lembretesPendentes, setLembretesPendentes] = useState([]) // dos itens do drawer aberto
+  const [celulaTarefa, setCelulaTarefa] = useState(null) // {titulo, statusLabel, itens} — modal da visão Tarefas ao clicar numa contagem
 
   const carregarDepartamentos = () => listarDepartamentos().then(setDepartamentos).catch(() => {})
   useEffect(() => { carregarDepartamentos() }, [])
@@ -289,6 +290,45 @@ export default function Empresas({ onOpenTarefas, clienteInicialId, onClienteIni
     })
     return grupos
   }, [itensPorVencimento])
+
+  // Visão "Tarefas": agrupa todas as tarefas (de todas as empresas
+  // filtradas) pelo título — útil pra tarefa criada em lote pra vários
+  // clientes (ModalTarefasLote), onde o mesmo título se repete empresa a
+  // empresa e faz sentido enxergar o andamento agregado ("quantas empresas
+  // já concluíram essa tarefa") em vez de abrir cliente por cliente. Cada
+  // contagem é de EMPRESAS distintas (não de linhas de tarefa) — se por
+  // algum motivo uma empresa tiver duas tarefas com o mesmo título, conta
+  // uma vez só em cada balde de status.
+  const tarefasAgrupadas = useMemo(() => {
+    const termo = busca.toLowerCase()
+    const clientesFiltrados = clientes.filter(c => {
+      if (termo && !c.nome.toLowerCase().includes(termo) && !c.cnpj?.includes(termo)) return false
+      if (carteira !== 'todas' && c.carteira !== carteira) return false
+      return true
+    })
+    const clienteById = new Map(clientesFiltrados.map(c => [c.id, c]))
+
+    const porTitulo = new Map()
+    tarefas.forEach(t => {
+      const cliente = clienteById.get(t.cliente_id)
+      if (!cliente) return
+      const chave = (t.titulo || '(sem título)').trim()
+      if (!porTitulo.has(chave)) porTitulo.set(chave, { titulo: chave, pendentes: [], vencidas: [], concluidas: [] })
+      const grupo = porTitulo.get(chave)
+      const item = { cliente, tarefa: t }
+      if (t.concluida) {
+        // uma empresa só entra uma vez por balde, mesmo com >1 tarefa igual
+        if (!grupo.concluidas.some(x => x.cliente.id === cliente.id)) grupo.concluidas.push(item)
+      } else {
+        if (!grupo.pendentes.some(x => x.cliente.id === cliente.id)) grupo.pendentes.push(item)
+        if (t.vencimento && isOverdue(t.vencimento) && !grupo.vencidas.some(x => x.cliente.id === cliente.id)) grupo.vencidas.push(item)
+      }
+    })
+
+    return [...porTitulo.values()]
+      .map(g => ({ ...g, total: new Set([...g.pendentes, ...g.concluidas].map(x => x.cliente.id)).size }))
+      .sort((a, b) => b.total - a.total || a.titulo.localeCompare(b.titulo))
+  }, [clientes, tarefas, busca, carteira])
 
   // `colunaAlvo` só vem preenchido na visão em kanban (Cards) — solta em
   // cima de outro card muda a entrega (se mudou de coluna) e reordena;
@@ -561,6 +601,11 @@ export default function Empresas({ onOpenTarefas, clienteInicialId, onClienteIni
             style={{ display:'flex', alignItems:'center', gap:4, background:visualizacao==='lista'?'var(--surface)':'none', boxShadow:visualizacao==='lista'?'var(--shadow-sm)':'none',
               border:'none', borderRadius:6, padding:'5px 9px', fontSize:11, color:visualizacao==='lista'?'var(--text1)':'var(--text3)', cursor:'pointer', fontWeight:500 }}>
             <Rows3Icon size={12} /> Lista
+          </button>
+          <button onClick={() => escolherVisualizacao('tarefas')} title="Tarefas agrupadas por título, com o andamento (nº de empresas) em cada status"
+            style={{ display:'flex', alignItems:'center', gap:4, background:visualizacao==='tarefas'?'var(--surface)':'none', boxShadow:visualizacao==='tarefas'?'var(--shadow-sm)':'none',
+              border:'none', borderRadius:6, padding:'5px 9px', fontSize:11, color:visualizacao==='tarefas'?'var(--text1)':'var(--text3)', cursor:'pointer', fontWeight:500 }}>
+            <CheckSquareIcon size={12} /> Tarefas
           </button>
         </div>
         <div style={{ marginLeft:'auto', display:'flex', alignItems:'center', gap:8 }}>
@@ -1020,6 +1065,60 @@ export default function Empresas({ onOpenTarefas, clienteInicialId, onClienteIni
           )
         })()}
 
+        {/* Tarefas agrupadas por título (ex: tarefa criada em lote pra várias
+            empresas via ModalTarefasLote) — cada coluna é uma contagem de
+            EMPRESAS distintas naquele status; clicar abre a lista de
+            empresas daquele balde, e clicar numa empresa ali abre o drawer
+            dela direto na aba Tarefas. */}
+        {visualizacao === 'tarefas' && (
+          <div style={{ flex:1, overflow:'auto', padding:'16px' }}>
+            {tarefasAgrupadas.length === 0 && (
+              <div style={{ padding:40, textAlign:'center', color:'var(--text3)', fontSize:13 }}>Nenhuma tarefa encontrada</div>
+            )}
+            {tarefasAgrupadas.length > 0 && (
+            <div style={{ maxWidth:760, border:'1px solid var(--border)', borderRadius:'var(--r-md)', overflow:'hidden', background:'var(--surface)' }}>
+              <div style={{ display:'flex', alignItems:'center', gap:8, padding:'6px 10px', background:'var(--surface2)', borderBottom:'1px solid var(--border)' }}>
+                <span style={{ flex:1, minWidth:0, fontSize:10, fontWeight:700, color:'var(--text3)', textTransform:'uppercase', letterSpacing:.4 }}>Tarefa</span>
+                <span style={{ width:78, flexShrink:0, fontSize:10, fontWeight:700, color:'var(--text3)', textTransform:'uppercase', letterSpacing:.4, textAlign:'center' }}>Pendentes</span>
+                <span style={{ width:78, flexShrink:0, fontSize:10, fontWeight:700, color:'var(--text3)', textTransform:'uppercase', letterSpacing:.4, textAlign:'center' }}>Vencidas</span>
+                <span style={{ width:78, flexShrink:0, fontSize:10, fontWeight:700, color:'var(--text3)', textTransform:'uppercase', letterSpacing:.4, textAlign:'center' }}>Concluídas</span>
+                <span style={{ width:78, flexShrink:0, fontSize:10, fontWeight:700, color:'var(--text3)', textTransform:'uppercase', letterSpacing:.4, textAlign:'center' }}>Empresas</span>
+              </div>
+              {tarefasAgrupadas.map((g, gi) => {
+                const ultima = gi === tarefasAgrupadas.length - 1
+                const celulas = [
+                  { valor: g.pendentes.length, itens: g.pendentes, cor: 'var(--warn)', statusLabel: 'Pendente' },
+                  { valor: g.vencidas.length, itens: g.vencidas, cor: 'var(--danger)', statusLabel: 'Vencida' },
+                  { valor: g.concluidas.length, itens: g.concluidas, cor: 'var(--ok)', statusLabel: 'Concluída' },
+                ]
+                return (
+                  <div key={g.titulo}
+                    onMouseEnter={e => { e.currentTarget.style.background = 'var(--surface2)' }}
+                    onMouseLeave={e => { e.currentTarget.style.background = 'transparent' }}
+                    style={{ display:'flex', alignItems:'center', gap:8, padding:'7px 10px',
+                      borderBottom: ultima ? 'none' : '1px solid var(--border)', transition:'background .1s' }}>
+                    <span style={{ flex:1, minWidth:0, fontSize:12, fontWeight:600, color:'var(--text1)', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }} title={g.titulo}>
+                      {g.titulo}
+                    </span>
+                    {celulas.map(cel => (
+                      <button key={cel.statusLabel} onClick={() => { if (cel.itens.length > 0) setCelulaTarefa({ titulo: g.titulo, statusLabel: cel.statusLabel, itens: cel.itens }) }}
+                        disabled={cel.itens.length === 0}
+                        style={{ width:78, flexShrink:0, textAlign:'center', background:'none', border:'none', padding:0,
+                          cursor: cel.itens.length > 0 ? 'pointer' : 'default', fontSize:12.5, fontWeight:700,
+                          color: cel.itens.length > 0 ? cel.cor : 'var(--text3)', textDecoration: cel.itens.length > 0 ? 'underline' : 'none',
+                          textDecorationColor: cel.itens.length > 0 ? `color-mix(in srgb, ${cel.cor}, transparent 60%)` : 'transparent' }}>
+                        {cel.valor}
+                      </button>
+                    ))}
+                    <span style={{ width:78, flexShrink:0, textAlign:'center', fontSize:12.5, fontWeight:700, color:'var(--text2)' }}>{g.total}</span>
+                  </div>
+                )
+              })}
+            </div>
+            )}
+          </div>
+        )}
+
         {visualizacao === 'vencimento' && (
           <div style={{ flex:1, overflow:'auto', padding:'16px' }}>
             {gruposPorVencimento.length === 0 && (
@@ -1365,6 +1464,26 @@ export default function Empresas({ onOpenTarefas, clienteInicialId, onClienteIni
           onClose={() => setLembreteAlvo(null)}
           onSaved={async () => { setLembreteAlvo(null); await recarregarLembretes() }}
         />
+      )}
+
+      {/* Modal "lista de empresas" — ao clicar numa contagem na visão Tarefas */}
+      {celulaTarefa && (
+        <ModalBase titulo={`${celulaTarefa.titulo} — ${celulaTarefa.statusLabel} (${celulaTarefa.itens.length})`} onClose={() => setCelulaTarefa(null)}>
+          <div style={{ display:'flex', flexDirection:'column', gap:6 }}>
+            {celulaTarefa.itens.map(({ cliente }) => (
+              <button key={cliente.id} onClick={() => {
+                  setCelulaTarefa(null)
+                  setDrawer({ c: cliente, dept: null })
+                  setDrawerTab('tarefas')
+                }}
+                style={{ width:'100%', display:'flex', alignItems:'center', justifyContent:'space-between', gap:8, textAlign:'left',
+                  background:'var(--surface2)', border:'1px solid var(--border)', borderRadius:8, padding:'8px 10px', cursor:'pointer' }}>
+                <span style={{ fontSize:12.5, fontWeight:600, color:'var(--text1)' }}>{cliente.nome}</span>
+                <ChevronRightIcon size={13} color="var(--text3)" />
+              </button>
+            ))}
+          </div>
+        </ModalBase>
       )}
 
       {/* Modal CND estadual/municipal */}
