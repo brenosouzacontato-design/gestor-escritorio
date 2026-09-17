@@ -795,81 +795,77 @@ export default function Empresas({ onOpenTarefas, clienteInicialId, onClienteIni
                       border:`1px solid ${completo?'var(--ok)':resS==='danger'?'var(--danger)':resS==='venc_breve'?COR_VENCENDO:'var(--border)'}`,
                       borderLeft:`3px solid ${completo?'var(--ok)':resS==='danger'?'var(--danger)':resS==='venc_breve'?COR_VENCENDO:resS==='warn'?'var(--warn)':'var(--border)'}`,
                       borderRadius:'var(--r-md)',
-                      padding:8, cursor:'grab', transition:'transform .1s, box-shadow .1s, opacity .1s', boxShadow:'var(--shadow-sm)',
+                      padding:6, cursor:'grab', transition:'transform .1s, box-shadow .1s, opacity .1s', boxShadow:'var(--shadow-sm)',
                       opacity:arrastando?.4:1 }}
                     onMouseEnter={e => { e.currentTarget.style.transform='translateY(-1px)'; e.currentTarget.style.boxShadow='var(--shadow-md)' }}
                     onMouseLeave={e => { e.currentTarget.style.transform='none'; e.currentTarget.style.boxShadow='var(--shadow-sm)' }}>
-                    <div style={{ display:'flex', alignItems:'center', gap:5, marginBottom:7 }}>
-                      <div style={{ width:20, height:20, borderRadius:6, background:bg, color:tc, flexShrink:0,
-                        display:'flex', alignItems:'center', justifyContent:'center', fontSize:9.5, fontWeight:700 }}>
+                    <div style={{ display:'flex', alignItems:'center', gap:4, marginBottom:5 }}>
+                      <div style={{ width:16, height:16, borderRadius:5, background:bg, color:tc, flexShrink:0,
+                        display:'flex', alignItems:'center', justifyContent:'center', fontSize:8.5, fontWeight:700 }}>
                         {initials}
                       </div>
-                      <div style={{ minWidth:0, flex:1 }}>
-                        <div style={{ fontSize:11, fontWeight:600, color:'var(--text1)', wordBreak:'break-word', lineHeight:1.2 }}>{c.nome}</div>
-                        <div style={{ fontSize:9, color:'var(--text3)' }}>{c.regime||'SN'}</div>
+                      <div style={{ minWidth:0, flex:1, fontSize:10.5, fontWeight:600, color:'var(--text1)',
+                        overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }} title={c.nome}>
+                        {c.nome}
                       </div>
-                      {S_ICON[resS] && (() => { const Icon = S_ICON[resS]; return <Icon size={12} color={S_COLOR[resS]} /> })()}
-                      <GripVerticalIcon size={11} color="var(--text3)" style={{ flexShrink:0, cursor:'grab' }} title="Arrastar pra reordenar" />
+                      {S_ICON[resS] && (() => { const Icon = S_ICON[resS]; return <Icon size={11} color={S_COLOR[resS]} /> })()}
+                      <GripVerticalIcon size={10} color="var(--text3)" style={{ flexShrink:0, cursor:'grab' }} title="Arrastar pra reordenar" />
                     </div>
 
                     {completo ? (
                       <div style={{ display:'flex', alignItems:'center', justifyContent:'center', gap:4, background:'var(--ok)', color:'#fff',
-                        borderRadius:99, padding:'5px 0', marginBottom:8, fontSize:10.5, fontWeight:700 }}>
-                        <CheckCircleIcon size={12} /> Tudo em dia
+                        borderRadius:99, padding:'3px 0', marginBottom:5, fontSize:10, fontWeight:700 }}>
+                        <CheckCircleIcon size={11} /> Tudo em dia
                       </div>
                     ) : (
-                      <div style={{ marginBottom:8 }}>
-                        {resVenc > 0 && (
-                          <div style={{ display:'flex', alignItems:'center', gap:4, background:'var(--danger-dim)', color:'var(--danger)',
-                            borderRadius:6, padding:'4px 6px', marginBottom:5, fontSize:10, fontWeight:700 }}>
-                            <AlertCircleIcon size={11} style={{ flexShrink:0 }} /> {resVenc} vencida{resVenc!==1?'s':''}
-                          </div>
-                        )}
-                        {resVenc === 0 && resVencendo && (
-                          <div style={{ display:'flex', alignItems:'center', gap:4, background:'rgba(194,65,12,.12)', color:COR_VENCENDO,
-                            borderRadius:6, padding:'4px 6px', marginBottom:5, fontSize:10, fontWeight:700 }}>
-                            <ClockIcon size={11} style={{ flexShrink:0 }} /> Vence em breve
-                          </div>
-                        )}
-                        <div style={{ display:'flex', justifyContent:'space-between', alignItems:'baseline', marginBottom:4 }}>
-                          <span style={{ fontSize:11, fontWeight:700, color:'var(--text1)' }}>
-                            {resOk}/{obsTotal.length || 0} <span style={{ fontWeight:500, color:'var(--text3)', fontSize:9 }}>concluídas</span>
+                      <div style={{ display:'flex', alignItems:'center', gap:6, marginBottom:5 }}>
+                        {resVenc > 0 ? (
+                          <span style={{ display:'flex', alignItems:'center', gap:3, color:'var(--danger)', fontSize:9.5, fontWeight:700, flexShrink:0 }}>
+                            <AlertCircleIcon size={10} /> {resVenc} venc.
                           </span>
-                          <span style={{ fontSize:14, fontWeight:800, color:S_COLOR[resS] }}>{resPct}%</span>
-                        </div>
-                        <div style={{ height:6, background:'var(--surface2)', borderRadius:99, overflow:'hidden' }}>
+                        ) : resVencendo ? (
+                          <span style={{ display:'flex', alignItems:'center', gap:3, color:COR_VENCENDO, fontSize:9.5, fontWeight:700, flexShrink:0 }}>
+                            <ClockIcon size={10} /> em breve
+                          </span>
+                        ) : (
+                          <span style={{ fontSize:9.5, fontWeight:600, color:'var(--text3)', flexShrink:0 }}>
+                            {resOk}/{obsTotal.length || 0}
+                          </span>
+                        )}
+                        <div style={{ flex:1, height:5, background:'var(--surface2)', borderRadius:99, overflow:'hidden' }}>
                           <div style={{ height:'100%', width:`${resPct}%`, background:S_COLOR[resS], borderRadius:99, transition:'width .3s' }} />
                         </div>
+                        <span style={{ fontSize:10.5, fontWeight:800, color:S_COLOR[resS], flexShrink:0 }}>{resPct}%</span>
                       </div>
                     )}
 
-                    <div style={{ display:'flex', flexDirection:'column', gap:4, marginBottom:7 }}>
+                    {/* Departamentos + tarefas viram etiquetas compactas
+                        (ícone + valor) numa faixa só, em vez de uma linha
+                        inteira por departamento — é o que mais engordava
+                        a altura do card. */}
+                    <div style={{ display:'flex', flexWrap:'wrap', gap:3 }}>
                       {departamentos.map(d => {
                         const dd = deptData[d.id] || { s:'empty', val:'—' }
                         return (
                           <button key={d.id} onClick={(e) => { e.stopPropagation(); openDrawer(c, d) }}
-                            title={`Abrir ${d.nome}`}
-                            style={{ width:'100%', display:'flex', alignItems:'center', justifyContent:'space-between', gap:5,
-                              background:completo?'rgba(255,255,255,.5)':'var(--surface2)', border:'1px solid var(--border)', borderRadius:6,
-                              padding:'4px 7px', cursor:'pointer' }}>
-                            <span style={{ fontSize:10, color:'var(--text2)', display:'flex', alignItems:'center', gap:4, fontWeight:500 }}>
-                              <span>{d.icone || '📋'}</span> {d.nome}
-                            </span>
-                            <span style={{ fontSize:10, fontWeight:700, color: completo ? 'var(--text1)' : S_COLOR[dd.s] }}>
+                            title={`${d.nome}: ${dd.val}`}
+                            style={{ display:'flex', alignItems:'center', gap:2,
+                              background:completo?'rgba(255,255,255,.5)':'var(--surface2)', border:'1px solid var(--border)', borderRadius:5,
+                              padding:'2px 5px', cursor:'pointer' }}>
+                            <span style={{ fontSize:9 }}>{d.icone || '📋'}</span>
+                            <span style={{ fontSize:9, fontWeight:700, color: completo ? 'var(--text1)' : S_COLOR[dd.s] }}>
                               {dd.val}
                             </span>
                           </button>
                         )
                       })}
                       <button onClick={(e) => { e.stopPropagation(); onOpenTarefas?.(c.id) }}
-                        title="Abrir tarefas dessa empresa no módulo de Tarefas"
-                        style={{ width:'100%', display:'flex', alignItems:'center', justifyContent:'space-between', gap:5,
-                          background:completo?'rgba(255,255,255,.5)':'var(--surface2)', border:'1px solid var(--border)', borderRadius:6,
-                          padding:'4px 7px', cursor:'pointer' }}>
-                        <span style={{ fontSize:10, color:'var(--text2)', display:'flex', alignItems:'center', gap:4, fontWeight:500 }}>
-                          <CheckSquareIcon size={11} /> Tarefas
-                        </span>
-                        <span style={{ fontSize:10, fontWeight:700, color: tasksCliente.length===0 ? 'var(--text3)' : tasksPend>0 ? 'var(--warn)' : 'var(--ok)' }}>
+                        title={`Tarefas: ${tasksCliente.length===0 ? 'nenhuma' : `${tasksCliente.length-tasksPend}/${tasksCliente.length}`}`}
+                        style={{ display:'flex', alignItems:'center', gap:2,
+                          background:completo?'rgba(255,255,255,.5)':'var(--surface2)', border:'1px solid var(--border)', borderRadius:5,
+                          padding:'2px 5px', cursor:'pointer' }}>
+                        <CheckSquareIcon size={9} color="var(--text3)" />
+                        <span style={{ fontSize:9, fontWeight:700, color: tasksCliente.length===0 ? 'var(--text3)' : tasksPend>0 ? 'var(--warn)' : 'var(--ok)' }}>
                           {tasksCliente.length===0 ? '—' : `${tasksCliente.length-tasksPend}/${tasksCliente.length}`}
                         </span>
                       </button>
@@ -900,7 +896,7 @@ export default function Empresas({ onOpenTarefas, clienteInicialId, onClienteIni
             { id:'a_entregar', label:'A entregar', cor:'var(--warn)', itens: rowsCards.filter(r => !entregues.has(r.c.id)) },
             { id:'entregue',   label:'Entregue',   cor:'var(--ok)',   itens: rowsCards.filter(r => entregues.has(r.c.id)) },
           ]
-          const COL_CHECK = 30, COL_GRIP = 22, COL_CARTEIRA = 130, COL_STATUS = 80
+          const COL_CHECK = 30, COL_GRIP = 22, COL_MODULOS = 90, COL_CARTEIRA = 110, COL_STATUS = 90
           return (
           <div style={{ flex:1, overflow:'auto', padding:'16px' }}>
             {rows.length === 0 && (
@@ -924,6 +920,7 @@ export default function Empresas({ onOpenTarefas, clienteInicialId, onClienteIni
                       <span style={{ width:COL_CHECK, flexShrink:0 }} />
                       <span style={{ width:COL_GRIP, flexShrink:0 }} />
                       <span style={{ flex:1, minWidth:0, fontSize:10, fontWeight:700, color:'var(--text3)', textTransform:'uppercase', letterSpacing:.4 }}>Empresa</span>
+                      <span style={{ width:COL_MODULOS, flexShrink:0, fontSize:10, fontWeight:700, color:'var(--text3)', textTransform:'uppercase', letterSpacing:.4 }}>Módulos</span>
                       <span style={{ width:COL_CARTEIRA, flexShrink:0, fontSize:10, fontWeight:700, color:'var(--text3)', textTransform:'uppercase', letterSpacing:.4 }}>Carteira</span>
                       <span style={{ width:COL_STATUS, flexShrink:0, fontSize:10, fontWeight:700, color:'var(--text3)', textTransform:'uppercase', letterSpacing:.4, textAlign:'right' }}>Status</span>
                     </div>
@@ -932,16 +929,19 @@ export default function Empresas({ onOpenTarefas, clienteInicialId, onClienteIni
                         Arraste uma empresa pra cá
                       </div>
                     )}
-                    {secao.itens.map(({ c }, ri) => {
+                    {secao.itens.map(({ c, deptData }, ri) => {
                       const obsTotal = obrigacoes.filter(o => o.cliente_id===c.id && o.competencia===compSel)
                       const resOk   = obsTotal.filter(o => o.status==='concluido'||o.status==='nao_aplica').length
                       const resVenc = obsTotal.filter(o => o.status==='vencido').length
                       const resVencendo = obsTotal.some(isVencendo)
                       const resPct  = obsTotal.length > 0 ? Math.round((resOk/obsTotal.length)*100) : 0
                       const resS    = resVenc > 0 ? 'danger' : resVencendo ? 'venc_breve' : resPct===100 ? 'ok' : obsTotal.filter(o=>o.status==='pendente').length > 0 ? 'warn' : 'empty'
+                      const tasksCliente = tarefas.filter(t => t.cliente_id === c.id)
+                      const tasksPend = tasksCliente.filter(t => !t.concluida).length
                       const entregue = secao.id === 'entregue'
                       const arrastando = arrastandoId === c.id
                       const ultima = ri === secao.itens.length - 1
+                      const StatusIcon = S_ICON[resS]
                       return (
                         <div key={c.id} onClick={() => openDrawer(c, null)}
                           draggable
@@ -953,7 +953,7 @@ export default function Empresas({ onOpenTarefas, clienteInicialId, onClienteIni
                           onMouseLeave={e => { e.currentTarget.style.background = 'transparent' }}
                           style={{ display:'flex', alignItems:'center', gap:8, cursor:'pointer',
                             borderBottom: ultima ? 'none' : '1px solid var(--border)',
-                            padding:'6px 10px', opacity:arrastando?.4:entregue?.65:1, transition:'opacity .1s, background .1s' }}>
+                            padding:'5px 10px', opacity:arrastando?.4:entregue?.65:1, transition:'opacity .1s, background .1s' }}>
                           <button onClick={e => { e.stopPropagation(); handleMudarEntrega(c.id, !entregue) }}
                             title={entregue ? 'Marcar como não entregue' : 'Marcar como entregue'}
                             style={{ width:16, height:16, borderRadius:4, flexShrink:0, cursor:'pointer',
@@ -964,12 +964,41 @@ export default function Empresas({ onOpenTarefas, clienteInicialId, onClienteIni
                           <span style={{ width:COL_GRIP, flexShrink:0, display:'flex', justifyContent:'center' }}>
                             <GripVerticalIcon size={13} color="var(--text3)" style={{ cursor:'grab' }} title="Arrastar pra reordenar ou mudar de lista" />
                           </span>
-                          <span style={{ minWidth:0, flex:1, fontSize:12, fontWeight:600, color:entregue?'var(--text3)':'var(--text1)',
-                            textDecoration:entregue?'line-through':'none', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
-                            {c.nome}
+                          <span style={{ minWidth:0, flex:1, display:'flex', alignItems:'center', gap:5, overflow:'hidden' }}>
+                            {StatusIcon && <StatusIcon size={12} color={entregue ? 'var(--text3)' : S_COLOR[resS]} style={{ flexShrink:0 }}
+                              title={resS==='danger'?'Tem vencida':resS==='venc_breve'?'Vence em breve':resS==='ok'?'Tudo em dia':resS==='na'?'Não se aplica':''} />}
+                            <span style={{ minWidth:0, fontSize:12, fontWeight:600, color:entregue?'var(--text3)':'var(--text1)',
+                              textDecoration:entregue?'line-through':'none', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
+                              {c.nome}
+                            </span>
+                            <span style={{ flexShrink:0, fontSize:8.5, fontWeight:700, color:'var(--text3)', background:'var(--surface2)',
+                              border:'1px solid var(--border)', borderRadius:4, padding:'1px 4px' }}>
+                              {c.regime === 'Lucro Presumido' ? 'LP' : c.regime === 'Lucro Real' ? 'LR' : 'SN'}
+                            </span>
+                            {tasksPend > 0 && (
+                              <span style={{ flexShrink:0, display:'flex', alignItems:'center', gap:2, fontSize:9.5, color:'var(--text3)' }}
+                                title={`${tasksPend} tarefa${tasksPend!==1?'s':''} pendente${tasksPend!==1?'s':''}`}>
+                                <CheckSquareIcon size={10} /> {tasksPend}
+                              </span>
+                            )}
                           </span>
-                          <span style={{ width:COL_CARTEIRA, flexShrink:0, fontSize:11, color:'var(--text3)', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
-                            {c.carteira || '—'}
+                          <span style={{ width:COL_MODULOS, flexShrink:0, display:'flex', alignItems:'center', gap:3, flexWrap:'wrap' }}>
+                            {departamentos.map(d => {
+                              const dd = deptData?.[d.id] || { s:'empty' }
+                              return (
+                                <span key={d.id} title={`${d.nome}: ${dd.val ?? ''}`}
+                                  style={{ width:6, height:6, borderRadius:'50%', flexShrink:0,
+                                    background: entregue ? 'var(--border2)' : S_COLOR[dd.s] || 'var(--border2)' }} />
+                              )
+                            })}
+                          </span>
+                          <span style={{ width:COL_CARTEIRA, flexShrink:0, fontSize:10.5, color:'var(--text3)', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
+                            {c.carteira && (
+                              <span style={{ background:'var(--surface2)', border:'1px solid var(--border)', borderRadius:99, padding:'1px 7px' }}>
+                                {c.carteira}
+                              </span>
+                            )}
+                            {!c.carteira && '—'}
                           </span>
                           <span style={{ width:COL_STATUS, flexShrink:0, display:'flex', alignItems:'center', justifyContent:'flex-end', gap:5 }}>
                             {resVenc > 0 && !entregue && (
