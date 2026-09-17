@@ -9,7 +9,7 @@ import { uploadDeclaracaoSimples, uploadSituacaoFiscal, obterCndManual, salvarCn
 import PainelViewerModal from './painel/PainelViewerModal'
 import {
   listarDocumentosPorCliente, abrirLinkAssinado, uploadArquivo, listarCandidatos,
-  identificarDocumento, criarDocumento, confirmarDocumento,
+  identificarDocumento, criarDocumento, confirmarDocumento, excluirDocumento, reatribuirDocumento,
 } from './documentos/documentosApi'
 import { criarLembrete, listarLembretesPorItens, excluirLembrete } from './andamento/lembretesApi'
 
@@ -1560,8 +1560,51 @@ function AbaAnexosEmpresa({ clienteId }) {
   const [fila, setFila] = useState([]) // [{id, arquivo, status, storagePath, sugestao, candidatoId, ignorar, erro}]
   const [arrastando, setArrastando] = useState(false)
   const [confirmando, setConfirmando] = useState(false)
+  const [docTrocando, setDocTrocando] = useState(null) // id do doc com o seletor de vínculo aberto
+  const [novoVinculoId, setNovoVinculoId] = useState('') // valor escolhido no seletor, até confirmar (select controlado)
+  const [docExcluindo, setDocExcluindo] = useState(null) // id do doc com a confirmação de exclusão aberta
+  const [processandoDocId, setProcessandoDocId] = useState(null) // id do doc em troca/exclusão (desabilita os botões dele)
 
   const recarregarDocs = () => listarDocumentosPorCliente(clienteId).then(setDocs).catch(e => setErro(e.message))
+
+  // Corrige um documento vinculado errado pela IA (ou trocado à mão) sem
+  // precisar excluir e reenviar o arquivo -- desfaz a baixa antiga e aplica
+  // a nova (ou nenhuma, se candidatoId vier vazio).
+  const trocarVinculo = async (doc, candidatoId) => {
+    setProcessandoDocId(doc.id)
+    try {
+      const candidato = candidatoId ? candidatos.find(c => c.id === candidatoId) : null
+      await reatribuirDocumento(doc.id, candidato)
+      // recarrega candidatos também -- sem isso a lista ficava com o item
+      // que acabou de ser concluído ainda aparecendo como "em aberto" (e o
+      // que acabou de voltar a pendente pelo desfazer ainda faltando),
+      // até a próxima vez que a aba fosse reaberta do zero
+      await Promise.all([recarregarDocs(), fetchObrigacoes(), fetchTarefas(), listarCandidatos().then(cs => setCandidatos(cs.filter(c => c.clienteId === clienteId)))])
+      setDocTrocando(null)
+      show?.(candidato ? 'Vínculo atualizado — baixa aplicada no novo item.' : 'Vínculo removido — documento fica só arquivado.')
+    } catch (e) {
+      show?.('Erro ao trocar vínculo: ' + e.message)
+    } finally {
+      setProcessandoDocId(null)
+    }
+  }
+
+  // desfazerVinculo=true também reverte a baixa (obrigação/tarefa volta a
+  // pendente) -- pra quando o documento foi vinculado errado e a baixa não
+  // devia ter acontecido; false só remove o arquivo e mantém a baixa.
+  const excluirDoc = async (doc, desfazerVinculo) => {
+    setProcessandoDocId(doc.id)
+    try {
+      await excluirDocumento(doc.id, { desfazerVinculo })
+      await Promise.all([recarregarDocs(), fetchObrigacoes(), fetchTarefas()])
+      setDocExcluindo(null)
+      show?.(desfazerVinculo ? 'Documento excluído e baixa desfeita.' : 'Documento excluído.')
+    } catch (e) {
+      show?.('Erro ao excluir: ' + e.message)
+    } finally {
+      setProcessandoDocId(null)
+    }
+  }
 
   useEffect(() => {
     setDocs(null)
@@ -1620,7 +1663,10 @@ function AbaAnexosEmpresa({ clienteId }) {
       }
     }
     setFila(prev => prev.filter(it => !prontos.some(p => p.id === it.id)))
-    await Promise.all([recarregarDocs(), fetchObrigacoes(), fetchTarefas()])
+    // recarrega candidatos também -- sem isso, confirmar um documento não
+    // tirava o item recém-concluído da lista de correspondências (ficava
+    // selecionável de novo até reabrir a aba do zero)
+    await Promise.all([recarregarDocs(), fetchObrigacoes(), fetchTarefas(), listarCandidatos().then(cs => setCandidatos(cs.filter(c => c.clienteId === clienteId)))])
     setConfirmando(false)
     show?.(
       falhas.length > 0
@@ -1707,24 +1753,83 @@ function AbaAnexosEmpresa({ clienteId }) {
     {!erro && docs != null && docs.length === 0 && (
       <div style={{ textAlign:'center', color:'var(--text3)', fontSize:12, padding:'24px 0' }}>Nenhum anexo pra essa empresa</div>
     )}
-    {docs?.map(doc => (
-      <div key={doc.id} style={{ background:'var(--surface2)', border:'1px solid var(--border)', borderRadius:8,
-        padding:'10px 12px', display:'flex', alignItems:'center', gap:10 }}>
-        <FileIcon size={14} color="var(--text3)" style={{ flexShrink:0 }} />
-        <div style={{ flex:1, minWidth:0 }}>
-          <div style={{ fontSize:11, fontWeight:500, color:'var(--text1)', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>
-            {doc.tipo_documento_sugerido || doc.nome_arquivo}
+    {docs?.map(doc => {
+      const vinculo = doc.etapas_obrigacao ? `✓ ${doc.obrigacoes?.titulo || 'Obrigação'} — deu baixa`
+        : doc.tarefas ? `✓ Tarefa: ${doc.tarefas.titulo} — deu baixa`
+        : 'Sem vínculo (só arquivado)'
+      const processando = processandoDocId === doc.id
+      return (
+      <div key={doc.id} style={{ background:'var(--surface2)', border:'1px solid var(--border)', borderRadius:8, padding:'10px 12px' }}>
+        <div style={{ display:'flex', alignItems:'center', gap:10 }}>
+          <FileIcon size={14} color="var(--text3)" style={{ flexShrink:0 }} />
+          <div style={{ flex:1, minWidth:0 }}>
+            <div style={{ fontSize:11, fontWeight:500, color:'var(--text1)', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>
+              {doc.tipo_documento_sugerido || doc.nome_arquivo}
+            </div>
+            <div style={{ fontSize:10, color: doc.etapas_obrigacao || doc.tarefas ? 'var(--ok)' : 'var(--text3)', marginTop:2 }}>
+              {vinculo} · {new Date(doc.created_at).toLocaleDateString('pt-BR')}
+            </div>
           </div>
-          <div style={{ fontSize:10, color:'var(--text3)', marginTop:2 }}>
-            {new Date(doc.created_at).toLocaleDateString('pt-BR')}
-          </div>
+          <button onClick={() => baixar(doc)} title="Baixar" disabled={processando}
+            style={{ background:'none', border:'none', color:'var(--text3)', cursor:'pointer', padding:2, flexShrink:0 }}>
+            <DownloadIcon size={13} />
+          </button>
+          <button onClick={() => {
+              const abrindo = docTrocando !== doc.id
+              setDocTrocando(abrindo ? doc.id : null)
+              setNovoVinculoId(abrindo ? (doc.etapa_obrigacao_id || doc.tarefa_id || '') : '')
+              setDocExcluindo(null)
+            }}
+            title="Trocar a obrigação/tarefa que esse documento resolve" disabled={processando}
+            style={{ background:'none', border:'none', color: docTrocando === doc.id ? 'var(--accent)' : 'var(--text3)', cursor:'pointer', padding:2, flexShrink:0 }}>
+            <RefreshCwIcon size={13} />
+          </button>
+          <button onClick={() => { setDocExcluindo(docExcluindo === doc.id ? null : doc.id); setDocTrocando(null) }}
+            title="Excluir esse documento" disabled={processando}
+            style={{ background:'none', border:'none', color: docExcluindo === doc.id ? 'var(--danger)' : 'var(--text3)', cursor:'pointer', padding:2, flexShrink:0 }}>
+            <Trash2Icon size={13} />
+          </button>
         </div>
-        <button onClick={() => baixar(doc)} title="Baixar"
-          style={{ background:'none', border:'none', color:'var(--text3)', cursor:'pointer', padding:2, flexShrink:0 }}>
-          <DownloadIcon size={13} />
-        </button>
+
+        {docTrocando === doc.id && (
+          <div style={{ marginTop:8, paddingTop:8, borderTop:'1px solid var(--border)', display:'flex', gap:6, alignItems:'center' }}>
+            <select value={novoVinculoId} disabled={processando}
+              onChange={e => setNovoVinculoId(e.target.value)}
+              style={{ flex:1, minWidth:0, fontSize:11, padding:'5px 7px' }}>
+              <option value="">Nenhuma correspondência (só arquivar)</option>
+              {candidatos.map(c => <option key={c.id} value={c.id}>{c.rotulo}</option>)}
+            </select>
+            <button onClick={() => trocarVinculo(doc, novoVinculoId)} disabled={processando}
+              style={{ fontSize:10.5, padding:'5px 10px', borderRadius:6, border:'none', background:'var(--accent)', color:'#fff', cursor:'pointer', flexShrink:0 }}>
+              {processando ? 'Aplicando...' : 'Aplicar'}
+            </button>
+          </div>
+        )}
+
+        {docExcluindo === doc.id && (
+          <div style={{ marginTop:8, paddingTop:8, borderTop:'1px solid var(--border)', display:'flex', flexDirection:'column', gap:6 }}>
+            <div style={{ fontSize:10.5, color:'var(--text2)' }}>Excluir "{doc.nome_arquivo}"?</div>
+            <div style={{ display:'flex', gap:6, flexWrap:'wrap' }}>
+              <button onClick={() => excluirDoc(doc, false)} disabled={processando}
+                style={{ fontSize:10.5, padding:'4px 9px', borderRadius:6, border:'1px solid var(--border)', background:'var(--surface)', color:'var(--text1)', cursor:'pointer' }}>
+                Só excluir o arquivo
+              </button>
+              {(doc.etapas_obrigacao || doc.tarefas) && (
+                <button onClick={() => excluirDoc(doc, true)} disabled={processando}
+                  style={{ fontSize:10.5, padding:'4px 9px', borderRadius:6, border:'1px solid var(--danger)', background:'var(--danger-dim)', color:'var(--danger)', cursor:'pointer' }}>
+                  Excluir e desfazer a baixa
+                </button>
+              )}
+              <button onClick={() => setDocExcluindo(null)} disabled={processando}
+                style={{ fontSize:10.5, padding:'4px 9px', borderRadius:6, border:'none', background:'none', color:'var(--text3)', cursor:'pointer' }}>
+                Cancelar
+              </button>
+            </div>
+          </div>
+        )}
       </div>
-    ))}
+      )
+    })}
   </>
 }
 

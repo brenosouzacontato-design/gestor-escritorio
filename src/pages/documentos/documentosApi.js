@@ -238,12 +238,55 @@ export async function listarUploadsWhatsapp() {
   return data;
 }
 
-export async function excluirDocumento(id) {
-  const { data: doc, error: errBusca } = await supabase.from('documentos').select('storage_path').eq('id', id).single();
+// Desfaz a baixa que um documento causou — etapa volta a em_andamento (e a
+// obrigação dela volta a pendente), ou tarefa volta a não concluída.
+// Usado antes de excluir um documento vinculado errado (pra não deixar a
+// obrigação/tarefa marcada como feita por engano) e antes de reatribuir
+// pra outro vínculo (reatribuirDocumento) — sem isso, trocar o vínculo
+// deixava a baixa antiga "grudada" enquanto aplicava a nova.
+async function desfazerBaixa({ obrigacao_id, etapa_obrigacao_id, tarefa_id }) {
+  if (etapa_obrigacao_id) {
+    await supabase.from('etapas_obrigacao').update({ status: 'em_andamento', data_conclusao: null }).eq('id', etapa_obrigacao_id);
+    if (obrigacao_id) {
+      await supabase.from('obrigacoes').update({ status: 'pendente', data_conclusao: null }).eq('id', obrigacao_id);
+    }
+  } else if (tarefa_id) {
+    await supabase.from('tarefas').update({ concluida: false, concluida_em: null }).eq('id', tarefa_id);
+  }
+}
+
+// desfazerVinculo=true também reverte a baixa que o documento causou —
+// use quando o documento foi vinculado errado (a obrigação/tarefa não
+// devia ter sido dada como feita). Sem isso, excluir só remove o arquivo
+// e mantém a baixa já aplicada (útil pra só limpar um anexo duplicado,
+// por exemplo).
+export async function excluirDocumento(id, { desfazerVinculo = false } = {}) {
+  const { data: doc, error: errBusca } = await supabase
+    .from('documentos')
+    .select('storage_path, obrigacao_id, etapa_obrigacao_id, tarefa_id')
+    .eq('id', id)
+    .single();
   if (errBusca) throw errBusca;
+  if (desfazerVinculo) await desfazerBaixa(doc);
   if (doc?.storage_path) await supabase.storage.from(BUCKET).remove([doc.storage_path]);
   const { error } = await supabase.from('documentos').delete().eq('id', id);
   if (error) throw error;
+}
+
+// Troca o vínculo de um documento já confirmado (a IA errou o candidato,
+// ou o usuário quer apontar pra outro) -- desfaz a baixa antiga (se
+// houver) e aplica a nova via confirmarDocumento, mantendo o mesmo
+// arquivo. candidatoNovo pode vir null (documento passa a não dar baixa
+// em nada, só fica arquivado).
+export async function reatribuirDocumento(documentoId, candidatoNovo) {
+  const { data: doc, error: errBusca } = await supabase
+    .from('documentos')
+    .select('cliente_id, obrigacao_id, etapa_obrigacao_id, tarefa_id')
+    .eq('id', documentoId)
+    .single();
+  if (errBusca) throw errBusca;
+  await desfazerBaixa(doc);
+  await confirmarDocumento(documentoId, { clienteId: doc.cliente_id, candidato: candidatoNovo });
 }
 
 // Aplica de fato a baixa (etapa ou tarefa, conforme o candidato escolhido —
