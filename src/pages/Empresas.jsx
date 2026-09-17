@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect } from 'react'
-import { PlusIcon, XIcon, CheckCircleIcon, ClockIcon, AlertCircleIcon, MinusCircleIcon, ChevronRightIcon, CalendarIcon, CheckIcon, ZapIcon, RefreshCwIcon, Trash2Icon, ListIcon, LayoutGridIcon, BarChart3Icon, Share2Icon, EyeIcon, CheckSquareIcon, FileIcon, DownloadIcon, PencilIcon, FileTextIcon, GripVerticalIcon, BellIcon, BellRingIcon, UploadCloudIcon, Loader2Icon, SparklesIcon } from 'lucide-react'
+import { PlusIcon, XIcon, CheckCircleIcon, ClockIcon, AlertCircleIcon, MinusCircleIcon, ChevronRightIcon, CalendarIcon, CheckIcon, ZapIcon, RefreshCwIcon, Trash2Icon, ListIcon, LayoutGridIcon, Rows3Icon, BarChart3Icon, Share2Icon, EyeIcon, CheckSquareIcon, FileIcon, DownloadIcon, PencilIcon, FileTextIcon, GripVerticalIcon, BellIcon, BellRingIcon, UploadCloudIcon, Loader2Icon, SparklesIcon } from 'lucide-react'
 import { useStore } from '../store'
 import { DeptChip, PriDot, fmtDate, isOverdue, useToast } from '../components/shared'
 import { supabase } from '../lib/supabase'
@@ -557,6 +557,11 @@ export default function Empresas({ onOpenTarefas, clienteInicialId, onClienteIni
               border:'none', borderRadius:6, padding:'5px 9px', fontSize:11, color:visualizacao==='vencimento'?'var(--text1)':'var(--text3)', cursor:'pointer', fontWeight:500 }}>
             <CalendarIcon size={12} /> Vencimentos
           </button>
+          <button onClick={() => escolherVisualizacao('lista')} title="Ver como lista arrastável, separada entre entregue e a entregar"
+            style={{ display:'flex', alignItems:'center', gap:4, background:visualizacao==='lista'?'var(--surface)':'none', boxShadow:visualizacao==='lista'?'var(--shadow-sm)':'none',
+              border:'none', borderRadius:6, padding:'5px 9px', fontSize:11, color:visualizacao==='lista'?'var(--text1)':'var(--text3)', cursor:'pointer', fontWeight:500 }}>
+            <Rows3Icon size={12} /> Lista
+          </button>
         </div>
         <div style={{ marginLeft:'auto', display:'flex', alignItems:'center', gap:8 }}>
           <button onClick={handleGerarCompetencia} disabled={gerando}
@@ -872,6 +877,100 @@ export default function Empresas({ onOpenTarefas, clienteInicialId, onClienteIni
                   </div>
                 )
               })}
+                  </div>
+                </div>
+              ))}
+            </div>
+            )}
+          </div>
+          )
+        })()}
+
+        {/* Lista arrastável — mesma sinalização de entrega/reordenação da
+            visão Cards (entregues, ordemCards, handleDropCard/handleDropNaColuna),
+            só que como duas listas verticais compactas em vez de colunas
+            lado a lado de cards grandes — mais rápido de escanear quando
+            é só reordenar/marcar entrega, sem precisar dos detalhes por
+            departamento que os cards mostram. */}
+        {visualizacao === 'lista' && (() => {
+          const secoes = [
+            { id:'a_entregar', label:'A entregar', cor:'var(--warn)', itens: rowsCards.filter(r => !entregues.has(r.c.id)) },
+            { id:'entregue',   label:'Entregue',   cor:'var(--ok)',   itens: rowsCards.filter(r => entregues.has(r.c.id)) },
+          ]
+          return (
+          <div style={{ flex:1, overflow:'auto', padding:'16px' }}>
+            {rows.length === 0 && (
+              <div style={{ padding:40, textAlign:'center', color:'var(--text3)', fontSize:13 }}>Nenhuma empresa encontrada</div>
+            )}
+            {rows.length > 0 && (
+            <div style={{ display:'flex', flexDirection:'column', gap:20, maxWidth:640 }}>
+              {secoes.map(secao => (
+                <div key={secao.id}
+                  onDragOver={e => e.preventDefault()}
+                  onDrop={e => { e.preventDefault(); handleDropNaColuna(secao.id) }}>
+                  <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:8 }}>
+                    <span style={{ fontSize:11.5, fontWeight:700, color:'var(--text3)', textTransform:'uppercase', letterSpacing:.4 }}>{secao.label}</span>
+                    <span style={{ background:secao.cor+'22', color:secao.cor, borderRadius:99, padding:'2px 9px', fontSize:11, fontWeight:700 }}>{secao.itens.length}</span>
+                  </div>
+                  {secao.itens.length === 0 && (
+                    <div style={{ textAlign:'center', color:'var(--text3)', fontSize:12, padding:'14px 0', border:'1px dashed var(--border2)', borderRadius:8 }}>
+                      Arraste uma empresa pra cá
+                    </div>
+                  )}
+                  <div style={{ display:'flex', flexDirection:'column', gap:6 }}>
+                    {secao.itens.map(({ c }, ri) => {
+                      const [bg, tc] = AVATAR_COLORS[ri % AVATAR_COLORS.length]
+                      const initials = c.nome.split(' ').slice(0,2).map(w=>w[0]).join('').toUpperCase()
+                      const obsTotal = obrigacoes.filter(o => o.cliente_id===c.id && o.competencia===compSel)
+                      const resOk   = obsTotal.filter(o => o.status==='concluido'||o.status==='nao_aplica').length
+                      const resVenc = obsTotal.filter(o => o.status==='vencido').length
+                      const resVencendo = obsTotal.some(isVencendo)
+                      const resPct  = obsTotal.length > 0 ? Math.round((resOk/obsTotal.length)*100) : 0
+                      const resS    = resVenc > 0 ? 'danger' : resVencendo ? 'venc_breve' : resPct===100 ? 'ok' : obsTotal.filter(o=>o.status==='pendente').length > 0 ? 'warn' : 'empty'
+                      const entregue = secao.id === 'entregue'
+                      const arrastando = arrastandoId === c.id
+                      return (
+                        <div key={c.id} onClick={() => openDrawer(c, null)}
+                          draggable
+                          onDragStart={e => { e.stopPropagation(); setArrastandoId(c.id) }}
+                          onDragOver={e => e.preventDefault()}
+                          onDrop={e => { e.preventDefault(); e.stopPropagation(); handleDropCard(c.id, secao.id) }}
+                          onDragEnd={() => setArrastandoId(null)}
+                          style={{ display:'flex', alignItems:'center', gap:10, background:'var(--surface)',
+                            border:'1px solid var(--border)',
+                            borderLeft:`3px solid ${entregue?'var(--ok)':resS==='danger'?'var(--danger)':resS==='venc_breve'?COR_VENCENDO:resS==='warn'?'var(--warn)':'var(--border)'}`,
+                            borderRadius:8, padding:'8px 10px', cursor:'grab', opacity:arrastando?.4:entregue?.75:1, transition:'opacity .1s' }}>
+                          <GripVerticalIcon size={13} color="var(--text3)" style={{ flexShrink:0, cursor:'grab' }} title="Arrastar pra reordenar ou mudar de lista" />
+                          <button onClick={e => { e.stopPropagation(); handleMudarEntrega(c.id, !entregue) }}
+                            title={entregue ? 'Marcar como não entregue' : 'Marcar como entregue'}
+                            style={{ width:18, height:18, borderRadius:5, flexShrink:0, cursor:'pointer',
+                              border:`1px solid ${entregue?'var(--ok)':'var(--border2)'}`, background:entregue?'var(--ok)':'transparent',
+                              display:'flex', alignItems:'center', justifyContent:'center' }}>
+                            {entregue && <CheckIcon size={12} color="#fff" strokeWidth={3} />}
+                          </button>
+                          <div style={{ width:24, height:24, borderRadius:6, background:bg, color:tc, flexShrink:0,
+                            display:'flex', alignItems:'center', justifyContent:'center', fontSize:10, fontWeight:700 }}>
+                            {initials}
+                          </div>
+                          <div style={{ minWidth:0, flex:1 }}>
+                            <div style={{ fontSize:12, fontWeight:600, color:entregue?'var(--text3)':'var(--text1)', textDecoration:entregue?'line-through':'none',
+                              overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
+                              {c.nome}
+                            </div>
+                            <div style={{ fontSize:10, color:'var(--text3)' }}>{c.regime||'SN'}{c.carteira ? ` · ${c.carteira}` : ''}</div>
+                          </div>
+                          {resVenc > 0 && !entregue && (
+                            <span style={{ display:'flex', alignItems:'center', gap:3, background:'var(--danger-dim)', color:'var(--danger)',
+                              borderRadius:99, padding:'2px 8px', fontSize:10.5, fontWeight:700, flexShrink:0 }}>
+                              <AlertCircleIcon size={11} /> {resVenc}
+                            </span>
+                          )}
+                          <span style={{ fontSize:12.5, fontWeight:700, color: entregue ? 'var(--text3)' : S_COLOR[resS], flexShrink:0, minWidth:34, textAlign:'right' }}>
+                            {resPct}%
+                          </span>
+                        </div>
+                      )
+                    })}
                   </div>
                 </div>
               ))}
