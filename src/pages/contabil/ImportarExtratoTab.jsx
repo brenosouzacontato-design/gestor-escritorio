@@ -79,13 +79,20 @@ const PAGINAS_POR_PARTE = 1;
 // começar a próxima
 const PARTES_SIMULTANEAS = 2;
 
-// remove duplicatas geradas pela sobreposição de 1 página entre partes
-// (a mesma transação pode aparecer em duas chamadas quando cai bem na
-// página de sobreposição) -- mesma chave usada depois pra extratoReferencia
+// remove duplicatas geradas pela sobreposição de 1 página entre partes (a
+// mesma transação pode aparecer em duas chamadas quando cai bem na página
+// de sobreposição). A chave usa só data+tipo+valor -- os fatos "duros" do
+// extrato -- e NÃO descricao/identificador: são texto que o Claude
+// transcreve de novo em cada chamada independente, e viu-se na prática que
+// a mesma transação sai formatada de um jeito numa chamada e ligeiramente
+// diferente na outra (ex.: identificador "472932918" numa vez e "00019
+// 472932918" na outra; descricao "Pagamento efetuado - X" numa vez e
+// "Pagamento - X" na outra) — chave em cima desses campos deixava
+// duplicata escapar por divergir num detalhe de formatação.
 function dedupBySobreposicao(transacoes) {
   const vistos = new Set();
   return transacoes.filter((t) => {
-    const chave = [t.data, t.tipo, Number(t.valor).toFixed(2), t.identificador || t.descricao.trim()].join('|');
+    const chave = [t.data, t.tipo, Number(t.valor).toFixed(2)].join('|');
     if (vistos.has(chave)) return false;
     vistos.add(chave);
     return true;
