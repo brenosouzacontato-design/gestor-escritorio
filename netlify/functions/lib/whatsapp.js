@@ -32,6 +32,17 @@ async function enviarMensagem(numero, texto) {
     return { sucesso: false, erro }
   }
   const url = `${EVOLUTION_URL}/message/sendText/${EVOLUTION_INSTANCE}`
+  // O Netlify mata a function inteira com 504 "Inactivity Timeout" depois
+  // de ~29s sem resposta (teto fixo do API Gateway, não configurável) — se
+  // a Evolution API/ngrok travar (ex: instância desconectada tentando
+  // resolver um número/grupo, ou o túnel caiu), esse fetch sem timeout
+  // ficava pendurado até isso acontecer. Como whatsapp-webhook.js chama
+  // essa função DEPOIS de já ter gravado a tarefa/lembrete no banco, um
+  // travamento aqui não devia arriscar derrubar a function inteira e levar
+  // junto trabalho que já tinha sido feito com sucesso — por isso o
+  // timeout curto, com erro claro em vez de pendurar.
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), 10000)
   try {
     const resp = await fetch(url, {
       method: 'POST',
@@ -39,7 +50,8 @@ async function enviarMensagem(numero, texto) {
       // Evolution API v1.x (a versão rodando aqui — ver iniciar-gestor.bat)
       // exige o texto aninhado em textMessage.text; um body { number, text }
       // solto (formato da v2) volta 400 "instance requires property textMessage".
-      body: JSON.stringify({ number: numero, textMessage: { text: texto } })
+      body: JSON.stringify({ number: numero, textMessage: { text: texto } }),
+      signal: controller.signal,
     })
     const corpo = await resp.text().catch(() => '')
     console.log(`Evolution API sendText -> ${url} (número ${numero}), status ${resp.status}:`, corpo.slice(0, 500))
@@ -69,8 +81,11 @@ async function enviarMensagem(numero, texto) {
     // verdade" quando o envio aparenta sucesso mas a mensagem não chega.
     return { sucesso: true, corpo: corpo.slice(0, 500) }
   } catch (e) {
-    console.error('Erro ao enviar mensagem:', e.message)
-    return { sucesso: false, erro: e.message }
+    const erro = e.name === 'AbortError' ? `Evolution API não respondeu em 10s (${url}) — travou ou o túnel/instância caiu.` : e.message
+    console.error('Erro ao enviar mensagem:', erro)
+    return { sucesso: false, erro }
+  } finally {
+    clearTimeout(timer)
   }
 }
 

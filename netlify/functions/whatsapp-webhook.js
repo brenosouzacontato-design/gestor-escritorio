@@ -20,10 +20,32 @@ const ANTHROPIC_KEY = process.env.ANTHROPIC_API_KEY
 
 const EXTENSAO_POR_MIME = { 'application/pdf': 'pdf', 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp' }
 
+// O Netlify roda essa function síncrona atrás de um API Gateway que mata a
+// conexão com "Inactivity Timeout" (504) depois de ~29s sem resposta — um
+// teto fixo, não dá pra configurar/aumentar. Descoberto na prática: quando
+// a chamada à Anthropic (extrairTarefa) ou o envio da confirmação de volta
+// pro WhatsApp (enviarMensagem, em lib/whatsapp.js) demoravam mais que
+// isso, a function inteira era matada ANTES de gravar a tarefa no banco —
+// a tarefa se perdia de vez, sem erro nem confirmação no grupo, sem
+// nenhum rastro de que a mensagem chegou a ser processada. Por isso todo
+// fetch pra serviço externo aqui tem um timeout curto e, quando estoura,
+// cai num fallback que garante que a tarefa é criada mesmo assim (só sem
+// os campos que a IA preencheria) — perder a formatação bonita é bem
+// melhor que perder a tarefa inteira.
+async function fetchComTimeout(url, opcoes, timeoutMs) {
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), timeoutMs)
+  try {
+    return await fetch(url, { ...opcoes, signal: controller.signal })
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
 async function extrairTarefa(mensagem, clientes) {
   const listaNomes = clientes.map(c => `${c.nome} (id: ${c.id})`).join('\n')
 
-  const response = await fetch('https://api.anthropic.com/v1/messages', {
+  const response = await fetchComTimeout('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -58,14 +80,30 @@ Regras:
 - departamento: PGDAS/DAS/NFSe/fiscal = fiscal, folha/holerite/eSocial = folha, contrato/abertura/alteração = societario, restante = contabil`
       }]
     })
-  })
+  }, 12000)
 
+  if (!response.ok) throw new Error(`Anthropic respondeu ${response.status}: ${await response.text()}`)
   const data = await response.json()
   const texto = data.content[0].text.trim()
   try {
     return JSON.parse(texto)
   } catch {
     return JSON.parse(texto.replace(/```json|```/g, '').trim())
+  }
+}
+
+// Fallback pra quando extrairTarefa falha ou estoura o timeout (Anthropic
+// fora do ar/lenta) -- garante que a tarefa é criada de qualquer forma,
+// só sem a formatação/classificação que a IA faria. Fica pendente de
+// revisão manual (cliente_id null, departamento genérico) em vez de
+// sumir sem deixar rastro.
+function tarefaFallback(textoTarefa) {
+  return {
+    titulo: textoTarefa.substring(0, 100),
+    cliente_id: null,
+    prazo: null,
+    departamento: 'contabil',
+    prioridade: 'normal',
   }
 }
 
@@ -205,8 +243,17 @@ exports.handler = async (event) => {
       .select('id, nome')
       .eq('ativo', true)
 
-    const tarefa = await extrairTarefa(textoTarefa, clientes || [])
-    console.log('Tarefa extraída:', JSON.stringify(tarefa))
+    let tarefa
+    try {
+      tarefa = await extrairTarefa(textoTarefa, clientes || [])
+      console.log('Tarefa extraída:', JSON.stringify(tarefa))
+    } catch (eIA) {
+      // Anthropic fora do ar, lenta (estourou o timeout de 12s) ou
+      // devolveu algo que não parseou -- cria a tarefa mesmo assim, com
+      // o texto cru, em vez de perder ela de vez (ver tarefaFallback)
+      console.error('Falha ao extrair tarefa com IA, usando fallback:', eIA.message)
+      tarefa = tarefaFallback(textoTarefa)
+    }
 
     // Validar cliente_id — garantir que existe na lista
     let clienteIdFinal = null
