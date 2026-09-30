@@ -165,7 +165,7 @@ export default function Overview({ onAddTarefa, onOpenCliente, onOpenEmpresa, on
             <span className="section-label" style={{ display:'flex', alignItems:'center', gap:5 }}>
               <ZapIcon size={12} /> Urgentes
             </span>
-            <button className="btn btn-sm btn-accent" onClick={onAddTarefa}>+ Nova</button>
+            <button className="btn btn-sm btn-accent" onClick={() => onAddTarefa()}>+ Nova</button>
           </div>
           <div className="card" style={{ marginBottom:16 }}>
             {urgentes.map(t => <TaskRow key={t.id} tarefa={t} onToggle={() => toggleTarefa(t.id)} />)}

@@ -65,7 +65,14 @@ export default function App() {
   const obrigVencidas  = obrigacoes.filter(o => o.status === 'vencido').length
   const obrigPendentes = obrigacoes.filter(o => o.status === 'pendente').length
 
-  const openNewTask = (clienteId = '') => { setNewTaskClienteId(clienteId); setShowNewTask(true) }
+  // Vários lugares chamam isso direto como onClick={onAddTarefa} sem
+  // envolver numa arrow function -- o React passa o SyntheticEvent do
+  // clique como primeiro argumento nesse caso, sobrescrevendo o default
+  // ''. Já aconteceu 2x (Overview.jsx e Tarefas.jsx) e quebrava a criação
+  // de tarefa avulsa: o "cliente" virava o próprio evento de clique, que
+  // o Supabase não consegue serializar (estrutura circular). Filtra aqui
+  // pra não depender de todo callsite lembrar de embrulhar em arrow fn.
+  const openNewTask = (clienteId = '') => { setNewTaskClienteId(typeof clienteId === 'string' ? clienteId : ''); setShowNewTask(true) }
   const navigate    = (p) => { setPage(p); if (p !== 'clientes') setSelectedCliente(null) }
   const toggleTheme = () => setTheme(t => t === 'dark' ? 'light' : 'dark')
   const toggleCollapsed = () => setCollapsed(c => {

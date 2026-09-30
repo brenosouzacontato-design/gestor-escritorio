@@ -129,7 +129,7 @@ export default function Tarefas({ onAddTarefa, highlightTaskId, onHighlightConsu
             </button>
           ))}
         </div>
-        <button className="btn btn-sm btn-accent" onClick={onAddTarefa} style={{ flexShrink:0 }}>
+        <button className="btn btn-sm btn-accent" onClick={() => onAddTarefa()} style={{ flexShrink:0 }}>
           <PlusIcon size={12} /> Nova
         </button>
       </div>

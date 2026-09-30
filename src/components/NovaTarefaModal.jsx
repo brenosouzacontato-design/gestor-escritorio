@@ -26,9 +26,10 @@ export default function NovaTarefaModal({ onClose, clienteIdInicial = '' }) {
 
   const submit = async () => {
     if (!form.titulo.trim()) { show('Informe o título da tarefa'); return }
-    if (!form.cliente_id) { show('Selecione um cliente'); return }
     setLoading(true)
-    const { error } = await addTarefa({ ...form, vencimento: form.vencimento || null })
+    // tarefa avulsa (sem cliente) é válida -- cliente_id vazio vira null
+    // em vez de mandar '' pra uma coluna uuid (que dá erro no Postgres)
+    const { error } = await addTarefa({ ...form, cliente_id: form.cliente_id || null, vencimento: form.vencimento || null })
     setLoading(false)
     if (error) { show('Erro ao salvar tarefa'); return }
     show('Tarefa criada')
@@ -42,7 +43,7 @@ export default function NovaTarefaModal({ onClose, clienteIdInicial = '' }) {
       <div className="form-field">
         <label className="form-label">Cliente</label>
         <select value={form.cliente_id} onChange={e => set('cliente_id', e.target.value)}>
-          <option value="">Selecione...</option>
+          <option value="">— Sem cliente (tarefa avulsa) —</option>
           {clientes.map(c => <option key={c.id} value={c.id}>{c.nome}</option>)}
         </select>
       </div>
