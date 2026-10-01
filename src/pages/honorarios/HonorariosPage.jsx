@@ -800,7 +800,19 @@ function AbaPorCarteira({ carteiras }) {
   const [erro, setErro] = useState(null)
   const [carteiraEvolucao, setCarteiraEvolucao] = useState('todas')
   const [dica, setDica] = useState(null) // { x, y, linhas }
+  const [competenciaSel, setCompetenciaSel] = useState('todas') // 'todas' = período inteiro
   const competencias = useMemo(() => ultimasCompetencias(meses), [meses])
+  useEffect(() => {
+    if (competenciaSel !== 'todas' && !competencias.includes(competenciaSel)) setCompetenciaSel('todas')
+  }, [competencias])
+  const alternarCompetencia = (comp) => setCompetenciaSel((atual) => (atual === comp ? 'todas' : comp))
+
+  // Recorte usado pelos totais, pelo gráfico por carteira e pela tabela —
+  // o período inteiro ou só a competência escolhida.
+  const dadosVisao = useMemo(() => {
+    if (!dados) return []
+    return competenciaSel === 'todas' ? dados : dados.filter((h) => h.competencia === competenciaSel)
+  }, [dados, competenciaSel])
 
   useEffect(() => {
     setDados(null); setErro(null)
@@ -808,9 +820,8 @@ function AbaPorCarteira({ carteiras }) {
   }, [competencias])
 
   const porCarteira = useMemo(() => {
-    if (!dados) return []
     const grupos = new Map()
-    for (const h of dados) {
+    for (const h of dadosVisao) {
       const c = carteiraDe(h)
       if (!grupos.has(c)) grupos.set(c, [])
       grupos.get(c).push(h)
@@ -820,7 +831,26 @@ function AbaPorCarteira({ carteiras }) {
       clientes: new Set(lista.map((h) => h.cliente_id || h.id)).size,
       ...somar(lista),
     })).sort((a, b) => b.total - a.total)
-  }, [dados])
+  }, [dadosVisao])
+
+  // Matriz carteira x competência (período inteiro) — mesma ordem de porCarteira
+  const matriz = useMemo(() => {
+    if (!dados) return []
+    const carteirasOrdem = []
+    const vistos = new Set()
+    for (const h of dados) {
+      const c = carteiraDe(h)
+      if (!vistos.has(c)) { vistos.add(c); carteirasOrdem.push(c) }
+    }
+    return carteirasOrdem.map((c) => {
+      const lista = dados.filter((h) => carteiraDe(h) === c)
+      return {
+        carteira: c,
+        ...somar(lista),
+        meses: competencias.map((comp) => ({ competencia: comp, ...somar(lista.filter((h) => h.competencia === comp)) })),
+      }
+    }).sort((a, b) => b.total - a.total)
+  }, [dados, competencias])
 
   const porMes = useMemo(() => {
     if (!dados) return []
@@ -828,7 +858,7 @@ function AbaPorCarteira({ carteiras }) {
     return competencias.map((comp) => ({ competencia: comp, ...somar(filtrados.filter((h) => h.competencia === comp)) }))
   }, [dados, competencias, carteiraEvolucao])
 
-  const geral = useMemo(() => somar(dados || []), [dados])
+  const geral = useMemo(() => somar(dadosVisao), [dadosVisao])
 
   if (erro) return <p style={{ color: 'var(--danger)', fontSize: 13 }}>{erro}</p>
   if (!dados) return <p style={{ color: 'var(--text3)', fontSize: 13 }}>Carregando...</p>
@@ -854,7 +884,11 @@ function AbaPorCarteira({ carteiras }) {
             <button key={n} className={`tab-btn ${meses === n ? 'active' : ''}`} onClick={() => setMeses(n)}>{n} meses</button>
           ))}
         </div>
-        <span style={{ fontSize: 11, color: 'var(--text3)' }}>{competencias[0]} a {competencias[competencias.length - 1]} · por competência</span>
+        <span style={{ fontSize: 12, color: 'var(--text3)', marginLeft: 6 }}>Competência:</span>
+        <select value={competenciaSel} onChange={(e) => setCompetenciaSel(e.target.value)} style={{ padding: '6px 10px', fontSize: 12.5, width: 'auto' }}>
+          <option value="todas">Período todo ({competencias[0]} a {competencias[competencias.length - 1]})</option>
+          {[...competencias].reverse().map((c) => <option key={c} value={c}>{c}</option>)}
+        </select>
       </div>
 
       <div style={{ display: 'flex', gap: 10, marginBottom: 14, flexWrap: 'wrap' }}>
@@ -866,12 +900,19 @@ function AbaPorCarteira({ carteiras }) {
 
       {dados.length === 0 ? (
         <div className="empty"><p>📊</p>Nenhum honorário gerado nesse período.</div>
+      ) : dadosVisao.length === 0 && competenciaSel !== 'todas' ? (
+        <div className="empty">
+          <p>📊</p>Nenhum honorário gerado para {competenciaSel}.
+          <div><button className="btn btn-ghost btn-sm" style={{ marginTop: 8 }} onClick={() => setCompetenciaSel('todas')}>Ver período todo</button></div>
+        </div>
       ) : (
         <>
           {/* Recebido x a receber por carteira */}
           <div style={card}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, gap: 10, flexWrap: 'wrap' }}>
-              <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text1)' }}>Recebimentos por carteira</span>
+              <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text1)' }}>
+                Recebimentos por carteira · <span style={{ color: 'var(--text3)', fontWeight: 500 }}>{competenciaSel === 'todas' ? 'período todo' : competenciaSel}</span>
+              </span>
               <Legenda />
             </div>
             {porCarteira.map((c) => (
@@ -905,9 +946,12 @@ function AbaPorCarteira({ carteiras }) {
               </div>
               <Legenda />
             </div>
+            <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: -6, marginBottom: 4 }}>Clique num mês pra ver só aquela competência.</div>
             <div style={{ display: 'flex', alignItems: 'flex-end', gap: 8, height: 180, borderBottom: '1px solid var(--border)', paddingTop: 18 }}>
               {porMes.map((m) => (
-                <div key={m.competencia} style={{ flex: 1, minWidth: 0, height: '100%', display: 'flex', flexDirection: 'column', justifyContent: 'flex-end', alignItems: 'center', cursor: 'default' }}
+                <div key={m.competencia} onClick={() => alternarCompetencia(m.competencia)}
+                  style={{ flex: 1, minWidth: 0, height: '100%', display: 'flex', flexDirection: 'column', justifyContent: 'flex-end', alignItems: 'center', cursor: 'pointer',
+                    opacity: competenciaSel === 'todas' || competenciaSel === m.competencia ? 1 : 0.35, transition: 'opacity .15s' }}
                   onMouseMove={(e) => mostrarDica(e, [m.competencia, `Recebido: ${fmt(m.recebido)}`, `A receber: ${fmt(m.pendente)}`, `${pct(m.recebido, m.total)}% recebido`])}
                   onMouseLeave={() => setDica(null)}>
                   {m.total > 0 && <div style={{ fontSize: 10, color: 'var(--text3)', marginBottom: 3, whiteSpace: 'nowrap' }}>{fmtCurto(m.total)}</div>}
@@ -920,10 +964,58 @@ function AbaPorCarteira({ carteiras }) {
             </div>
             <div style={{ display: 'flex', gap: 8, marginTop: 6 }}>
               {porMes.map((m) => (
-                <div key={m.competencia} style={{ flex: 1, minWidth: 0, textAlign: 'center', fontSize: 10.5, color: 'var(--text3)' }}>{m.competencia.slice(0, 2)}/{m.competencia.slice(5)}</div>
+                <div key={m.competencia} onClick={() => alternarCompetencia(m.competencia)}
+                  style={{ flex: 1, minWidth: 0, textAlign: 'center', fontSize: 10.5, cursor: 'pointer',
+                    color: competenciaSel === m.competencia ? 'var(--text1)' : 'var(--text3)', fontWeight: competenciaSel === m.competencia ? 700 : 400 }}>
+                  {m.competencia.slice(0, 2)}/{m.competencia.slice(5)}
+                </div>
               ))}
             </div>
           </div>
+
+          {/* Matriz carteira x competência (só no período todo) */}
+          {competenciaSel === 'todas' && (
+            <div style={{ ...card, padding: 0, overflow: 'hidden' }}>
+              <div style={{ padding: '12px 16px 8px', fontSize: 13, fontWeight: 600, color: 'var(--text1)' }}>
+                Recebido por carteira e competência
+                <span style={{ fontSize: 11, color: 'var(--text3)', fontWeight: 400, marginLeft: 8 }}>recebido / faturado · clique no mês pra detalhar</span>
+              </div>
+              <div style={{ overflowX: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                  <thead>
+                    <tr style={{ background: 'var(--surface2)' }}>
+                      <th style={cabecalho}>Carteira</th>
+                      {competencias.map((comp) => (
+                        <th key={comp} style={{ ...cabecalho, textAlign: 'right', cursor: 'pointer' }} onClick={() => alternarCompetencia(comp)}>{comp}</th>
+                      ))}
+                      <th style={{ ...cabecalho, textAlign: 'right' }}>Total</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {matriz.map((linha) => (
+                      <tr key={linha.carteira || '_'} style={{ borderTop: '1px solid var(--border)' }}>
+                        <td style={{ padding: '7px 12px', color: linha.carteira ? 'var(--text1)' : 'var(--text3)', fontWeight: 500, whiteSpace: 'nowrap' }}>{nomeCarteira(linha.carteira)}</td>
+                        {linha.meses.map((m) => (
+                          <td key={m.competencia} style={{ padding: '7px 12px', textAlign: 'right', whiteSpace: 'nowrap' }}>
+                            {m.total > 0 ? (
+                              <>
+                                <div style={{ color: 'var(--text1)' }}>{fmtCurto(m.recebido)} <span style={{ color: 'var(--text3)' }}>/ {fmtCurto(m.total)}</span></div>
+                                <div style={{ fontSize: 10.5, fontWeight: 600, color: m.pendente > 0 ? 'var(--warn)' : 'var(--ok)' }}>{pct(m.recebido, m.total)}%</div>
+                              </>
+                            ) : <span style={{ color: 'var(--text3)' }}>—</span>}
+                          </td>
+                        ))}
+                        <td style={{ padding: '7px 12px', textAlign: 'right', whiteSpace: 'nowrap', fontWeight: 600 }}>
+                          {fmtCurto(linha.recebido)} <span style={{ color: 'var(--text3)', fontWeight: 400 }}>/ {fmtCurto(linha.total)}</span>
+                          <div style={{ fontSize: 10.5, color: linha.pendente > 0 ? 'var(--warn)' : 'var(--ok)' }}>{pct(linha.recebido, linha.total)}%</div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
 
           {/* Tabela */}
           <div style={{ overflowX: 'auto', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)' }}>
