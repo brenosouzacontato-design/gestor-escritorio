@@ -25,9 +25,20 @@ function competenciaDoVencimento(vencimentoIso) {
 export async function listarHonorariosDoMes(competencia) {
   const { data, error } = await supabase
     .from('honorarios')
-    .select('*, clientes(nome, telefone)')
+    .select('*, clientes(nome, telefone, carteira)')
     .eq('competencia', competencia)
     .order('vencimento');
+  if (error) throw error;
+  return data;
+}
+
+// Várias competências de uma vez — alimenta a visão "Por carteira" (gráfico
+// de recebimentos mês a mês). Só os campos que o gráfico usa.
+export async function listarHonorariosDasCompetencias(competencias) {
+  const { data, error } = await supabase
+    .from('honorarios')
+    .select('id, competencia, valor, status, data_pagamento, vencimento, cliente_id, clientes(nome, carteira)')
+    .in('competencia', competencias);
   if (error) throw error;
   return data;
 }
@@ -103,7 +114,7 @@ export async function criarHonorarioAvulso({ clienteId, nomeAvulso, telefoneAvul
       valor,
       vencimento,
     })
-    .select('*, clientes(nome, telefone)')
+    .select('*, clientes(nome, telefone, carteira)')
     .single();
   if (error) throw error;
   return data;
@@ -117,8 +128,34 @@ export async function marcarStatusHonorario(honorarioId, status) {
   if (error) throw error;
 }
 
-export async function atualizarHonorario(honorarioId, { valor, vencimento }) {
-  const { error } = await supabase.from('honorarios').update({ valor, vencimento }).eq('id', honorarioId);
+export async function atualizarHonorario(honorarioId, { valor, vencimento, dataPagamento }) {
+  const campos = { valor, vencimento };
+  if (dataPagamento !== undefined) campos.data_pagamento = dataPagamento || null;
+  const { error } = await supabase.from('honorarios').update(campos).eq('id', honorarioId);
+  if (error) throw error;
+}
+
+// Edição em grupo — só os campos presentes em "campos" são alterados
+// ({ status, data_pagamento, vencimento, valor }). Marcar como pendente
+// limpa a data de recebimento (mesma regra de marcarStatusHonorario);
+// informar data de recebimento implica status pago.
+export async function atualizarHonorariosEmLote(ids, campos) {
+  if (!ids.length) return;
+  const update = { ...campos };
+  if (update.data_pagamento) update.status = 'pago';
+  if (update.status === 'pendente') update.data_pagamento = null;
+  if (update.status === 'pago' && !update.data_pagamento) {
+    // sem data informada: mantém a que já existe; quem não tinha ganha hoje
+    const { data_pagamento, ...semData } = update;
+    const { error: e1 } = await supabase.from('honorarios').update(semData).in('id', ids);
+    if (e1) throw e1;
+    const { error: e2 } = await supabase.from('honorarios')
+      .update({ data_pagamento: new Date().toISOString().slice(0, 10) })
+      .in('id', ids).is('data_pagamento', null);
+    if (e2) throw e2;
+    return;
+  }
+  const { error } = await supabase.from('honorarios').update(update).in('id', ids);
   if (error) throw error;
 }
 

@@ -33,10 +33,21 @@ export default function Clientes({ onAddTarefa, selectedId, onSelect }) {
   const fechamentos = useStore(s => s.fechamentos)
   const [showForm, setShowForm] = useState(false)
   const [busca, setBusca] = useState('')
+  const [carteira, setCarteira] = useState('todas')
+
+  // Mesmo filtro de carteira de Empresas.jsx — '' = clientes sem carteira.
+  const carteiras = useMemo(() =>
+    Array.from(new Set(clientes.map(c => c.carteira).filter(Boolean))).sort(),
+    [clientes]
+  )
+  const temSemCarteira = clientes.some(c => !c.carteira)
 
   const filtrados = useMemo(() =>
-    clientes.filter(c => c.nome.toLowerCase().includes(busca.toLowerCase()) || c.cnpj?.includes(busca)),
-    [clientes, busca]
+    clientes.filter(c => {
+      if (carteira !== 'todas' && (c.carteira || '') !== carteira) return false
+      return c.nome.toLowerCase().includes(busca.toLowerCase()) || c.cnpj?.includes(busca)
+    }),
+    [clientes, busca, carteira]
   )
 
   if (selectedId) {
@@ -56,18 +67,30 @@ export default function Clientes({ onAddTarefa, selectedId, onSelect }) {
   return (
     <div className="page">
       <div className="section-hdr">
-        <span className="section-label">Clientes ({clientes.length})</span>
+        <span className="section-label">
+          Clientes ({filtrados.length !== clientes.length ? `${filtrados.length} de ${clientes.length}` : clientes.length})
+        </span>
         <button className="btn btn-sm btn-accent" onClick={() => setShowForm(true)}>
           <PlusIcon size={13} /> Novo
         </button>
       </div>
 
-      <input
-        placeholder="Buscar por nome ou CNPJ..."
-        value={busca}
-        onChange={e => setBusca(e.target.value)}
-        style={{ width:'100%', padding:'8px 12px', border:'1px solid var(--border)', borderRadius:'var(--r-sm)', fontSize:13, background:'var(--surface)', color:'var(--text1)', marginBottom:12 }}
-      />
+      <div style={{ display:'flex', gap:8, marginBottom:12 }}>
+        <input
+          placeholder="Buscar por nome ou CNPJ..."
+          value={busca}
+          onChange={e => setBusca(e.target.value)}
+          style={{ flex:1, minWidth:0, padding:'8px 12px', border:'1px solid var(--border)', borderRadius:'var(--r-sm)', fontSize:13, background:'var(--surface)', color:'var(--text1)' }}
+        />
+        {carteiras.length > 0 && (
+          <select value={carteira} onChange={e => setCarteira(e.target.value)}
+            style={{ maxWidth:180, padding:'8px 10px', border:'1px solid var(--border)', borderRadius:'var(--r-sm)', fontSize:13, background:'var(--surface)', color:'var(--text1)' }}>
+            <option value="todas">Todas as carteiras</option>
+            {carteiras.map(c => <option key={c} value={c}>{c}</option>)}
+            {temSemCarteira && <option value="">Sem carteira</option>}
+          </select>
+        )}
+      </div>
 
       {filtrados.map((c, i) => {
         const clienteTarefas = tarefas.filter(t => t.cliente_id === c.id)
@@ -82,7 +105,12 @@ export default function Clientes({ onAddTarefa, selectedId, onSelect }) {
             <Avatar name={c.nome} size={38} idx={i} />
             <div style={{ flex:1, minWidth:0 }}>
               <div style={{ fontSize:13, fontWeight:500, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{c.nome}</div>
-              <div style={{ fontSize:11, color:'var(--text2)', marginTop:1 }}>{c.cnpj} · {c.regime}</div>
+              <div style={{ fontSize:11, color:'var(--text2)', marginTop:1, display:'flex', alignItems:'center', gap:6 }}>
+                <span>{c.cnpj} · {c.regime}</span>
+                {c.carteira && carteira === 'todas' && (
+                  <span style={{ background:'rgba(59,102,246,.12)', color:'var(--accent)', borderRadius:99, padding:'0 6px', fontSize:10, fontWeight:600 }}>{c.carteira}</span>
+                )}
+              </div>
             </div>
             <div style={{ display:'flex', flexDirection:'column', alignItems:'flex-end', gap:4 }}>
               <StatusDots folha={folha} fiscal={fiscal} tarefas={status} />

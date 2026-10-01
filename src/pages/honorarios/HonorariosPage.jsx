@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react'
-import { BanknoteIcon, SearchIcon, SendIcon, SettingsIcon, RefreshCwIcon, PencilIcon, InfoIcon, PlusIcon } from 'lucide-react'
+import { BanknoteIcon, SearchIcon, SendIcon, SettingsIcon, RefreshCwIcon, PencilIcon, InfoIcon, PlusIcon, BarChart3Icon, XIcon, ListChecksIcon } from 'lucide-react'
 import { Modal, useToast } from '../../components/shared'
 import { useStore } from '../../store'
 import EmpresaCombobox from '../../components/EmpresaCombobox'
@@ -7,6 +7,7 @@ import {
   listarHonorariosDoMes, gerarHonorariosDoMes, marcarStatusHonorario,
   atualizarHonorario, atualizarConfigCliente, obterConfigPix, salvarConfigPix,
   enviarLembreteAgora, obterPreviaLembrete, criarHonorarioAvulso, listarClientesConfigurados,
+  atualizarHonorariosEmLote, listarHonorariosDasCompetencias,
 } from './honorariosApi'
 
 function competenciaAtual() {
@@ -33,6 +34,11 @@ function diasAtraso(vencimento) {
   return Math.round((hoje - venc) / 86400000)
 }
 
+// Carteira do honorário — '' pra cliente sem carteira e pra não cliente
+// (avulso sem linha em "clientes").
+function carteiraDe(h) { return h.clientes?.carteira || '' }
+function nomeCarteira(c) { return c || 'Sem carteira' }
+
 const cabecalho = { textAlign: 'left', padding: '9px 12px', fontSize: 10.5, color: 'var(--text3)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.03em', whiteSpace: 'nowrap' }
 
 // Módulo de Honorários — cobrança mensal recorrente por cliente. Uma linha
@@ -45,12 +51,16 @@ const cabecalho = { textAlign: 'left', padding: '9px 12px', fontSize: 10.5, colo
 // netlify/functions/lib/telefone.js); sem isso, fica pra revisão manual
 // (botão "Lembrete" nesta tela).
 export default function HonorariosPage() {
-  const [aba, setAba] = useState('cobrancas') // cobrancas | config
+  const [aba, setAba] = useState('cobrancas') // cobrancas | carteiras | config
   const [competencia, setCompetencia] = useState(competenciaAtual())
   const [honorarios, setHonorarios] = useState(null)
   const [erro, setErro] = useState(null)
   const [busca, setBusca] = useState('')
   const [statusFiltro, setStatusFiltro] = useState('todos')
+  const [carteira, setCarteira] = useState('todas')
+  const [selecionados, setSelecionados] = useState(() => new Set())
+  const [showEditarLote, setShowEditarLote] = useState(false)
+  const clientesStore = useStore((s) => s.clientes)
   const [gerando, setGerando] = useState(false)
   const [showConfigPix, setShowConfigPix] = useState(false)
   const [showNovoAvulso, setShowNovoAvulso] = useState(false)
@@ -62,21 +72,42 @@ export default function HonorariosPage() {
     setErro(null)
     listarHonorariosDoMes(competencia).then(setHonorarios).catch((e) => setErro(e.message))
   }
-  useEffect(() => { setHonorarios(null); carregar() }, [competencia])
+  useEffect(() => { setHonorarios(null); setSelecionados(new Set()); carregar() }, [competencia])
+
+  const carteiras = useMemo(() =>
+    Array.from(new Set(clientesStore.map((c) => c.carteira).filter(Boolean))).sort(),
+    [clientesStore]
+  )
+
+  // Base dos totais: só o filtro de carteira (status/busca não mexem no "A receber"/"Recebido")
+  const daCarteira = useMemo(() => {
+    if (!honorarios) return []
+    if (carteira === 'todas') return honorarios
+    return honorarios.filter((h) => carteiraDe(h) === carteira)
+  }, [honorarios, carteira])
 
   const filtrados = useMemo(() => {
-    if (!honorarios) return []
-    let lista = honorarios
+    let lista = daCarteira
     if (statusFiltro !== 'todos') lista = lista.filter((h) => h.status === statusFiltro)
     if (busca.trim()) {
       const termo = busca.trim().toLowerCase()
       lista = lista.filter((h) => (h.clientes?.nome || h.nome_avulso || '').toLowerCase().includes(termo))
     }
     return lista
-  }, [honorarios, busca, statusFiltro])
+  }, [daCarteira, busca, statusFiltro])
 
-  const totalPendente = (honorarios || []).filter((h) => h.status === 'pendente').reduce((s, h) => s + Number(h.valor), 0)
-  const totalPago = (honorarios || []).filter((h) => h.status === 'pago').reduce((s, h) => s + Number(h.valor), 0)
+  // Seleção só vale pro que está visível — o que o filtro esconde não entra na edição em grupo
+  const selecionadosVisiveis = filtrados.filter((h) => selecionados.has(h.id))
+  const todosMarcados = filtrados.length > 0 && selecionadosVisiveis.length === filtrados.length
+  const alternarSelecao = (id) => setSelecionados((prev) => {
+    const next = new Set(prev)
+    if (next.has(id)) next.delete(id); else next.add(id)
+    return next
+  })
+  const alternarTodos = () => setSelecionados(todosMarcados ? new Set() : new Set(filtrados.map((h) => h.id)))
+
+  const totalPendente = daCarteira.filter((h) => h.status === 'pendente').reduce((s, h) => s + Number(h.valor), 0)
+  const totalPago = daCarteira.filter((h) => h.status === 'pago').reduce((s, h) => s + Number(h.valor), 0)
 
   const handleGerar = async () => {
     setGerando(true)
@@ -92,7 +123,8 @@ export default function HonorariosPage() {
 
   const alternarStatus = async (h) => {
     const novo = h.status === 'pago' ? 'pendente' : 'pago'
-    setHonorarios((prev) => prev.map((x) => (x.id === h.id ? { ...x, status: novo } : x)))
+    const dataPagamento = novo === 'pago' ? new Date().toISOString().slice(0, 10) : null
+    setHonorarios((prev) => prev.map((x) => (x.id === h.id ? { ...x, status: novo, data_pagamento: dataPagamento } : x)))
     try {
       await marcarStatusHonorario(h.id, novo)
     } catch (e) {
@@ -123,12 +155,16 @@ export default function HonorariosPage() {
         </div>
       </div>
 
-      <div className="tabs" style={{ maxWidth: 340, marginBottom: 14 }}>
+      <div className="tabs" style={{ maxWidth: 480, marginBottom: 14 }}>
         <button className={`tab-btn ${aba === 'cobrancas' ? 'active' : ''}`} onClick={() => setAba('cobrancas')}>Cobranças</button>
+        <button className={`tab-btn ${aba === 'carteiras' ? 'active' : ''}`} onClick={() => setAba('carteiras')}>
+          <BarChart3Icon size={12} style={{ marginRight: 4, verticalAlign: '-2px' }} />Por carteira
+        </button>
         <button className={`tab-btn ${aba === 'config' ? 'active' : ''}`} onClick={() => setAba('config')}>Configurar clientes</button>
       </div>
 
       {aba === 'config' && <AbaConfigClientes />}
+      {aba === 'carteiras' && <AbaPorCarteira carteiras={carteiras} />}
 
       {aba === 'cobrancas' && (
         <>
@@ -136,6 +172,13 @@ export default function HonorariosPage() {
             <select value={competencia} onChange={(e) => setCompetencia(e.target.value)} style={{ padding: '7px 10px', fontSize: 12.5 }}>
               {opcoesCompetencia().map((c) => <option key={c} value={c}>{c}</option>)}
             </select>
+            {carteiras.length > 0 && (
+              <select value={carteira} onChange={(e) => setCarteira(e.target.value)} style={{ padding: '7px 10px', fontSize: 12.5, maxWidth: 180 }}>
+                <option value="todas">Todas as carteiras</option>
+                {carteiras.map((c) => <option key={c} value={c}>{c}</option>)}
+                <option value="">Sem carteira</option>
+              </select>
+            )}
             <div style={{ position: 'relative', flex: 1, minWidth: 180 }}>
               <SearchIcon size={14} color="var(--text3)" style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)' }} />
               <input value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Buscar cliente..."
@@ -151,7 +194,7 @@ export default function HonorariosPage() {
             </button>
           </div>
 
-          {honorarios && honorarios.length > 0 && (
+          {daCarteira.length > 0 && (
             <div style={{ display: 'flex', gap: 10, marginBottom: 14 }}>
               <div style={{ flex: 1, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: '10px 14px' }}>
                 <div style={{ fontSize: 10, color: 'var(--text3)', fontWeight: 600, textTransform: 'uppercase' }}>A receber</div>
@@ -173,15 +216,36 @@ export default function HonorariosPage() {
             </div>
           )}
 
+          {selecionadosVisiveis.length > 0 && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10, padding: '8px 12px', background: 'var(--accent-dim)', border: '1px solid var(--accent)', borderRadius: 'var(--r-md)', fontSize: 12.5, flexWrap: 'wrap' }}>
+              <ListChecksIcon size={15} color="var(--accent)" />
+              <span style={{ color: 'var(--text1)', fontWeight: 600 }}>
+                {selecionadosVisiveis.length} selecionado{selecionadosVisiveis.length !== 1 ? 's' : ''}
+              </span>
+              <span style={{ color: 'var(--text3)' }}>· {fmt(selecionadosVisiveis.reduce((s, h) => s + Number(h.valor), 0))}</span>
+              <div style={{ flex: 1 }} />
+              <button className="btn btn-accent btn-sm" onClick={() => setShowEditarLote(true)}>
+                <PencilIcon size={13} /> Editar em grupo
+              </button>
+              <button className="btn btn-ghost btn-sm" onClick={() => setSelecionados(new Set())} title="Limpar seleção">
+                <XIcon size={13} />
+              </button>
+            </div>
+          )}
+
           {honorarios && filtrados.length > 0 && (
             <div style={{ overflowX: 'auto', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
                 <thead>
                   <tr style={{ background: 'var(--surface2)' }}>
+                    <th style={{ ...cabecalho, width: 32, paddingRight: 0 }}>
+                      <input type="checkbox" checked={todosMarcados} onChange={alternarTodos} title="Selecionar todos" />
+                    </th>
                     <th style={cabecalho}>Cliente</th>
                     <th style={cabecalho}>Valor</th>
                     <th style={cabecalho}>Vencimento</th>
                     <th style={cabecalho}>Status</th>
+                    <th style={cabecalho}>Recebido em</th>
                     <th style={cabecalho}>Lembrete</th>
                     <th style={cabecalho}></th>
                   </tr>
@@ -190,9 +254,15 @@ export default function HonorariosPage() {
                   {filtrados.map((h) => {
                     const atraso = h.status === 'pendente' ? diasAtraso(h.vencimento) : 0
                     return (
-                      <tr key={h.id} style={{ borderTop: '1px solid var(--border)' }}>
+                      <tr key={h.id} style={{ borderTop: '1px solid var(--border)', background: selecionados.has(h.id) ? 'var(--accent-dim)' : undefined }}>
+                        <td style={{ padding: '8px 0 8px 12px' }}>
+                          <input type="checkbox" checked={selecionados.has(h.id)} onChange={() => alternarSelecao(h.id)} />
+                        </td>
                         <td style={{ padding: '8px 12px', color: 'var(--text1)', fontWeight: 500, whiteSpace: 'nowrap' }}>
                           {h.clientes?.nome || h.nome_avulso}
+                          {carteira === 'todas' && h.clientes?.carteira && (
+                            <span style={{ marginLeft: 6, background: 'rgba(59,102,246,.12)', color: 'var(--accent)', borderRadius: 99, padding: '0 6px', fontSize: 10, fontWeight: 600 }}>{h.clientes.carteira}</span>
+                          )}
                           {h.tipo === 'avulso' && (
                             <div style={{ fontSize: 10.5, color: 'var(--text3)', fontWeight: 400, display: 'flex', alignItems: 'center', gap: 4, marginTop: 2 }}>
                               <span className="badge badge-gray" style={{ fontSize: 9 }}>Avulso</span>
@@ -211,11 +281,14 @@ export default function HonorariosPage() {
                             {h.status === 'pago' ? 'Pago' : 'Pendente'}
                           </button>
                         </td>
+                        <td style={{ padding: '8px 12px', whiteSpace: 'nowrap', color: 'var(--text2)' }}>
+                          {h.status === 'pago' ? fmtData(h.data_pagamento) : '—'}
+                        </td>
                         <td style={{ padding: '8px 12px', fontSize: 11, color: 'var(--text3)', whiteSpace: 'nowrap' }}>
                           {h.lembrete_enviado_em ? `Enviado ${fmtData(h.lembrete_enviado_em.slice(0, 10))}` : '—'}
                         </td>
                         <td style={{ padding: '8px 12px', whiteSpace: 'nowrap' }}>
-                          <button className="btn btn-ghost btn-sm" onClick={() => setEditando(h)} title="Editar valor/vencimento">
+                          <button className="btn btn-ghost btn-sm" onClick={() => setEditando(h)} title="Editar valor/vencimento/recebimento">
                             <PencilIcon size={13} />
                           </button>
                           {h.status === 'pendente' && (
@@ -238,6 +311,10 @@ export default function HonorariosPage() {
       {editando && (
         <ModalEditarHonorario honorario={editando} onClose={() => setEditando(null)}
           onSaved={() => { setEditando(null); carregar() }} />
+      )}
+      {showEditarLote && (
+        <ModalEditarLote honorarios={selecionadosVisiveis} onClose={() => setShowEditarLote(false)}
+          onSaved={() => { setShowEditarLote(false); setSelecionados(new Set()); carregar() }} />
       )}
       {showNovoAvulso && (
         <ModalNovoAvulso onClose={() => setShowNovoAvulso(false)}
@@ -377,13 +454,15 @@ function ModalConfigPix({ onClose }) {
 function ModalEditarHonorario({ honorario, onClose, onSaved }) {
   const [valor, setValor] = useState(String(honorario.valor))
   const [vencimento, setVencimento] = useState(honorario.vencimento)
+  const [dataPagamento, setDataPagamento] = useState(honorario.data_pagamento || '')
   const [salvando, setSalvando] = useState(false)
   const { show } = useToast()
+  const pago = honorario.status === 'pago'
 
   const salvar = async () => {
     setSalvando(true)
     try {
-      await atualizarHonorario(honorario.id, { valor: Number(valor), vencimento })
+      await atualizarHonorario(honorario.id, { valor: Number(valor), vencimento, dataPagamento: pago ? dataPagamento : undefined })
       onSaved()
     } catch (e) {
       show?.('Erro ao salvar: ' + e.message)
@@ -402,6 +481,12 @@ function ModalEditarHonorario({ honorario, onClose, onSaved }) {
         <label className="form-label">Vencimento</label>
         <input type="date" value={vencimento} onChange={(e) => setVencimento(e.target.value)} />
       </div>
+      {pago && (
+        <div className="form-field">
+          <label className="form-label">Data de recebimento</label>
+          <input type="date" value={dataPagamento} onChange={(e) => setDataPagamento(e.target.value)} />
+        </div>
+      )}
       <button className="btn btn-accent" style={{ width: '100%' }} onClick={salvar} disabled={salvando}>
         {salvando ? 'Salvando...' : 'Salvar'}
       </button>
@@ -569,5 +654,312 @@ function ModalPreviaLembrete({ honorario, onClose, onEnviado }) {
         {resultadoEnvio ? 'Fechar' : erroPrevia ? 'Fechar' : 'Cancelar'}
       </button>
     </Modal>
+  )
+}
+
+// ── Modal edição em grupo ───────────────────────────────────────────────────
+// Cada campo só é aplicado se marcado — o que ficar desmarcado continua como
+// está em cada cobrança. Data de recebimento implica status "Pago".
+function ModalEditarLote({ honorarios, onClose, onSaved }) {
+  const hoje = new Date().toISOString().slice(0, 10)
+  const [usar, setUsar] = useState({ dataPagamento: true, status: false, vencimento: false, valor: false })
+  const [status, setStatus] = useState('pago')
+  const [dataPagamento, setDataPagamento] = useState(hoje)
+  const [vencimento, setVencimento] = useState(hoje)
+  const [valor, setValor] = useState('')
+  const [salvando, setSalvando] = useState(false)
+  const { show } = useToast()
+
+  const marcar = (campo) => setUsar((u) => ({ ...u, [campo]: !u[campo] }))
+  const algumCampo = Object.values(usar).some(Boolean)
+
+  const salvar = async () => {
+    const campos = {}
+    if (usar.dataPagamento) {
+      if (!dataPagamento) { show?.('Informe a data de recebimento.'); return }
+      campos.status = 'pago'
+      campos.data_pagamento = dataPagamento
+    } else if (usar.status) {
+      campos.status = status
+    }
+    if (usar.vencimento) {
+      if (!vencimento) { show?.('Informe o vencimento.'); return }
+      campos.vencimento = vencimento
+    }
+    if (usar.valor) {
+      if (valor === '' || Number.isNaN(Number(valor))) { show?.('Informe o valor.'); return }
+      campos.valor = Number(valor)
+    }
+    setSalvando(true)
+    try {
+      await atualizarHonorariosEmLote(honorarios.map((h) => h.id), campos)
+      show?.(`${honorarios.length} honorário${honorarios.length !== 1 ? 's' : ''} atualizado${honorarios.length !== 1 ? 's' : ''}`)
+      onSaved()
+    } catch (e) {
+      show?.('Erro ao salvar: ' + e.message)
+    }
+    setSalvando(false)
+  }
+
+  const rotulo = { display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5, fontWeight: 600, color: 'var(--text1)', cursor: 'pointer', marginBottom: 6 }
+
+  return (
+    <Modal onClose={onClose}>
+      <p className="modal-title">Editar em grupo — {honorarios.length} honorário{honorarios.length !== 1 ? 's' : ''}</p>
+      <div className="notice notice-info">
+        <InfoIcon size={14} />
+        <span>Marque só o que quer alterar — o resto continua como está em cada cobrança.</span>
+      </div>
+
+      <div className="form-field">
+        <label style={rotulo}>
+          <input type="checkbox" checked={usar.dataPagamento} onChange={() => marcar('dataPagamento')} /> Data de recebimento
+        </label>
+        <input type="date" value={dataPagamento} disabled={!usar.dataPagamento} onChange={(e) => setDataPagamento(e.target.value)} />
+        {usar.dataPagamento && <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 4 }}>Marca todos como pagos nessa data.</div>}
+      </div>
+
+      <div className="form-field" style={{ opacity: usar.dataPagamento ? 0.5 : 1 }}>
+        <label style={rotulo}>
+          <input type="checkbox" checked={usar.status && !usar.dataPagamento} disabled={usar.dataPagamento} onChange={() => marcar('status')} /> Status
+        </label>
+        <select value={status} disabled={!usar.status || usar.dataPagamento} onChange={(e) => setStatus(e.target.value)}>
+          <option value="pago">Pago (recebido hoje, se ainda não tiver data)</option>
+          <option value="pendente">Pendente (limpa a data de recebimento)</option>
+        </select>
+      </div>
+
+      <div className="form-field">
+        <label style={rotulo}>
+          <input type="checkbox" checked={usar.vencimento} onChange={() => marcar('vencimento')} /> Vencimento
+        </label>
+        <input type="date" value={vencimento} disabled={!usar.vencimento} onChange={(e) => setVencimento(e.target.value)} />
+      </div>
+
+      <div className="form-field">
+        <label style={rotulo}>
+          <input type="checkbox" checked={usar.valor} onChange={() => marcar('valor')} /> Valor
+        </label>
+        <input type="number" step="0.01" value={valor} placeholder="0,00" disabled={!usar.valor} onChange={(e) => setValor(e.target.value)} />
+      </div>
+
+      <button className="btn btn-accent" style={{ width: '100%' }} onClick={salvar} disabled={salvando || !algumCampo}>
+        {salvando ? 'Salvando...' : `Aplicar em ${honorarios.length}`}
+      </button>
+      <button className="btn btn-ghost" style={{ width: '100%', marginTop: 8 }} onClick={onClose}>Cancelar</button>
+    </Modal>
+  )
+}
+
+// ── Aba Por carteira ─────────────────────────────────────────────────────────
+// Recebido x a receber agrupado pela carteira do cliente, nos últimos N meses
+// (por competência da cobrança). Gráficos em HTML/CSS puro — o app não tem
+// biblioteca de gráfico e não precisa de uma pra barras.
+function ultimasCompetencias(n) {
+  const hoje = new Date()
+  const lista = []
+  for (let i = n - 1; i >= 0; i--) {
+    const d = new Date(hoje.getFullYear(), hoje.getMonth() - i, 1)
+    lista.push(String(d.getMonth() + 1).padStart(2, '0') + '/' + d.getFullYear())
+  }
+  return lista
+}
+function fmtCurto(v) {
+  const n = Number(v || 0)
+  if (n >= 1000) return 'R$ ' + (n / 1000).toLocaleString('pt-BR', { maximumFractionDigits: 1 }) + 'k'
+  return 'R$ ' + n.toLocaleString('pt-BR', { maximumFractionDigits: 0 })
+}
+function somar(lista) {
+  let recebido = 0, pendente = 0
+  for (const h of lista) {
+    if (h.status === 'pago') recebido += Number(h.valor)
+    else pendente += Number(h.valor)
+  }
+  return { recebido, pendente, total: recebido + pendente }
+}
+
+const COR_RECEBIDO = 'var(--ok)'
+const COR_PENDENTE = 'var(--warn)'
+
+function Legenda() {
+  const item = (cor, texto) => (
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+      <span style={{ width: 10, height: 10, borderRadius: 3, background: cor }} />{texto}
+    </span>
+  )
+  return (
+    <div style={{ display: 'flex', gap: 14, fontSize: 11, color: 'var(--text2)' }}>
+      {item(COR_RECEBIDO, 'Recebido')}{item(COR_PENDENTE, 'A receber')}
+    </div>
+  )
+}
+
+function AbaPorCarteira({ carteiras }) {
+  const [meses, setMeses] = useState(6)
+  const [dados, setDados] = useState(null)
+  const [erro, setErro] = useState(null)
+  const [carteiraEvolucao, setCarteiraEvolucao] = useState('todas')
+  const [dica, setDica] = useState(null) // { x, y, linhas }
+  const competencias = useMemo(() => ultimasCompetencias(meses), [meses])
+
+  useEffect(() => {
+    setDados(null); setErro(null)
+    listarHonorariosDasCompetencias(competencias).then(setDados).catch((e) => setErro(e.message))
+  }, [competencias])
+
+  const porCarteira = useMemo(() => {
+    if (!dados) return []
+    const grupos = new Map()
+    for (const h of dados) {
+      const c = carteiraDe(h)
+      if (!grupos.has(c)) grupos.set(c, [])
+      grupos.get(c).push(h)
+    }
+    return Array.from(grupos, ([c, lista]) => ({
+      carteira: c,
+      clientes: new Set(lista.map((h) => h.cliente_id || h.id)).size,
+      ...somar(lista),
+    })).sort((a, b) => b.total - a.total)
+  }, [dados])
+
+  const porMes = useMemo(() => {
+    if (!dados) return []
+    const filtrados = carteiraEvolucao === 'todas' ? dados : dados.filter((h) => carteiraDe(h) === carteiraEvolucao)
+    return competencias.map((comp) => ({ competencia: comp, ...somar(filtrados.filter((h) => h.competencia === comp)) }))
+  }, [dados, competencias, carteiraEvolucao])
+
+  const geral = useMemo(() => somar(dados || []), [dados])
+
+  if (erro) return <p style={{ color: 'var(--danger)', fontSize: 13 }}>{erro}</p>
+  if (!dados) return <p style={{ color: 'var(--text3)', fontSize: 13 }}>Carregando...</p>
+
+  const maxCarteira = Math.max(1, ...porCarteira.map((c) => c.total))
+  const maxMes = Math.max(1, ...porMes.map((m) => m.total))
+  const pct = (a, b) => (b > 0 ? Math.round((a / b) * 100) : 0)
+  const mostrarDica = (e, linhas) => setDica({ x: e.clientX, y: e.clientY, linhas })
+  const card = { background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)', padding: '14px 16px', marginBottom: 14 }
+  const kpi = (rotulo, valor, cor) => (
+    <div style={{ flex: 1, minWidth: 140, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: '10px 14px' }}>
+      <div style={{ fontSize: 10, color: 'var(--text3)', fontWeight: 600, textTransform: 'uppercase' }}>{rotulo}</div>
+      <div style={{ fontSize: 17, fontWeight: 700, color: cor || 'var(--text1)' }}>{valor}</div>
+    </div>
+  )
+
+  return (
+    <div onMouseLeave={() => setDica(null)}>
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 14, flexWrap: 'wrap' }}>
+        <span style={{ fontSize: 12, color: 'var(--text3)' }}>Período:</span>
+        <div className="tabs" style={{ width: 300 }}>
+          {[3, 6, 12].map((n) => (
+            <button key={n} className={`tab-btn ${meses === n ? 'active' : ''}`} onClick={() => setMeses(n)}>{n} meses</button>
+          ))}
+        </div>
+        <span style={{ fontSize: 11, color: 'var(--text3)' }}>{competencias[0]} a {competencias[competencias.length - 1]} · por competência</span>
+      </div>
+
+      <div style={{ display: 'flex', gap: 10, marginBottom: 14, flexWrap: 'wrap' }}>
+        {kpi('Faturado', fmt(geral.total))}
+        {kpi('Recebido', fmt(geral.recebido), 'var(--ok)')}
+        {kpi('A receber', fmt(geral.pendente), 'var(--warn)')}
+        {kpi('% recebido', pct(geral.recebido, geral.total) + '%')}
+      </div>
+
+      {dados.length === 0 ? (
+        <div className="empty"><p>📊</p>Nenhum honorário gerado nesse período.</div>
+      ) : (
+        <>
+          {/* Recebido x a receber por carteira */}
+          <div style={card}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, gap: 10, flexWrap: 'wrap' }}>
+              <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text1)' }}>Recebimentos por carteira</span>
+              <Legenda />
+            </div>
+            {porCarteira.map((c) => (
+              <div key={c.carteira || '_'} style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
+                <div style={{ width: 120, flexShrink: 0, fontSize: 12, color: c.carteira ? 'var(--text1)' : 'var(--text3)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={nomeCarteira(c.carteira)}>
+                  {nomeCarteira(c.carteira)}
+                </div>
+                <div style={{ flex: 1, minWidth: 0, display: 'flex', gap: 2, height: 18 }}
+                  onMouseMove={(e) => mostrarDica(e, [nomeCarteira(c.carteira), `Recebido: ${fmt(c.recebido)}`, `A receber: ${fmt(c.pendente)}`, `${pct(c.recebido, c.total)}% recebido · ${c.clientes} cliente${c.clientes !== 1 ? 's' : ''}`])}
+                  onMouseLeave={() => setDica(null)}>
+                  {c.recebido > 0 && <div style={{ width: `${(c.recebido / maxCarteira) * 100}%`, background: COR_RECEBIDO, borderRadius: c.pendente > 0 ? '4px 0 0 4px' : 4 }} />}
+                  {c.pendente > 0 && <div style={{ width: `${(c.pendente / maxCarteira) * 100}%`, background: COR_PENDENTE, borderRadius: c.recebido > 0 ? '0 4px 4px 0' : 4 }} />}
+                </div>
+                <div style={{ width: 120, flexShrink: 0, textAlign: 'right', fontSize: 11.5, color: 'var(--text2)', whiteSpace: 'nowrap' }}>
+                  {fmtCurto(c.total)} · <strong style={{ color: 'var(--text1)' }}>{pct(c.recebido, c.total)}%</strong>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* Evolução mensal */}
+          <div style={card}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, gap: 10, flexWrap: 'wrap' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text1)', whiteSpace: 'nowrap' }}>Evolução mês a mês</span>
+                <select value={carteiraEvolucao} onChange={(e) => setCarteiraEvolucao(e.target.value)} style={{ padding: '4px 8px', fontSize: 12 }}>
+                  <option value="todas">Todas as carteiras</option>
+                  {carteiras.map((c) => <option key={c} value={c}>{c}</option>)}
+                  <option value="">Sem carteira</option>
+                </select>
+              </div>
+              <Legenda />
+            </div>
+            <div style={{ display: 'flex', alignItems: 'flex-end', gap: 8, height: 180, borderBottom: '1px solid var(--border)', paddingTop: 18 }}>
+              {porMes.map((m) => (
+                <div key={m.competencia} style={{ flex: 1, minWidth: 0, height: '100%', display: 'flex', flexDirection: 'column', justifyContent: 'flex-end', alignItems: 'center', cursor: 'default' }}
+                  onMouseMove={(e) => mostrarDica(e, [m.competencia, `Recebido: ${fmt(m.recebido)}`, `A receber: ${fmt(m.pendente)}`, `${pct(m.recebido, m.total)}% recebido`])}
+                  onMouseLeave={() => setDica(null)}>
+                  {m.total > 0 && <div style={{ fontSize: 10, color: 'var(--text3)', marginBottom: 3, whiteSpace: 'nowrap' }}>{fmtCurto(m.total)}</div>}
+                  <div style={{ width: '100%', maxWidth: 44, display: 'flex', flexDirection: 'column', gap: m.recebido > 0 && m.pendente > 0 ? 2 : 0, height: `${(m.total / maxMes) * 100}%`, minHeight: m.total > 0 ? 3 : 0 }}>
+                    {m.pendente > 0 && <div style={{ flex: m.pendente, background: COR_PENDENTE, borderRadius: '4px 4px 0 0' }} />}
+                    {m.recebido > 0 && <div style={{ flex: m.recebido, background: COR_RECEBIDO, borderRadius: m.pendente > 0 ? 0 : '4px 4px 0 0' }} />}
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div style={{ display: 'flex', gap: 8, marginTop: 6 }}>
+              {porMes.map((m) => (
+                <div key={m.competencia} style={{ flex: 1, minWidth: 0, textAlign: 'center', fontSize: 10.5, color: 'var(--text3)' }}>{m.competencia.slice(0, 2)}/{m.competencia.slice(5)}</div>
+              ))}
+            </div>
+          </div>
+
+          {/* Tabela */}
+          <div style={{ overflowX: 'auto', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
+              <thead>
+                <tr style={{ background: 'var(--surface2)' }}>
+                  <th style={cabecalho}>Carteira</th>
+                  <th style={{ ...cabecalho, textAlign: 'right' }}>Clientes</th>
+                  <th style={{ ...cabecalho, textAlign: 'right' }}>Faturado</th>
+                  <th style={{ ...cabecalho, textAlign: 'right' }}>Recebido</th>
+                  <th style={{ ...cabecalho, textAlign: 'right' }}>A receber</th>
+                  <th style={{ ...cabecalho, textAlign: 'right' }}>% recebido</th>
+                </tr>
+              </thead>
+              <tbody>
+                {porCarteira.map((c) => (
+                  <tr key={c.carteira || '_'} style={{ borderTop: '1px solid var(--border)' }}>
+                    <td style={{ padding: '8px 12px', color: c.carteira ? 'var(--text1)' : 'var(--text3)', fontWeight: 500 }}>{nomeCarteira(c.carteira)}</td>
+                    <td style={{ padding: '8px 12px', textAlign: 'right', color: 'var(--text2)' }}>{c.clientes}</td>
+                    <td style={{ padding: '8px 12px', textAlign: 'right', whiteSpace: 'nowrap' }}>{fmt(c.total)}</td>
+                    <td style={{ padding: '8px 12px', textAlign: 'right', whiteSpace: 'nowrap', color: 'var(--ok)' }}>{fmt(c.recebido)}</td>
+                    <td style={{ padding: '8px 12px', textAlign: 'right', whiteSpace: 'nowrap', color: c.pendente > 0 ? 'var(--warn)' : 'var(--text3)' }}>{fmt(c.pendente)}</td>
+                    <td style={{ padding: '8px 12px', textAlign: 'right', fontWeight: 600 }}>{pct(c.recebido, c.total)}%</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
+
+      {dica && (
+        <div style={{ position: 'fixed', left: dica.x + 12, top: dica.y + 12, zIndex: 2000, pointerEvents: 'none', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', boxShadow: 'var(--shadow-sm)', padding: '7px 10px', fontSize: 11.5, color: 'var(--text2)', whiteSpace: 'nowrap' }}>
+          {dica.linhas.map((l, i) => <div key={i} style={i === 0 ? { fontWeight: 700, color: 'var(--text1)', marginBottom: 2 } : undefined}>{l}</div>)}
+        </div>
+      )}
+    </div>
   )
 }
