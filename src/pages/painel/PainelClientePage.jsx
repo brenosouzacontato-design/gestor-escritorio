@@ -968,7 +968,7 @@ function Metrica({ label, valor, cor }) {
 // gráficos (o projeto não usa nenhuma hoje, mantém o mesmo estilo das
 // barras de progresso já feitas à mão no resto do app). `dados` já vem
 // ordenado cronologicamente de obterHistoricoFaturamento.
-function GraficoFaturamento({ dados }) {
+export function GraficoFaturamento({ dados }) {
   const max = Math.max(...dados.map((d) => d.faturamento_periodo || 0), 1);
   const larguraBarra = 46, gap = 16, altura = 100;
   // Espaço reservado acima das barras pro rótulo do valor — sem essa margem,

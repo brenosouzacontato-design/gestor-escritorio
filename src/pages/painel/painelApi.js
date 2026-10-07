@@ -473,3 +473,44 @@ export async function salvarCndManual(clienteId, competencia, { situacaoEstadual
   if (error) throw error;
   return data;
 }
+
+// Documentos confirmados vinculados a tarefas (mesmo formato de
+// obterDocumentosPorObrigacao) — a nova versão do painel só mostra tarefa
+// concluída quando ela tem anexo pra baixar.
+export async function obterDocumentosPorTarefa(tarefaIds) {
+  if (!tarefaIds || tarefaIds.length === 0) return {};
+  const { data, error } = await supabase
+    .from('documentos')
+    .select('id, tarefa_id, storage_path, nome_arquivo')
+    .in('tarefa_id', tarefaIds)
+    .eq('status', 'confirmado');
+  if (error) throw error;
+  return Object.fromEntries(data.map((d) => [d.tarefa_id, d]));
+}
+
+// ---------- Log de visualização do link compartilhado ----------
+
+// Gravado só quando o link público é aberto (main.jsx) — as prévias de
+// dentro do app (PaineisPage/PainelViewerModal) não contam como visita do
+// cliente. Tabela em supabase-schema-painel-visualizacoes.sql.
+export async function registrarVisualizacaoPainel(clienteId, competencia, versao) {
+  const { error } = await supabase.from('painel_visualizacoes').insert({
+    cliente_id: clienteId,
+    competencia: competencia || null,
+    versao,
+    user_agent: navigator.userAgent.slice(0, 300),
+  });
+  if (error) throw error;
+}
+
+export async function obterUltimaVisualizacaoPainel(clienteId) {
+  const { data, error } = await supabase
+    .from('painel_visualizacoes')
+    .select('visualizado_em, competencia, versao')
+    .eq('cliente_id', clienteId)
+    .order('visualizado_em', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) throw error;
+  return data;
+}

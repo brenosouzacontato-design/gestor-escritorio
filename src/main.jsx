@@ -5,8 +5,10 @@ import RelatorioCompartilhadoPage from './pages/contabil/RelatorioCompartilhadoP
 import NotasFiscaisCompartilhadoPage from './pages/contabil/NotasFiscaisCompartilhadoPage.jsx'
 import IdentificarLancamentosPage from './pages/contabil/IdentificarLancamentosPage.jsx'
 import DocumentoCompartilhadoPage from './pages/documentos/DocumentoCompartilhadoPage.jsx'
+import PainelClientePage from './pages/painel/PainelClientePage.jsx'
 import PainelCompartilhadoPage from './pages/painel/PainelCompartilhadoPage.jsx'
 import ComprovanteFaturamentoPage from './pages/painel/ComprovanteFaturamentoPage.jsx'
+import { registrarVisualizacaoPainel } from './pages/painel/painelApi.js'
 import './styles.css'
 
 // Links compartilhados (Balancete/DRE e identificação de lançamentos via
@@ -46,7 +48,14 @@ if (share === 'dre' || share === 'balancete') {
 } else if (doc) {
   raiz = <DocumentoCompartilhadoPage documentoId={doc} />
 } else if (painel) {
-  raiz = <PainelCompartilhadoPage clienteId={painel} competencia={params.get('competencia')} />
+  // log da visita do cliente (a última aparece pro escritório no topo do
+  // painel) — falha silenciosa se a tabela ainda não existir
+  registrarVisualizacaoPainel(painel, params.get('competencia'), params.get('versao') === '1' ? 'completa' : 'nova').catch(() => {})
+  // versão nova (só impostos anexados + pendências do Relatório de Situação
+  // Fiscal) é o padrão; &versao=1 abre o painel completo antigo
+  raiz = params.get('versao') === '1'
+    ? <PainelClientePage clienteId={painel} competencia={params.get('competencia')} />
+    : <PainelCompartilhadoPage clienteId={painel} competencia={params.get('competencia')} />
 }
 
 ReactDOM.createRoot(document.getElementById('root')).render(

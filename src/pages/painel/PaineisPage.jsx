@@ -3,6 +3,7 @@ import { Share2Icon, MonitorIcon } from 'lucide-react'
 import { useStore } from '../../store'
 import EmpresaCombobox from '../../components/EmpresaCombobox'
 import PainelClientePage from './PainelClientePage'
+import PainelCompartilhadoPage from './PainelCompartilhadoPage'
 
 const CHAVE_ULTIMO_CLIENTE = 'paineis-cliente-selecionado'
 
@@ -14,6 +15,8 @@ export default function PaineisPage() {
   const clientes = useStore(s => s.clientes)
   const compSel = useStore(s => s.competenciaSelecionada)
   const [clienteId, setClienteId] = useState(() => localStorage.getItem(CHAVE_ULTIMO_CLIENTE) || '')
+  // 'nova' = PainelCompartilhadoPage (padrão do link); 'completa' = painel antigo (&versao=1)
+  const [versao, setVersao] = useState('nova')
 
   const clientesOrdenados = useMemo(() => [...clientes].sort((a, b) => a.nome.localeCompare(b.nome)), [clientes])
 
@@ -34,8 +37,10 @@ export default function PaineisPage() {
 
   const compartilhar = () => {
     if (!clienteAtual) return
-    const link = `${window.location.origin}${window.location.pathname}?painel=${clienteAtual.id}&competencia=${encodeURIComponent(compSel)}`
-    const mensagem = `Olá! Segue o painel de ${clienteAtual.nome} — competência ${compSel} — com obrigações, financeiro e demais informações:\n${link}`
+    const link = `${window.location.origin}${window.location.pathname}?painel=${clienteAtual.id}&competencia=${encodeURIComponent(compSel)}${versao === 'completa' ? '&versao=1' : ''}`
+    const mensagem = versao === 'completa'
+      ? `Olá! Segue o painel de ${clienteAtual.nome} — competência ${compSel} — com obrigações, financeiro e demais informações:\n${link}`
+      : `Olá! Seguem os impostos e as pendências fiscais de ${clienteAtual.nome} — competência ${compSel}:\n${link}`
     window.open(`https://wa.me/?text=${encodeURIComponent(mensagem)}`, '_blank')
   }
 
@@ -55,6 +60,15 @@ export default function PaineisPage() {
       <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 16, flexWrap: 'wrap' }}>
         <EmpresaCombobox empresas={clientesOrdenados} value={clienteId} onChange={setClienteId}
           placeholder="Escolher empresa..." style={{ flex: 1, minWidth: 240 }} />
+        <div style={{ display: 'flex', background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: 8, padding: 2 }}>
+          {[['nova', 'Nova versão'], ['completa', 'Completo']].map(([v, label]) => (
+            <button key={v} onClick={() => setVersao(v)}
+              style={{ border: 'none', borderRadius: 6, padding: '5px 10px', cursor: 'pointer', fontSize: 12, fontWeight: 600,
+                background: versao === v ? 'var(--navy)' : 'transparent', color: versao === v ? '#fff' : 'var(--text2)' }}>
+              {label}
+            </button>
+          ))}
+        </div>
         <button onClick={compartilhar} disabled={!clienteAtual} className="btn btn-accent" style={{ padding: '7px 14px' }}>
           <Share2Icon size={13} /> Compartilhar
         </button>
@@ -67,7 +81,9 @@ export default function PaineisPage() {
         </div>
       )}
 
-      {clienteAtual && <PainelClientePage key={clienteAtual.id} clienteId={clienteAtual.id} competencia={compSel} admin />}
+      {clienteAtual && (versao === 'nova'
+        ? <PainelCompartilhadoPage key={`${clienteAtual.id}-${compSel}`} clienteId={clienteAtual.id} competencia={compSel} admin />
+        : <PainelClientePage key={clienteAtual.id} clienteId={clienteAtual.id} competencia={compSel} admin />)}
     </div>
   )
 }

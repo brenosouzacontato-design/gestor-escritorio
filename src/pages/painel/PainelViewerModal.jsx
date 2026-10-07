@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { XIcon, ChevronLeftIcon, ChevronRightIcon, Share2Icon } from 'lucide-react';
 import PainelClientePage from './PainelClientePage';
+import PainelCompartilhadoPage from './PainelCompartilhadoPage';
 
 // Visualizador interno do painel do cliente — em vez de abrir uma aba nova
 // por empresa (como "Visualizar painel" fazia antes), abre um overlay
@@ -11,6 +12,9 @@ import PainelClientePage from './PainelClientePage';
 // empresa em que o usuário clicou.
 export default function PainelViewerModal({ clientes, indiceInicial, competencia, onClose }) {
   const [indice, setIndice] = useState(indiceInicial);
+  // 'nova' = PainelCompartilhadoPage (só impostos anexados + pendências do
+  // Relatório de Situação Fiscal, padrão do link); 'completa' = painel antigo
+  const [versao, setVersao] = useState('nova');
   const touchInicio = useRef(null);
 
   const total = clientes.length;
@@ -40,8 +44,10 @@ export default function PainelViewerModal({ clientes, indiceInicial, competencia
   };
 
   const compartilhar = () => {
-    const link = `${window.location.origin}${window.location.pathname}?painel=${clienteAtual.id}&competencia=${encodeURIComponent(competencia)}`;
-    const mensagem = `Olá! Segue o painel de ${clienteAtual.nome} — competência ${competencia} — com obrigações, financeiro e demais informações:\n${link}`;
+    const link = `${window.location.origin}${window.location.pathname}?painel=${clienteAtual.id}&competencia=${encodeURIComponent(competencia)}${versao === 'completa' ? '&versao=1' : ''}`;
+    const mensagem = versao === 'completa'
+      ? `Olá! Segue o painel de ${clienteAtual.nome} — competência ${competencia} — com obrigações, financeiro e demais informações:\n${link}`
+      : `Olá! Seguem os impostos e as pendências fiscais de ${clienteAtual.nome} — competência ${competencia}:\n${link}`;
     window.open(`https://wa.me/?text=${encodeURIComponent(mensagem)}`, '_blank');
   };
 
@@ -69,6 +75,16 @@ export default function PainelViewerModal({ clientes, indiceInicial, competencia
             display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: '#fff' }}>
           <ChevronRightIcon size={16} />
         </button>
+        <div style={{ display: 'flex', background: 'rgba(255,255,255,.1)', borderRadius: 8, padding: 2, flexShrink: 0 }}>
+          {[['nova', 'Nova versão'], ['completa', 'Completo']].map(([v, label]) => (
+            <button key={v} onClick={() => setVersao(v)}
+              title={v === 'nova' ? 'Só impostos anexados e pendências da Situação Fiscal' : 'Painel completo (versão anterior)'}
+              style={{ border: 'none', borderRadius: 6, padding: '0 10px', height: 26, cursor: 'pointer', fontSize: 11, fontWeight: 600, whiteSpace: 'nowrap',
+                background: versao === v ? '#fff' : 'transparent', color: versao === v ? 'var(--navy)' : '#fff' }}>
+              {label}
+            </button>
+          ))}
+        </div>
         <button onClick={compartilhar} title="Compartilhar esse painel via WhatsApp"
           style={{ background: 'var(--accent)', border: 'none', borderRadius: 8, padding: '0 12px', height: 30, flexShrink: 0,
             display: 'flex', alignItems: 'center', gap: 5, cursor: 'pointer', color: '#fff', fontSize: 11, fontWeight: 600, whiteSpace: 'nowrap' }}>
@@ -76,7 +92,9 @@ export default function PainelViewerModal({ clientes, indiceInicial, competencia
         </button>
       </div>
       <div style={{ flex: 1, overflowY: 'auto' }} onTouchStart={onTouchStart} onTouchEnd={onTouchEnd}>
-        <PainelClientePage key={clienteAtual.id} clienteId={clienteAtual.id} competencia={competencia} admin />
+        {versao === 'nova'
+          ? <PainelCompartilhadoPage key={clienteAtual.id} clienteId={clienteAtual.id} competencia={competencia} admin />
+          : <PainelClientePage key={clienteAtual.id} clienteId={clienteAtual.id} competencia={competencia} admin />}
       </div>
     </div>
   );

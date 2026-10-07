@@ -1,41 +1,41 @@
 import { useEffect, useState } from 'react';
 import {
-  CalendarIcon, DownloadIcon, CheckCircleIcon, FileTextIcon, AlertTriangleIcon, ClockIcon, ShieldCheckIcon,
+  CalendarIcon, DownloadIcon, CheckCircleIcon, AlertTriangleIcon, ClockIcon, TrendingUpIcon,
+  ClipboardListIcon, EyeIcon, ReceiptIcon,
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { abrirLinkAssinado } from '../documentos/documentosApi';
+import { GraficoFaturamento } from './PainelClientePage';
 import {
   obterResumoObrigacoes, obterResumoTarefas, obterDadosGerenciais, obterDocumentosPorObrigacao,
-  obterSituacaoFiscalMaisRecente, obterCndManual, obterPendenciasAnteriores, obterValoresDasPendencias,
+  obterDocumentosPorTarefa, obterSituacaoFiscalMaisRecente, obterCndManual, obterHistoricoFaturamento,
+  obterUltimaVisualizacaoPainel,
 } from './painelApi';
 
-// Página pública (link compartilhado com o cliente, ?painel=<id>&competencia=MM/YYYY
-// — ver main.jsx). Diferente do painel interno (PainelClientePage.jsx, que
-// continua sendo o que o escritório vê de dentro do app), aqui é tudo numa
-// página só, sem abas, e só com o que interessa ao cliente de Fiscal e
-// Folha: impostos em aberto (Relatório de Situação Fiscal + guias vencidas),
-// impostos a vencer (guias anexadas às obrigações, com valor e download) e
-// o andamento das obrigações dessas duas áreas no mês.
-
-const STATUS_LABEL = { pendente: 'Pendente', concluido: 'Concluído', nao_aplica: 'N/A', vencido: 'Vencido' };
-const STATUS_COR = {
-  pendente: ['var(--warn)', 'var(--warn-dim)'],
-  concluido: ['var(--ok)', 'var(--ok-dim)'],
-  nao_aplica: ['var(--info)', 'var(--info-dim)'],
-  vencido: ['var(--danger)', 'var(--danger-dim)'],
-};
+// Nova versão do painel do cliente (link compartilhado, ?painel=<id>&competencia=MM/YYYY
+// — ver main.jsx; a versão completa antiga continua em PainelClientePage.jsx,
+// acessível com &versao=1). Página única, nessa ordem:
+//   1. Fiscal: números da Declaração do Simples do mês + evolução do faturamento;
+//   2. cards de impostos em aberto (Relatório de Situação Fiscal), a vencer e
+//      vencidos (guias anexadas);
+//   3. impostos da competência com guia anexada (valor + download) — o DAS de
+//      mês com faturamento zerado aparece como "Sem movimento";
+//   4. pendências do Relatório de Situação Fiscal (RFB/PGFN), com nome legível
+//      do tributo, competência e valor atualizado;
+//   5. demais obrigações/tarefas de Fiscal e Folha — concluídas só aparecem
+//      se tiverem anexo pra baixar.
+// `admin` (prévia de dentro do app) mostra a última vez que o cliente abriu o link.
 
 // Mesmo fallback de PainelClientePage.jsx pra obrigações legadas sem
-// tipo_obrigacao_id (não resolvem o join com tipos_obrigacao.eh_imposto).
+// tipo_obrigacao_id, mais reconhecimento pelo nome (FGTS, DARF etc. nem
+// sempre estão marcados como eh_imposto) — anexo de obrigação que não é
+// imposto (ex: holerites na obrigação "Folha") não é guia a pagar.
 const NOMES_IMPOSTO = new Set([
   'PGDAS', 'PGMEI', 'PARCELAMENTO MEI', 'PARCELAMENTO SIMPLES',
   'PARCELAMENTO SIMPLIFICADO RFB', 'RECALCULO INSS', 'RECALCULO PGDAS',
   'INSS MENSAL',
 ]);
-// Além da marcação eh_imposto, reconhece guia de imposto pelo nome (FGTS,
-// DARF etc. nem sempre estão marcados) — anexo de obrigação que não é
-// imposto (ex: holerites na obrigação "Folha") não é guia a pagar.
-const TITULO_IMPOSTO = /(pg)?das|pgmei|inss|fgts|darf|dctfweb|irrf|irpj|csll|pis|cofins|icms|iss|difal|parcelamento|guia/i;
+const TITULO_IMPOSTO = /\b(pg)?das\b|pgmei|inss|fgts|darf|dctfweb|irrf|irpj|csll|pis|cofins|icms|iss|difal|parcelamento|guia/i;
 function ehImposto(o) {
   return o.tipos_obrigacao?.eh_imposto || NOMES_IMPOSTO.has((o.tipo || '').toUpperCase())
     || TITULO_IMPOSTO.test(`${o.titulo || ''} ${o.tipo || ''}`);
@@ -44,14 +44,12 @@ function ehDas(o) {
   return /\b(pg)?das\b/i.test(`${o.titulo || ''} ${o.tipo || ''}`);
 }
 
-// Área (Fiscal/Folha) da obrigação pelo nome do departamento. Imposto
-// legado sem departamento cai em Fiscal; qualquer outra área (Contábil,
-// Societário...) fica de fora da página compartilhada.
+// Área (Fiscal/Folha) pelo departamento — o resto (Contábil, Societário...)
+// fica de fora da lista de obrigações/tarefas.
 function areaObrigacao(o) {
   const nome = (o.departamentos?.nome || '').toLowerCase();
   if (/folha|pessoal|dp\b/.test(nome)) return 'Folha';
   if (/fiscal/.test(nome)) return 'Fiscal';
-  if (!nome && ehImposto(o)) return 'Fiscal';
   return null;
 }
 function areaTarefa(t) {
@@ -59,6 +57,30 @@ function areaTarefa(t) {
   if (d === 'folha' || d === 'pessoal') return 'Folha';
   if (d === 'fiscal') return 'Fiscal';
   return null;
+}
+
+// O relatório da RFB traz o código da receita ("1099-01 - CP-SEGUR.") —
+// traduz pro nome que o cliente reconhece. Sem correspondência, usa o
+// texto original sem o período (que já aparece ao lado do nome).
+const NOMES_TRIBUTO = [
+  [/CP[\s.-]*SEGUR|1099/i, 'INSS Mensal'],
+  [/CP[\s.-]*PATRONAL|1138/i, 'INSS Patronal'],
+  [/CP[\s.-]*TERCEIROS|1170|1176|1191|1196|1200/i, 'INSS Terceiros'],
+  [/CP[\s.-]*(GIL)?RAT|CP[\s.-]*SAT|1646/i, 'INSS RAT'],
+  [/SIMPLES\s*NAC|\bDAS\b|\bSN\b/i, 'DAS — Simples Nacional'],
+  [/\bMEI\b|SIMEI/i, 'DAS MEI'],
+  [/IRRF|0561/i, 'IRRF'],
+  [/IRPJ/i, 'IRPJ'],
+  [/CSLL/i, 'CSLL'],
+  [/COFINS/i, 'COFINS'],
+  [/\bPIS\b/i, 'PIS'],
+  [/FGTS/i, 'FGTS'],
+];
+function nomeTributo(texto) {
+  const t = texto || '';
+  const achado = NOMES_TRIBUTO.find(([re]) => re.test(t));
+  if (achado) return achado[1];
+  return t.replace(/\s*(PA\s*)?\d{2}\/\d{4}\s*$/i, '').trim() || 'Débito';
 }
 
 function fmt(v) {
@@ -70,6 +92,19 @@ function fmtPct(v) {
 function fmtData(iso) {
   if (!iso) return '';
   return new Date(iso + 'T00:00:00').toLocaleDateString('pt-BR');
+}
+function fmtDataHora(ts) {
+  const d = new Date(ts);
+  return `${d.toLocaleDateString('pt-BR')} às ${d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`;
+}
+function fmtHaQuanto(ts) {
+  const min = Math.round((Date.now() - new Date(ts).getTime()) / 60000);
+  if (min < 1) return 'agora há pouco';
+  if (min < 60) return `há ${min} min`;
+  const h = Math.round(min / 60);
+  if (h < 24) return `há ${h} h`;
+  const dias = Math.round(h / 24);
+  return `há ${dias} dia${dias !== 1 ? 's' : ''}`;
 }
 function diasParaVencer(vencimento) {
   if (!vencimento) return null;
@@ -91,54 +126,58 @@ function opcoesCompetencia(base) {
   }
   return opcoes;
 }
+function competenciaOrdinal(c) {
+  if (!c) return 0;
+  const [mes, ano] = c.split('/').map(Number);
+  return ano * 100 + mes;
+}
+// Relatórios extraídos antes do campo "competencia" existir só trazem o
+// período dentro do texto do tributo (ex: "1099-01 - CP-SEGUR. 06/2026").
+function competenciaDoTexto(texto) {
+  const m = /(\d{2})\/(\d{4})/.exec(texto || '');
+  return m ? `${m[1]}/${m[2]}` : null;
+}
 const somaValores = (itens) => itens.reduce((s, it) => s + (Number(it.valor) || 0), 0);
 const temValor = (itens) => itens.some((it) => it.valor != null);
-// Total em R$ quando ao menos um item tem valor conhecido; senão a
-// contagem (só DAS/débitos da RFB trazem valor — "R$ 0,00" enganaria).
-const resumoItens = (itens, singular, plural) => (temValor(itens)
-  ? fmt(somaValores(itens))
-  : `${itens.length} ${itens.length === 1 ? singular : plural}`);
+const plural = (n, s, p) => `${n} ${n === 1 ? s : p}`;
 
-export default function PainelCompartilhadoPage({ clienteId, competencia: competenciaInicial }) {
+export default function PainelCompartilhadoPage({ clienteId, competencia: competenciaInicial, admin = false }) {
   const [competencia, setCompetencia] = useState(competenciaInicial);
   const opcoesComp = opcoesCompetencia(competenciaInicial);
   const [dados, setDados] = useState(null);
+  const [ultimaVisualizacao, setUltimaVisualizacao] = useState(undefined); // undefined = carregando/indisponível
   const [carregando, setCarregando] = useState(true);
   const [erro, setErro] = useState(null);
+
+  useEffect(() => {
+    if (!admin) return;
+    obterUltimaVisualizacaoPainel(clienteId).then(setUltimaVisualizacao).catch(() => setUltimaVisualizacao(undefined));
+  }, [clienteId, admin]);
 
   useEffect(() => {
     (async () => {
       setCarregando(true);
       setErro(null);
       try {
-        const [{ data: cliente, error: errCliente }, obs, tarefas, gerenciais, situacaoFiscal, cndManual, pendenciasAnt] = await Promise.all([
+        const [{ data: cliente, error: errCliente }, obs, tarefas, gerenciais, historico, situacaoFiscal, cndManual] = await Promise.all([
           supabase.from('clientes').select('nome, cnpj, regime').eq('id', clienteId).single(),
           obterResumoObrigacoes(clienteId, competencia),
           obterResumoTarefas(clienteId, competencia),
-          // tabelas novas toleram ainda não existir no banco, igual ao painel interno
+          // tabelas novas toleram ainda não existir no banco, igual ao painel completo
           obterDadosGerenciais(clienteId, competencia).catch(() => null),
+          obterHistoricoFaturamento(clienteId).catch(() => []),
           obterSituacaoFiscalMaisRecente(clienteId, competencia).catch(() => null),
           obterCndManual(clienteId, competencia).catch(() => null),
-          obterPendenciasAnteriores(clienteId, competencia).catch(() => ({ obrigacoes: [], tarefas: [] })),
         ]);
         if (errCliente) throw errCliente;
-
-        const obrigacoesMes = obs.itens.filter((o) => areaObrigacao(o));
-        const obrigacoesAnteriores = pendenciasAnt.obrigacoes.filter((o) => areaObrigacao(o));
-        const todas = [...obrigacoesAnteriores, ...obrigacoesMes];
-
-        const [anexos, valoresDas] = await Promise.all([
-          obterDocumentosPorObrigacao(todas.map((o) => o.id)).catch(() => ({})),
-          obterValoresDasPendencias(clienteId, [...new Set(todas.filter(ehDas).map((o) => o.competencia || competencia))]).catch(() => ({})),
+        const impostos = obs.itens.filter(ehImposto);
+        const outrasObrigacoes = obs.itens.filter((o) => !ehImposto(o) && areaObrigacao(o));
+        const tarefasArea = tarefas.itens.filter((t) => areaTarefa(t));
+        const [anexos, anexosTarefa] = await Promise.all([
+          obterDocumentosPorObrigacao([...impostos, ...outrasObrigacoes].map((o) => o.id)).catch(() => ({})),
+          obterDocumentosPorTarefa(tarefasArea.map((t) => t.id)).catch(() => ({})),
         ]);
-        if (gerenciais?.valor_das != null) valoresDas[competencia] = gerenciais.valor_das;
-
-        setDados({
-          cliente, gerenciais, situacaoFiscal, cndManual, anexos, valoresDas,
-          obrigacoesMes, obrigacoesAnteriores,
-          tarefasMes: tarefas.itens.filter((t) => areaTarefa(t)),
-          tarefasAnteriores: pendenciasAnt.tarefas.filter((t) => areaTarefa(t)),
-        });
+        setDados({ cliente, impostos, outrasObrigacoes, tarefasArea, anexos, anexosTarefa, gerenciais, historico, situacaoFiscal, cndManual });
       } catch (e) {
         setErro(e.message);
       } finally {
@@ -148,25 +187,31 @@ export default function PainelCompartilhadoPage({ clienteId, competencia: compet
   }, [clienteId, competencia]);
 
   const baixar = (storagePath) => abrirLinkAssinado(storagePath).catch(() => null);
-
-  const calc = dados && montarImpostos(dados, competencia);
+  const guias = dados && montarGuias(dados, competencia);
+  const pendencias = dados && montarPendencias(dados.situacaoFiscal);
+  const itensArea = dados && montarObrigacoesTarefas(dados, competencia);
+  const aVencer = guias ? guias.filter((g) => !g.semMovimento && !alertaVencida(g) && !(g.concluida && g.dias != null && g.dias < 0)) : [];
+  const vencidos = guias ? guias.filter(alertaVencida) : [];
+  const proximoVencimento = aVencer.find((g) => g.vencimento && g.dias >= 0)?.vencimento;
+  const semMovimento = dados?.gerenciais?.faturamento_periodo != null && Number(dados.gerenciais.faturamento_periodo) === 0;
 
   return (
     <div style={{ minHeight: '100vh', background: 'var(--bg)', padding: '24px 12px' }}>
-      <div style={{ maxWidth: 780, margin: '0 auto', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--r-xl)', overflow: 'hidden' }}>
+      <div style={{ maxWidth: 720, margin: '0 auto', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--r-xl)', overflow: 'hidden' }}>
 
         {/* ── Cabeçalho ── */}
         <div style={{ padding: '20px 22px', background: 'var(--navy)' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, flexWrap: 'wrap' }}>
             <div style={{ minWidth: 0 }}>
               <div style={{ fontSize: 11, color: 'var(--navy-text)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.04em' }}>
-                Resumo fiscal e folha
+                Painel fiscal
               </div>
               <div style={{ fontSize: 19, color: '#fff', fontWeight: 700, marginTop: 4 }}>{carregando && !dados ? '...' : dados?.cliente?.nome}</div>
               {dados?.cliente && (
                 <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 8 }}>
                   {dados.cliente.cnpj && <ChipCabecalho>{dados.cliente.cnpj}</ChipCabecalho>}
                   <ChipCabecalho>{dados.cliente.regime || 'SN'}</ChipCabecalho>
+                  <ChipSituacao situacaoFiscal={dados.situacaoFiscal} cndManual={dados.cndManual} />
                 </div>
               )}
             </div>
@@ -176,108 +221,94 @@ export default function PainelCompartilhadoPage({ clienteId, competencia: compet
               {opcoesComp.map((c) => <option key={c} value={c} style={{ color: '#000' }}>Competência {c}</option>)}
             </select>
           </div>
+          {admin && ultimaVisualizacao !== undefined && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 12, fontSize: 11, color: 'var(--navy-text)',
+              background: 'rgba(255,255,255,.08)', borderRadius: 6, padding: '6px 10px' }}>
+              <EyeIcon size={12} />
+              {ultimaVisualizacao
+                ? <span>Última visualização do cliente: <b style={{ color: '#fff' }}>{fmtDataHora(ultimaVisualizacao.visualizado_em)}</b> ({fmtHaQuanto(ultimaVisualizacao.visualizado_em)}){ultimaVisualizacao.competencia ? ` · competência ${ultimaVisualizacao.competencia}` : ''}</span>
+                : <span>O cliente ainda não abriu o link do painel.</span>}
+            </div>
+          )}
         </div>
 
         <div style={{ padding: 22 }}>
           {carregando && <p style={{ color: 'var(--text2)' }}>Carregando...</p>}
           {erro && <p style={{ color: 'var(--danger)' }}>{erro}</p>}
 
-          {!carregando && !erro && calc && (
+          {!carregando && !erro && dados && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
 
-              {/* ── Indicadores ── */}
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: 10 }}>
-                <Indicador
-                  icone={<AlertTriangleIcon size={13} />} titulo="Impostos em aberto"
-                  valor={calc.emAberto.length === 0 ? 'Nenhum' : resumoItens(calc.emAberto, 'item', 'itens')}
-                  sub={calc.emAberto.length === 0 ? 'Nada vencido ou em débito' : temValor(calc.emAberto) ? `${calc.emAberto.length} ${calc.emAberto.length === 1 ? 'item' : 'itens'}${calc.emAberto.some((i) => i.valor == null) ? ' · alguns sem valor informado' : ''}` : 'valores nas guias/relatório'}
-                  s={calc.emAberto.length > 0 ? 'danger' : 'ok'} />
-                <Indicador
-                  icone={<ClockIcon size={13} />} titulo="Impostos a vencer"
-                  valor={calc.aVencer.length === 0 ? 'Nenhum' : resumoItens(calc.aVencer, 'guia', 'guias')}
-                  sub={calc.aVencer.length === 0 ? 'Nenhuma guia pendente' : calc.proximoVencimento ? `Próximo: ${fmtData(calc.proximoVencimento)}` : `${calc.aVencer.length} guia${calc.aVencer.length !== 1 ? 's' : ''}`}
-                  s={calc.aVencer.length === 0 ? 'ok' : calc.aVencer.some((i) => i.dias != null && i.dias <= 3) ? 'warn' : 'neutral'} />
-                <IndicadorSituacao situacaoFiscal={dados.situacaoFiscal} cndManual={dados.cndManual} />
+              {/* ── 1. Fiscal: Declaração do Simples + evolução do faturamento ── */}
+              {(dados.gerenciais || dados.historico.length > 0) && (
+                <Secao titulo={`Fiscal — competência ${competencia}`} icone={<TrendingUpIcon size={14} />}
+                  extra={dados.gerenciais?.storage_path && <BotaoLink onClick={() => baixar(dados.gerenciais.storage_path)}>Declaração</BotaoLink>}>
+                  {dados.gerenciais && (
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 8, marginBottom: dados.historico.length > 0 ? 14 : 0 }}>
+                      <Mini label="Faturamento do mês" valor={fmt(dados.gerenciais.faturamento_periodo)} />
+                      <Mini label="RBT12" valor={fmt(dados.gerenciais.rbt12)} />
+                      <Mini label="Alíquota efetiva" valor={semMovimento ? '—' : fmtPct(dados.gerenciais.aliquota_efetiva)} cor="var(--accent)" />
+                      <Mini label="DAS" valor={semMovimento ? 'Sem movimento' : fmt(dados.gerenciais.valor_das)} cor={semMovimento ? 'var(--ok)' : undefined} />
+                    </div>
+                  )}
+                  {dados.historico.length > 0 && (
+                    <div>
+                      <div style={{ fontSize: 10.5, color: 'var(--text3)', fontWeight: 600, marginBottom: 6 }}>Evolução do faturamento</div>
+                      <GraficoFaturamento dados={dados.historico} />
+                    </div>
+                  )}
+                </Secao>
+              )}
+
+              {/* ── 2. Cards: em aberto / a vencer / vencidos ── */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10 }}>
+                <Indicador icone={<AlertTriangleIcon size={13} />} titulo="Em aberto"
+                  valor={!dados.situacaoFiscal ? '—' : pendencias.length === 0 ? 'Nenhum' : fmt(somaValores(pendencias))}
+                  sub={!dados.situacaoFiscal ? 'Relatório de Situação Fiscal não enviado' : pendencias.length === 0 ? 'Nada em aberto na Receita' : `${plural(pendencias.length, 'débito', 'débitos')} na Receita/PGFN`}
+                  s={!dados.situacaoFiscal ? 'neutral' : pendencias.length > 0 ? 'danger' : 'ok'} />
+                <Indicador icone={<ClockIcon size={13} />} titulo="A vencer"
+                  valor={aVencer.length === 0 ? 'Nenhum' : temValor(aVencer) ? fmt(somaValores(aVencer)) : plural(aVencer.length, 'guia', 'guias')}
+                  sub={aVencer.length === 0 ? 'Nenhuma guia a vencer' : `${plural(aVencer.length, 'guia', 'guias')}${proximoVencimento ? ` · próximo ${fmtData(proximoVencimento)}` : ''}`}
+                  s={aVencer.length === 0 ? 'ok' : aVencer.some(alertaUrgente) ? 'warn' : 'neutral'} />
+                <Indicador icone={<ReceiptIcon size={13} />} titulo="Vencidos"
+                  valor={vencidos.length === 0 ? 'Nenhum' : temValor(vencidos) ? fmt(somaValores(vencidos)) : plural(vencidos.length, 'guia', 'guias')}
+                  sub={vencidos.length === 0 ? 'Nenhuma guia vencida' : `${plural(vencidos.length, 'guia vencida', 'guias vencidas')} sem baixa`}
+                  s={vencidos.length > 0 ? 'danger' : 'ok'} />
               </div>
 
-              {/* ── Impostos a vencer ── */}
-              <Secao titulo="Impostos a vencer" icone={<CalendarIcon size={14} />}
-                extra={temValor(calc.aVencer) && <TotalSecao valor={somaValores(calc.aVencer)} />}>
-                {calc.aVencer.length === 0
-                  ? <Vazio>Nenhuma guia a vencer anexada para essa competência.</Vazio>
-                  : <div style={LISTA}>{calc.aVencer.map((it) => <LinhaImposto key={it.id} it={it} onBaixar={baixar} />)}</div>}
+              {/* ── 3. Impostos (guias anexadas) ── */}
+              <Secao titulo={`Impostos da competência ${competencia}`} icone={<CalendarIcon size={14} />}
+                extra={temValor(guias) && <Total valor={somaValores(guias)} />}>
+                {guias.length === 0
+                  ? <Vazio>Nenhuma guia de imposto anexada para essa competência.</Vazio>
+                  : <div style={LISTA}>{guias.map((g) => <LinhaGuia key={g.id} g={g} onBaixar={baixar} />)}</div>}
               </Secao>
 
-              {/* ── Impostos em aberto ── */}
-              <Secao titulo="Impostos em aberto" icone={<AlertTriangleIcon size={14} />}
-                extra={temValor(calc.emAberto) && <TotalSecao valor={somaValores(calc.emAberto)} cor="var(--danger)" />}>
-                {calc.emAberto.length === 0
-                  ? <Vazio ok>Nenhum imposto em aberto{dados.situacaoFiscal ? ' na Receita Federal nem guias vencidas' : ''}.</Vazio>
-                  : <div style={LISTA}>{calc.emAberto.map((it) => <LinhaImposto key={it.id} it={it} onBaixar={baixar} aberto />)}</div>}
-
-                {dados.situacaoFiscal?.parcelamentos?.length > 0 && (
-                  <div style={{ marginTop: 12 }}>
-                    <Subtitulo>Parcelamentos ativos</Subtitulo>
-                    <div style={LISTA}>
-                      {dados.situacaoFiscal.parcelamentos.map((p, i) => (
-                        <LinhaSimples key={i} titulo={p.modalidade || 'Parcelamento'} sub={p.parcelas || null} valor={p.valor} />
-                      ))}
-                    </div>
+              {/* ── 4. Pendências (Relatório de Situação Fiscal) ── */}
+              <Secao titulo="Pendências — Relatório de Situação Fiscal" icone={<AlertTriangleIcon size={14} />}
+                extra={pendencias.length > 0 && <Total valor={somaValores(pendencias)} cor="var(--danger)" />}>
+                {!dados.situacaoFiscal
+                  ? <Vazio>Relatório de Situação Fiscal ainda não enviado.</Vazio>
+                  : pendencias.length === 0
+                    ? <Vazio ok>Nenhuma pendência na Receita Federal nem em Dívida Ativa.</Vazio>
+                    : <div style={LISTA}>{pendencias.map((p) => <LinhaPendencia key={p.id} p={p} />)}</div>}
+                {dados.situacaoFiscal && (
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap', marginTop: 10, fontSize: 11, color: 'var(--text3)' }}>
+                    <span>
+                      Relatório emitido em {dados.situacaoFiscal.data_emissao ? fmtData(dados.situacaoFiscal.data_emissao) : dados.situacaoFiscal.competencia}
+                      {pendencias.length > 0 ? ' · saldo atualizado conforme o relatório.' : '.'}
+                    </span>
+                    {dados.situacaoFiscal.storage_path && (
+                      <BotaoLink onClick={() => baixar(dados.situacaoFiscal.storage_path)}>Baixar relatório</BotaoLink>
+                    )}
                   </div>
                 )}
-
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap', marginTop: 10, fontSize: 11, color: 'var(--text3)' }}>
-                  <span>
-                    {dados.situacaoFiscal
-                      ? `Base: Relatório de Situação Fiscal (RFB)${dados.situacaoFiscal.data_emissao ? ` emitido em ${fmtData(dados.situacaoFiscal.data_emissao)}` : ` de ${dados.situacaoFiscal.competencia}`} e guias anexadas.`
-                      : 'Relatório de Situação Fiscal ainda não enviado — exibindo só as guias vencidas.'}
-                  </span>
-                  {dados.situacaoFiscal?.storage_path && (
-                    <BotaoLink onClick={() => baixar(dados.situacaoFiscal.storage_path)}>Baixar relatório</BotaoLink>
-                  )}
-                </div>
               </Secao>
 
-              {/* ── Fiscal + Folha ── */}
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 14 }}>
-                <CardArea titulo="Fiscal" icone="🧾"
-                  obrigacoes={dados.obrigacoesMes.filter((o) => areaObrigacao(o) === 'Fiscal')}
-                  tarefas={dados.tarefasMes.filter((t) => areaTarefa(t) === 'Fiscal' && !t.concluida)}
-                  anexos={dados.anexos} onBaixar={baixar}>
-                  {dados.gerenciais && (
-                    <div style={{ marginBottom: 12 }}>
-                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 6 }}>
-                        <Subtitulo semMargem>Declaração do Simples{dados.gerenciais.anexo ? ` · Anexo ${dados.gerenciais.anexo}` : ''}</Subtitulo>
-                        {dados.gerenciais.storage_path && (
-                          <BotaoLink onClick={() => baixar(dados.gerenciais.storage_path)}>Baixar</BotaoLink>
-                        )}
-                      </div>
-                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
-                        <Mini label="Faturamento" valor={fmt(dados.gerenciais.faturamento_periodo)} />
-                        <Mini label="RBT12" valor={fmt(dados.gerenciais.rbt12)} />
-                        <Mini label="Alíquota efetiva" valor={fmtPct(dados.gerenciais.aliquota_efetiva)} cor="var(--accent)" />
-                        <Mini label="DAS" valor={fmt(dados.gerenciais.valor_das)} />
-                      </div>
-                    </div>
-                  )}
-                </CardArea>
-                <CardArea titulo="Folha" icone="👥"
-                  obrigacoes={dados.obrigacoesMes.filter((o) => areaObrigacao(o) === 'Folha')}
-                  tarefas={dados.tarefasMes.filter((t) => areaTarefa(t) === 'Folha' && !t.concluida)}
-                  anexos={dados.anexos} onBaixar={baixar} />
-              </div>
-
-              {(calc.pendenciasAnteriores.length > 0 || dados.tarefasAnteriores.length > 0) && (
-                <Secao titulo="Pendências de meses anteriores" icone={<ClockIcon size={14} />}>
-                  <div style={LISTA}>
-                    {calc.pendenciasAnteriores.map((o) => (
-                      <LinhaSimples key={o.id} titulo={o.titulo || o.tipo} sub={`${areaObrigacao(o)} · ${o.competencia}`}
-                        status={o.status} vencimento={o.vencimento} />
-                    ))}
-                    {dados.tarefasAnteriores.map((t) => (
-                      <LinhaSimples key={t.id} titulo={t.titulo} sub={`${areaTarefa(t)} · ${t.competencia}`} status="pendente" vencimento={t.vencimento} />
-                    ))}
-                  </div>
+              {/* ── 5. Obrigações e tarefas (Fiscal/Folha) ── */}
+              {itensArea.length > 0 && (
+                <Secao titulo="Obrigações e tarefas do mês" icone={<ClipboardListIcon size={14} />}>
+                  <div style={LISTA}>{itensArea.map((it) => <LinhaObrigacao key={it.id} it={it} onBaixar={baixar} />)}</div>
                 </Secao>
               )}
             </div>
@@ -285,76 +316,114 @@ export default function PainelCompartilhadoPage({ clienteId, competencia: compet
         </div>
 
         <div style={{ padding: '12px 22px', borderTop: '1px solid var(--border)', fontSize: 11, color: 'var(--text3)' }}>
-          Gerado pelo Gestor — Escritório Contábil. Valores das guias conforme documentos anexados pelo escritório.
+          Gerado pelo Gestor — Escritório Contábil.
         </div>
       </div>
     </div>
   );
 }
 
-// Separa os impostos em "a vencer" (guia anexada, ainda no prazo) e "em
-// aberto" (guia/imposto vencido sem baixa + débitos e dívida ativa do
-// Relatório de Situação Fiscal). Valor da guia: só o DAS tem valor
-// conhecido (vem da Declaração do Simples da mesma competência) — as
-// demais guias mostram "valor na guia" e o cliente baixa o PDF.
-function montarImpostos(dados, competencia) {
-  const { obrigacoesMes, obrigacoesAnteriores, anexos, valoresDas, gerenciais, situacaoFiscal } = dados;
-  const aVencer = [];
-  const emAberto = [];
-
-  [...obrigacoesAnteriores, ...obrigacoesMes].forEach((o) => {
-    if (!ehImposto(o)) return;
-    const anexo = anexos[o.id] || null;
-    const dias = diasParaVencer(o.vencimento);
-    const concluida = o.status === 'concluido' || o.status === 'nao_aplica';
-    const comp = o.competencia || competencia;
-    const item = {
-      id: o.id,
-      titulo: o.titulo || o.tipo,
-      sub: `${areaObrigacao(o)} · competência ${comp}`,
-      vencimento: o.vencimento,
-      dias,
-      valor: ehDas(o) ? (valoresDas[comp] ?? null) : null,
-      anexo,
-    };
-    if (dias != null && dias < 0) {
-      if (!concluida) emAberto.push({ ...item, origem: anexo ? 'Guia vencida' : 'Imposto vencido' });
-    } else if (anexo) {
-      aVencer.push(item);
-    }
-  });
-
-  // Declaração do Simples enviada mas sem obrigação de DAS cadastrada no
-  // mês — o valor ainda é informação útil, só não tem guia pra baixar.
-  const temDasNoMes = obrigacoesMes.some(ehDas);
-  if (gerenciais?.valor_das > 0 && !temDasNoMes) {
-    aVencer.push({ id: 'das-declaracao', titulo: 'DAS — Simples Nacional', sub: `Fiscal · competência ${competencia}`,
-      vencimento: null, dias: null, valor: gerenciais.valor_das, anexo: null, semGuia: true });
+// Só impostos da competência com guia anexada. Exceção: o DAS de um mês
+// com faturamento zerado na Declaração do Simples não tem guia (não há o
+// que pagar) — entra como "Sem movimento" pro cliente saber que está ok.
+function montarGuias({ impostos, anexos, gerenciais }, competencia) {
+  const semMovimento = gerenciais != null && gerenciais.faturamento_periodo != null && Number(gerenciais.faturamento_periodo) === 0;
+  const guias = impostos
+    .filter((o) => anexos[o.id] || (semMovimento && ehDas(o)))
+    .map((o) => {
+      const das = ehDas(o);
+      return {
+        id: o.id,
+        titulo: o.titulo || o.tipo,
+        competencia: o.competencia || competencia,
+        area: o.departamentos?.nome || null,
+        vencimento: o.vencimento,
+        // vencida + concluída = o escritório já deu baixa, não é alerta
+        dias: diasParaVencer(o.vencimento),
+        concluida: o.status === 'concluido' || o.status === 'nao_aplica',
+        semMovimento: das && semMovimento,
+        valor: das && !semMovimento && gerenciais?.valor_das != null ? Number(gerenciais.valor_das) : null,
+        anexo: anexos[o.id] || null,
+      };
+    });
+  if (semMovimento && !impostos.some(ehDas)) {
+    guias.push({ id: 'das-sem-movimento', titulo: 'DAS — Simples Nacional', competencia, area: 'Fiscal',
+      vencimento: null, dias: null, concluida: true, semMovimento: true, valor: null, anexo: null });
   }
-
-  (situacaoFiscal?.debitos || []).forEach((d, i) => {
-    emAberto.push({ id: `deb-${i}`, titulo: d.tributo || 'Débito', sub: d.situacao || null, valor: d.valor ?? null, origem: 'Receita Federal' });
-  });
-  (situacaoFiscal?.dividas_ativas || []).forEach((d, i) => {
-    emAberto.push({ id: `pgfn-${i}`, titulo: d.inscricao ? `Inscrição ${d.inscricao}` : 'Dívida ativa', sub: d.situacao || null, valor: d.valor ?? null, origem: 'Dívida Ativa (PGFN)' });
-  });
-
-  aVencer.sort((a, b) => (a.vencimento || '9999-99-99').localeCompare(b.vencimento || '9999-99-99'));
-  emAberto.sort((a, b) => (a.vencimento || '9999-99-99').localeCompare(b.vencimento || '9999-99-99'));
-  const proximoVencimento = aVencer.find((i) => i.vencimento)?.vencimento || null;
-  // impostos/guias de meses anteriores já listados acima não se repetem aqui
-  const jaListados = new Set([...aVencer, ...emAberto].map((i) => i.id));
-  const pendenciasAnteriores = obrigacoesAnteriores.filter((o) => !jaListados.has(o.id));
-  return { aVencer, emAberto, proximoVencimento, pendenciasAnteriores };
+  return guias.sort((a, b) => (a.vencimento || '9999-99-99').localeCompare(b.vencimento || '9999-99-99'));
 }
+
+// Débitos (RFB) + inscrições em Dívida Ativa (PGFN) do relatório mais
+// recente, ordenados por competência. `valor` já é o saldo atualizado
+// (ver extrair-situacao-fiscal.js).
+function montarPendencias(situacaoFiscal) {
+  if (!situacaoFiscal) return [];
+  const debitos = (situacaoFiscal.debitos || []).map((d, i) => ({
+    id: `deb-${i}`, origem: 'Receita Federal', nome: nomeTributo(d.tributo), codigo: d.tributo || null,
+    competencia: d.competencia || competenciaDoTexto(d.tributo), vencimento: d.vencimento || null,
+    valorOriginal: d.valorOriginal ?? null, valor: d.valor ?? null, situacao: d.situacao || null,
+  }));
+  const dividas = (situacaoFiscal.dividas_ativas || []).map((d, i) => ({
+    id: `pgfn-${i}`, origem: 'Dívida Ativa (PGFN)', nome: d.tributo ? nomeTributo(d.tributo) : 'Dívida ativa',
+    codigo: [d.tributo, d.inscricao ? `Inscrição ${d.inscricao}` : null].filter(Boolean).join(' · ') || null,
+    competencia: d.competencia || competenciaDoTexto(d.tributo), vencimento: null,
+    valorOriginal: null, valor: d.valor ?? null, situacao: d.situacao || null,
+  }));
+  return [...debitos, ...dividas].sort((a, b) => competenciaOrdinal(a.competencia) - competenciaOrdinal(b.competencia));
+}
+
+// Obrigações (não-imposto) e tarefas de Fiscal/Folha do mês. Concluída sem
+// anexo não interessa ao cliente (não há nada pra ele ver/baixar) — só
+// entra concluída se tiver documento anexado; pendente entra sempre.
+function montarObrigacoesTarefas({ outrasObrigacoes, tarefasArea, anexos, anexosTarefa }, competencia) {
+  const obrigacoes = outrasObrigacoes
+    .filter((o) => !(o.status === 'concluido' || o.status === 'nao_aplica') || anexos[o.id])
+    .map((o) => ({
+      id: o.id, titulo: o.titulo || o.tipo, area: areaObrigacao(o), competencia: o.competencia || competencia,
+      status: o.status, vencimento: o.vencimento, anexo: anexos[o.id] || null,
+    }));
+  const tarefas = tarefasArea
+    .filter((t) => !t.concluida || anexosTarefa[t.id])
+    .map((t) => ({
+      id: t.id, titulo: t.titulo, area: areaTarefa(t), competencia,
+      status: t.concluida ? 'concluido' : 'pendente', vencimento: t.vencimento, anexo: anexosTarefa[t.id] || null,
+    }));
+  const ordemStatus = { vencido: 0, pendente: 1, concluido: 2, nao_aplica: 3 };
+  return [...obrigacoes, ...tarefas].sort((a, b) => (ordemStatus[a.status] ?? 9) - (ordemStatus[b.status] ?? 9)
+    || (a.vencimento || '9999').localeCompare(b.vencimento || '9999'));
+}
+
+const alertaVencida = (g) => !g.semMovimento && !g.concluida && g.dias != null && g.dias < 0;
+const alertaUrgente = (g) => !g.semMovimento && g.dias != null && g.dias >= 0 && g.dias <= 3;
 
 const LISTA = { display: 'flex', flexDirection: 'column', gap: 6 };
 const COR_S = { ok: 'var(--ok)', warn: 'var(--warn)', danger: 'var(--danger)', neutral: 'var(--text1)' };
+const STATUS_LABEL = { pendente: 'Pendente', concluido: 'Concluído', nao_aplica: 'N/A', vencido: 'Vencido' };
+const STATUS_COR = {
+  pendente: ['var(--warn)', 'var(--warn-dim)'],
+  concluido: ['var(--ok)', 'var(--ok-dim)'],
+  nao_aplica: ['var(--info)', 'var(--info-dim)'],
+  vencido: ['var(--danger)', 'var(--danger-dim)'],
+};
 
 function ChipCabecalho({ children }) {
   return (
     <span style={{ fontSize: 10.5, color: 'var(--navy-text)', background: 'rgba(255,255,255,.08)', border: '1px solid rgba(255,255,255,.15)', borderRadius: 99, padding: '3px 9px' }}>
       {children}
+    </span>
+  );
+}
+
+// Situação perante o fisco nas 3 esferas — federal vem do Relatório de
+// Situação Fiscal (IA), estadual/municipal da marcação manual (cnd_manual).
+function ChipSituacao({ situacaoFiscal, cndManual }) {
+  const esferas = [situacaoFiscal?.situacao_geral, cndManual?.situacao_estadual, cndManual?.situacao_municipal].filter(Boolean);
+  if (esferas.length === 0) return null;
+  const pendente = esferas.includes('pendente');
+  return (
+    <span style={{ fontSize: 10.5, fontWeight: 700, borderRadius: 99, padding: '3px 9px', color: '#fff',
+      background: pendente ? 'var(--danger)' : 'var(--ok)' }}>
+      {pendente ? 'Situação fiscal: com pendências' : 'Situação fiscal: regular'}
     </span>
   );
 }
@@ -373,12 +442,8 @@ function Secao({ titulo, icone, extra, children }) {
   );
 }
 
-function Subtitulo({ children, semMargem }) {
-  return <div style={{ fontSize: 10.5, color: 'var(--text3)', fontWeight: 600, marginBottom: semMargem ? 0 : 6 }}>{children}</div>;
-}
-
-function TotalSecao({ valor, cor }) {
-  return <span style={{ fontSize: 13, fontWeight: 800, color: cor || 'var(--text1)' }}>{fmt(valor)}</span>;
+function Total({ valor, cor }) {
+  return <span style={{ fontSize: 13, fontWeight: 800, color: cor || 'var(--text1)', whiteSpace: 'nowrap' }}>{fmt(valor)}</span>;
 }
 
 function Vazio({ children, ok }) {
@@ -400,6 +465,25 @@ function BotaoLink({ onClick, children }) {
   );
 }
 
+function BotaoGuia({ anexo, onBaixar, label = 'Guia' }) {
+  return (
+    <button type="button" onClick={() => onBaixar(anexo.storage_path)} title={`Baixar ${anexo.nome_arquivo}`}
+      style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11.5, fontWeight: 700, color: '#fff', background: 'var(--accent)',
+        border: 'none', borderRadius: 8, padding: '6px 11px', cursor: 'pointer', whiteSpace: 'nowrap' }}>
+      <DownloadIcon size={13} /> {label}
+    </button>
+  );
+}
+
+function Mini({ label, valor, cor }) {
+  return (
+    <div style={{ background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: '9px 11px' }}>
+      <div style={{ fontSize: 9.5, color: 'var(--text3)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.03em' }}>{label}</div>
+      <div style={{ fontSize: 14, fontWeight: 700, color: cor || 'var(--text1)', marginTop: 3 }}>{valor}</div>
+    </div>
+  );
+}
+
 function Indicador({ icone, titulo, valor, sub, s }) {
   return (
     <div style={{ background: 'var(--bg)', border: '1px solid var(--border)', borderTop: `3px solid ${s === 'neutral' ? 'var(--border2)' : COR_S[s]}`,
@@ -413,156 +497,101 @@ function Indicador({ icone, titulo, valor, sub, s }) {
   );
 }
 
-// Situação perante o fisco nas 3 esferas — federal vem do Relatório de
-// Situação Fiscal (IA), estadual/municipal da marcação manual (cnd_manual).
-function IndicadorSituacao({ situacaoFiscal, cndManual }) {
-  const esferas = [
-    { label: 'Federal', s: situacaoFiscal?.situacao_geral, anexo: null },
-    { label: 'Estadual', s: cndManual?.situacao_estadual, anexo: cndManual?.anexo_estadual_path },
-    { label: 'Municipal', s: cndManual?.situacao_municipal, anexo: cndManual?.anexo_municipal_path },
-  ];
-  const informadas = esferas.filter((e) => e.s);
-  const s = informadas.length === 0 ? 'neutral' : informadas.some((e) => e.s === 'pendente') ? 'danger' : 'ok';
-  const valor = informadas.length === 0 ? '—' : s === 'danger' ? 'Com pendências' : 'Regular';
-  return (
-    <div style={{ background: 'var(--bg)', border: '1px solid var(--border)', borderTop: `3px solid ${s === 'neutral' ? 'var(--border2)' : COR_S[s]}`,
-      borderRadius: 'var(--r-lg)', padding: '12px 14px' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 10.5, color: 'var(--text3)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.03em' }}>
-        <ShieldCheckIcon size={13} /> Situação fiscal
-      </div>
-      <div style={{ fontSize: 20, fontWeight: 800, color: COR_S[s], marginTop: 6 }}>{valor}</div>
-      <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginTop: 5 }}>
-        {esferas.map((e) => {
-          const cor = e.s === 'regular' ? 'var(--ok)' : e.s === 'pendente' ? 'var(--danger)' : 'var(--text3)';
-          const dim = e.s === 'regular' ? 'var(--ok-dim)' : e.s === 'pendente' ? 'var(--danger-dim)' : 'var(--surface2)';
-          return (
-            <span key={e.label} title={e.s === 'regular' ? 'Regular' : e.s === 'pendente' ? 'Com pendências' : 'Não informado'}
-              style={{ fontSize: 9.5, fontWeight: 700, color: cor, background: dim, borderRadius: 99, padding: '2px 7px' }}>
-              {e.label}
-            </span>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
-function LinhaImposto({ it, onBaixar, aberto }) {
-  const urgente = aberto || (it.dias != null && it.dias <= 3);
-  const corPrazo = aberto ? 'var(--danger)' : it.dias != null && it.dias <= 3 ? 'var(--warn)' : 'var(--text3)';
+// Linha base: título com a competência ao lado ("INSS Mensal 06/2026"),
+// detalhes embaixo, valor/ações à direita.
+function Linha({ corBorda, titulo, competencia, detalhes, direita }) {
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', background: 'var(--bg)', border: '1px solid var(--border)',
-      borderLeft: `3px solid ${aberto ? 'var(--danger)' : urgente ? 'var(--warn)' : 'var(--accent)'}`, borderRadius: 'var(--r-md)', flexWrap: 'wrap' }}>
-      <div style={{ flex: '1 1 180px', minWidth: 0 }}>
-        <div style={{ fontSize: 13, color: 'var(--text1)', fontWeight: 700 }}>{it.titulo}</div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 2, flexWrap: 'wrap', fontSize: 10.5 }}>
-          {it.origem && <span style={{ color: 'var(--danger)', fontWeight: 600 }}>{it.origem}</span>}
-          {it.sub && <span style={{ color: 'var(--text3)' }}>{it.sub}</span>}
-          {it.vencimento && (
-            <span style={{ color: corPrazo, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 3 }}>
-              <CalendarIcon size={10} /> {fmtData(it.vencimento)} · {fmtDias(it.dias)}
-            </span>
-          )}
+      borderLeft: `3px solid ${corBorda}`, borderRadius: 'var(--r-md)', flexWrap: 'wrap' }}>
+      <div style={{ flex: '1 1 200px', minWidth: 0 }}>
+        <div style={{ fontSize: 13, color: 'var(--text1)', fontWeight: 700 }}>
+          {titulo}{competencia && <span style={{ color: 'var(--accent)', marginLeft: 6 }}>{competencia}</span>}
         </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 2, flexWrap: 'wrap', fontSize: 10.5 }}>{detalhes}</div>
       </div>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginLeft: 'auto' }}>
-        <span style={{ fontSize: it.valor != null ? 14 : 11, fontWeight: it.valor != null ? 800 : 500, color: it.valor != null ? 'var(--text1)' : 'var(--text3)', whiteSpace: 'nowrap' }}>
-          {it.valor != null ? fmt(it.valor) : it.anexo ? 'valor na guia' : '—'}
-        </span>
-        {it.anexo ? (
-          <button type="button" onClick={() => onBaixar(it.anexo.storage_path)} title={`Baixar ${it.anexo.nome_arquivo}`}
-            style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11.5, fontWeight: 700, color: '#fff', background: 'var(--accent)',
-              border: 'none', borderRadius: 8, padding: '6px 11px', cursor: 'pointer', whiteSpace: 'nowrap' }}>
-            <DownloadIcon size={13} /> Guia
-          </button>
-        ) : it.semGuia ? (
-          <span style={{ fontSize: 10, color: 'var(--text3)', whiteSpace: 'nowrap' }}>guia ainda não anexada</span>
-        ) : null}
-      </div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginLeft: 'auto' }}>{direita}</div>
     </div>
   );
 }
 
-function LinhaSimples({ titulo, sub, valor, status, vencimento, anexo, onBaixar }) {
-  const [cor, dim] = STATUS_COR[status] || [];
-  const dias = diasParaVencer(vencimento);
+function LinhaGuia({ g, onBaixar }) {
+  const vencida = alertaVencida(g);
+  const urgente = alertaUrgente(g);
+  const corBorda = g.semMovimento ? 'var(--ok)' : vencida ? 'var(--danger)' : urgente ? 'var(--warn)' : 'var(--accent)';
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)' }}>
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontSize: 12.5, color: 'var(--text1)', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{titulo}</div>
-        {(sub || vencimento) && (
-          <div style={{ fontSize: 10.5, color: 'var(--text3)', marginTop: 1 }}>
-            {sub}{sub && vencimento ? ' · ' : ''}{vencimento ? `${fmtData(vencimento)}${status !== 'concluido' && status !== 'nao_aplica' ? ` (${fmtDias(dias)})` : ''}` : ''}
-          </div>
-        )}
-      </div>
-      {valor != null && <span style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--text1)', whiteSpace: 'nowrap' }}>{fmt(valor)}</span>}
-      {anexo && (
-        <button type="button" onClick={() => onBaixar(anexo.storage_path)} title={`Baixar ${anexo.nome_arquivo}`}
-          style={{ background: 'var(--accent-dim)', border: 'none', borderRadius: 99, width: 24, height: 24, flexShrink: 0,
-            display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: 'var(--accent)' }}>
-          <DownloadIcon size={12} />
-        </button>
-      )}
-      {status && (
-        <span style={{ fontSize: 10, fontWeight: 700, color: cor, background: dim, borderRadius: 99, padding: '3px 9px', flexShrink: 0 }}>
-          {STATUS_LABEL[status]}
-        </span>
-      )}
-    </div>
-  );
-}
-
-function Mini({ label, valor, cor }) {
-  return (
-    <div style={{ background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: '7px 9px' }}>
-      <div style={{ fontSize: 9.5, color: 'var(--text3)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.03em' }}>{label}</div>
-      <div style={{ fontSize: 13, fontWeight: 700, color: cor || 'var(--text1)', marginTop: 2 }}>{valor}</div>
-    </div>
-  );
-}
-
-// Card de uma área (Fiscal/Folha) com o andamento das obrigações do mês —
-// barra de progresso + lista com status e download do que já foi anexado.
-function CardArea({ titulo, icone, obrigacoes, tarefas, anexos, onBaixar, children }) {
-  const ok = obrigacoes.filter((o) => o.status === 'concluido' || o.status === 'nao_aplica').length;
-  const vencidas = obrigacoes.filter((o) => o.status === 'vencido').length;
-  const pct = obrigacoes.length ? Math.round((ok / obrigacoes.length) * 100) : null;
-  const cor = vencidas > 0 ? 'var(--danger)' : pct === 100 ? 'var(--ok)' : 'var(--warn)';
-  const ordenadas = [...obrigacoes].sort((a, b) => (a.vencimento || '9999').localeCompare(b.vencimento || '9999'));
-  return (
-    <div style={{ background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)', padding: 14 }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 10 }}>
-        <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--text1)' }}>{icone} {titulo}</div>
-        {pct != null && <span style={{ fontSize: 12, fontWeight: 700, color: cor }}>{ok}/{obrigacoes.length} concluídas</span>}
-      </div>
-      {pct != null && (
-        <div style={{ height: 6, background: 'var(--surface3)', borderRadius: 99, overflow: 'hidden', marginBottom: 12 }}>
-          <div style={{ height: '100%', width: `${pct}%`, background: cor, borderRadius: 99 }} />
-        </div>
-      )}
-      {children}
-      {obrigacoes.length === 0 && tarefas.length === 0 ? (
-        <div style={{ fontSize: 12, color: 'var(--text3)', padding: '8px 0' }}>Nenhuma obrigação de {titulo.toLowerCase()} nessa competência.</div>
-      ) : (
+    <Linha corBorda={corBorda} titulo={g.titulo} competencia={g.competencia}
+      detalhes={(
         <>
-          {obrigacoes.length > 0 && <Subtitulo>Obrigações do mês</Subtitulo>}
-          <div style={LISTA}>
-            {ordenadas.map((o) => (
-              <LinhaSimples key={o.id} titulo={o.titulo || o.tipo} status={o.status} vencimento={o.vencimento}
-                anexo={anexos[o.id]} onBaixar={onBaixar} />
-            ))}
-          </div>
-          {tarefas.length > 0 && (
-            <div style={{ marginTop: 10 }}>
-              <Subtitulo>Em andamento</Subtitulo>
-              <div style={LISTA}>
-                {tarefas.map((t) => <LinhaSimples key={t.id} titulo={t.titulo} status="pendente" vencimento={t.vencimento} />)}
-              </div>
-            </div>
+          {g.area && <span style={{ color: 'var(--text3)' }}>{g.area}</span>}
+          {g.vencimento && !g.semMovimento && (
+            <span style={{ color: vencida ? 'var(--danger)' : urgente ? 'var(--warn)' : 'var(--text3)', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 3 }}>
+              <CalendarIcon size={10} /> {fmtData(g.vencimento)}{g.concluida && g.dias < 0 ? '' : ` · ${fmtDias(g.dias)}`}
+            </span>
           )}
         </>
       )}
-    </div>
+      direita={(
+        <>
+          {g.semMovimento ? (
+            <span style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--ok)', background: 'var(--ok-dim)', borderRadius: 99, padding: '4px 10px', whiteSpace: 'nowrap' }}>
+              Sem movimento
+            </span>
+          ) : (
+            <span style={{ fontSize: g.valor != null ? 14 : 11, fontWeight: g.valor != null ? 800 : 500, color: g.valor != null ? 'var(--text1)' : 'var(--text3)', whiteSpace: 'nowrap' }}>
+              {g.valor != null ? fmt(g.valor) : 'valor na guia'}
+            </span>
+          )}
+          {g.anexo && <BotaoGuia anexo={g.anexo} onBaixar={onBaixar} />}
+        </>
+      )} />
+  );
+}
+
+function LinhaPendencia({ p }) {
+  return (
+    <Linha corBorda="var(--danger)" titulo={p.nome} competencia={p.competencia}
+      detalhes={(
+        <>
+          <span style={{ color: 'var(--danger)', fontWeight: 600 }}>{p.origem}</span>
+          {p.situacao && <span style={{ color: 'var(--text3)' }}>{p.situacao}</span>}
+          {p.vencimento && <span style={{ color: 'var(--text3)' }}>venc. {fmtData(p.vencimento)}</span>}
+          {p.codigo && <span style={{ color: 'var(--text3)', opacity: 0.8 }}>{p.codigo}</span>}
+        </>
+      )}
+      direita={(
+        <div style={{ textAlign: 'right' }}>
+          <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--text1)', whiteSpace: 'nowrap' }}>{p.valor != null ? fmt(p.valor) : '—'}</div>
+          {p.valorOriginal != null && Number(p.valorOriginal) !== Number(p.valor) && (
+            <div style={{ fontSize: 10, color: 'var(--text3)', whiteSpace: 'nowrap' }}>original {fmt(p.valorOriginal)}</div>
+          )}
+        </div>
+      )} />
+  );
+}
+
+function LinhaObrigacao({ it, onBaixar }) {
+  const [cor, dim] = STATUS_COR[it.status] || ['var(--text3)', 'var(--surface2)'];
+  const dias = diasParaVencer(it.vencimento);
+  const aberta = it.status === 'pendente' || it.status === 'vencido';
+  return (
+    <Linha corBorda={cor} titulo={it.titulo} competencia={it.competencia}
+      detalhes={(
+        <>
+          {it.area && <span style={{ color: 'var(--text3)' }}>{it.area}</span>}
+          {it.vencimento && (
+            <span style={{ color: aberta && dias < 0 ? 'var(--danger)' : 'var(--text3)', fontWeight: aberta ? 600 : 400, display: 'flex', alignItems: 'center', gap: 3 }}>
+              <CalendarIcon size={10} /> {fmtData(it.vencimento)}{aberta ? ` · ${fmtDias(dias)}` : ''}
+            </span>
+          )}
+        </>
+      )}
+      direita={(
+        <>
+          {it.anexo && <BotaoGuia anexo={it.anexo} onBaixar={onBaixar} label="Baixar" />}
+          <span style={{ fontSize: 10, fontWeight: 700, color: cor, background: dim, borderRadius: 99, padding: '3px 9px', whiteSpace: 'nowrap' }}>
+            {STATUS_LABEL[it.status] || it.status}
+          </span>
+        </>
+      )} />
   );
 }
