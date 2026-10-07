@@ -5,7 +5,7 @@ import RelatorioCompartilhadoPage from './pages/contabil/RelatorioCompartilhadoP
 import NotasFiscaisCompartilhadoPage from './pages/contabil/NotasFiscaisCompartilhadoPage.jsx'
 import IdentificarLancamentosPage from './pages/contabil/IdentificarLancamentosPage.jsx'
 import DocumentoCompartilhadoPage from './pages/documentos/DocumentoCompartilhadoPage.jsx'
-import PainelClientePage from './pages/painel/PainelClientePage.jsx'
+import PainelCompartilhadoPage from './pages/painel/PainelCompartilhadoPage.jsx'
 import ComprovanteFaturamentoPage from './pages/painel/ComprovanteFaturamentoPage.jsx'
 import './styles.css'
 
@@ -46,7 +46,7 @@ if (share === 'dre' || share === 'balancete') {
 } else if (doc) {
   raiz = <DocumentoCompartilhadoPage documentoId={doc} />
 } else if (painel) {
-  raiz = <PainelClientePage clienteId={painel} competencia={params.get('competencia')} />
+  raiz = <PainelCompartilhadoPage clienteId={painel} competencia={params.get('competencia')} />
 }
 
 ReactDOM.createRoot(document.getElementById('root')).render(

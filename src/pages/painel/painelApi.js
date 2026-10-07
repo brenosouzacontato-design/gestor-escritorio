@@ -406,6 +406,22 @@ export async function obterSituacaoFiscal(clienteId, competencia) {
   return data;
 }
 
+// Relatório de Situação Fiscal mais recente até a competência informada —
+// o relatório é um retrato do momento e nem todo mês recebe um novo, então
+// a página compartilhada (PainelCompartilhadoPage.jsx) usa o último
+// disponível em vez de mostrar "nenhum relatório" só porque o mês virou.
+export async function obterSituacaoFiscalMaisRecente(clienteId, competencia) {
+  const { data, error } = await supabase
+    .from('situacao_fiscal_rfb')
+    .select('*')
+    .eq('cliente_id', clienteId);
+  if (error) throw error;
+  const ordAtual = competenciaOrdinal(competencia);
+  return (data || [])
+    .filter((d) => d.competencia && competenciaOrdinal(d.competencia) <= ordAtual)
+    .sort((a, b) => competenciaOrdinal(b.competencia) - competenciaOrdinal(a.competencia))[0] || null;
+}
+
 // ---------- CND estadual/municipal (marcação manual) ----------
 
 export async function obterCndManual(clienteId, competencia) {
