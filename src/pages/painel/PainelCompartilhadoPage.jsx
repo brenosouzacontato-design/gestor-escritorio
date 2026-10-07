@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import {
   CalendarIcon, DownloadIcon, CheckCircleIcon, AlertTriangleIcon, ClockIcon, TrendingUpIcon,
-  ClipboardListIcon, EyeIcon, ReceiptIcon,
+  ClipboardListIcon, EyeIcon,
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { abrirLinkAssinado } from '../documentos/documentosApi';
@@ -40,8 +40,11 @@ function ehImposto(o) {
   return o.tipos_obrigacao?.eh_imposto || NOMES_IMPOSTO.has((o.tipo || '').toUpperCase())
     || TITULO_IMPOSTO.test(`${o.titulo || ''} ${o.tipo || ''}`);
 }
+// Recálculo do PGDAS não é o DAS do mês: não herda o valor da declaração
+// nem a regra de "Sem movimento" — só aparece se tiver guia anexada.
 function ehDas(o) {
-  return /\b(pg)?das\b/i.test(`${o.titulo || ''} ${o.tipo || ''}`);
+  const texto = `${o.titulo || ''} ${o.tipo || ''}`;
+  return /\b(pg)?das\b/i.test(texto) && !/rec[aá]lculo/i.test(texto);
 }
 
 // Área (Fiscal/Folha) pelo departamento — o resto (Contábil, Societário...)
@@ -191,8 +194,12 @@ export default function PainelCompartilhadoPage({ clienteId, competencia: compet
   const pendencias = dados && montarPendencias(dados.situacaoFiscal);
   const itensArea = dados && montarObrigacoesTarefas(dados, competencia);
   const aVencer = guias ? guias.filter((g) => !g.semMovimento && !alertaVencida(g) && !(g.concluida && g.dias != null && g.dias < 0)) : [];
-  const vencidos = guias ? guias.filter(alertaVencida) : [];
+  const guiasVencidas = guias ? guias.filter(alertaVencida) : [];
+  // "Vencidos" junta as guias vencidas sem baixa com os débitos do
+  // Relatório de Situação Fiscal (que por definição já passaram do prazo)
+  const vencidos = [...guiasVencidas, ...(pendencias || [])];
   const proximoVencimento = aVencer.find((g) => g.vencimento && g.dias >= 0)?.vencimento;
+  const datasAVencer = new Set(aVencer.filter((g) => g.vencimento).map((g) => g.vencimento));
   const semMovimento = dados?.gerenciais?.faturamento_periodo != null && Number(dados.gerenciais.faturamento_periodo) === 0;
 
   return (
@@ -260,20 +267,21 @@ export default function PainelCompartilhadoPage({ clienteId, competencia: compet
                 </Secao>
               )}
 
-              {/* ── 2. Cards: em aberto / a vencer / vencidos ── */}
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10 }}>
-                <Indicador icone={<AlertTriangleIcon size={13} />} titulo="Em aberto"
-                  valor={!dados.situacaoFiscal ? '—' : pendencias.length === 0 ? 'Nenhum' : fmt(somaValores(pendencias))}
-                  sub={!dados.situacaoFiscal ? 'Relatório de Situação Fiscal não enviado' : pendencias.length === 0 ? 'Nada em aberto na Receita' : `${plural(pendencias.length, 'débito', 'débitos')} na Receita/PGFN`}
-                  s={!dados.situacaoFiscal ? 'neutral' : pendencias.length > 0 ? 'danger' : 'ok'} />
-                <Indicador icone={<ClockIcon size={13} />} titulo="A vencer"
-                  valor={aVencer.length === 0 ? 'Nenhum' : temValor(aVencer) ? fmt(somaValores(aVencer)) : plural(aVencer.length, 'guia', 'guias')}
-                  sub={aVencer.length === 0 ? 'Nenhuma guia a vencer' : `${plural(aVencer.length, 'guia', 'guias')}${proximoVencimento ? ` · próximo ${fmtData(proximoVencimento)}` : ''}`}
-                  s={aVencer.length === 0 ? 'ok' : aVencer.some(alertaUrgente) ? 'warn' : 'neutral'} />
-                <Indicador icone={<ReceiptIcon size={13} />} titulo="Vencidos"
-                  valor={vencidos.length === 0 ? 'Nenhum' : temValor(vencidos) ? fmt(somaValores(vencidos)) : plural(vencidos.length, 'guia', 'guias')}
-                  sub={vencidos.length === 0 ? 'Nenhuma guia vencida' : `${plural(vencidos.length, 'guia vencida', 'guias vencidas')} sem baixa`}
+              {/* ── 2. Cards: vencidos / a vencer (valor total) ── */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 10 }}>
+                <Indicador icone={<AlertTriangleIcon size={13} />} titulo="Vencidos"
+                  valor={vencidos.length === 0 ? 'Nenhum' : temValor(vencidos) ? fmt(somaValores(vencidos)) : 'Valor na guia'}
+                  sub={vencidos.length === 0 ? 'Nada vencido' : [
+                    pendencias.length > 0 && plural(pendencias.length, 'débito na Receita/PGFN', 'débitos na Receita/PGFN'),
+                    guiasVencidas.length > 0 && plural(guiasVencidas.length, 'guia vencida', 'guias vencidas'),
+                  ].filter(Boolean).join(' · ') + (vencidos.some((v) => v.valor == null) && temValor(vencidos) ? ' · + valores nas guias' : '')}
                   s={vencidos.length > 0 ? 'danger' : 'ok'} />
+                <Indicador icone={<ClockIcon size={13} />} titulo="A vencer"
+                  valor={aVencer.length === 0 ? 'Nenhum' : temValor(aVencer) ? fmt(somaValores(aVencer)) : 'Valor na guia'}
+                  sub={aVencer.length === 0 ? 'Nenhuma guia a vencer' : proximoVencimento
+                    ? `${datasAVencer.size > 1 ? 'Próximo vencimento' : 'Vencimento'}: ${fmtData(proximoVencimento)}${aVencer.some((g) => g.valor == null) && temValor(aVencer) ? ' · + valores nas guias' : ''}`
+                    : plural(aVencer.length, 'guia', 'guias')}
+                  s={aVencer.length === 0 ? 'ok' : aVencer.some(alertaUrgente) ? 'warn' : 'neutral'} />
               </div>
 
               {/* ── 3. Impostos (guias anexadas) ── */}
