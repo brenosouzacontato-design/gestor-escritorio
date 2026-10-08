@@ -9,7 +9,7 @@ import { GraficoFaturamento } from './PainelClientePage';
 import {
   obterResumoObrigacoes, obterResumoTarefas, obterDadosGerenciais, obterDocumentosPorObrigacao,
   obterDocumentosPorTarefa, obterSituacaoFiscalMaisRecente, obterCndManual, obterHistoricoFaturamento,
-  obterUltimaVisualizacaoPainel,
+  obterUltimaVisualizacaoPainel, extrairValorGuia,
 } from './painelApi';
 
 // Nova versão do painel do cliente (link compartilhado, ?painel=<id>&competencia=MM/YYYY
@@ -149,6 +149,7 @@ export default function PainelCompartilhadoPage({ clienteId, competencia: compet
   const opcoesComp = opcoesCompetencia(competenciaInicial);
   const [dados, setDados] = useState(null);
   const [ultimaVisualizacao, setUltimaVisualizacao] = useState(undefined); // undefined = carregando/indisponível
+  const [lendoGuias, setLendoGuias] = useState(() => new Set()); // ids de documentos sendo lidos pela IA
   const [carregando, setCarregando] = useState(true);
   const [erro, setErro] = useState(null);
 
@@ -189,8 +190,32 @@ export default function PainelCompartilhadoPage({ clienteId, competencia: compet
     })();
   }, [clienteId, competencia]);
 
+  // Guias anexadas que a IA ainda não leu: dispara a leitura (uma requisição
+  // por guia, em paralelo) e vai preenchendo o valor conforme cada uma volta.
+  // Só roda quando a coluna valor_guia_extraido_em existe — antes do schema
+  // aplicado o painel segue mostrando "valor na guia".
+  useEffect(() => {
+    if (!dados) return;
+    const pendentes = dados.impostos
+      .map((o) => dados.anexos[o.id])
+      .filter((a) => a && 'valor_guia_extraido_em' in a && !a.valor_guia_extraido_em && !lendoGuias.has(a.id));
+    if (pendentes.length === 0) return;
+    setLendoGuias((prev) => new Set([...prev, ...pendentes.map((a) => a.id)]));
+    pendentes.forEach((anexo) => {
+      extrairValorGuia(anexo.id)
+        .then((r) => setDados((d) => d && {
+          ...d,
+          anexos: Object.fromEntries(Object.entries(d.anexos).map(([k, a]) => [k, a.id === anexo.id
+            ? { ...a, valor_guia: r.valor, vencimento_guia: r.vencimento, valor_guia_extraido_em: new Date().toISOString() }
+            : a])),
+        }))
+        .catch(() => {})
+        .finally(() => setLendoGuias((prev) => { const n = new Set(prev); n.delete(anexo.id); return n; }));
+    });
+  }, [dados]);
+
   const baixar = (storagePath) => abrirLinkAssinado(storagePath).catch(() => null);
-  const guias = dados && montarGuias(dados, competencia);
+  const guias = dados && montarGuias(dados, competencia).map((g) => ({ ...g, lendo: g.anexo && lendoGuias.has(g.anexo.id) }));
   const pendencias = dados && montarPendencias(dados.situacaoFiscal);
   const itensArea = dados && montarObrigacoesTarefas(dados, competencia);
   const aVencer = guias ? guias.filter((g) => !g.semMovimento && !alertaVencida(g) && !(g.concluida && g.dias != null && g.dias < 0)) : [];
@@ -270,14 +295,14 @@ export default function PainelCompartilhadoPage({ clienteId, competencia: compet
               {/* ── 2. Cards: vencidos / a vencer (valor total) ── */}
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 10 }}>
                 <Indicador icone={<AlertTriangleIcon size={13} />} titulo="Vencidos"
-                  valor={vencidos.length === 0 ? 'Nenhum' : temValor(vencidos) ? fmt(somaValores(vencidos)) : 'Valor na guia'}
+                  valor={vencidos.length === 0 ? 'Nenhum' : temValor(vencidos) ? fmt(somaValores(vencidos)) : vencidos.some((v) => v.lendo) ? 'Lendo guias…' : 'Valor na guia'}
                   sub={vencidos.length === 0 ? 'Nada vencido' : [
                     pendencias.length > 0 && plural(pendencias.length, 'débito na Receita/PGFN', 'débitos na Receita/PGFN'),
                     guiasVencidas.length > 0 && plural(guiasVencidas.length, 'guia vencida', 'guias vencidas'),
                   ].filter(Boolean).join(' · ') + (vencidos.some((v) => v.valor == null) && temValor(vencidos) ? ' · + valores nas guias' : '')}
                   s={vencidos.length > 0 ? 'danger' : 'ok'} />
                 <Indicador icone={<ClockIcon size={13} />} titulo="A vencer"
-                  valor={aVencer.length === 0 ? 'Nenhum' : temValor(aVencer) ? fmt(somaValores(aVencer)) : 'Valor na guia'}
+                  valor={aVencer.length === 0 ? 'Nenhum' : temValor(aVencer) ? fmt(somaValores(aVencer)) : aVencer.some((g) => g.lendo) ? 'Lendo guias…' : 'Valor na guia'}
                   sub={aVencer.length === 0 ? 'Nenhuma guia a vencer' : proximoVencimento
                     ? `${datasAVencer.size > 1 ? 'Próximo vencimento' : 'Vencimento'}: ${fmtData(proximoVencimento)}${aVencer.some((g) => g.valor == null) && temValor(aVencer) ? ' · + valores nas guias' : ''}`
                     : plural(aVencer.length, 'guia', 'guias')}
@@ -340,18 +365,27 @@ function montarGuias({ impostos, anexos, gerenciais }, competencia) {
     .filter((o) => anexos[o.id] || (semMovimento && ehDas(o)))
     .map((o) => {
       const das = ehDas(o);
+      const anexo = anexos[o.id] || null;
+      // valor lido da própria guia (IA) tem prioridade — já vem com multa/
+      // juros se for o caso; o DAS cai no valor da declaração enquanto a
+      // guia não foi lida
+      const valorGuia = anexo?.valor_guia != null ? Number(anexo.valor_guia) : null;
+      // vencimento impresso na guia é o que vale pro pagamento — o da
+      // obrigação às vezes está cadastrado errado (ex: FGTS Digital)
+      const vencimento = anexo?.vencimento_guia || o.vencimento || null;
       return {
         id: o.id,
         titulo: o.titulo || o.tipo,
         competencia: o.competencia || competencia,
         area: o.departamentos?.nome || null,
-        vencimento: o.vencimento,
+        vencimento,
         // vencida + concluída = o escritório já deu baixa, não é alerta
-        dias: diasParaVencer(o.vencimento),
+        dias: diasParaVencer(vencimento),
         concluida: o.status === 'concluido' || o.status === 'nao_aplica',
         semMovimento: das && semMovimento,
-        valor: das && !semMovimento && gerenciais?.valor_das != null ? Number(gerenciais.valor_das) : null,
-        anexo: anexos[o.id] || null,
+        valor: das && semMovimento ? null
+          : valorGuia ?? (das && gerenciais?.valor_das != null ? Number(gerenciais.valor_das) : null),
+        anexo,
       };
     });
   if (semMovimento && !impostos.some(ehDas)) {
@@ -546,7 +580,7 @@ function LinhaGuia({ g, onBaixar }) {
             </span>
           ) : (
             <span style={{ fontSize: g.valor != null ? 14 : 11, fontWeight: g.valor != null ? 800 : 500, color: g.valor != null ? 'var(--text1)' : 'var(--text3)', whiteSpace: 'nowrap' }}>
-              {g.valor != null ? fmt(g.valor) : 'valor na guia'}
+              {g.valor != null ? fmt(g.valor) : g.lendo ? 'lendo guia…' : 'valor na guia'}
             </span>
           )}
           {g.anexo && <BotaoGuia anexo={g.anexo} onBaixar={onBaixar} />}

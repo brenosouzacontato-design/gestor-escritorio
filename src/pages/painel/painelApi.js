@@ -72,7 +72,10 @@ export async function obterDocumentosPorObrigacao(obrigacaoIds) {
   if (!obrigacaoIds || obrigacaoIds.length === 0) return {};
   const { data, error } = await supabase
     .from('documentos')
-    .select('id, obrigacao_id, storage_path, nome_arquivo')
+    // '*' em vez de lista fixa: inclui valor_guia/vencimento_guia quando a
+    // coluna já existe (supabase-schema-documentos-valor-guia.sql) sem
+    // quebrar enquanto o schema não foi aplicado
+    .select('*')
     .in('obrigacao_id', obrigacaoIds)
     .eq('status', 'confirmado');
   if (error) throw error;
@@ -513,4 +516,20 @@ export async function obterUltimaVisualizacaoPainel(clienteId) {
     .maybeSingle();
   if (error) throw error;
   return data;
+}
+
+// Pede pra IA ler valor/vencimento de uma guia já anexada
+// (netlify/functions/extrair-valor-guia.js) — a função grava em
+// documentos.valor_guia e só lê cada documento uma vez.
+export async function extrairValorGuia(documentoId) {
+  const resp = await fetch('/.netlify/functions/extrair-valor-guia', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ documentoId }),
+  });
+  if (!resp.ok) {
+    const erro = await resp.json().catch(() => ({}));
+    throw new Error(erro.error || 'Falha ao ler a guia.');
+  }
+  return resp.json(); // { documentoId, valor, vencimento }
 }
