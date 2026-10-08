@@ -518,6 +518,23 @@ export async function obterUltimaVisualizacaoPainel(clienteId) {
   return data;
 }
 
+// ---------- Honorários (módulo Honorários) ----------
+
+// Honorários do cliente que entram no painel como obrigação a pagar: todos
+// os pendentes (de qualquer competência — atrasado continua aparecendo até
+// ser pago) + o da competência selecionada mesmo se já pago, pro cliente ver
+// que está quitado. Mesma tabela da tela Honorários (honorariosApi.js).
+export async function obterHonorariosPainel(clienteId, competencia) {
+  const { data, error } = await supabase
+    .from('honorarios')
+    .select('*')
+    .eq('cliente_id', clienteId);
+  if (error) throw error;
+  return (data || [])
+    .filter((h) => h.status === 'pendente' || h.competencia === competencia)
+    .sort((a, b) => (a.vencimento || '').localeCompare(b.vencimento || ''));
+}
+
 // Pede pra IA ler valor/vencimento de uma guia já anexada
 // (netlify/functions/extrair-valor-guia.js) — a função grava em
 // documentos.valor_guia e só lê cada documento uma vez.

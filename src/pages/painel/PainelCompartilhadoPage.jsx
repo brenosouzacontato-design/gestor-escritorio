@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import {
   CalendarIcon, DownloadIcon, CheckCircleIcon, AlertTriangleIcon, ClockIcon, TrendingUpIcon,
-  ClipboardListIcon, EyeIcon,
+  ClipboardListIcon, EyeIcon, WalletIcon, CopyIcon,
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { abrirLinkAssinado } from '../documentos/documentosApi';
@@ -9,8 +9,9 @@ import { GraficoFaturamento } from './PainelClientePage';
 import {
   obterResumoObrigacoes, obterResumoTarefas, obterDadosGerenciais, obterDocumentosPorObrigacao,
   obterDocumentosPorTarefa, obterSituacaoFiscalMaisRecente, obterCndManual, obterHistoricoFaturamento,
-  obterUltimaVisualizacaoPainel, extrairValorGuia,
+  obterUltimaVisualizacaoPainel, extrairValorGuia, obterHonorariosPainel,
 } from './painelApi';
+import { obterConfigPix } from '../honorarios/honorariosApi';
 
 // Nova versão do painel do cliente (link compartilhado, ?painel=<id>&competencia=MM/YYYY
 // — ver main.jsx; a versão completa antiga continua em PainelClientePage.jsx,
@@ -163,7 +164,7 @@ export default function PainelCompartilhadoPage({ clienteId, competencia: compet
       setCarregando(true);
       setErro(null);
       try {
-        const [{ data: cliente, error: errCliente }, obs, tarefas, gerenciais, historico, situacaoFiscal, cndManual] = await Promise.all([
+        const [{ data: cliente, error: errCliente }, obs, tarefas, gerenciais, historico, situacaoFiscal, cndManual, honorarios, configPix] = await Promise.all([
           supabase.from('clientes').select('nome, cnpj, regime').eq('id', clienteId).single(),
           obterResumoObrigacoes(clienteId, competencia),
           obterResumoTarefas(clienteId, competencia),
@@ -172,6 +173,8 @@ export default function PainelCompartilhadoPage({ clienteId, competencia: compet
           obterHistoricoFaturamento(clienteId).catch(() => []),
           obterSituacaoFiscalMaisRecente(clienteId, competencia).catch(() => null),
           obterCndManual(clienteId, competencia).catch(() => null),
+          obterHonorariosPainel(clienteId, competencia).catch(() => []),
+          obterConfigPix().catch(() => ({ chavePix: '', favorecido: '' })),
         ]);
         if (errCliente) throw errCliente;
         const impostos = obs.itens.filter(ehImposto);
@@ -181,7 +184,7 @@ export default function PainelCompartilhadoPage({ clienteId, competencia: compet
           obterDocumentosPorObrigacao([...impostos, ...outrasObrigacoes].map((o) => o.id)).catch(() => ({})),
           obterDocumentosPorTarefa(tarefasArea.map((t) => t.id)).catch(() => ({})),
         ]);
-        setDados({ cliente, impostos, outrasObrigacoes, tarefasArea, anexos, anexosTarefa, gerenciais, historico, situacaoFiscal, cndManual });
+        setDados({ cliente, impostos, outrasObrigacoes, tarefasArea, anexos, anexosTarefa, gerenciais, historico, situacaoFiscal, cndManual, honorarios, configPix });
       } catch (e) {
         setErro(e.message);
       } finally {
@@ -218,11 +221,18 @@ export default function PainelCompartilhadoPage({ clienteId, competencia: compet
   const guias = dados && montarGuias(dados, competencia).map((g) => ({ ...g, lendo: g.anexo && lendoGuias.has(g.anexo.id) }));
   const pendencias = dados && montarPendencias(dados.situacaoFiscal);
   const itensArea = dados && montarObrigacoesTarefas(dados, competencia);
-  const aVencer = guias ? guias.filter((g) => !g.semMovimento && !alertaVencida(g) && !(g.concluida && g.dias != null && g.dias < 0)) : [];
+  const honorarios = dados ? montarHonorarios(dados.honorarios) : [];
+  const honorariosAVencer = honorarios.filter((h) => !h.concluida && !(h.dias != null && h.dias < 0));
+  const honorariosVencidos = honorarios.filter(alertaVencida);
+  const aVencer = guias ? [
+    ...guias.filter((g) => !g.semMovimento && !alertaVencida(g) && !(g.concluida && g.dias != null && g.dias < 0)),
+    ...honorariosAVencer,
+  ].sort((a, b) => (a.vencimento || '9999').localeCompare(b.vencimento || '9999')) : [];
   const guiasVencidas = guias ? guias.filter(alertaVencida) : [];
-  // "Vencidos" junta as guias vencidas sem baixa com os débitos do
-  // Relatório de Situação Fiscal (que por definição já passaram do prazo)
-  const vencidos = [...guiasVencidas, ...(pendencias || [])];
+  // "Vencidos" junta as guias vencidas sem baixa, os honorários atrasados e
+  // os débitos do Relatório de Situação Fiscal (que por definição já
+  // passaram do prazo)
+  const vencidos = [...guiasVencidas, ...honorariosVencidos, ...(pendencias || [])];
   const proximoVencimento = aVencer.find((g) => g.vencimento && g.dias >= 0)?.vencimento;
   const datasAVencer = new Set(aVencer.filter((g) => g.vencimento).map((g) => g.vencimento));
   const semMovimento = dados?.gerenciais?.faturamento_periodo != null && Number(dados.gerenciais.faturamento_periodo) === 0;
@@ -299,11 +309,12 @@ export default function PainelCompartilhadoPage({ clienteId, competencia: compet
                   sub={vencidos.length === 0 ? 'Nada vencido' : [
                     pendencias.length > 0 && plural(pendencias.length, 'débito na Receita/PGFN', 'débitos na Receita/PGFN'),
                     guiasVencidas.length > 0 && plural(guiasVencidas.length, 'guia vencida', 'guias vencidas'),
+                    honorariosVencidos.length > 0 && plural(honorariosVencidos.length, 'honorário vencido', 'honorários vencidos'),
                   ].filter(Boolean).join(' · ') + (vencidos.some((v) => v.valor == null) && temValor(vencidos) ? ' · + valores nas guias' : '')}
                   s={vencidos.length > 0 ? 'danger' : 'ok'} />
                 <Indicador icone={<ClockIcon size={13} />} titulo="A vencer"
                   valor={aVencer.length === 0 ? 'Nenhum' : temValor(aVencer) ? fmt(somaValores(aVencer)) : aVencer.some((g) => g.lendo) ? 'Lendo guias…' : 'Valor na guia'}
-                  sub={aVencer.length === 0 ? 'Nenhuma guia a vencer' : proximoVencimento
+                  sub={aVencer.length === 0 ? 'Nada a vencer' : proximoVencimento
                     ? `${datasAVencer.size > 1 ? 'Próximo vencimento' : 'Vencimento'}: ${fmtData(proximoVencimento)}${aVencer.some((g) => g.valor == null) && temValor(aVencer) ? ' · + valores nas guias' : ''}`
                     : plural(aVencer.length, 'guia', 'guias')}
                   s={aVencer.length === 0 ? 'ok' : aVencer.some(alertaUrgente) ? 'warn' : 'neutral'} />
@@ -316,6 +327,17 @@ export default function PainelCompartilhadoPage({ clienteId, competencia: compet
                   ? <Vazio>Nenhuma guia de imposto anexada para essa competência.</Vazio>
                   : <div style={LISTA}>{guias.map((g) => <LinhaGuia key={g.id} g={g} onBaixar={baixar} />)}</div>}
               </Secao>
+
+              {/* ── Honorários (módulo Honorários) + chave PIX pra copiar ── */}
+              {honorarios.length > 0 && (
+                <Secao titulo="Honorários" icone={<WalletIcon size={14} />}
+                  extra={honorarios.some((h) => !h.concluida) && <Total valor={somaValores(honorarios.filter((h) => !h.concluida))} />}>
+                  <div style={LISTA}>{honorarios.map((h) => <LinhaHonorario key={h.id} h={h} />)}</div>
+                  {honorarios.some((h) => !h.concluida) && dados.configPix?.chavePix && (
+                    <ChavePix chave={dados.configPix.chavePix} favorecido={dados.configPix.favorecido} />
+                  )}
+                </Secao>
+              )}
 
               {/* ── 4. Pendências (Relatório de Situação Fiscal) ── */}
               <Secao titulo="Pendências — Relatório de Situação Fiscal" icone={<AlertTriangleIcon size={14} />}
@@ -433,6 +455,21 @@ function montarObrigacoesTarefas({ outrasObrigacoes, tarefasArea, anexos, anexos
   const ordemStatus = { vencido: 0, pendente: 1, concluido: 2, nao_aplica: 3 };
   return [...obrigacoes, ...tarefas].sort((a, b) => (ordemStatus[a.status] ?? 9) - (ordemStatus[b.status] ?? 9)
     || (a.vencimento || '9999').localeCompare(b.vencimento || '9999'));
+}
+
+// Honorário como "obrigação a pagar" — mesmo formato das guias pra entrar
+// nos cards de vencidos/a vencer. Avulso usa a descrição como título.
+function montarHonorarios(honorarios) {
+  return (honorarios || []).map((h) => ({
+    id: `hon-${h.id}`,
+    titulo: h.tipo === 'avulso' ? (h.descricao || 'Honorário avulso') : 'Honorário contábil',
+    competencia: h.competencia,
+    vencimento: h.vencimento,
+    dias: diasParaVencer(h.vencimento),
+    concluida: h.status === 'pago',
+    dataPagamento: h.data_pagamento,
+    valor: h.valor != null ? Number(h.valor) : null,
+  }));
 }
 
 const alertaVencida = (g) => !g.semMovimento && !g.concluida && g.dias != null && g.dias < 0;
@@ -586,6 +623,70 @@ function LinhaGuia({ g, onBaixar }) {
           {g.anexo && <BotaoGuia anexo={g.anexo} onBaixar={onBaixar} />}
         </>
       )} />
+  );
+}
+
+function LinhaHonorario({ h }) {
+  const vencido = alertaVencida(h);
+  const urgente = !h.concluida && alertaUrgente(h);
+  const [cor, dim] = h.concluida ? STATUS_COR.concluido : vencido ? STATUS_COR.vencido : STATUS_COR.pendente;
+  return (
+    <Linha corBorda={h.concluida ? 'var(--ok)' : vencido ? 'var(--danger)' : urgente ? 'var(--warn)' : 'var(--accent)'}
+      titulo={h.titulo} competencia={h.competencia}
+      detalhes={h.concluida
+        ? <span style={{ color: 'var(--text3)' }}>{h.dataPagamento ? `Pago em ${fmtData(h.dataPagamento)}` : 'Pago'}</span>
+        : h.vencimento && (
+          <span style={{ color: vencido ? 'var(--danger)' : urgente ? 'var(--warn)' : 'var(--text3)', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 3 }}>
+            <CalendarIcon size={10} /> {fmtData(h.vencimento)} · {fmtDias(h.dias)}
+          </span>
+        )}
+      direita={(
+        <>
+          <span style={{ fontSize: 14, fontWeight: 800, color: 'var(--text1)', whiteSpace: 'nowrap' }}>{h.valor != null ? fmt(h.valor) : '—'}</span>
+          <span style={{ fontSize: 10, fontWeight: 700, color: cor, background: dim, borderRadius: 99, padding: '3px 9px', whiteSpace: 'nowrap' }}>
+            {h.concluida ? 'Pago' : vencido ? 'Vencido' : 'A pagar'}
+          </span>
+        </>
+      )} />
+  );
+}
+
+// Chave PIX do escritório (Honorários → Configurar PIX) com botão de copiar
+// — o cliente cola direto no app do banco.
+function ChavePix({ chave, favorecido }) {
+  const [copiado, setCopiado] = useState(false);
+  const copiar = async () => {
+    try {
+      await navigator.clipboard.writeText(chave);
+    } catch {
+      // fallback pra navegador/webview sem Clipboard API (ex: navegador interno do WhatsApp)
+      const el = document.createElement('textarea');
+      el.value = chave;
+      el.style.position = 'fixed';
+      el.style.opacity = '0';
+      document.body.appendChild(el);
+      el.select();
+      document.execCommand('copy');
+      el.remove();
+    }
+    setCopiado(true);
+    setTimeout(() => setCopiado(false), 2500);
+  };
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 10, padding: '12px 14px', borderRadius: 'var(--r-md)',
+      background: 'var(--accent-dim)', flexWrap: 'wrap' }}>
+      <div style={{ flex: '1 1 200px', minWidth: 0 }}>
+        <div style={{ fontSize: 10, color: 'var(--text3)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.03em' }}>
+          Pague via PIX{favorecido ? ` · ${favorecido}` : ''}
+        </div>
+        <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--text1)', marginTop: 3, wordBreak: 'break-all' }}>{chave}</div>
+      </div>
+      <button type="button" onClick={copiar}
+        style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: 700, color: '#fff',
+          background: copiado ? 'var(--ok)' : 'var(--accent)', border: 'none', borderRadius: 8, padding: '8px 14px', cursor: 'pointer', whiteSpace: 'nowrap' }}>
+        {copiado ? <CheckCircleIcon size={14} /> : <CopyIcon size={14} />} {copiado ? 'Chave copiada!' : 'Copiar chave PIX'}
+      </button>
+    </div>
   );
 }
 
