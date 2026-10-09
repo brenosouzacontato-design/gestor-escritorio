@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect } from 'react'
-import { PlusIcon, XIcon, CheckCircleIcon, ClockIcon, AlertCircleIcon, MinusCircleIcon, ChevronRightIcon, CalendarIcon, CheckIcon, ZapIcon, RefreshCwIcon, Trash2Icon, ListIcon, LayoutGridIcon, Rows3Icon, ClipboardListIcon, BarChart3Icon, Share2Icon, EyeIcon, CheckSquareIcon, FileIcon, DownloadIcon, PencilIcon, FileTextIcon, GripVerticalIcon, BellIcon, BellRingIcon, UploadCloudIcon, Loader2Icon, SparklesIcon } from 'lucide-react'
+import { PlusIcon, XIcon, CheckCircleIcon, ClockIcon, AlertCircleIcon, MinusCircleIcon, ChevronRightIcon, CalendarIcon, CheckIcon, ZapIcon, RefreshCwIcon, Trash2Icon, ListIcon, LayoutGridIcon, Rows3Icon, ClipboardListIcon, BarChart3Icon, Share2Icon, EyeIcon, CheckSquareIcon, FileIcon, DownloadIcon, PencilIcon, FileTextIcon, GripVerticalIcon, BellIcon, BellRingIcon, UploadCloudIcon, Loader2Icon, SparklesIcon, Building2Icon, AlertTriangleIcon, HourglassIcon, PackageCheckIcon, InboxIcon, CircleDashedIcon, BriefcaseIcon } from 'lucide-react'
 import { useStore } from '../store'
 import { DeptChip, PriDot, fmtDate, isOverdue, useToast } from '../components/shared'
 import { supabase } from '../lib/supabase'
@@ -78,6 +78,17 @@ const AVATAR_COLORS = [
   ['#1a2a1a','#86efac'],['#1e2a2a','#67e8f9'],['#2a1a1a','#fca5a5'],
 ]
 
+// Selo pequeno (ícone + texto) usado nas linhas da visualização Lista —
+// vencidas, vence em breve, tarefas, carteira etc.
+function Selo({ Icon, cor, bg, title, children }) {
+  return (
+    <span title={title} style={{ display:'inline-flex', alignItems:'center', gap:3, fontSize:10, fontWeight:600, color:cor, background:bg,
+      borderRadius:99, padding:'1px 7px', whiteSpace:'nowrap', maxWidth:160, overflow:'hidden', textOverflow:'ellipsis' }}>
+      <Icon size={10} style={{ flexShrink:0 }} /> {children}
+    </span>
+  )
+}
+
 function DeptPill({ data, onClick }) {
   const Icon = S_ICON[data.s]
   return (
@@ -146,6 +157,7 @@ export default function Empresas({ onOpenTarefas, clienteInicialId, onClienteIni
   // supabase-schema-cliente-entrega-competencia.sql. Guarda só quem está
   // entregue na competência atual; todo o resto cai em "A entregar".
   const [entregues, setEntregues] = useState(new Set())
+  const [filtroLista, setFiltroLista] = useState('todas') // chip de status ativo na visualização Lista
   const [departamentos,setDepartamentos] = useState([])
   const [showAddDept, setShowAddDept] = useState(false)
   const [novoDept,    setNovoDept]    = useState('')
@@ -940,56 +952,132 @@ export default function Empresas({ onOpenTarefas, clienteInicialId, onClienteIni
             entrega, sem precisar dos detalhes por departamento que os
             cards mostram. */}
         {visualizacao === 'lista' && (() => {
-          const secoes = [
-            { id:'a_entregar', label:'A entregar', cor:'var(--warn)', itens: rowsCards.filter(r => !entregues.has(r.c.id)) },
-            { id:'entregue',   label:'Entregue',   cor:'var(--ok)',   itens: rowsCards.filter(r => entregues.has(r.c.id)) },
+          // Métricas de cada empresa calculadas uma vez só — usadas tanto
+          // nos chips de resumo/filtro do topo quanto nas linhas.
+          const hoje = new Date(new Date().toDateString())
+          const itensLista = rowsCards.map(({ c, deptData }) => {
+            const obsTotal = obrigacoes.filter(o => o.cliente_id===c.id && o.competencia===compSel)
+            const resOk   = obsTotal.filter(o => o.status==='concluido'||o.status==='nao_aplica').length
+            const resVenc = obsTotal.filter(o => o.status==='vencido').length
+            const resPend = obsTotal.filter(o => o.status==='pendente').length
+            const resVencendo = obsTotal.filter(isVencendo).length
+            const resPct  = obsTotal.length > 0 ? Math.round((resOk/obsTotal.length)*100) : 0
+            const resS    = resVenc > 0 ? 'danger' : resVencendo > 0 ? 'venc_breve' : obsTotal.length > 0 && resPct===100 ? 'ok' : resPend > 0 ? 'warn' : 'empty'
+            const tasksPend = tarefas.filter(t => t.cliente_id === c.id && !t.concluida)
+            const tasksAtrasadas = tasksPend.filter(t => t.vencimento && new Date(t.vencimento + 'T00:00:00') < hoje).length
+            const proxVenc = obsTotal.filter(o => o.status==='pendente' && o.vencimento).map(o => o.vencimento).sort()[0] || null
+            return { c, deptData, obsTotal, resOk, resVenc, resPend, resVencendo, resPct, resS, tasksPend: tasksPend.length, tasksAtrasadas, proxVenc, entregue: entregues.has(c.id) }
+          })
+          const FILTROS = [
+            { id:'todas',      label:'Todas',          Icon:Building2Icon,     cor:'var(--text2)',  bg:'var(--surface2)', teste: () => true },
+            { id:'danger',     label:'Com vencidas',   Icon:AlertTriangleIcon, cor:S_COLOR.danger,  bg:S_BG.danger,       teste: r => r.resS === 'danger' },
+            { id:'venc_breve', label:'Vencem em breve', Icon:HourglassIcon,    cor:S_COLOR.venc_breve, bg:S_BG.venc_breve, teste: r => r.resS === 'venc_breve' },
+            { id:'warn',       label:'Pendentes',      Icon:ClockIcon,         cor:S_COLOR.warn,    bg:S_BG.warn,         teste: r => r.resS === 'warn' },
+            { id:'ok',         label:'Em dia',         Icon:CheckCircleIcon,   cor:S_COLOR.ok,      bg:S_BG.ok,           teste: r => r.resS === 'ok' },
+            { id:'tarefas',    label:'Tarefas abertas', Icon:CheckSquareIcon,  cor:'var(--info)',   bg:'var(--info-dim)', teste: r => r.tasksPend > 0 },
           ]
-          const COL_CHECK = 30, COL_GRIP = 22, COL_MODULOS = 90, COL_CARTEIRA = 110, COL_STATUS = 90
+          const filtroAtivo = FILTROS.find(f => f.id === filtroLista) || FILTROS[0]
+          const visiveis = itensLista.filter(filtroAtivo.teste)
+          const secoes = [
+            { id:'a_entregar', label:'A entregar', Icon:HourglassIcon,    cor:'var(--warn)', bg:'var(--warn-dim)', itens: visiveis.filter(r => !r.entregue) },
+            { id:'entregue',   label:'Entregue',   Icon:PackageCheckIcon, cor:'var(--ok)',   bg:'var(--ok-dim)',   itens: visiveis.filter(r => r.entregue) },
+          ]
+          const totalEntregues = itensLista.filter(r => r.entregue).length
+          const pctEntregue = itensLista.length > 0 ? Math.round((totalEntregues / itensLista.length) * 100) : 0
+          const COL_CHECK = 26, COL_GRIP = 16, COL_MODULOS = 170, COL_PROGRESSO = 130
+          const HEAD = { fontSize:10, fontWeight:700, color:'var(--text3)', textTransform:'uppercase', letterSpacing:.4 }
+          const REGIME = {
+            SN: { label:'SN', titulo:'Simples Nacional', cor:'#2563EB' },
+            LP: { label:'LP', titulo:'Lucro Presumido',  cor:'#7C3AED' },
+            LR: { label:'LR', titulo:'Lucro Real',       cor:'#C2410C' },
+          }
+          const corAvatar = (nome) => {
+            let h = 0
+            for (const ch of nome || '') h = (h * 31 + ch.charCodeAt(0)) >>> 0
+            return AVATAR_COLORS[h % AVATAR_COLORS.length]
+          }
           return (
           <div style={{ flex:1, overflow:'auto', padding:'16px' }}>
             {rows.length === 0 && (
               <div style={{ padding:40, textAlign:'center', color:'var(--text3)', fontSize:13 }}>Nenhuma empresa encontrada</div>
             )}
             {rows.length > 0 && (
-            <div style={{ display:'flex', flexDirection:'column', gap:20, maxWidth:760 }}>
+            <div style={{ display:'flex', flexDirection:'column', gap:18, maxWidth:1000 }}>
+
+              {/* Resumo da competência + filtros rápidos por status */}
+              <div style={{ display:'flex', flexDirection:'column', gap:10, background:'var(--surface)', border:'1px solid var(--border)', borderRadius:'var(--r-md)', padding:'12px 14px' }}>
+                <div style={{ display:'flex', alignItems:'center', gap:10 }}>
+                  <PackageCheckIcon size={15} color="var(--ok)" />
+                  <span style={{ fontSize:12, fontWeight:700, color:'var(--text1)' }}>Entregas de {compSel}</span>
+                  <div style={{ flex:1, height:7, background:'var(--surface3)', borderRadius:99, overflow:'hidden' }}>
+                    <div style={{ height:'100%', width:`${pctEntregue}%`, background:'var(--ok)', borderRadius:99, transition:'width .3s' }} />
+                  </div>
+                  <span style={{ fontSize:12, fontWeight:700, color:'var(--ok)' }}>{pctEntregue}%</span>
+                  <span style={{ fontSize:11, color:'var(--text3)' }}>{totalEntregues}/{itensLista.length}</span>
+                </div>
+                <div style={{ display:'flex', gap:6, flexWrap:'wrap' }}>
+                  {FILTROS.map(f => {
+                    const qtd = itensLista.filter(f.teste).length
+                    const ativo = filtroAtivo.id === f.id
+                    return (
+                      <button key={f.id} onClick={() => setFiltroLista(f.id)} title={`Mostrar: ${f.label.toLowerCase()}`}
+                        style={{ display:'flex', alignItems:'center', gap:5, fontSize:11, fontWeight:600, cursor:'pointer',
+                          borderRadius:99, padding:'4px 10px', transition:'all .12s',
+                          color: ativo ? '#fff' : f.cor, background: ativo ? f.cor : f.bg,
+                          border:`1px solid ${ativo ? f.cor : 'transparent'}`, opacity: qtd === 0 && !ativo ? .5 : 1 }}>
+                        <f.Icon size={12} /> {f.label}
+                        <span style={{ fontSize:10, fontWeight:800, borderRadius:99, padding:'0 6px', minWidth:18, textAlign:'center',
+                          background: ativo ? 'rgba(255,255,255,.25)' : 'var(--surface)', color: ativo ? '#fff' : f.cor }}>{qtd}</span>
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+
               {secoes.map(secao => (
                 <div key={secao.id}
                   onDragOver={e => e.preventDefault()}
                   onDrop={e => { e.preventDefault(); handleDropNaColuna(secao.id) }}>
-                  <div style={{ display:'flex', alignItems:'center', gap:6, marginBottom:6 }}>
-                    <span style={{ width:8, height:8, borderRadius:2, background:secao.cor, flexShrink:0 }} />
-                    <span style={{ fontSize:12, fontWeight:700, color:'var(--text1)' }}>{secao.label}</span>
-                    <span style={{ fontSize:11, color:'var(--text3)' }}>{secao.itens.length}</span>
+                  <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:8 }}>
+                    <span style={{ width:24, height:24, borderRadius:7, background:secao.bg, color:secao.cor, flexShrink:0,
+                      display:'flex', alignItems:'center', justifyContent:'center' }}>
+                      <secao.Icon size={13} />
+                    </span>
+                    <span style={{ fontSize:13, fontWeight:700, color:'var(--text1)' }}>{secao.label}</span>
+                    <span style={{ fontSize:10.5, fontWeight:800, color:secao.cor, background:secao.bg, borderRadius:99, padding:'1px 8px' }}>{secao.itens.length}</span>
+                    {secao.id === 'a_entregar' && secao.itens.some(r => r.resVenc > 0) && (
+                      <span style={{ display:'flex', alignItems:'center', gap:3, fontSize:10.5, fontWeight:700, color:'var(--danger)' }}>
+                        <AlertTriangleIcon size={11} /> {secao.itens.filter(r => r.resVenc > 0).length} com vencidas
+                      </span>
+                    )}
                   </div>
                   <div style={{ border:'1px solid var(--border)', borderRadius:'var(--r-md)', overflow:'hidden', background:'var(--surface)' }}>
                     {/* Cabeçalho de coluna, estilo grid do Microsoft Lists */}
-                    <div style={{ display:'flex', alignItems:'center', gap:8, padding:'6px 10px',
+                    <div style={{ display:'flex', alignItems:'center', gap:8, padding:'7px 10px 7px 13px',
                       background:'var(--surface2)', borderBottom:'1px solid var(--border)' }}>
-                      <span style={{ width:COL_CHECK, flexShrink:0 }} />
-                      <span style={{ width:COL_GRIP, flexShrink:0 }} />
-                      <span style={{ flex:1, minWidth:0, fontSize:10, fontWeight:700, color:'var(--text3)', textTransform:'uppercase', letterSpacing:.4 }}>Empresa</span>
-                      <span style={{ width:COL_MODULOS, flexShrink:0, fontSize:10, fontWeight:700, color:'var(--text3)', textTransform:'uppercase', letterSpacing:.4 }}>Módulos</span>
-                      <span style={{ width:COL_CARTEIRA, flexShrink:0, fontSize:10, fontWeight:700, color:'var(--text3)', textTransform:'uppercase', letterSpacing:.4 }}>Carteira</span>
-                      <span style={{ width:COL_STATUS, flexShrink:0, fontSize:10, fontWeight:700, color:'var(--text3)', textTransform:'uppercase', letterSpacing:.4, textAlign:'right' }}>Status</span>
+                      <span style={{ width:COL_CHECK + COL_GRIP + 8, flexShrink:0 }} />
+                      <span style={{ ...HEAD, flex:1, minWidth:0 }}>Empresa</span>
+                      <span style={{ ...HEAD, width:COL_MODULOS, flexShrink:0 }}>Módulos</span>
+                      <span style={{ ...HEAD, width:COL_PROGRESSO, flexShrink:0, textAlign:'right' }}>Obrigações</span>
                     </div>
                     {secao.itens.length === 0 && (
-                      <div style={{ textAlign:'center', color:'var(--text3)', fontSize:12, padding:'16px 0' }}>
-                        Arraste uma empresa pra cá
+                      <div style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:6, color:'var(--text3)', fontSize:12, padding:'18px 0' }}>
+                        <InboxIcon size={18} />
+                        {filtroAtivo.id === 'todas' ? 'Arraste uma empresa pra cá' : 'Nenhuma empresa com esse filtro'}
                       </div>
                     )}
-                    {secao.itens.map(({ c, deptData }, ri) => {
-                      const obsTotal = obrigacoes.filter(o => o.cliente_id===c.id && o.competencia===compSel)
-                      const resOk   = obsTotal.filter(o => o.status==='concluido'||o.status==='nao_aplica').length
-                      const resVenc = obsTotal.filter(o => o.status==='vencido').length
-                      const resVencendo = obsTotal.some(isVencendo)
-                      const resPct  = obsTotal.length > 0 ? Math.round((resOk/obsTotal.length)*100) : 0
-                      const resS    = resVenc > 0 ? 'danger' : resVencendo ? 'venc_breve' : resPct===100 ? 'ok' : obsTotal.filter(o=>o.status==='pendente').length > 0 ? 'warn' : 'empty'
-                      const tasksCliente = tarefas.filter(t => t.cliente_id === c.id)
-                      const tasksPend = tasksCliente.filter(t => !t.concluida).length
-                      const entregue = secao.id === 'entregue'
+                    {secao.itens.map((r, ri) => {
+                      const { c, deptData, obsTotal, resOk, resVenc, resPend, resVencendo, resPct, resS, tasksPend, tasksAtrasadas, proxVenc, entregue } = r
                       const arrastando = arrastandoId === c.id
                       const ultima = ri === secao.itens.length - 1
-                      const StatusIcon = S_ICON[resS]
+                      const StatusIcon = S_ICON[resS] || CircleDashedIcon
+                      const corStatus = entregue ? 'var(--ok)' : S_COLOR[resS]
+                      const [avBg, avTc] = corAvatar(c.nome)
+                      // pula o prefixo de CNPJ/números do nome ("42.403.984 RODRIGO ...")
+                      const palavras = c.nome.split(' ').filter(w => /^[A-Za-zÀ-ÿ]/.test(w))
+                      const initials = (palavras.length ? palavras : [c.nome]).slice(0,2).map(w=>w[0]).join('').toUpperCase()
+                      const regime = REGIME[c.regime === 'Lucro Presumido' ? 'LP' : c.regime === 'Lucro Real' ? 'LR' : 'SN']
+                      const diasProx = proxVenc ? Math.round((new Date(proxVenc + 'T00:00:00') - hoje) / 86400000) : null
                       return (
                         <div key={c.id} onClick={() => openDrawer(c, null)}
                           draggable
@@ -1000,60 +1088,94 @@ export default function Empresas({ onOpenTarefas, clienteInicialId, onClienteIni
                           onMouseEnter={e => { e.currentTarget.style.background = 'var(--surface2)' }}
                           onMouseLeave={e => { e.currentTarget.style.background = 'transparent' }}
                           style={{ display:'flex', alignItems:'center', gap:8, cursor:'pointer',
-                            borderBottom: ultima ? 'none' : '1px solid var(--border)',
-                            padding:'5px 10px', opacity:arrastando?.4:entregue?.65:1, transition:'opacity .1s, background .1s' }}>
+                            borderBottom: ultima ? 'none' : '1px solid var(--border)', borderLeft:`3px solid ${corStatus}`,
+                            padding:'8px 10px', opacity:arrastando?.4:entregue?.72:1, transition:'opacity .1s, background .1s' }}>
                           <button onClick={e => { e.stopPropagation(); handleMudarEntrega(c.id, !entregue) }}
                             title={entregue ? 'Marcar como não entregue' : 'Marcar como entregue'}
-                            style={{ width:16, height:16, borderRadius:4, flexShrink:0, cursor:'pointer',
-                              border:`1px solid ${entregue?'var(--ok)':'var(--border2)'}`, background:entregue?'var(--ok)':'transparent',
-                              display:'flex', alignItems:'center', justifyContent:'center', marginLeft: (COL_CHECK-16)/2 }}>
-                            {entregue && <CheckIcon size={11} color="#fff" strokeWidth={3} />}
+                            style={{ width:18, height:18, borderRadius:5, flexShrink:0, cursor:'pointer',
+                              border:`1.5px solid ${entregue?'var(--ok)':'var(--border2)'}`, background:entregue?'var(--ok)':'transparent',
+                              display:'flex', alignItems:'center', justifyContent:'center', marginLeft: (COL_CHECK-18)/2, marginRight: (COL_CHECK-18)/2 }}>
+                            {entregue && <CheckIcon size={12} color="#fff" strokeWidth={3} />}
                           </button>
                           <span style={{ width:COL_GRIP, flexShrink:0, display:'flex', justifyContent:'center' }}>
                             <GripVerticalIcon size={13} color="var(--text3)" style={{ cursor:'grab' }} title="Arrastar pra reordenar ou mudar de lista" />
                           </span>
-                          <span style={{ minWidth:0, flex:1, display:'flex', alignItems:'center', gap:5, overflow:'hidden' }}>
-                            {StatusIcon && <StatusIcon size={12} color={entregue ? 'var(--text3)' : S_COLOR[resS]} style={{ flexShrink:0 }}
-                              title={resS==='danger'?'Tem vencida':resS==='venc_breve'?'Vence em breve':resS==='ok'?'Tudo em dia':resS==='na'?'Não se aplica':''} />}
-                            <span style={{ minWidth:0, fontSize:12, fontWeight:600, color:entregue?'var(--text3)':'var(--text1)',
-                              textDecoration:entregue?'line-through':'none', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
-                              {c.nome}
-                            </span>
-                            <span style={{ flexShrink:0, fontSize:8.5, fontWeight:700, color:'var(--text3)', background:'var(--surface2)',
-                              border:'1px solid var(--border)', borderRadius:4, padding:'1px 4px' }}>
-                              {c.regime === 'Lucro Presumido' ? 'LP' : c.regime === 'Lucro Real' ? 'LR' : 'SN'}
-                            </span>
-                            {tasksPend > 0 && (
-                              <span style={{ flexShrink:0, display:'flex', alignItems:'center', gap:2, fontSize:9.5, color:'var(--text3)' }}
-                                title={`${tasksPend} tarefa${tasksPend!==1?'s':''} pendente${tasksPend!==1?'s':''}`}>
-                                <CheckSquareIcon size={10} /> {tasksPend}
+
+                          {/* Empresa: avatar com indicador de status + nome + selos */}
+                          <span style={{ minWidth:0, flex:1, display:'flex', alignItems:'center', gap:10 }}>
+                            <span style={{ position:'relative', flexShrink:0 }}>
+                              <span style={{ width:32, height:32, borderRadius:9, background:avBg, color:avTc, fontSize:11, fontWeight:800,
+                                display:'flex', alignItems:'center', justifyContent:'center' }}>{initials}</span>
+                              <span title={resS==='danger'?'Tem obrigação vencida':resS==='venc_breve'?'Vence em breve':resS==='ok'?'Tudo em dia':resS==='warn'?'Pendente':'Sem obrigações na competência'}
+                                style={{ position:'absolute', right:-4, bottom:-4, width:16, height:16, borderRadius:'50%', background:'var(--surface)',
+                                  display:'flex', alignItems:'center', justifyContent:'center' }}>
+                                {entregue ? <CheckCircleIcon size={14} color="var(--ok)" /> : <StatusIcon size={14} color={S_COLOR[resS]} />}
                               </span>
-                            )}
+                            </span>
+                            <span style={{ minWidth:0, display:'flex', flexDirection:'column', gap:3 }}>
+                              <span style={{ display:'flex', alignItems:'center', gap:6, minWidth:0 }}>
+                                <span style={{ minWidth:0, fontSize:12.5, fontWeight:700, color:entregue?'var(--text3)':'var(--text1)',
+                                  textDecoration:entregue?'line-through':'none', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
+                                  {c.nome}
+                                </span>
+                                <span title={regime.titulo} style={{ flexShrink:0, fontSize:9, fontWeight:800, borderRadius:4, padding:'1px 5px',
+                                  color:regime.cor, background:`color-mix(in srgb, ${regime.cor}, transparent 86%)` }}>
+                                  {regime.label}
+                                </span>
+                              </span>
+                              <span style={{ display:'flex', alignItems:'center', gap:5, flexWrap:'wrap' }}>
+                                {resVenc > 0 && !entregue && (
+                                  <Selo Icon={AlertTriangleIcon} cor={S_COLOR.danger} bg={S_BG.danger}>{resVenc} vencida{resVenc!==1?'s':''}</Selo>
+                                )}
+                                {resVencendo > 0 && !entregue && (
+                                  <Selo Icon={HourglassIcon} cor={S_COLOR.venc_breve} bg={S_BG.venc_breve}>{resVencendo} vence{resVencendo!==1?'m':''} em breve</Selo>
+                                )}
+                                {resPend > 0 && !entregue && diasProx != null && (
+                                  <Selo Icon={CalendarIcon} cor={diasProx < 0 ? S_COLOR.danger : diasProx <= 3 ? S_COLOR.venc_breve : 'var(--text3)'} bg="var(--surface2)">
+                                    {diasProx < 0 ? `venceu há ${-diasProx}d` : diasProx === 0 ? 'vence hoje' : `próx. em ${diasProx}d`}
+                                  </Selo>
+                                )}
+                                {tasksPend > 0 && (
+                                  <Selo Icon={CheckSquareIcon} cor={tasksAtrasadas > 0 ? 'var(--danger)' : 'var(--info)'} bg={tasksAtrasadas > 0 ? 'var(--danger-dim)' : 'var(--info-dim)'}
+                                    title={`${tasksPend} tarefa${tasksPend!==1?'s':''} pendente${tasksPend!==1?'s':''}${tasksAtrasadas > 0 ? `, ${tasksAtrasadas} atrasada${tasksAtrasadas!==1?'s':''}` : ''}`}>
+                                    {tasksPend} tarefa{tasksPend!==1?'s':''}
+                                  </Selo>
+                                )}
+                                {c.carteira && (
+                                  <Selo Icon={BriefcaseIcon} cor="var(--text3)" bg="var(--surface2)">{c.carteira}</Selo>
+                                )}
+                                {entregue && <Selo Icon={PackageCheckIcon} cor="var(--ok)" bg="var(--ok-dim)">entregue</Selo>}
+                              </span>
+                            </span>
                           </span>
-                          <span style={{ width:COL_MODULOS, flexShrink:0, display:'flex', alignItems:'center', gap:3, flexWrap:'wrap' }}>
+
+                          {/* Módulos: ícone do departamento colorido pelo status dele */}
+                          <span style={{ width:COL_MODULOS, flexShrink:0, display:'flex', alignItems:'center', gap:4, flexWrap:'wrap' }}>
                             {departamentos.map(d => {
                               const dd = deptData?.[d.id] || { s:'empty' }
+                              const vazio = dd.s === 'empty'
                               return (
-                                <span key={d.id} title={`${d.nome}: ${dd.val ?? ''}`}
-                                  style={{ width:6, height:6, borderRadius:'50%', flexShrink:0,
-                                    background: entregue ? 'var(--border2)' : S_COLOR[dd.s] || 'var(--border2)' }} />
+                                <span key={d.id} title={`${d.nome}: ${dd.val ?? '—'}${dd.s==='danger'?' · vencida':dd.s==='venc_breve'?' · vence em breve':dd.s==='ok'?' · em dia':''}`}
+                                  style={{ display:'flex', alignItems:'center', gap:3, height:22, padding:'0 6px', borderRadius:6, flexShrink:0,
+                                    fontSize:10, fontWeight:700, opacity: vazio ? .45 : 1,
+                                    background: entregue ? 'var(--surface2)' : S_BG[dd.s] || 'var(--surface2)',
+                                    color: entregue ? 'var(--text3)' : S_COLOR[dd.s] || 'var(--text3)',
+                                    border:`1px solid ${entregue || vazio ? 'var(--border)' : `color-mix(in srgb, ${S_COLOR[dd.s]}, transparent 65%)`}` }}>
+                                  <span style={{ fontSize:11 }}>{d.icone || '📋'}</span>
+                                  {!vazio && <span>{dd.s==='na' ? 'N/A' : `${dd.pct}%`}</span>}
+                                </span>
                               )
                             })}
                           </span>
-                          <span style={{ width:COL_CARTEIRA, flexShrink:0, fontSize:10.5, color:'var(--text3)', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
-                            {c.carteira && (
-                              <span style={{ background:'var(--surface2)', border:'1px solid var(--border)', borderRadius:99, padding:'1px 7px' }}>
-                                {c.carteira}
-                              </span>
-                            )}
-                            {!c.carteira && '—'}
-                          </span>
-                          <span style={{ width:COL_STATUS, flexShrink:0, display:'flex', alignItems:'center', justifyContent:'flex-end', gap:5 }}>
-                            {resVenc > 0 && !entregue && (
-                              <AlertCircleIcon size={12} color="var(--danger)" title={`${resVenc} vencida${resVenc!==1?'s':''}`} />
-                            )}
-                            <span style={{ fontSize:11.5, fontWeight:700, color: entregue ? 'var(--text3)' : S_COLOR[resS] }}>
-                              {resPct}%
+
+                          {/* Progresso das obrigações da competência */}
+                          <span style={{ width:COL_PROGRESSO, flexShrink:0, display:'flex', flexDirection:'column', alignItems:'flex-end', gap:4 }}>
+                            <span style={{ display:'flex', alignItems:'baseline', gap:5 }}>
+                              <span style={{ fontSize:10.5, color:'var(--text3)' }}>{obsTotal.length > 0 ? `${resOk}/${obsTotal.length}` : 'sem obrig.'}</span>
+                              <span style={{ fontSize:13, fontWeight:800, color: corStatus }}>{obsTotal.length > 0 ? `${resPct}%` : '—'}</span>
+                            </span>
+                            <span style={{ width:'100%', height:5, background:'var(--surface3)', borderRadius:99, overflow:'hidden', display:'flex' }}>
+                              <span style={{ height:'100%', width:`${resPct}%`, background: corStatus, borderRadius:99, transition:'width .3s' }} />
                             </span>
                           </span>
                         </div>
@@ -1062,6 +1184,14 @@ export default function Empresas({ onOpenTarefas, clienteInicialId, onClienteIni
                   </div>
                 </div>
               ))}
+
+              {/* Legenda das cores */}
+              <div style={{ display:'flex', alignItems:'center', gap:12, flexWrap:'wrap', fontSize:10.5, color:'var(--text3)' }}>
+                {[['danger','Vencida'],['venc_breve','Vence em breve'],['warn','Pendente'],['ok','Em dia'],['na','Não se aplica']].map(([s, label]) => {
+                  const I = S_ICON[s]
+                  return <span key={s} style={{ display:'flex', alignItems:'center', gap:4 }}><I size={11} color={S_COLOR[s]} /> {label}</span>
+                })}
+              </div>
             </div>
             )}
           </div>

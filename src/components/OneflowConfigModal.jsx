@@ -1,8 +1,11 @@
 import { useState } from 'react'
-import { InfoIcon, KeyIcon, RefreshCwIcon } from 'lucide-react'
+import { InfoIcon, KeyIcon, RefreshCwIcon, ExternalLinkIcon, AlertTriangleIcon } from 'lucide-react'
 import { Modal, useToast } from './shared'
 import { useStore } from '../store'
-import { getUserToken, autenticarEscritorioCompleto } from '../lib/oneflow'
+import { getUserToken, autenticarEscritorioCompleto, listarApps, extrairTokenColado, expiracaoDoToken } from '../lib/oneflow'
+
+const OMIE_LOGIN_URL = 'https://app.omie.com.br/login/'
+const OMIE_TOKEN_URL = 'https://app.omie.com.br/api/portal/users/me/token/'
 import { supabase } from '../lib/supabase'
 
 export default function OneflowConfigModal({ onClose }) {
@@ -13,7 +16,10 @@ export default function OneflowConfigModal({ onClose }) {
   const syncEmpresasOneFlow = useStore(s => s.syncEmpresasOneFlow)
   const { show } = useToast()
 
-  const [tab, setTab] = useState(oneflowConfig.configurado ? 'sincronizar' : 'login')
+  // A Omie passou a exigir reCAPTCHA no login do portal, então o login por
+  // senha direto pela API é recusado (403) — o caminho que funciona é o
+  // token colado, por isso ele virou a aba padrão.
+  const [tab, setTab] = useState(oneflowConfig.configurado ? 'sincronizar' : 'token')
   const [login, setLogin] = useState('')
   const [senha, setSenha] = useState('')
   const [token, setToken] = useState('')
@@ -56,14 +62,28 @@ export default function OneflowConfigModal({ onClose }) {
   }
 
   const salvarTokenManual = async () => {
-    if (!token.trim()) { show('Cole o token'); return }
-    const expiresAt = new Date(Date.now() + 23 * 60 * 60 * 1000).toISOString()
-    const cfg = { userToken: token.trim(), configurado: true, tokenExpiresAt: expiresAt }
-    setOneflowConfig(cfg)
-    await salvarTokenNoSupabase(cfg)
-    show('Token salvo!')
-    setTab('sincronizar')
+    const { token: jwt, refresh_token } = extrairTokenColado(token)
+    if (!jwt) { show('Não encontrei um token no texto colado (deve começar com "eyJ")'); return }
+    const expiresAt = expiracaoDoToken(jwt) || new Date(Date.now() + 23 * 60 * 60 * 1000).toISOString()
+    if (new Date(expiresAt) <= new Date()) { show('Esse token já venceu — gere um novo'); return }
+    setLoading(true)
+    try {
+      // Testa o token antes de salvar — senão um token inválido só aparecia
+      // como erro depois, na hora de sincronizar.
+      await listarApps(jwt)
+      const cfg = { userToken: jwt, refreshToken: refresh_token || undefined, configurado: true, tokenExpiresAt: expiresAt }
+      setOneflowConfig(cfg)
+      await salvarTokenNoSupabase(cfg)
+      setToken('')
+      show('Token válido e salvo!')
+      setTab('sincronizar')
+    } catch (e) {
+      show(`Erro: ${e.message}`)
+    }
+    setLoading(false)
   }
+
+  const tokenVencido = oneflowConfig.configurado && oneflowConfig.tokenExpiresAt && new Date(oneflowConfig.tokenExpiresAt) <= new Date()
 
   const sincronizarEmpresas = async () => {
     const t = oneflowConfig.userToken
@@ -116,9 +136,9 @@ export default function OneflowConfigModal({ onClose }) {
 
       {tab === 'login' && (
         <>
-          <div className="notice notice-info">
-            <InfoIcon size={14} />
-            <span>Informe as credenciais do usuário de integração do OneFlow/Omie.</span>
+          <div className="notice notice-info" style={{ background:'var(--warn-dim)', color:'var(--warn)' }}>
+            <AlertTriangleIcon size={14} />
+            <span>A Omie passou a exigir reCAPTCHA no login, então esse caminho costuma ser recusado. Se der erro 403, use a aba <strong>Token</strong>.</span>
           </div>
           <div className="form-field">
             <label className="form-label">Login (e-mail)</label>
@@ -138,24 +158,42 @@ export default function OneflowConfigModal({ onClose }) {
         <>
           <div className="notice notice-info">
             <InfoIcon size={14} />
-            <span>Cole o token JWT obtido em <strong>app.omie.com.br/api/portal/users/me/token/</strong></span>
+            <span>
+              O endereço do token só funciona com você <strong>logado na Omie no mesmo navegador</strong> — sem login a Omie recusa (403, página em branco).
+            </span>
           </div>
+          <ol style={{ fontSize:12, color:'var(--text2)', margin:'0 0 12px', paddingLeft:18, display:'flex', flexDirection:'column', gap:6 }}>
+            <li>
+              Entre na Omie normalmente:{' '}
+              <a href={OMIE_LOGIN_URL} target="_blank" rel="noreferrer" style={{ color:'var(--accent)', fontWeight:600, display:'inline-flex', alignItems:'center', gap:3 }}>
+                app.omie.com.br/login <ExternalLinkIcon size={11} />
+              </a>
+            </li>
+            <li>
+              Já logado, abra:{' '}
+              <a href={OMIE_TOKEN_URL} target="_blank" rel="noreferrer" style={{ color:'var(--accent)', fontWeight:600, display:'inline-flex', alignItems:'center', gap:3 }}>
+                /api/portal/users/me/token/ <ExternalLinkIcon size={11} />
+              </a>
+            </li>
+            <li>Copie tudo o que aparecer na página (pode ser o JSON inteiro) e cole abaixo.</li>
+          </ol>
           <div className="form-field">
-            <label className="form-label">Token JWT</label>
+            <label className="form-label">Token JWT (ou o JSON da página)</label>
             <textarea
               style={{ fontFamily:'monospace', fontSize:11 }}
-              placeholder="eyJ..."
+              placeholder='eyJ...  ou  {"token": "eyJ...", ...}'
               value={token}
               onChange={e => setToken(e.target.value)}
               rows={4}
             />
           </div>
-          <button className="btn btn-accent" style={{ width:'100%' }} onClick={salvarTokenManual}>
-            Salvar token
+          <button className="btn btn-accent" style={{ width:'100%' }} onClick={salvarTokenManual} disabled={loading}>
+            {loading ? 'Validando...' : 'Validar e salvar token'}
           </button>
           {oneflowConfig.configurado && (
-            <div style={{ marginTop:10, padding:'8px 12px', background:'var(--ok-dim)', borderRadius:'var(--r-sm)', fontSize:12, color:'var(--ok)' }}>
-              ✓ Token configurado — expira {oneflowConfig.tokenExpiresAt ? new Date(oneflowConfig.tokenExpiresAt).toLocaleString('pt-BR') : 'em breve'}
+            <div style={{ marginTop:10, padding:'8px 12px', background: tokenVencido ? 'var(--danger-dim)' : 'var(--ok-dim)', borderRadius:'var(--r-sm)', fontSize:12, color: tokenVencido ? 'var(--danger)' : 'var(--ok)' }}>
+              {tokenVencido ? '⚠ Token vencido em ' : '✓ Token configurado — expira '}
+              {oneflowConfig.tokenExpiresAt ? new Date(oneflowConfig.tokenExpiresAt).toLocaleString('pt-BR') : 'em breve'}
             </div>
           )}
         </>
@@ -167,6 +205,16 @@ export default function OneflowConfigModal({ onClose }) {
             <InfoIcon size={14} />
             <span>Busca as empresas do seu escritório no OneFlow e vincula automaticamente pelos CNPJs cadastrados.</span>
           </div>
+
+          {tokenVencido && (
+            <div className="notice" style={{ background:'var(--danger-dim)', color:'var(--danger)', cursor:'pointer' }} onClick={() => setTab('token')}>
+              <AlertTriangleIcon size={14} />
+              <span>
+                O token venceu em {new Date(oneflowConfig.tokenExpiresAt).toLocaleString('pt-BR')} — por isso as atualizações estão falhando.
+                {' '}<strong style={{ textDecoration:'underline' }}>Gerar um novo na aba Token</strong>.
+              </span>
+            </div>
+          )}
 
           {resultado && (
             <div className="card" style={{ marginBottom:14 }}>

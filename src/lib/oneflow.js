@@ -7,8 +7,51 @@ async function proxyFetch(url, token, bodyData) {
   if (token) payload.authorization = token
   if (bodyData) { payload.method = 'POST'; payload.bodyData = bodyData }
   const res = await fetch(PROXY_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
-  if (!res.ok) throw new Error('Proxy error ' + res.status)
+  if (!res.ok) {
+    let detalhe = ''
+    try {
+      const j = await res.json()
+      detalhe = j?.details?.message?.message || j?.message || j?.error || j?.raw || ''
+    } catch (e) { /* corpo vazio — a Omie devolve 403 sem corpo nenhum */ }
+    const err = new Error(mensagemErroOmie(res.status, url, detalhe))
+    err.status = res.status
+    throw err
+  }
   return res.json()
+}
+
+// A Omie responde 403 SEM corpo pra qualquer chamada não autenticada (token
+// vencido/errado) — e também pro login por senha, que passou a exigir
+// reCAPTCHA no portal e não aceita mais login direto pela API. Traduz o
+// "Proxy error 403" genérico de antes em algo que diga o que fazer.
+function mensagemErroOmie(status, url, detalhe) {
+  if (status === 403 || status === 401) {
+    if (url.includes('/users/login/')) return 'A Omie recusou o login (403). O portal passou a exigir reCAPTCHA e não aceita mais login pela API — use a aba "Token".'
+    return `A Omie recusou o token (${status}) — ele venceu ou é inválido. Gere um novo na aba "Token".`
+  }
+  return `Omie/OneFlow respondeu ${status}${detalhe ? ': ' + String(detalhe).slice(0, 160) : ''}`
+}
+
+// Aceita o token "cru" (eyJ...) ou o JSON inteiro que a página
+// app.omie.com.br/api/portal/users/me/token/ mostra ({"token": "...", ...}).
+export function extrairTokenColado(texto) {
+  const t = (texto || '').trim().replace(/^Bearer\s+/i, '')
+  if (t.startsWith('{')) {
+    try {
+      const j = JSON.parse(t)
+      return { token: j.token || j.access_token || null, refresh_token: j.refresh_token || null }
+    } catch (e) { /* cai no regex abaixo */ }
+  }
+  const m = t.match(/eyJ[\w-]+\.[\w-]+\.[\w-]+/)
+  return { token: m ? m[0] : null, refresh_token: null }
+}
+
+// Lê o "exp" do próprio JWT (em vez de chutar 23h) — null se não der.
+export function expiracaoDoToken(token) {
+  try {
+    const payload = JSON.parse(atob(token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')))
+    return payload.exp ? new Date(payload.exp * 1000).toISOString() : null
+  } catch (e) { return null }
 }
 
 export async function getUserToken(l, s) { return proxyFetch(OMIE_BASE + '/users/login/', null, { login: l, password: s }) }

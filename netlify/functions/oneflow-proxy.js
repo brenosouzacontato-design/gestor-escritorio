@@ -9,7 +9,7 @@ exports.handler = async function(event) {
     const { url, method, authorization, bodyData } = JSON.parse(event.body)
     const allowed = url && (url.startsWith("https://app.omie.com.br") || url.startsWith("https://rest.oneflow.com.br"))
     if (!allowed) return { statusCode: 400, headers: CORS, body: JSON.stringify({ error: "URL nao permitida" }) }
-    const headers = { "Content-Type": "application/json" }
+    const headers = { "Content-Type": "application/json", "Accept": "application/json", "User-Agent": "Mozilla/5.0 (GestorEscritorio)" }
     if (authorization) headers["Authorization"] = "Bearer " + authorization
     const fetchOpts = { method: method || "GET", headers: headers }
     if (bodyData) fetchOpts.body = JSON.stringify(bodyData)
