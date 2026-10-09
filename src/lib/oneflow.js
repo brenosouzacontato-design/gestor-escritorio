@@ -34,8 +34,13 @@ function mensagemErroOmie(status, url, detalhe) {
 
 // Aceita o token "cru" (eyJ...) ou o JSON inteiro que a página
 // app.omie.com.br/api/portal/users/me/token/ mostra ({"token": "...", ...}).
+//
+// Remove TODO espaço/quebra de linha antes de qualquer coisa: a página da
+// Omie quebra o token em várias linhas e a cópia traz espaços no meio dele
+// ("...LCJ1dWlkC I6Ij..."), o que faz a Omie recusar com 403. Token JWT e
+// refresh_token nunca têm espaço, e os outros campos do JSON são ignorados.
 export function extrairTokenColado(texto) {
-  const t = (texto || '').trim().replace(/^Bearer\s+/i, '')
+  const t = (texto || '').trim().replace(/^Bearer\s+/i, '').replace(/\s+/g, '')
   if (t.startsWith('{')) {
     try {
       const j = JSON.parse(t)
