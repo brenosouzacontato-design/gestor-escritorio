@@ -147,7 +147,50 @@ async function extrairTransacoesComDivisao(arquivo) {
   }
 
   if (falhas.length > 0) truncado = true;
-  return { transacoes: dedupBySobreposicao(transacoes), truncado, falhas: falhas.length > 0 ? falhas : undefined };
+  return { transacoes: dedupBySobreposicao(transacoes).map(corrigirTipoPelaDescricao), truncado, falhas: falhas.length > 0 ? falhas : undefined };
+}
+
+// Rede de segurança pra extração por IA: quando a própria descrição já diz
+// a direção ("Transferência enviada", "Pix recebido", "Pagamento de boleto
+// efetuado"...), ela vence o "tipo" que a IA devolveu — a IA olha uma
+// página por vez e, em extrato sem sinal no valor, às vezes erra a direção
+// (ex: "Depósito recebido ... * Débito" virava saída por causa do "Débito").
+function corrigirTipoPelaDescricao(t) {
+  const d = (t.descricao || '').toLowerCase();
+  if (/\b(recebid[oa]|dep[óo]sito recebido|reembolso|estorno|resgate)\b/.test(d)) return { ...t, tipo: 'entrada' };
+  if (/\b(enviad[oa]|pagamento (de boleto )?efetuado|tarifa|saque)\b/.test(d)) return { ...t, tipo: 'saida' };
+  return t;
+}
+
+// Extrato do Nubank: lido por regra direto do texto do PDF (ver
+// extratoNubank.js) — devolve null se o PDF não for do Nubank, pra cair na
+// extração por IA. O módulo (pdf.js) só é baixado quando um PDF é importado.
+async function extrairExtratoNubankSeFor(arquivo) {
+  const { lerLinhasPdf, pareceExtratoNubank, interpretarExtratoNubank } = await import('./extratoNubank');
+  let paginas;
+  try {
+    paginas = await lerLinhasPdf(await arquivo.arrayBuffer());
+  } catch {
+    return null; // PDF que o pdf.js não abre (ex: com senha) — tenta pela IA
+  }
+  if (!pareceExtratoNubank(paginas)) return null;
+  const { transacoes, totais, avisos } = interpretarExtratoNubank(paginas);
+  if (transacoes.length === 0) return null;
+  const soma = (tipo) => transacoes.filter((t) => t.tipo === tipo).reduce((s, t) => s + t.valor, 0);
+  const confere = (total, calculado) => total == null || Math.abs(Math.abs(total) - calculado) < 0.01;
+  const somaEntradas = soma('entrada');
+  const somaSaidas = soma('saida');
+  return {
+    transacoes,
+    truncado: false,
+    nubank: {
+      totais,
+      somaEntradas,
+      somaSaidas,
+      confere: totais != null && confere(totais.entradas, somaEntradas) && confere(totais.saidas, somaSaidas),
+      avisos,
+    },
+  };
 }
 
 // Sugere uma conta pra transação olhando lançamentos anteriores com
@@ -217,7 +260,9 @@ export default function ImportarExtratoTab({ empresaId }) {
     try {
       const ehExcel = /\.(xlsx|xls)$/i.test(arquivo.name);
       const [extracao, historico, regras] = await Promise.all([
-        ehExcel ? extrairTransacoesDeExcel(arquivo) : extrairTransacoesComDivisao(arquivo),
+        ehExcel
+          ? extrairTransacoesDeExcel(arquivo)
+          : extrairExtratoNubankSeFor(arquivo).then((r) => r || extrairTransacoesComDivisao(arquivo)),
         listarLancamentos(empresaId, {}),
         // regras de classificação são só um bônus — se falhar (ex: tabela
         // ainda não migrada), a extração não pode travar por causa disso
@@ -244,6 +289,14 @@ export default function ImportarExtratoTab({ empresaId }) {
       });
       setTransacoes(comSugestao);
       const avisos = [];
+      if (extracao.nubank) {
+        const { totais, somaEntradas, somaSaidas, confere, avisos: avisosNubank } = extracao.nubank;
+        const brl = (v) => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+        avisos.push(confere
+          ? `✓ Extrato Nubank lido direto do PDF: ${extraidas.length} movimentos — entradas ${brl(somaEntradas)} e saídas ${brl(somaSaidas)} conferem com os totais do extrato.`
+          : `⚠ Extrato Nubank lido direto do PDF, mas a soma NÃO bate com os totais do extrato (entradas ${brl(somaEntradas)}${totais?.entradas != null ? ` x ${brl(Math.abs(totais.entradas))}` : ''}; saídas ${brl(somaSaidas)}${totais?.saidas != null ? ` x ${brl(Math.abs(totais.saidas))}` : ''}). Confira antes de gerar os lançamentos.`);
+        if (avisosNubank.length > 0) avisos.push(`⚠ ${avisosNubank.slice(0, 3).join(' ')}`);
+      }
       if (extracao.falhas) {
         avisos.push(`⚠ Não consegui processar ${extracao.falhas.length} trecho${extracao.falhas.length === 1 ? '' : 's'} do extrato (${extracao.falhas.join('; ')}). As transações desses trechos não vieram — tente reimportar o período correspondente separado.`);
       } else if (extracao.truncado) {
@@ -290,6 +343,7 @@ export default function ImportarExtratoTab({ empresaId }) {
       const contaPendente = contasBanco.find((c) => c.codigo === CODIGO_CONTA_PENDENTE);
       const validas = transacoes.filter((t) => !t.ignorar);
 
+      const ocorrencias = new Map(); // chave base -> quantas vezes já apareceu nesse extrato
       const itens = validas.map((t) => {
         // sem conta classificada ainda: lança em "Valores a Identificar" pra
         // não perder a transação, e fica pra conciliar depois nos Lançamentos
@@ -310,7 +364,16 @@ export default function ImportarExtratoTab({ empresaId }) {
         // identifica a transação de forma estável pra não duplicar se o
         // mesmo extrato (ou um período sobreposto) for reimportado depois —
         // usa o identificador do banco quando tem, senão cai pra descrição
-        const extratoReferencia = [contaBancoId, t.data, t.tipo, valor.toFixed(2), t.identificador || t.descricao.trim()].join('|');
+        // Duas transações legítimas e idênticas no mesmo dia (ex: dois Pix de
+        // R$ 160 pra mesma pessoa — comum no Nubank, que não traz código da
+        // transação) davam a mesma chave e a 2ª era descartada como "já
+        // importada". A partir da 2ª ocorrência dentro do mesmo extrato a
+        // chave ganha "#2", "#3"... — a 1ª mantém a chave antiga, então
+        // reimportar o mesmo extrato continua sem duplicar.
+        const base = [contaBancoId, t.data, t.tipo, valor.toFixed(2), t.identificador || t.descricao.trim()].join('|');
+        const n = (ocorrencias.get(base) || 0) + 1;
+        ocorrencias.set(base, n);
+        const extratoReferencia = n === 1 ? base : `${base}#${n}`;
         return {
           data: t.data,
           historico: t.descricao,
