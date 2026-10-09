@@ -5,7 +5,8 @@ import {
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { abrirLinkAssinado } from '../documentos/documentosApi';
-import { GraficoFaturamento } from './PainelClientePage';
+import { GraficoFaturamento, ComparativoDas } from './PainelClientePage';
+import { calcularAliquotaNominal } from '../../lib/simplesNacional';
 import {
   obterResumoObrigacoes, obterResumoTarefas, obterDadosGerenciais, obterDocumentosPorObrigacao,
   obterDocumentosPorTarefa, obterSituacaoFiscalMaisRecente, obterCndManual, obterHistoricoFaturamento,
@@ -293,6 +294,17 @@ export default function PainelCompartilhadoPage({ clienteId, competencia: compet
                       <Mini label="DAS" valor={semMovimento ? 'Sem movimento' : fmt(dados.gerenciais.valor_das)} cor={semMovimento ? 'var(--ok)' : undefined} />
                     </div>
                   )}
+                  {/* Simples "cheio" (alíquota da tabela pelo RBT12/anexo) x DAS real pago — mostra a economia */}
+                  {(() => {
+                    const g = dados.gerenciais;
+                    const aliquotaCheia = g ? calcularAliquotaNominal(g.anexo, g.rbt12) : null;
+                    if (semMovimento || aliquotaCheia == null || !(Number(g.faturamento_periodo) > 0) || g.valor_das == null) return null;
+                    return (
+                      <div style={dados.historico.length > 0 ? { marginBottom: 14 } : { marginTop: 14 }}>
+                        <ComparativoDas aliquotaReal={aliquotaCheia} faturamento={Number(g.faturamento_periodo)} dasPago={Number(g.valor_das)} />
+                      </div>
+                    );
+                  })()}
                   {dados.historico.length > 0 && (
                     <div>
                       <div style={{ fontSize: 10.5, color: 'var(--text3)', fontWeight: 600, marginBottom: 6 }}>Evolução do faturamento</div>

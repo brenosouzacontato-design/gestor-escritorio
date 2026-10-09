@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import {
   WalletIcon, ClipboardListIcon, CheckSquareIcon, BarChart3Icon,
   CalendarIcon, DownloadIcon, CheckCircleIcon, FileTextIcon, TrendingUpIcon, LayersIcon,
-  AlertTriangleIcon, Share2Icon, ClockIcon, SettingsIcon, EyeIcon, EyeOffIcon,
+  AlertTriangleIcon, Share2Icon, ClockIcon, SettingsIcon, EyeIcon, EyeOffIcon, PiggyBankIcon,
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { calcularAliquotaNominal } from '../../lib/simplesNacional';
@@ -860,20 +860,39 @@ function RingCard({ nome, icone, s, pct, val, onClick }) {
 
 // Comparação "Simples cheio x pago" em barras — mais fácil de comparar de
 // relance do que dois números lado a lado.
-function ComparativoDas({ aliquotaReal, faturamento, dasPago }) {
+// Exportado também pro painel compartilhado (PainelCompartilhadoPage.jsx).
+export function ComparativoDas({ aliquotaReal, faturamento, dasPago }) {
   const cheio = faturamento * (aliquotaReal / 100);
   const max = Math.max(cheio, dasPago, 1);
   const economia = cheio - dasPago;
+  const pctEconomia = cheio > 0 ? (economia / cheio) * 100 : 0;
+  const aliquotaPaga = faturamento > 0 ? (dasPago / faturamento) * 100 : null;
   return (
     <div style={{ background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: '12px 14px' }}>
       <div style={{ fontSize: 10, color: 'var(--text3)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.03em', marginBottom: 9 }}>
-        Simples "cheio" (tabela) x Simples pago
+        Simples "cheio" (tabela) x Simples real (pago)
       </div>
       <BarraComparativa label={`Cheio (${fmtPct(aliquotaReal)})`} valor={cheio} pct={(cheio / max) * 100} cor="var(--text3)" />
-      <BarraComparativa label="Pago (DAS real)" valor={dasPago} pct={(dasPago / max) * 100} cor="var(--ok)" />
-      {Math.abs(economia) > 0.01 && (
-        <div style={{ fontSize: 11.5, color: economia > 0 ? 'var(--ok)' : 'var(--text2)', fontWeight: 600, marginTop: 9 }}>
-          {economia > 0 ? `Economia de ${fmt(economia)} nessa competência (aproveitamento de crédito/segregação de receita).` : `${fmt(-economia)} a mais que o "cheio" nessa competência.`}
+      <BarraComparativa label={`Real${aliquotaPaga != null ? ` (${fmtPct(aliquotaPaga)})` : ''}`} valor={dasPago} pct={(dasPago / max) * 100} cor="var(--ok)" />
+      {economia > 0.01 && (
+        <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 10, marginTop: 10, padding: '10px 12px', borderRadius: 'var(--r-md)', background: 'var(--ok-dim)' }}>
+          <div style={{ width: 32, height: 32, borderRadius: '50%', background: 'var(--ok)', color: '#fff', flexShrink: 0,
+            display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <PiggyBankIcon size={17} />
+          </div>
+          <div style={{ flex: 1, minWidth: 140 }}>
+            <div style={{ fontSize: 10, color: 'var(--ok)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.03em' }}>Economia na competência</div>
+            <div style={{ fontSize: 11, color: 'var(--text2)', marginTop: 1 }}>Aproveitamento de crédito / segregação de receita</div>
+          </div>
+          <div style={{ textAlign: 'right', marginLeft: 'auto' }}>
+            <div style={{ fontSize: 17, fontWeight: 800, color: 'var(--ok)', whiteSpace: 'nowrap' }}>{fmt(economia)}</div>
+            <div style={{ fontSize: 10.5, fontWeight: 700, color: 'var(--ok)' }}>{fmtPct(pctEconomia)} a menos</div>
+          </div>
+        </div>
+      )}
+      {economia < -0.01 && (
+        <div style={{ fontSize: 11.5, color: 'var(--text2)', fontWeight: 600, marginTop: 9 }}>
+          {fmt(-economia)} a mais que o "cheio" nessa competência.
         </div>
       )}
     </div>
@@ -882,12 +901,16 @@ function ComparativoDas({ aliquotaReal, faturamento, dasPago }) {
 
 function BarraComparativa({ label, valor, pct, cor }) {
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 7 }}>
-      <span style={{ fontSize: 11, color: 'var(--text2)', width: 104, flexShrink: 0 }}>{label}</span>
-      <div style={{ flex: 1, height: 8, background: 'var(--surface3)', borderRadius: 99, overflow: 'hidden' }}>
+    // rótulo e valor numa linha, barra embaixo ocupando a largura toda —
+    // assim continua legível no celular (link do cliente)
+    <div style={{ marginBottom: 9 }}>
+      <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 10, marginBottom: 4 }}>
+        <span style={{ fontSize: 11, color: 'var(--text2)' }}>{label}</span>
+        <span style={{ fontSize: 12.5, fontWeight: 700, whiteSpace: 'nowrap' }}>{fmt(valor)}</span>
+      </div>
+      <div style={{ height: 8, background: 'var(--surface3)', borderRadius: 99, overflow: 'hidden' }}>
         <div style={{ height: '100%', borderRadius: 99, width: `${pct}%`, background: cor }} />
       </div>
-      <span style={{ fontSize: 12, fontWeight: 700, width: 86, textAlign: 'right', flexShrink: 0 }}>{fmt(valor)}</span>
     </div>
   );
 }
