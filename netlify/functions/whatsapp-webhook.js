@@ -134,18 +134,30 @@ async function processarDocumento(body, midia, remoteJid) {
       if (!base64) throw new Error('A API do WhatsApp não devolveu o conteúdo do arquivo.')
     }
 
-    const arquivo = await uploadArquivo({ nomeArquivo, mimeType, base64, folderId: DRIVE_FOLDER_ID })
-    console.log('Arquivo salvo no Drive:', arquivo.id, arquivo.name)
+    // O backup no Drive é um extra: se falhar (ex: refresh token do Google
+    // vencido), o documento ainda precisa entrar no sistema — identificação,
+    // fila de revisão e baixa de guia por comprovante não dependem dele.
+    // `erroDrive` vai junto na observação do documento e na resposta do grupo.
+    let arquivo = null
+    let erroDrive = null
+    try {
+      arquivo = await uploadArquivo({ nomeArquivo, mimeType, base64, folderId: DRIVE_FOLDER_ID })
+      console.log('Arquivo salvo no Drive:', arquivo.id, arquivo.name)
 
-    const remetente = body?.data?.key?.participant || body?.data?.pushName || remoteJid
-    const { error: errLog } = await supabase.from('documentos_whatsapp').insert({
-      nome_arquivo: arquivo.name,
-      mime_type: mimeType,
-      remetente,
-      drive_file_id: arquivo.id,
-      drive_link: arquivo.webViewLink || null,
-    })
-    if (errLog) console.error('Erro ao gravar log do upload:', errLog.message)
+      const remetente = body?.data?.key?.participant || body?.data?.pushName || remoteJid
+      const { error: errLog } = await supabase.from('documentos_whatsapp').insert({
+        nome_arquivo: arquivo.name,
+        mime_type: mimeType,
+        remetente,
+        drive_file_id: arquivo.id,
+        drive_link: arquivo.webViewLink || null,
+      })
+      if (errLog) console.error('Erro ao gravar log do upload:', errLog.message)
+    } catch (eDrive) {
+      erroDrive = eDrive.message
+      console.error('Erro ao salvar no Drive (seguindo sem o backup):', erroDrive)
+    }
+    const avisoDrive = erroDrive ? `\n\n⚠️ Não consegui salvar a cópia no Drive: ${erroDrive.slice(0, 160)}` : ''
 
     // Comprovante de pagamento de uma guia em aberto: marca a guia como paga
     // e deixa o comprovante disponível no painel do cliente
@@ -157,8 +169,8 @@ async function processarDocumento(body, midia, remoteJid) {
       if (baixa.guia) {
         const valor = baixa.valorPago != null ? `\n💰 ${baixa.valorPago.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}` : ''
         const data = baixa.dataPagamento ? ` em ${baixa.dataPagamento.split('-').reverse().join('/')}` : ''
-        await enviarMensagem(remoteJid, `✅ *Comprovante identificado — guia marcada como paga!*\n👤 ${baixa.guia.clienteNome}\n📄 ${baixa.guia.titulo}${baixa.guia.competencia ? ` ${baixa.guia.competencia}` : ''}${valor}\n📅 Pago${data}\nO comprovante já está disponível no painel do cliente.`)
-        return { statusCode: 200, body: JSON.stringify({ success: true, driveFileId: arquivo.id, guiaPaga: baixa.guia.id }) }
+        await enviarMensagem(remoteJid, `✅ *Comprovante identificado — guia marcada como paga!*\n👤 ${baixa.guia.clienteNome}\n📄 ${baixa.guia.titulo}${baixa.guia.competencia ? ` ${baixa.guia.competencia}` : ''}${valor}\n📅 Pago${data}\nO comprovante já está disponível no painel do cliente.${avisoDrive}`)
+        return { statusCode: 200, body: JSON.stringify({ success: true, driveFileId: arquivo?.id || null, guiaPaga: baixa.guia.id }) }
       }
       pareceComprovante = baixa.ehComprovante
     } catch (eComp) {
@@ -195,7 +207,7 @@ async function processarDocumento(body, midia, remoteJid) {
         tamanho_bytes: Buffer.byteLength(base64, 'base64'),
         tipo_documento_sugerido: sugestao.tipoDocumento,
         confianca: sugestao.confianca,
-        observacao_ia: sugestao.observacao,
+        observacao_ia: erroDrive ? `${sugestao.observacao || ''} [Sem cópia no Drive: ${erroDrive.slice(0, 200)}]`.trim() : sugestao.observacao,
         candidato_sugerido_id: candidato?.id || null,
         candidato_sugerido_tipo: candidato?.tipo || null,
         status: sugestao.candidatoId ? 'identificado' : 'sem_match',
@@ -215,12 +227,15 @@ async function processarDocumento(body, midia, remoteJid) {
       console.error('Erro ao identificar documento:', eIdent.message)
     }
 
-    await enviarMensagem(remoteJid, `✅ *Documento salvo no Drive!*\n📄 ${arquivo.name}${mensagemIdentificacao}`)
-    return { statusCode: 200, body: JSON.stringify({ success: true, driveFileId: arquivo.id, nome: arquivo.name }) }
+    await enviarMensagem(remoteJid, `${arquivo ? '✅ *Documento salvo no Drive!*' : '✅ *Documento recebido!*'}\n📄 ${arquivo?.name || nomeArquivo}${mensagemIdentificacao}${avisoDrive}`)
+    return { statusCode: 200, body: JSON.stringify({ success: true, driveFileId: arquivo?.id || null, nome: arquivo?.name || nomeArquivo }) }
   } catch (e) {
     console.error('Erro ao processar documento:', e.message)
     await enviarMensagem(remoteJid, `❌ Erro ao salvar o documento: ${e.message}`)
-    return { statusCode: 500, body: e.message }
+    // 200 de propósito: a Evolution API reenvia o mesmo webhook até 10 vezes
+    // quando recebe erro, e reprocessar não conserta uma falha dessas — só
+    // repete a mesma mensagem de erro no grupo dez vezes
+    return { statusCode: 200, body: JSON.stringify({ success: false, error: e.message }) }
   }
 }
 
