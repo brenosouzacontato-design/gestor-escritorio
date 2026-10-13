@@ -1,17 +1,17 @@
 import { useEffect, useState } from 'react';
 import {
   CalendarIcon, DownloadIcon, CheckCircleIcon, AlertTriangleIcon, ClockIcon, TrendingUpIcon,
-  ClipboardListIcon, EyeIcon, EyeOffIcon, WalletIcon, CopyIcon, FileTextIcon, SettingsIcon,
+  ClipboardListIcon, EyeIcon, EyeOffIcon, WalletIcon, CopyIcon, FileTextIcon, SettingsIcon, UserIcon,
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { abrirLinkAssinado } from '../documentos/documentosApi';
-import { GraficoFaturamento, ComparativoDas, NotasEntrada } from './PainelClientePage';
+import { GraficoFaturamento, ComparativoDas, NotasEntrada, TarefasDoCliente } from './PainelClientePage';
 import { calcularAliquotaNominal } from '../../lib/simplesNacional';
 import {
   obterResumoObrigacoes, obterResumoTarefas, obterDadosGerenciais, obterDocumentosPorObrigacao,
   obterDocumentosPorTarefa, obterSituacaoFiscalMaisRecente, obterCndManual, obterHistoricoFaturamento,
   obterUltimaVisualizacaoPainel, extrairValorGuia, obterHonorariosPainel, obterDocumentosFiscais,
-  definirSecoesOcultasPainel, atualizarDadosGerenciais, atualizarValorGuia,
+  definirSecoesOcultasPainel, atualizarDadosGerenciais, atualizarValorGuia, obterTarefasDoCliente,
 } from './painelApi';
 import { obterConfigPix } from '../honorarios/honorariosApi';
 
@@ -181,7 +181,7 @@ export default function PainelCompartilhadoPage({ clienteId, competencia: compet
       setCarregando(true);
       setErro(null);
       try {
-        const [{ data: cliente, error: errCliente }, obs, tarefas, gerenciais, historico, situacaoFiscal, cndManual, honorarios, configPix, notasEntrada] = await Promise.all([
+        const [{ data: cliente, error: errCliente }, obs, tarefas, gerenciais, historico, situacaoFiscal, cndManual, honorarios, configPix, notasEntrada, tarefasCliente] = await Promise.all([
           supabase.from('clientes').select('nome, cnpj, regime, painel_secoes_ocultas').eq('id', clienteId).single(),
           obterResumoObrigacoes(clienteId, competencia),
           obterResumoTarefas(clienteId, competencia),
@@ -193,6 +193,7 @@ export default function PainelCompartilhadoPage({ clienteId, competencia: compet
           obterHonorariosPainel(clienteId, competencia).catch(() => []),
           obterConfigPix().catch(() => ({ chavePix: '', favorecido: '' })),
           obterDocumentosFiscais(clienteId, competencia, 'entrada').catch(() => []),
+          obterTarefasDoCliente(clienteId).catch(() => []),
         ]);
         if (errCliente) throw errCliente;
         const impostos = obs.itens.filter(ehImposto);
@@ -202,7 +203,7 @@ export default function PainelCompartilhadoPage({ clienteId, competencia: compet
           obterDocumentosPorObrigacao([...impostos, ...outrasObrigacoes].map((o) => o.id)).catch(() => ({})),
           obterDocumentosPorTarefa(tarefasArea.map((t) => t.id)).catch(() => ({})),
         ]);
-        setDados({ cliente, impostos, outrasObrigacoes, tarefasArea, anexos, anexosTarefa, gerenciais, historico, situacaoFiscal, cndManual, honorarios, configPix, notasEntrada });
+        setDados({ cliente, impostos, outrasObrigacoes, tarefasArea, anexos, anexosTarefa, gerenciais, historico, situacaoFiscal, cndManual, honorarios, configPix, notasEntrada, tarefasCliente });
       } catch (e) {
         setErro(e.message);
       } finally {
@@ -280,7 +281,9 @@ export default function PainelCompartilhadoPage({ clienteId, competencia: compet
 
   const guias = dados && montarGuias(dados, competencia).map((g) => ({ ...g, lendo: g.anexo && lendoGuias.has(g.anexo.id) }));
   const pendencias = dados && montarPendencias(dados.situacaoFiscal);
-  const itensArea = dados && montarObrigacoesTarefas(dados, competencia);
+  // o que foi atribuído ao cliente já aparece em "Suas tarefas" — não repete na lista geral
+  const idsDoCliente = new Set((dados?.tarefasCliente || []).map((t) => t.id));
+  const itensArea = dados && montarObrigacoesTarefas(dados, competencia).filter((it) => !idsDoCliente.has(it.id));
   const honorarios = dados ? montarHonorarios(dados.honorarios) : [];
   // Seção oculta pro cliente também sai da soma dos cards de vencidos/a
   // vencer — senão o total mostraria um valor que ele não tem como conferir
@@ -372,6 +375,15 @@ export default function PainelCompartilhadoPage({ clienteId, competencia: compet
 
           {!carregando && !erro && dados && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
+
+              {/* ── Tarefas atribuídas ao cliente e ainda pendentes (qualquer competência) ── */}
+              {dados.tarefasCliente.length > 0 && (
+                <Ocultavel chave="tarefas_cliente" {...propsOc}>
+                  <Secao titulo="Suas tarefas — o que precisamos de você" icone={<UserIcon size={14} />}>
+                    <TarefasDoCliente itens={dados.tarefasCliente} />
+                  </Secao>
+                </Ocultavel>
+              )}
 
               {/* ── 1. Fiscal: Declaração do Simples + evolução do faturamento ── */}
               {(() => {

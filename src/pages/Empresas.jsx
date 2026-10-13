@@ -1,10 +1,11 @@
 import { useState, useMemo, useEffect } from 'react'
-import { PlusIcon, XIcon, CheckCircleIcon, ClockIcon, AlertCircleIcon, MinusCircleIcon, ChevronRightIcon, CalendarIcon, CheckIcon, ZapIcon, RefreshCwIcon, Trash2Icon, ListIcon, LayoutGridIcon, Rows3Icon, ClipboardListIcon, BarChart3Icon, Share2Icon, EyeIcon, CheckSquareIcon, FileIcon, DownloadIcon, PencilIcon, FileTextIcon, GripVerticalIcon, BellIcon, BellRingIcon, UploadCloudIcon, Loader2Icon, SparklesIcon, Building2Icon, AlertTriangleIcon, HourglassIcon, PackageCheckIcon, InboxIcon, CircleDashedIcon, BriefcaseIcon } from 'lucide-react'
+import { PlusIcon, XIcon, CheckCircleIcon, ClockIcon, AlertCircleIcon, MinusCircleIcon, ChevronRightIcon, CalendarIcon, CheckIcon, ZapIcon, RefreshCwIcon, Trash2Icon, ListIcon, LayoutGridIcon, Rows3Icon, ClipboardListIcon, BarChart3Icon, Share2Icon, EyeIcon, CheckSquareIcon, FileIcon, DownloadIcon, PencilIcon, FileTextIcon, GripVerticalIcon, BellIcon, BellRingIcon, UserIcon, UploadCloudIcon, Loader2Icon, SparklesIcon, Building2Icon, AlertTriangleIcon, HourglassIcon, PackageCheckIcon, InboxIcon, CircleDashedIcon, BriefcaseIcon } from 'lucide-react'
 import { useStore } from '../store'
 import { DeptChip, PriDot, fmtDate, isOverdue, useToast } from '../components/shared'
 import { supabase } from '../lib/supabase'
 import { listarDepartamentos, criarDepartamento, gerarObrigacoesRecorrentesCompetencia } from './andamento/andamentoApi'
-import { NovaObrigacaoModal, NovaTarefaModuloModal, ModalTarefasLote, ModalObrigacoesLote, ModalBase } from './andamento/modaisObrigacao'
+import { NovaObrigacaoModal, NovaTarefaModuloModal, ModalTarefasLote, ModalObrigacoesLote, ModalBase, ModalAtribuir } from './andamento/modaisObrigacao'
+import { atribuidaAoCliente } from '../lib/responsavel'
 import { uploadDeclaracaoSimples, uploadSituacaoFiscal, obterCndManual, salvarCndManual } from './painel/painelApi'
 import PainelViewerModal from './painel/PainelViewerModal'
 import {
@@ -115,6 +116,19 @@ function DeptPill({ data, onClick }) {
 // Cabeçalho de cada coluna do modal da empresa (obrigações/tarefas "a
 // entregar" x "entregue") — só o nome e a contagem, o filtro em si já vem
 // pronto de fora (aEntregar/entregues).
+// Quem está com a obrigação/tarefa — destacado quando é o cliente (o item
+// aparece no painel dele enquanto pendente, ver src/lib/responsavel.js).
+function ChipResponsavel({ item }) {
+  const cliente = atribuidaAoCliente(item)
+  return (
+    <span title={cliente ? 'Atribuída ao cliente — aparece no painel dele enquanto pendente' : `Atribuída a ${item.responsavel}`}
+      style={{ display:'inline-flex', alignItems:'center', gap:3, fontSize:9.5, fontWeight:600, borderRadius:99, padding:'1px 7px',
+        color: cliente ? 'var(--accent)' : 'var(--text2)', background: cliente ? 'var(--accent-dim)' : 'var(--surface3)' }}>
+      <UserIcon size={9} /> {item.responsavel}
+    </span>
+  )
+}
+
 function ColunaTitulo({ label, qtd, cor }) {
   return (
     <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:6,
@@ -173,6 +187,7 @@ export default function Empresas({ onOpenTarefas, clienteInicialId, onClienteIni
   const [showLoteObs,      setShowLoteObs]    = useState(false)
   const [tarefaEditando,   setTarefaEditando] = useState(null) // tarefa aberta pro modal de edição
   const [lembreteAlvo,     setLembreteAlvo]   = useState(null) // {obrigacaoId} ou {tarefaId} aberto pro modal de lembrete
+  const [atribuirAlvo,     setAtribuirAlvo]   = useState(null) // {obrigacaoId} ou {tarefaId} aberto pro modal "Atribuir a"
   const [showCndManual,   setShowCndManual]   = useState(false) // modal de marcar CND estadual/municipal
   const [painelViewer,    setPainelViewer]    = useState(null) // {indiceInicial} — abre o carrossel de painéis a partir da empresa do drawer
   const [lembretesPendentes, setLembretesPendentes] = useState([]) // dos itens do drawer aberto
@@ -1375,13 +1390,19 @@ export default function Empresas({ onOpenTarefas, clienteInicialId, onClienteIni
                     return (
                       <div style={{ background:'var(--surface)', border:'1px solid var(--border)',
                         borderLeft: vencendo ? `3px solid ${COR_VENCENDO}` : '1px solid var(--border)', borderRadius:8, padding:'10px 12px' }}>
-                        <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:6, marginBottom: o.vencimento ? 6 : 0 }}>
+                        <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:6, marginBottom: (o.vencimento || o.responsavel) ? 6 : 0 }}>
                           <span style={{ fontSize:12, fontWeight:500, color:'var(--text1)' }}>{o.titulo || o.tipo}</span>
                           <button onClick={() => setLembreteAlvo({ obrigacaoId: o.id, titulo: o.titulo || o.tipo, lembrete })}
                             title={lembrete ? `Lembrete pra ${new Date(lembrete.data_hora).toLocaleString('pt-BR')}` : 'Marcar lembrete'}
                             style={{ background:'none', border:'none', cursor:'pointer', padding:2, flexShrink:0,
                               color: lembrete ? 'var(--accent)' : 'var(--text3)' }}>
                             {lembrete ? <BellRingIcon size={13} /> : <BellIcon size={13} />}
+                          </button>
+                          <button onClick={() => setAtribuirAlvo({ obrigacaoId: o.id, titulo: o.titulo || o.tipo, responsavel: o.responsavel })}
+                            title={o.responsavel ? `Atribuída a ${o.responsavel}` : 'Atribuir a alguém'}
+                            style={{ background:'none', border:'none', cursor:'pointer', padding:2, flexShrink:0,
+                              color: o.responsavel ? 'var(--accent)' : 'var(--text3)' }}>
+                            <UserIcon size={13} />
                           </button>
                           <select
                             value={o.status || 'pendente'}
@@ -1404,6 +1425,7 @@ export default function Empresas({ onOpenTarefas, clienteInicialId, onClienteIni
                             {o.status==='vencido'?'⚠ ':vencendo?'⏰ vence em breve · ':''}Venc. {new Date(o.vencimento+'T12:00:00').toLocaleDateString('pt-BR')}
                           </div>
                         )}
+                        {o.responsavel && <div style={{ marginTop: o.vencimento ? 5 : 0 }}><ChipResponsavel item={o} /></div>}
                       </div>
                     )
                   }
@@ -1457,6 +1479,7 @@ export default function Empresas({ onOpenTarefas, clienteInicialId, onClienteIni
                                   <CalendarIcon size={9} />{overdue?'⚠ ':''}{fmtDate(t.vencimento)}
                                 </span>
                               )}
+                              {t.responsavel && <ChipResponsavel item={t} />}
                             </div>
                           </div>
                           <button onClick={() => setLembreteAlvo({ tarefaId: t.id, titulo: t.titulo, lembrete })}
@@ -1464,6 +1487,12 @@ export default function Empresas({ onOpenTarefas, clienteInicialId, onClienteIni
                             style={{ background:'none', border:'none', cursor:'pointer', padding:2, flexShrink:0,
                               color: lembrete ? 'var(--accent)' : 'var(--text3)' }}>
                             {lembrete ? <BellRingIcon size={12} /> : <BellIcon size={12} />}
+                          </button>
+                          <button onClick={() => setAtribuirAlvo({ tarefaId: t.id, titulo: t.titulo, responsavel: t.responsavel })}
+                            title={t.responsavel ? `Atribuída a ${t.responsavel}` : 'Atribuir a alguém'}
+                            style={{ background:'none', border:'none', cursor:'pointer', padding:2, flexShrink:0,
+                              color: t.responsavel ? 'var(--accent)' : 'var(--text3)' }}>
+                            <UserIcon size={12} />
                           </button>
                           <button onClick={() => setTarefaEditando(t)} title="Editar"
                             style={{ background:'none', border:'none', color:'var(--text3)', cursor:'pointer', padding:2, flexShrink:0 }}>
@@ -1592,6 +1621,15 @@ export default function Empresas({ onOpenTarefas, clienteInicialId, onClienteIni
           tarefa={tarefaEditando}
           onClose={() => setTarefaEditando(null)}
           onSaved={async () => { setTarefaEditando(null); await fetchTarefas() }}
+        />
+      )}
+
+      {/* Modal atribuir obrigação/tarefa a alguém (ou ao cliente) */}
+      {atribuirAlvo && (
+        <ModalAtribuir
+          alvo={atribuirAlvo}
+          onClose={() => setAtribuirAlvo(null)}
+          onSaved={async () => { const ehObrigacao = !!atribuirAlvo.obrigacaoId; setAtribuirAlvo(null); await (ehObrigacao ? fetchObrigacoes() : fetchTarefas()) }}
         />
       )}
 

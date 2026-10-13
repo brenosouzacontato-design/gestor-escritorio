@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import {
   WalletIcon, ClipboardListIcon, CheckSquareIcon, BarChart3Icon,
   CalendarIcon, DownloadIcon, CheckCircleIcon, FileTextIcon, TrendingUpIcon, LayersIcon,
-  AlertTriangleIcon, Share2Icon, ClockIcon, SettingsIcon, EyeIcon, EyeOffIcon, PiggyBankIcon, ChevronDownIcon,
+  AlertTriangleIcon, Share2Icon, ClockIcon, SettingsIcon, EyeIcon, EyeOffIcon, PiggyBankIcon, ChevronDownIcon, UserIcon,
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { calcularAliquotaNominal } from '../../lib/simplesNacional';
@@ -13,6 +13,7 @@ import {
   obterResumoObrigacoes, obterResumoTarefas, obterResumoFinanceiro, obterDadosGerenciais,
   obterDocumentosPorObrigacao, obterSituacaoFiscal, obterHistoricoFaturamento, obterCndManual,
   obterPendenciasAnteriores, obterValoresDasPendencias, obterDocumentosFiscais, definirSecoesOcultasPainel,
+  obterTarefasDoCliente,
 } from './painelApi';
 
 const STATUS_OBS_LABEL = { pendente: 'Pendente', concluido: 'Concluído', nao_aplica: 'N/A', vencido: 'Vencido' };
@@ -171,6 +172,7 @@ export default function PainelClientePage({ clienteId, competencia: competenciaI
   const [pendenciasAnteriores, setPendenciasAnteriores] = useState({ obrigacoes: [], tarefas: [] });
   const [valoresDasPendencias, setValoresDasPendencias] = useState({}); // competencia -> valor_das, só das pendências que parecem DAS
   const [documentosFiscais, setDocumentosFiscais] = useState([]);
+  const [tarefasCliente, setTarefasCliente] = useState([]);
   const [anexosObrigacao, setAnexosObrigacao] = useState({});
   const [carregando, setCarregando] = useState(true);
   const [erro, setErro] = useState(null);
@@ -181,7 +183,7 @@ export default function PainelClientePage({ clienteId, competencia: competenciaI
       setErro(null);
       try {
         const { dataInicio, dataFim } = competenciaParaPeriodo(competencia);
-        const [{ data: clienteData, error: errCliente }, resObs, resTarefas, resFinanceiro, itensIdentificar, dadosSimples, historico, situFiscal, cndManualData, pendenciasAnt, docsFiscais] = await Promise.all([
+        const [{ data: clienteData, error: errCliente }, resObs, resTarefas, resFinanceiro, itensIdentificar, dadosSimples, historico, situFiscal, cndManualData, pendenciasAnt, docsFiscais, tarefasDoCliente] = await Promise.all([
           supabase.from('clientes').select('nome, cnpj, regime, carteira, painel_secoes_ocultas').eq('id', clienteId).single(),
           obterResumoObrigacoes(clienteId, competencia),
           obterResumoTarefas(clienteId, competencia),
@@ -196,6 +198,8 @@ export default function PainelClientePage({ clienteId, competencia: competenciaI
           obterCndManual(clienteId, competencia).catch(() => null),
           obterPendenciasAnteriores(clienteId, competencia).catch(() => ({ obrigacoes: [], tarefas: [] })),
           obterDocumentosFiscais(clienteId, competencia).catch(() => []),
+          // coluna nova em tarefas (supabase-schema-responsavel.sql) — tolera ainda não existir
+          obterTarefasDoCliente(clienteId).catch(() => []),
         ]);
         if (errCliente) throw errCliente;
         setCliente(clienteData);
@@ -209,6 +213,7 @@ export default function PainelClientePage({ clienteId, competencia: competenciaI
         setCndManual(cndManualData);
         setPendenciasAnteriores(pendenciasAnt);
         setDocumentosFiscais(docsFiscais);
+        setTarefasCliente(tarefasDoCliente);
         const competenciasDas = [...new Set(
           pendenciasAnt.obrigacoes
             .filter((o) => `${o.titulo || ''} ${o.tipo || ''}`.toLowerCase().includes('das'))
@@ -393,6 +398,15 @@ export default function PainelClientePage({ clienteId, competencia: competenciaI
 
                   return (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 22 }}>
+
+                    {tarefasCliente.length > 0 && (
+                      <SecaoToggleable chave="tarefas_cliente" {...propsSecao}>
+                        <div>
+                          <SecaoTitulo icone={<UserIcon size={14} />}>Suas tarefas — o que precisamos de você</SecaoTitulo>
+                          <TarefasDoCliente itens={tarefasCliente} />
+                        </div>
+                      </SecaoToggleable>
+                    )}
 
                     {gerenciais && (
                       <SecaoToggleable chave="kpis" {...propsSecao}>
@@ -983,6 +997,39 @@ function CardSituacaoCND({ label, situacao, anexo, onBaixarAnexo }) {
       <span style={{ display: 'inline-block', marginTop: 5, fontSize: 12, fontWeight: 700, borderRadius: 99, padding: '3px 10px', color: cor, background: corDim }}>
         {texto}
       </span>
+    </div>
+  );
+}
+
+// Tarefas/obrigações que o escritório atribuiu ao cliente e ainda estão
+// pendentes (obterTarefasDoCliente) — o que depende dele. Usado nas duas
+// versões do painel.
+export function TarefasDoCliente({ itens }) {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+      {itens.map((it) => {
+        const dias = diasParaVencer(it.vencimento);
+        const atrasada = dias != null && dias < 0;
+        const cor = atrasada ? 'var(--danger)' : dias != null && dias <= 3 ? 'var(--warn)' : 'var(--accent)';
+        return (
+          <div key={it.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', background: 'var(--bg)',
+            border: '1px solid var(--border)', borderLeft: `3px solid ${cor}`, borderRadius: 'var(--r-md)', flexWrap: 'wrap' }}>
+            <div style={{ flex: '1 1 200px', minWidth: 0 }}>
+              <div style={{ fontSize: 13, color: 'var(--text1)', fontWeight: 700 }}>{it.titulo}</div>
+              {it.detalhe && <div style={{ fontSize: 11.5, color: 'var(--text2)', marginTop: 2, whiteSpace: 'pre-wrap' }}>{it.detalhe}</div>}
+              {it.vencimento && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 3, fontSize: 10.5, color: atrasada || (dias != null && dias <= 3) ? cor : 'var(--text3)', fontWeight: 600, marginTop: 3 }}>
+                  <CalendarIcon size={10} /> {fmtData(it.vencimento)} · {fmtDiasParaVencer(dias)}
+                </div>
+              )}
+            </div>
+            <span style={{ fontSize: 10, fontWeight: 700, borderRadius: 99, padding: '3px 9px', whiteSpace: 'nowrap', marginLeft: 'auto',
+              color: atrasada ? 'var(--danger)' : 'var(--warn)', background: atrasada ? 'var(--danger-dim)' : 'var(--warn-dim)' }}>
+              {atrasada ? 'Atrasada' : 'Pendente'}
+            </span>
+          </div>
+        );
+      })}
     </div>
   );
 }

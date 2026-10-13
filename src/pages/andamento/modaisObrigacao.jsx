@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react'
-import { PlusIcon, SaveIcon } from 'lucide-react'
+import { PlusIcon, SaveIcon, UserIcon } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
+import { useStore } from '../../store'
+import { RESPONSAVEL_CLIENTE, atribuidaAoCliente } from '../../lib/responsavel'
 import {
   listarTiposObrigacao, criarTipoObrigacaoComEtapas, criarObrigacaoComEtapas,
   calcularVencimento, criarTarefasLote, criarObrigacoesLote,
@@ -171,21 +173,28 @@ export function NovaTarefaModuloModal({ cliente, dept, tarefa, onClose, onSaved 
   const [prioridade,   setPrioridade]   = useState(tarefa?.prioridade || 'normal')
   const [vencimento,   setVencimento]   = useState(tarefa?.vencimento || '')
   const [observacao,   setObservacao]   = useState(tarefa?.observacao || '')
+  const [responsavel,  setResponsavel]  = useState(tarefa?.responsavel || '')
   const [saving,       setSaving]       = useState(false)
 
   const handleSave = async () => {
     if (!titulo.trim()) return
     setSaving(true)
+    // só manda a coluna quando o campo mudou — sem o schema novo aplicado
+    // (supabase-schema-responsavel.sql) ela não existe em tarefas, e mandá-la
+    // sempre derrubaria o salvamento de quem nem usou o campo
+    const atribuicao = responsavel.trim() !== (tarefa?.responsavel || '') ? { responsavel: responsavel.trim() || null } : {}
     if (editando) {
       await supabase.from('tarefas').update({
         titulo: titulo.trim(), departamento, prioridade,
         vencimento: vencimento || null, observacao: observacao || null,
+        ...atribuicao,
         updated_at: new Date().toISOString(),
       }).eq('id', tarefa.id)
     } else {
       await supabase.from('tarefas').insert({
         titulo: titulo.trim(), departamento, departamento_id: dept?.id || null, prioridade,
         vencimento: vencimento || null, observacao: observacao || null,
+        ...atribuicao,
         cliente_id: cliente.id, concluida: false,
         updated_at: new Date().toISOString(),
       })
@@ -227,6 +236,7 @@ export function NovaTarefaModuloModal({ cliente, dept, tarefa, onClose, onSaved 
           <input type="date" value={vencimento} onChange={e => setVencimento(e.target.value)}
             style={{ width:'100%', background:'var(--surface2)', border:'1px solid var(--border)', borderRadius:8, padding:'8px 10px', fontSize:13, color:'var(--text1)', outline:'none' }} />
         </div>
+        <CampoResponsavel value={responsavel} onChange={setResponsavel} />
         <div>
           <label style={{ fontSize:11, color:'var(--text2)', display:'block', marginBottom:4 }}>Observações</label>
           <textarea value={observacao} onChange={e => setObservacao(e.target.value)} rows={3}
@@ -514,6 +524,74 @@ export function ModalObrigacoesLote({ departamentos, clientes, competenciaInicia
         <button onClick={handleSave} disabled={saving||!podeSalvar}
           style={{ flex:1, background:'var(--accent)', border:'none', borderRadius:8, padding:'9px', fontSize:12, color:'#fff', fontWeight:500, cursor:'pointer', opacity:(saving||!podeSalvar)?.6:1 }}>
           {saving?'Criando...':`Criar para ${clientesSel.length} empresa${clientesSel.length!==1?'s':''}`}
+        </button>
+      </div>
+    </ModalBase>
+  )
+}
+
+// ── Campo "Atribuir a" ───────────────────────────────────────────────────────
+// Nome livre de quem cuida do item, com sugestão dos nomes já usados em
+// outras tarefas/obrigações, e um atalho pra atribuir ao cliente — nesse
+// caso o item vira pendência dele no painel compartilhado.
+export function CampoResponsavel({ value, onChange }) {
+  const tarefas = useStore(s => s.tarefas)
+  const obrigacoes = useStore(s => s.obrigacoes)
+  const doCliente = atribuidaAoCliente({ responsavel: value })
+  const nomes = [...new Set([...tarefas, ...obrigacoes].map(i => (i.responsavel || '').trim()).filter(n => n && !atribuidaAoCliente({ responsavel: n })))].sort()
+  return (
+    <div>
+      <label style={{ fontSize:11, color:'var(--text2)', display:'block', marginBottom:4 }}>Atribuir a</label>
+      <div style={{ display:'flex', gap:8 }}>
+        <input value={value} onChange={e => onChange(e.target.value)} list="responsaveis-sugeridos"
+          placeholder="Nome de quem vai fazer..."
+          style={{ flex:1, minWidth:0, background:'var(--surface2)', border:'1px solid var(--border)', borderRadius:8, padding:'8px 10px', fontSize:13, color:'var(--text1)', outline:'none' }} />
+        <datalist id="responsaveis-sugeridos">
+          {nomes.map(n => <option key={n} value={n} />)}
+        </datalist>
+        <button type="button" onClick={() => onChange(doCliente ? '' : RESPONSAVEL_CLIENTE)}
+          title="Atribuir ao cliente — aparece no painel dele enquanto estiver pendente"
+          style={{ display:'inline-flex', alignItems:'center', gap:5, borderRadius:8, padding:'0 12px', fontSize:12, fontWeight:600, cursor:'pointer', whiteSpace:'nowrap',
+            border:`1px solid ${doCliente?'var(--accent)':'var(--border)'}`, background:doCliente?'var(--accent)':'var(--surface2)', color:doCliente?'#fff':'var(--text2)' }}>
+          <UserIcon size={13} /> Cliente
+        </button>
+      </div>
+      {doCliente && (
+        <p style={{ fontSize:11, color:'var(--text3)', marginTop:5 }}>Aparece no painel do cliente como tarefa dele enquanto estiver pendente.</p>
+      )}
+    </div>
+  )
+}
+
+// ── Modal Atribuir (obrigação ou tarefa já existente) ────────────────────────
+// `alvo`: { obrigacaoId } ou { tarefaId }, mais titulo e responsavel atual.
+export function ModalAtribuir({ alvo, onClose, onSaved }) {
+  const [responsavel, setResponsavel] = useState(alvo.responsavel || '')
+  const [saving, setSaving] = useState(false)
+  const [erro, setErro] = useState(null)
+
+  const handleSalvar = async () => {
+    setSaving(true)
+    setErro(null)
+    const { error } = await supabase
+      .from(alvo.obrigacaoId ? 'obrigacoes' : 'tarefas')
+      .update({ responsavel: responsavel.trim() || null, updated_at: new Date().toISOString() })
+      .eq('id', alvo.obrigacaoId || alvo.tarefaId)
+    setSaving(false)
+    if (error) { setErro(error.message); return }
+    onSaved()
+  }
+
+  return (
+    <ModalBase onClose={onClose} titulo={`👤 Atribuir — ${alvo.titulo}`}>
+      <CampoResponsavel value={responsavel} onChange={setResponsavel} />
+      {erro && <p style={{ fontSize:11, color:'var(--danger)', marginTop:8 }}>Erro ao salvar: {erro}</p>}
+      <div style={{ display:'flex', gap:8, marginTop:16 }}>
+        <button onClick={onClose}
+          style={{ flex:1, background:'var(--surface2)', border:'1px solid var(--border)', borderRadius:8, padding:'9px', fontSize:12, color:'var(--text2)', cursor:'pointer' }}>Cancelar</button>
+        <button onClick={handleSalvar} disabled={saving}
+          style={{ flex:1, background:'var(--accent)', border:'none', borderRadius:8, padding:'9px', fontSize:12, color:'#fff', fontWeight:500, cursor:'pointer', opacity:saving?.6:1 }}>
+          {saving?'Salvando...':'Salvar'}
         </button>
       </div>
     </ModalBase>

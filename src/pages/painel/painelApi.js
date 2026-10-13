@@ -519,6 +519,35 @@ export async function obterDocumentosPorTarefa(tarefaIds) {
   return Object.fromEntries(data.map((d) => [d.tarefa_id, d]));
 }
 
+// ---------- Tarefas do cliente ----------
+
+// Tarefas e obrigações atribuídas ao próprio cliente ("Atribuir a" →
+// Cliente, ver src/lib/responsavel.js) e ainda pendentes — de qualquer
+// competência: o que depende do cliente continua no painel até ser
+// resolvido. Devolve já no formato único que o painel mostra.
+export async function obterTarefasDoCliente(clienteId) {
+  const [{ data: tarefas, error: errTar }, { data: obrigacoes, error: errObs }] = await Promise.all([
+    supabase
+      .from('tarefas')
+      .select('id, titulo, observacao, vencimento, competencia')
+      .eq('cliente_id', clienteId)
+      .eq('concluida', false)
+      .ilike('responsavel', 'cliente'),
+    supabase
+      .from('obrigacoes')
+      .select('id, titulo, tipo, vencimento, competencia')
+      .eq('cliente_id', clienteId)
+      .in('status', ['pendente', 'vencido'])
+      .ilike('responsavel', 'cliente'),
+  ]);
+  if (errTar) throw errTar;
+  if (errObs) throw errObs;
+  return [
+    ...(tarefas || []).map((t) => ({ id: t.id, titulo: t.titulo, detalhe: t.observacao || null, vencimento: t.vencimento ? t.vencimento.split('T')[0] : null, competencia: t.competencia || null })),
+    ...(obrigacoes || []).map((o) => ({ id: o.id, titulo: o.titulo || o.tipo, detalhe: null, vencimento: o.vencimento || null, competencia: o.competencia || null })),
+  ].sort((a, b) => (a.vencimento || '9999').localeCompare(b.vencimento || '9999'));
+}
+
 // ---------- Log de visualização do link compartilhado ----------
 
 // Gravado só quando o link público é aberto (main.jsx) — as prévias de
