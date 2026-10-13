@@ -5,7 +5,7 @@ import { useToast } from '../../components/shared'
 import {
   uploadArquivo, listarCandidatos, identificarDocumento, criarDocumento, confirmarDocumento,
   listarDocumentosConfirmados, listarDocumentosPendentes, excluirDocumento,
-  abrirLinkAssinado, itemResolvido, listarUploadsWhatsapp,
+  abrirLinkAssinado, itemResolvido, listarUploadsWhatsapp, listarGuiasEmAberto, pagarGuiaComComprovante,
 } from './documentosApi'
 
 const ACCEPT = '.pdf,.jpg,.jpeg,.png,.webp,application/pdf,image/jpeg,image/png,image/webp'
@@ -252,6 +252,9 @@ function AbaRevisar() {
 
   const [docs, setDocs] = useState(null) // null = carregando
   const [candidatos, setCandidatos] = useState([])
+  // guias de imposto em aberto — escolher uma no "Dar baixa em" trata o
+  // documento como comprovante de pagamento dela (candidatoId "guia:<id>")
+  const [guias, setGuias] = useState([])
   const [erro, setErro] = useState(null)
   const [selecoes, setSelecoes] = useState({}) // { [docId]: { clienteId, candidatoId } }
   const [processando, setProcessando] = useState(null) // id do doc em confirmação/exclusão
@@ -267,6 +270,8 @@ function AbaRevisar() {
         }])))
       })
       .catch((e) => setErro(e.message))
+    // colunas de pagamento (supabase-schema-guia-pagamento.sql) — tolera ainda não existirem
+    listarGuiasEmAberto().then(setGuias).catch(() => setGuias([]))
   }
   useEffect(() => { carregar() }, [])
 
@@ -289,6 +294,14 @@ function AbaRevisar() {
     const sel = selecoes[doc.id] || {}
     setProcessando(doc.id)
     try {
+      if ((sel.candidatoId || '').startsWith('guia:')) {
+        const guiaId = sel.candidatoId.slice(5)
+        await pagarGuiaComComprovante(doc.id, guiaId)
+        setDocs((prev) => prev.filter((d) => d.id !== doc.id))
+        setGuias((prev) => prev.filter((g) => g.id !== guiaId))
+        show?.('Guia marcada como paga — comprovante disponível no painel do cliente.')
+        return
+      }
       const candidato = sel.candidatoId ? candidatos.find((c) => c.id === sel.candidatoId) : null
       await confirmarDocumento(doc.id, { clienteId: sel.clienteId || null, candidato })
       setDocs((prev) => prev.filter((d) => d.id !== doc.id))
@@ -331,6 +344,8 @@ function AbaRevisar() {
       </p>
       {docs.map((doc) => {
         const sel = selecoes[doc.id] || { clienteId: '', candidatoId: '' }
+        const guiasCliente = guias.filter((g) => g.clienteId === sel.clienteId)
+        const ehPagamento = (sel.candidatoId || '').startsWith('guia:')
         return (
           <div key={doc.id} style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)', padding: '12px 14px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
@@ -361,6 +376,11 @@ function AbaRevisar() {
                   {candidatos.filter((c) => c.clienteId === sel.clienteId).map((c) => (
                     <option key={c.id} value={c.id}>{c.rotulo}</option>
                   ))}
+                  {guiasCliente.length > 0 && (
+                    <optgroup label="É comprovante de pagamento da guia">
+                      {guiasCliente.map((g) => <option key={g.id} value={`guia:${g.id}`}>{g.rotulo}</option>)}
+                    </optgroup>
+                  )}
                 </select>
               </div>
             </div>
@@ -375,7 +395,7 @@ function AbaRevisar() {
               </button>
               <button className="btn btn-accent btn-sm" onClick={() => confirmar(doc)} disabled={processando === doc.id}>
                 {sel.candidatoId ? <SearchCheckIcon size={13} /> : <ArchiveIcon size={13} />}
-                {processando === doc.id ? 'Confirmando...' : sel.candidatoId ? 'Confirmar e dar baixa' : 'Confirmar (arquivar)'}
+                {processando === doc.id ? 'Confirmando...' : ehPagamento ? 'Confirmar pagamento da guia' : sel.candidatoId ? 'Confirmar e dar baixa' : 'Confirmar (arquivar)'}
               </button>
             </div>
           </div>

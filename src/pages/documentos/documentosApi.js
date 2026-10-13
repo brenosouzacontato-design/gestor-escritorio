@@ -175,6 +175,53 @@ export async function listarDocumentosConfirmados() {
   return data;
 }
 
+// ---------- Comprovante de pagamento → guia paga ----------
+
+// Mesmo critério de "é imposto" do painel (PainelCompartilhadoPage.jsx) e
+// do webhook (netlify/functions/lib/comprovantePagamento.js).
+const TITULO_IMPOSTO = /\b(pg)?das\b|pgmei|inss|fgts|darf|dctfweb|irrf|irpj|csll|pis|cofins|icms|iss|difal|parcelamento|guia/i;
+
+// Guias de imposto anexadas que ainda não têm pagamento marcado — opções do
+// "Dar baixa em" da aba "A revisar" quando o documento é um comprovante que
+// o WhatsApp não conseguiu casar sozinho com a guia.
+export async function listarGuiasEmAberto() {
+  const { data, error } = await supabase
+    .from('documentos')
+    .select('id, valor_guia, obrigacoes!inner(titulo, tipo, competencia, cliente_id)')
+    .eq('status', 'confirmado')
+    .not('obrigacao_id', 'is', null)
+    .is('pago_em', null)
+    .order('created_at', { ascending: false });
+  if (error) throw error;
+  return (data || [])
+    .filter((d) => TITULO_IMPOSTO.test(`${d.obrigacoes.titulo || ''} ${d.obrigacoes.tipo || ''}`))
+    .map((d) => ({
+      id: d.id,
+      clienteId: d.obrigacoes.cliente_id,
+      rotulo: `${d.obrigacoes.titulo || d.obrigacoes.tipo}${d.obrigacoes.competencia ? ` ${d.obrigacoes.competencia}` : ''}`
+        + (d.valor_guia != null ? ` — ${Number(d.valor_guia).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}` : ''),
+    }));
+}
+
+// Liga na mão um comprovante da fila "A revisar" à guia que ele paga: a guia
+// fica como paga com o comprovante disponível no painel do cliente (mesmo
+// resultado da baixa automática do WhatsApp). O arquivo passa a pertencer à
+// guia — o registro do documento sai da fila sem apagar o arquivo.
+export async function pagarGuiaComComprovante(documentoId, guiaId) {
+  const { data: doc, error: errDoc } = await supabase
+    .from('documentos').select('storage_path, nome_arquivo').eq('id', documentoId).single();
+  if (errDoc) throw errDoc;
+
+  const { error: errGuia } = await supabase
+    .from('documentos')
+    .update({ pago_em: new Date().toISOString(), comprovante_path: doc.storage_path, comprovante_nome: doc.nome_arquivo })
+    .eq('id', guiaId);
+  if (errGuia) throw errGuia;
+
+  const { error: errRemover } = await supabase.from('documentos').delete().eq('id', documentoId);
+  if (errRemover) throw errRemover;
+}
+
 // Signed URL avulsa (botão "Baixar" na aba Concluídos) — bucket é privado,
 // não dá pra linkar direto pelo storage_path.
 export async function criarLinkAssinado(storagePath, segundos = 60 * 5) {
