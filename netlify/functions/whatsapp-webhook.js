@@ -117,7 +117,9 @@ async function processarDocumento(body, midia, remoteJid) {
     const mimeType = midia.mimetype || 'application/octet-stream'
     const nomeArquivo = midia.fileName || `whatsapp-${Date.now()}.${EXTENSAO_POR_MIME[mimeType] || 'bin'}`
 
-    let base64 = midia.base64 || null
+    // com "Webhook Base64" ligado, a Evolution API v1 manda o arquivo em
+    // data.message.base64 (ao lado do bloco da mídia, não dentro dele)
+    let base64 = midia.base64 || body?.data?.message?.base64 || null
     if (!base64) {
       const messageId = body?.data?.key?.id
       if (!messageId) throw new Error('Não achei o id da mensagem pra buscar o arquivo.')

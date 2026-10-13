@@ -7,7 +7,7 @@ echo.
 echo [1/4] Iniciando Evolution API...
 docker start evolution-api 2>nul || (
   echo Container nao existe, criando...
-  docker run -d --name evolution-api -p 8080:8080 -e "AUTHENTICATION_API_KEY=gestor123" -e "DATABASE_PROVIDER=sqlite" -e "GROUPS_IGNORE=false" atendai/evolution-api:v1.8.2
+  docker run -d --name evolution-api -p 8080:8080 -e "AUTHENTICATION_API_KEY=gestor123" -e "DATABASE_PROVIDER=sqlite" -e "GROUPS_IGNORE=false" evoapicloud/evolution-api:v1.8.7
 )
 
 echo.
@@ -16,7 +16,7 @@ timeout /t 5 /nobreak >nul
 
 echo.
 echo [3/4] Configurando webhook...
-curl -s -X POST http://localhost:8080/webhook/set/gestor-escritorio -H "Content-Type: application/json" -H "apikey: gestor123" -d "{\"url\":\"https://gestorcount.netlify.app/.netlify/functions/whatsapp-webhook\",\"enabled\":true,\"events\":[\"MESSAGES_UPSERT\"]}" >nul
+curl -s -X POST http://localhost:8080/webhook/set/gestor-escritorio -H "Content-Type: application/json" -H "apikey: gestor123" -d "{\"url\":\"https://gestorcount.netlify.app/.netlify/functions/whatsapp-webhook\",\"enabled\":true,\"webhook_by_events\":false,\"webhook_base64\":true,\"events\":[\"MESSAGES_UPSERT\"]}" >nul
 
 echo.
 echo [4/4] Configurando grupos...
