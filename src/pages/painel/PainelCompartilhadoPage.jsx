@@ -73,7 +73,7 @@ function areaTarefa(t) {
 // traduz pro nome que o cliente reconhece. Sem correspondência, usa o
 // texto original sem o período (que já aparece ao lado do nome).
 const NOMES_TRIBUTO = [
-  [/CP[\s.-]*SEGUR|1099/i, 'INSS Mensal'],
+  [/CP[\s.-]*SEGUR|1099|INSS\s*MENSAL/i, 'INSS Mensal'],
   [/CP[\s.-]*PATRONAL|1138/i, 'INSS Patronal'],
   [/CP[\s.-]*TERCEIROS|1170|1176|1191|1196|1200/i, 'INSS Terceiros'],
   [/CP[\s.-]*(GIL)?RAT|CP[\s.-]*SAT|1646/i, 'INSS RAT'],
@@ -289,15 +289,24 @@ export default function PainelCompartilhadoPage({ clienteId, competencia: compet
   const pendenciasCard = pendencias && !oculta('pendencias') ? pendencias : [];
   const honorariosAVencer = honorariosCard.filter((h) => !h.concluida && !(h.dias != null && h.dias < 0));
   const honorariosVencidos = honorariosCard.filter(alertaVencida);
+  // Débito que o relatório da Receita já lista mas ainda está no prazo (ex:
+  // INSS declarado na DCTFWeb antes do dia 20) é "a vencer", não vencido. Se
+  // a guia do mesmo tributo/competência já está anexada, ela é que entra na
+  // soma — o débito do relatório ficaria contado em dobro.
+  const guiasAVencer = guiasCard.filter((g) => !g.semMovimento && !alertaVencida(g) && !(g.concluida && g.dias != null && g.dias < 0));
+  const pendenciasVencidas = pendenciasCard.filter((p) => !p.aVencer);
+  const pendenciasAVencer = pendenciasCard.filter((p) => p.aVencer
+    && !guiasCard.some((g) => g.competencia === p.competencia && nomeTributo(g.titulo) === p.nome));
   const aVencer = [
-    ...guiasCard.filter((g) => !g.semMovimento && !alertaVencida(g) && !(g.concluida && g.dias != null && g.dias < 0)),
+    ...guiasAVencer,
     ...honorariosAVencer,
+    ...pendenciasAVencer,
   ].sort((a, b) => (a.vencimento || '9999').localeCompare(b.vencimento || '9999'));
   const guiasVencidas = guiasCard.filter(alertaVencida);
   // "Vencidos" junta as guias vencidas sem baixa, os honorários atrasados e
   // os débitos do Relatório de Situação Fiscal (que por definição já
   // passaram do prazo)
-  const vencidos = [...guiasVencidas, ...honorariosVencidos, ...pendenciasCard];
+  const vencidos = [...guiasVencidas, ...honorariosVencidos, ...pendenciasVencidas];
   const proximoVencimento = aVencer.find((g) => g.vencimento && g.dias >= 0)?.vencimento;
   const datasAVencer = new Set(aVencer.filter((g) => g.vencimento).map((g) => g.vencimento));
   const semMovimento = dados?.gerenciais?.faturamento_periodo != null && Number(dados.gerenciais.faturamento_periodo) === 0;
@@ -318,7 +327,7 @@ export default function PainelCompartilhadoPage({ clienteId, competencia: compet
                 <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 8 }}>
                   {dados.cliente.cnpj && <ChipCabecalho>{dados.cliente.cnpj}</ChipCabecalho>}
                   <ChipCabecalho>{dados.cliente.regime || 'SN'}</ChipCabecalho>
-                  <ChipSituacao situacaoFiscal={dados.situacaoFiscal} cndManual={dados.cndManual} />
+                  <ChipSituacao situacaoFiscal={dados.situacaoFiscal} cndManual={dados.cndManual} soAVencer={pendencias.length > 0 && pendencias.every((p) => p.aVencer)} />
                 </div>
               )}
             </div>
@@ -431,7 +440,7 @@ export default function PainelCompartilhadoPage({ clienteId, competencia: compet
                 <Indicador icone={<AlertTriangleIcon size={13} />} titulo="Vencidos"
                   valor={vencidos.length === 0 ? 'Nenhum' : temValor(vencidos) ? fmt(somaValores(vencidos)) : vencidos.some((v) => v.lendo) ? 'Lendo guias…' : 'Valor na guia'}
                   sub={vencidos.length === 0 ? 'Nada vencido' : [
-                    pendenciasCard.length > 0 && plural(pendenciasCard.length, 'débito na Receita/PGFN', 'débitos na Receita/PGFN'),
+                    pendenciasVencidas.length > 0 && plural(pendenciasVencidas.length, 'débito na Receita/PGFN', 'débitos na Receita/PGFN'),
                     guiasVencidas.length > 0 && plural(guiasVencidas.length, 'guia vencida', 'guias vencidas'),
                     honorariosVencidos.length > 0 && plural(honorariosVencidos.length, 'honorário vencido', 'honorários vencidos'),
                   ].filter(Boolean).join(' · ') + (vencidos.some((v) => v.valor == null) && temValor(vencidos) ? ' · + valores nas guias' : '')}
@@ -471,7 +480,7 @@ export default function PainelCompartilhadoPage({ clienteId, competencia: compet
               {/* ── 4. Pendências (Relatório de Situação Fiscal) ── */}
               <Ocultavel chave="pendencias" {...propsOc}>
               <Secao titulo="Pendências — Relatório de Situação Fiscal" icone={<AlertTriangleIcon size={14} />}
-                extra={pendencias.length > 0 && <Total valor={somaValores(pendencias)} cor="var(--danger)" />}>
+                extra={pendencias.some((p) => !p.aVencer) && <Total valor={somaValores(pendencias.filter((p) => !p.aVencer))} cor="var(--danger)" />}>
                 {!dados.situacaoFiscal
                   ? <Vazio>Relatório de Situação Fiscal ainda não enviado.</Vazio>
                   : pendencias.length === 0
@@ -566,7 +575,12 @@ function montarPendencias(situacaoFiscal) {
     competencia: d.competencia || competenciaDoTexto(d.tributo), vencimento: null,
     valorOriginal: null, valor: d.valor ?? null, situacao: d.situacao || null,
   }));
-  return [...debitos, ...dividas].sort((a, b) => competenciaOrdinal(a.competencia) - competenciaOrdinal(b.competencia));
+  // "A vencer": o vencimento do relatório ainda não passou; relatório lido
+  // antes do campo vencimento existir só tem o texto da situação ("A VENCER")
+  return [...debitos, ...dividas].map((p) => {
+    const dias = diasParaVencer(p.vencimento);
+    return { ...p, dias, aVencer: dias != null ? dias >= 0 : /a\s*vencer/i.test(p.situacao || '') };
+  }).sort((a, b) => competenciaOrdinal(a.competencia) - competenciaOrdinal(b.competencia));
 }
 
 // Obrigações (não-imposto) e tarefas de Fiscal/Folha do mês. Concluída sem
@@ -628,8 +642,10 @@ function ChipCabecalho({ children }) {
 
 // Situação perante o fisco nas 3 esferas — federal vem do Relatório de
 // Situação Fiscal (IA), estadual/municipal da marcação manual (cnd_manual).
-function ChipSituacao({ situacaoFiscal, cndManual }) {
-  const esferas = [situacaoFiscal?.situacao_geral, cndManual?.situacao_estadual, cndManual?.situacao_municipal].filter(Boolean);
+// `soAVencer`: o relatório só lista débito ainda no prazo — a IA marca a
+// situação geral como "pendente" mesmo assim, mas não há nada em atraso.
+function ChipSituacao({ situacaoFiscal, cndManual, soAVencer }) {
+  const esferas = [soAVencer && situacaoFiscal?.situacao_geral === 'pendente' ? 'regular' : situacaoFiscal?.situacao_geral, cndManual?.situacao_estadual, cndManual?.situacao_municipal].filter(Boolean);
   if (esferas.length === 0) return null;
   const pendente = esferas.includes('pendente');
   return (
@@ -873,12 +889,14 @@ function ChavePix({ chave, favorecido }) {
 
 function LinhaPendencia({ p }) {
   return (
-    <Linha corBorda="var(--danger)" titulo={p.nome} competencia={p.competencia}
+    <Linha corBorda={p.aVencer ? 'var(--accent)' : 'var(--danger)'} titulo={p.nome} competencia={p.competencia}
       detalhes={(
         <>
-          <span style={{ color: 'var(--danger)', fontWeight: 600 }}>{p.origem}</span>
-          {p.situacao && <span style={{ color: 'var(--text3)' }}>{p.situacao}</span>}
-          {p.vencimento && <span style={{ color: 'var(--text3)' }}>venc. {fmtData(p.vencimento)}</span>}
+          <span style={{ color: p.aVencer ? 'var(--text3)' : 'var(--danger)', fontWeight: 600 }}>{p.origem}</span>
+          {p.aVencer
+            ? <span style={{ color: 'var(--accent)', fontWeight: 600 }}>A vencer</span>
+            : p.situacao && <span style={{ color: 'var(--text3)' }}>{p.situacao}</span>}
+          {p.vencimento && <span style={{ color: 'var(--text3)' }}>venc. {fmtData(p.vencimento)}{p.aVencer ? ` · ${fmtDias(p.dias)}` : ''}</span>}
           {p.codigo && <span style={{ color: 'var(--text3)', opacity: 0.8 }}>{p.codigo}</span>}
         </>
       )}
