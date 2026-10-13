@@ -175,31 +175,32 @@ export function NovaTarefaModuloModal({ cliente, dept, tarefa, onClose, onSaved 
   const [observacao,   setObservacao]   = useState(tarefa?.observacao || '')
   const [responsavel,  setResponsavel]  = useState(tarefa?.responsavel || '')
   const [saving,       setSaving]       = useState(false)
+  const [erro,         setErro]         = useState(null)
 
   const handleSave = async () => {
     if (!titulo.trim()) return
     setSaving(true)
+    setErro(null)
     // só manda a coluna quando o campo mudou — sem o schema novo aplicado
     // (supabase-schema-responsavel.sql) ela não existe em tarefas, e mandá-la
     // sempre derrubaria o salvamento de quem nem usou o campo
     const atribuicao = responsavel.trim() !== (tarefa?.responsavel || '') ? { responsavel: responsavel.trim() || null } : {}
-    if (editando) {
-      await supabase.from('tarefas').update({
+    const { error } = editando
+      ? await supabase.from('tarefas').update({
         titulo: titulo.trim(), departamento, prioridade,
         vencimento: vencimento || null, observacao: observacao || null,
         ...atribuicao,
         updated_at: new Date().toISOString(),
       }).eq('id', tarefa.id)
-    } else {
-      await supabase.from('tarefas').insert({
+      : await supabase.from('tarefas').insert({
         titulo: titulo.trim(), departamento, departamento_id: dept?.id || null, prioridade,
         vencimento: vencimento || null, observacao: observacao || null,
         ...atribuicao,
         cliente_id: cliente.id, concluida: false,
         updated_at: new Date().toISOString(),
       })
-    }
     setSaving(false)
+    if (error) { setErro(mensagemErroResponsavel(error)); return }
     onSaved()
   }
 
@@ -237,6 +238,7 @@ export function NovaTarefaModuloModal({ cliente, dept, tarefa, onClose, onSaved 
             style={{ width:'100%', background:'var(--surface2)', border:'1px solid var(--border)', borderRadius:8, padding:'8px 10px', fontSize:13, color:'var(--text1)', outline:'none' }} />
         </div>
         <CampoResponsavel value={responsavel} onChange={setResponsavel} />
+        {erro && <p style={{ fontSize:11, color:'var(--danger)' }}>Erro ao salvar: {erro}</p>}
         <div>
           <label style={{ fontSize:11, color:'var(--text2)', display:'block', marginBottom:4 }}>Observações</label>
           <textarea value={observacao} onChange={e => setObservacao(e.target.value)} rows={3}
@@ -530,6 +532,14 @@ export function ModalObrigacoesLote({ departamentos, clientes, competenciaInicia
   )
 }
 
+// Erro de coluna inexistente = falta aplicar supabase-schema-responsavel.sql
+// (tarefas.responsavel) — diz isso em vez da mensagem crua do Postgres.
+function mensagemErroResponsavel(error) {
+  return /responsavel/i.test(error.message || '')
+    ? 'falta criar a coluna "responsavel" na tabela de tarefas — rode o arquivo supabase-schema-responsavel.sql no SQL Editor do Supabase.'
+    : error.message
+}
+
 // ── Campo "Atribuir a" ───────────────────────────────────────────────────────
 // Nome livre de quem cuida do item, com sugestão dos nomes já usados em
 // outras tarefas/obrigações, e um atalho pra atribuir ao cliente — nesse
@@ -578,7 +588,7 @@ export function ModalAtribuir({ alvo, onClose, onSaved }) {
       .update({ responsavel: responsavel.trim() || null, updated_at: new Date().toISOString() })
       .eq('id', alvo.obrigacaoId || alvo.tarefaId)
     setSaving(false)
-    if (error) { setErro(error.message); return }
+    if (error) { setErro(mensagemErroResponsavel(error)); return }
     onSaved()
   }
 

@@ -540,8 +540,10 @@ export async function obterTarefasDoCliente(clienteId) {
       .in('status', ['pendente', 'vencido'])
       .ilike('responsavel', 'cliente'),
   ]);
-  if (errTar) throw errTar;
-  if (errObs) throw errObs;
+  // As duas consultas falham separadas: tarefas.responsavel só existe depois
+  // de aplicar supabase-schema-responsavel.sql, e a falta dela não pode
+  // esconder as obrigações atribuídas ao cliente (coluna que já existe).
+  if (errTar && errObs) throw errObs;
   return [
     ...(tarefas || []).map((t) => ({ id: t.id, titulo: t.titulo, detalhe: t.observacao || null, vencimento: t.vencimento ? t.vencimento.split('T')[0] : null, competencia: t.competencia || null })),
     ...(obrigacoes || []).map((o) => ({ id: o.id, titulo: o.titulo || o.tipo, detalhe: null, vencimento: o.vencimento || null, competencia: o.competencia || null })),
