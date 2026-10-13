@@ -238,6 +238,28 @@ export async function definirSecoesOcultasPainel(clienteId, secoesOcultas) {
   if (error) throw error;
 }
 
+// Correção manual, pelo escritório, dos números da Declaração do Simples
+// que aparecem no painel (modo de edição de PainelCompartilhadoPage) — a
+// leitura por IA às vezes erra um valor. `patch` só com as colunas alteradas.
+export async function atualizarDadosGerenciais(clienteId, competencia, patch) {
+  const { error } = await supabase
+    .from('dados_gerenciais_simples')
+    .update(patch)
+    .eq('cliente_id', clienteId)
+    .eq('competencia', competencia);
+  if (error) throw error;
+}
+
+// Correção manual do valor de uma guia anexada. Marca o documento como já
+// lido pra IA (extrair-valor-guia.js) não sobrescrever o valor digitado.
+export async function atualizarValorGuia(documentoId, valor) {
+  const { error } = await supabase
+    .from('documentos')
+    .update({ valor_guia: valor, valor_guia_extraido_em: new Date().toISOString() })
+    .eq('id', documentoId);
+  if (error) throw error;
+}
+
 export async function obterDadosGerenciais(clienteId, competencia) {
   const { data, error } = await supabase
     .from('dados_gerenciais_simples')

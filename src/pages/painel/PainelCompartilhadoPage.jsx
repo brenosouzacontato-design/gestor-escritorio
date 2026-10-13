@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import {
   CalendarIcon, DownloadIcon, CheckCircleIcon, AlertTriangleIcon, ClockIcon, TrendingUpIcon,
-  ClipboardListIcon, EyeIcon, WalletIcon, CopyIcon, FileTextIcon,
+  ClipboardListIcon, EyeIcon, EyeOffIcon, WalletIcon, CopyIcon, FileTextIcon, SettingsIcon,
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { abrirLinkAssinado } from '../documentos/documentosApi';
@@ -11,6 +11,7 @@ import {
   obterResumoObrigacoes, obterResumoTarefas, obterDadosGerenciais, obterDocumentosPorObrigacao,
   obterDocumentosPorTarefa, obterSituacaoFiscalMaisRecente, obterCndManual, obterHistoricoFaturamento,
   obterUltimaVisualizacaoPainel, extrairValorGuia, obterHonorariosPainel, obterDocumentosFiscais,
+  definirSecoesOcultasPainel, atualizarDadosGerenciais, atualizarValorGuia,
 } from './painelApi';
 import { obterConfigPix } from '../honorarios/honorariosApi';
 
@@ -26,7 +27,11 @@ import { obterConfigPix } from '../honorarios/honorariosApi';
 //      do tributo, competência e valor atualizado;
 //   5. demais obrigações/tarefas de Fiscal e Folha — concluídas só aparecem
 //      se tiverem anexo pra baixar.
-// `admin` (prévia de dentro do app) mostra a última vez que o cliente abriu o link.
+// `admin` (prévia de dentro do app) mostra a última vez que o cliente abriu o
+// link e libera o modo de edição (engrenagem no cabeçalho): ocultar seções
+// pro cliente (clientes.painel_secoes_ocultas, mesma coluna e mesmas chaves
+// do painel completo onde a seção é a mesma) e corrigir os números da
+// Declaração do Simples e o valor das guias.
 
 // Mesmo fallback de PainelClientePage.jsx pra obrigações legadas sem
 // tipo_obrigacao_id, mais reconhecimento pelo nome (FGTS, DARF etc. nem
@@ -145,6 +150,14 @@ function competenciaDoTexto(texto) {
 const somaValores = (itens) => itens.reduce((s, it) => s + (Number(it.valor) || 0), 0);
 const temValor = (itens) => itens.some((it) => it.valor != null);
 const plural = (n, s, p) => `${n} ${n === 1 ? s : p}`;
+// Número digitado no modo de edição: aceita "1.234,56" e "1234.56". Vazio
+// vira null (apaga o valor); texto que não é número devolve undefined.
+function parseNumero(texto) {
+  const t = (texto || '').replace(/[R$%\s]/g, '');
+  if (t === '') return null;
+  const n = Number(t.includes(',') ? t.replace(/\./g, '').replace(',', '.') : t);
+  return Number.isFinite(n) ? n : undefined;
+}
 
 export default function PainelCompartilhadoPage({ clienteId, competencia: competenciaInicial, admin = false }) {
   const [competencia, setCompetencia] = useState(competenciaInicial);
@@ -154,6 +167,9 @@ export default function PainelCompartilhadoPage({ clienteId, competencia: compet
   const [lendoGuias, setLendoGuias] = useState(() => new Set()); // ids de documentos sendo lidos pela IA
   const [carregando, setCarregando] = useState(true);
   const [erro, setErro] = useState(null);
+  const [editandoPainel, setEditandoPainel] = useState(false);
+  const [erroEdicao, setErroEdicao] = useState(null);
+  const editando = admin && editandoPainel;
 
   useEffect(() => {
     if (!admin) return;
@@ -166,7 +182,7 @@ export default function PainelCompartilhadoPage({ clienteId, competencia: compet
       setErro(null);
       try {
         const [{ data: cliente, error: errCliente }, obs, tarefas, gerenciais, historico, situacaoFiscal, cndManual, honorarios, configPix, notasEntrada] = await Promise.all([
-          supabase.from('clientes').select('nome, cnpj, regime').eq('id', clienteId).single(),
+          supabase.from('clientes').select('nome, cnpj, regime, painel_secoes_ocultas').eq('id', clienteId).single(),
           obterResumoObrigacoes(clienteId, competencia),
           obterResumoTarefas(clienteId, competencia),
           // tabelas novas toleram ainda não existir no banco, igual ao painel completo
@@ -220,21 +236,68 @@ export default function PainelCompartilhadoPage({ clienteId, competencia: compet
   }, [dados]);
 
   const baixar = (storagePath) => abrirLinkAssinado(storagePath).catch(() => null);
+
+  const secoesOcultas = dados?.cliente?.painel_secoes_ocultas || [];
+  const oculta = (chave) => secoesOcultas.includes(chave);
+  const toggleSecao = async (chave) => {
+    const proxima = oculta(chave) ? secoesOcultas.filter((s) => s !== chave) : [...secoesOcultas, chave];
+    setDados((d) => ({ ...d, cliente: { ...d.cliente, painel_secoes_ocultas: proxima } }));
+    try {
+      await definirSecoesOcultasPainel(clienteId, proxima);
+      setErroEdicao(null);
+    } catch (e) {
+      setDados((d) => ({ ...d, cliente: { ...d.cliente, painel_secoes_ocultas: secoesOcultas } }));
+      setErroEdicao(`Não foi possível salvar: ${e.message}`);
+    }
+  };
+  const propsOc = { secoesOcultas, editando, onToggle: toggleSecao };
+
+  // Correções do modo de edição: aplica na tela na hora e desfaz se o banco recusar
+  const salvarGerencial = async (campo, valor) => {
+    const anterior = dados.gerenciais;
+    setDados((d) => ({ ...d, gerenciais: { ...d.gerenciais, [campo]: valor } }));
+    try {
+      await atualizarDadosGerenciais(clienteId, competencia, { [campo]: valor });
+      setErroEdicao(null);
+    } catch (e) {
+      setDados((d) => ({ ...d, gerenciais: anterior }));
+      setErroEdicao(`Não foi possível salvar: ${e.message}`);
+    }
+  };
+  const salvarValorGuia = async (anexo, valor) => {
+    const trocar = (novo) => setDados((d) => ({
+      ...d, anexos: Object.fromEntries(Object.entries(d.anexos).map(([k, a]) => [k, a.id === anexo.id ? novo : a])),
+    }));
+    trocar({ ...anexo, valor_guia: valor, valor_guia_extraido_em: new Date().toISOString() });
+    try {
+      await atualizarValorGuia(anexo.id, valor);
+      setErroEdicao(null);
+    } catch (e) {
+      trocar(anexo);
+      setErroEdicao(`Não foi possível salvar: ${e.message}`);
+    }
+  };
+
   const guias = dados && montarGuias(dados, competencia).map((g) => ({ ...g, lendo: g.anexo && lendoGuias.has(g.anexo.id) }));
   const pendencias = dados && montarPendencias(dados.situacaoFiscal);
   const itensArea = dados && montarObrigacoesTarefas(dados, competencia);
   const honorarios = dados ? montarHonorarios(dados.honorarios) : [];
-  const honorariosAVencer = honorarios.filter((h) => !h.concluida && !(h.dias != null && h.dias < 0));
-  const honorariosVencidos = honorarios.filter(alertaVencida);
-  const aVencer = guias ? [
-    ...guias.filter((g) => !g.semMovimento && !alertaVencida(g) && !(g.concluida && g.dias != null && g.dias < 0)),
+  // Seção oculta pro cliente também sai da soma dos cards de vencidos/a
+  // vencer — senão o total mostraria um valor que ele não tem como conferir
+  const guiasCard = guias && !oculta('impostos') ? guias : [];
+  const honorariosCard = oculta('honorarios') ? [] : honorarios;
+  const pendenciasCard = pendencias && !oculta('pendencias') ? pendencias : [];
+  const honorariosAVencer = honorariosCard.filter((h) => !h.concluida && !(h.dias != null && h.dias < 0));
+  const honorariosVencidos = honorariosCard.filter(alertaVencida);
+  const aVencer = [
+    ...guiasCard.filter((g) => !g.semMovimento && !alertaVencida(g) && !(g.concluida && g.dias != null && g.dias < 0)),
     ...honorariosAVencer,
-  ].sort((a, b) => (a.vencimento || '9999').localeCompare(b.vencimento || '9999')) : [];
-  const guiasVencidas = guias ? guias.filter(alertaVencida) : [];
+  ].sort((a, b) => (a.vencimento || '9999').localeCompare(b.vencimento || '9999'));
+  const guiasVencidas = guiasCard.filter(alertaVencida);
   // "Vencidos" junta as guias vencidas sem baixa, os honorários atrasados e
   // os débitos do Relatório de Situação Fiscal (que por definição já
   // passaram do prazo)
-  const vencidos = [...guiasVencidas, ...honorariosVencidos, ...(pendencias || [])];
+  const vencidos = [...guiasVencidas, ...honorariosVencidos, ...pendenciasCard];
   const proximoVencimento = aVencer.find((g) => g.vencimento && g.dias >= 0)?.vencimento;
   const datasAVencer = new Set(aVencer.filter((g) => g.vencimento).map((g) => g.vencimento));
   const semMovimento = dados?.gerenciais?.faturamento_periodo != null && Number(dados.gerenciais.faturamento_periodo) === 0;
@@ -259,12 +322,30 @@ export default function PainelCompartilhadoPage({ clienteId, competencia: compet
                 </div>
               )}
             </div>
-            <select value={competencia} onChange={(e) => setCompetencia(e.target.value)}
-              style={{ fontSize: 12, color: '#fff', background: 'rgba(255,255,255,.1)', border: '1px solid rgba(255,255,255,.2)',
-                borderRadius: 6, padding: '5px 8px', fontWeight: 600 }}>
-              {opcoesComp.map((c) => <option key={c} value={c} style={{ color: '#000' }}>Competência {c}</option>)}
-            </select>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <select value={competencia} onChange={(e) => setCompetencia(e.target.value)}
+                style={{ fontSize: 12, color: '#fff', background: 'rgba(255,255,255,.1)', border: '1px solid rgba(255,255,255,.2)',
+                  borderRadius: 6, padding: '5px 8px', fontWeight: 600 }}>
+                {opcoesComp.map((c) => <option key={c} value={c} style={{ color: '#000' }}>Competência {c}</option>)}
+              </select>
+              {admin && (
+                <button type="button" onClick={() => setEditandoPainel((v) => !v)}
+                  title={editandoPainel ? 'Sair do modo de edição' : 'Ocultar seções e corrigir valores antes de compartilhar'}
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: 5, height: 30, borderRadius: 8, padding: '0 10px', flexShrink: 0,
+                    cursor: 'pointer', fontSize: 11, fontWeight: 600, color: '#fff', whiteSpace: 'nowrap',
+                    border: `1px solid ${editandoPainel ? 'var(--accent)' : 'rgba(255,255,255,.2)'}`,
+                    background: editandoPainel ? 'var(--accent)' : 'rgba(255,255,255,.1)' }}>
+                  <SettingsIcon size={13} /> {editandoPainel ? 'Concluir edição' : 'Editar painel'}
+                </button>
+              )}
+            </div>
           </div>
+          {editando && (
+            <div style={{ marginTop: 12, fontSize: 11, color: 'var(--navy-text)', background: 'rgba(255,255,255,.08)', borderRadius: 6, padding: '6px 10px' }}>
+              Modo de edição — só você vê isso. Use o olho pra escolher o que o cliente enxerga e corrija os valores nos campos; tudo é salvo na hora.
+              {erroEdicao && <div style={{ color: '#fff', fontWeight: 700, marginTop: 4 }}>⚠ {erroEdicao}</div>}
+            </div>
+          )}
           {admin && ultimaVisualizacao !== undefined && (
             <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 12, fontSize: 11, color: 'var(--navy-text)',
               background: 'rgba(255,255,255,.08)', borderRadius: 6, padding: '6px 10px' }}>
@@ -284,50 +365,73 @@ export default function PainelCompartilhadoPage({ clienteId, competencia: compet
             <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
 
               {/* ── 1. Fiscal: Declaração do Simples + evolução do faturamento ── */}
-              {(dados.gerenciais || dados.historico.length > 0) && (
-                <Secao titulo={`Fiscal — competência ${competencia}`} icone={<TrendingUpIcon size={14} />}
-                  extra={dados.gerenciais?.storage_path && <BotaoLink onClick={() => baixar(dados.gerenciais.storage_path)}>Declaração</BotaoLink>}>
-                  {dados.gerenciais && (
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 8, marginBottom: dados.historico.length > 0 ? 14 : 0 }}>
-                      <Mini label="Faturamento do mês" valor={fmt(dados.gerenciais.faturamento_periodo)} />
-                      <Mini label="RBT12" valor={fmt(dados.gerenciais.rbt12)} />
-                      <Mini label="Alíquota efetiva" valor={semMovimento ? '—' : fmtPct(dados.gerenciais.aliquota_efetiva)} cor="var(--accent)" />
-                      <Mini label="DAS" valor={semMovimento ? 'Sem movimento' : fmt(dados.gerenciais.valor_das)} cor={semMovimento ? 'var(--ok)' : undefined} />
+              {(() => {
+                const g = dados.gerenciais;
+                const temGrafico = dados.historico.length > 0;
+                // Simples "cheio" (alíquota da tabela pelo RBT12/anexo) x DAS real pago — mostra a economia
+                const aliquotaCheia = g ? calcularAliquotaNominal(g.anexo, g.rbt12) : null;
+                const temComparativo = !semMovimento && aliquotaCheia != null && Number(g.faturamento_periodo) > 0 && g.valor_das != null;
+                const algoVisivel = (g && !oculta('kpis')) || (temComparativo && !oculta('comparativo')) || (temGrafico && !oculta('grafico'));
+                if (!(g || temGrafico) || !(editando || algoVisivel)) return null;
+                return (
+                  <Secao titulo={`Fiscal — competência ${competencia}`} icone={<TrendingUpIcon size={14} />}
+                    extra={g?.storage_path && <BotaoLink onClick={() => baixar(g.storage_path)}>Declaração</BotaoLink>}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                      {g && (
+                        <Ocultavel chave="kpis" {...propsOc}>
+                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 8 }}>
+                            {editando ? (
+                              <>
+                                {[['faturamento_periodo', 'Faturamento do mês (R$)'], ['rbt12', 'RBT12 (R$)'], ['aliquota_efetiva', 'Alíquota efetiva (%)'], ['valor_das', 'DAS (R$)']].map(([campo, label]) => (
+                                  <Mini key={`${competencia}-${campo}`} label={label}
+                                    valor={<CampoNumero valor={g[campo]} onSalvar={(v) => salvarGerencial(campo, v)} />} />
+                                ))}
+                              </>
+                            ) : (
+                              <>
+                                <Mini label="Faturamento do mês" valor={fmt(g.faturamento_periodo)} />
+                                <Mini label="RBT12" valor={fmt(g.rbt12)} />
+                                <Mini label="Alíquota efetiva" valor={semMovimento ? '—' : fmtPct(g.aliquota_efetiva)} cor="var(--accent)" />
+                                <Mini label="DAS" valor={semMovimento ? 'Sem movimento' : fmt(g.valor_das)} cor={semMovimento ? 'var(--ok)' : undefined} />
+                              </>
+                            )}
+                          </div>
+                        </Ocultavel>
+                      )}
+                      {temComparativo && (
+                        <Ocultavel chave="comparativo" {...propsOc}>
+                          <ComparativoDas aliquotaReal={aliquotaCheia} faturamento={Number(g.faturamento_periodo)} dasPago={Number(g.valor_das)} />
+                        </Ocultavel>
+                      )}
+                      {temGrafico && (
+                        <Ocultavel chave="grafico" {...propsOc}>
+                          <div>
+                            <div style={{ fontSize: 10.5, color: 'var(--text3)', fontWeight: 600, marginBottom: 6 }}>Evolução do faturamento</div>
+                            <GraficoFaturamento dados={dados.historico} />
+                          </div>
+                        </Ocultavel>
+                      )}
                     </div>
-                  )}
-                  {/* Simples "cheio" (alíquota da tabela pelo RBT12/anexo) x DAS real pago — mostra a economia */}
-                  {(() => {
-                    const g = dados.gerenciais;
-                    const aliquotaCheia = g ? calcularAliquotaNominal(g.anexo, g.rbt12) : null;
-                    if (semMovimento || aliquotaCheia == null || !(Number(g.faturamento_periodo) > 0) || g.valor_das == null) return null;
-                    return (
-                      <div style={dados.historico.length > 0 ? { marginBottom: 14 } : { marginTop: 14 }}>
-                        <ComparativoDas aliquotaReal={aliquotaCheia} faturamento={Number(g.faturamento_periodo)} dasPago={Number(g.valor_das)} />
-                      </div>
-                    );
-                  })()}
-                  {dados.historico.length > 0 && (
-                    <div>
-                      <div style={{ fontSize: 10.5, color: 'var(--text3)', fontWeight: 600, marginBottom: 6 }}>Evolução do faturamento</div>
-                      <GraficoFaturamento dados={dados.historico} />
-                    </div>
-                  )}
-                </Secao>
-              )}
+                  </Secao>
+                );
+              })()}
 
               {/* ── Notas fiscais de entrada (integração Omie/OneFlow): total, abre por nota ── */}
               {dados.notasEntrada.length > 0 && (
-                <Secao titulo={`Notas fiscais de entrada — ${competencia}`} icone={<FileTextIcon size={14} />}>
-                  <NotasEntrada documentos={dados.notasEntrada} />
-                </Secao>
+                <Ocultavel chave="notas_entrada" {...propsOc}>
+                  <Secao titulo={`Notas fiscais de entrada — ${competencia}`} icone={<FileTextIcon size={14} />}>
+                    <NotasEntrada documentos={dados.notasEntrada} />
+                  </Secao>
+                </Ocultavel>
               )}
 
               {/* ── 2. Cards: vencidos / a vencer (valor total) ── */}
+              <Ocultavel chave="indicadores" {...propsOc}>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 10 }}>
                 <Indicador icone={<AlertTriangleIcon size={13} />} titulo="Vencidos"
                   valor={vencidos.length === 0 ? 'Nenhum' : temValor(vencidos) ? fmt(somaValores(vencidos)) : vencidos.some((v) => v.lendo) ? 'Lendo guias…' : 'Valor na guia'}
                   sub={vencidos.length === 0 ? 'Nada vencido' : [
-                    pendencias.length > 0 && plural(pendencias.length, 'débito na Receita/PGFN', 'débitos na Receita/PGFN'),
+                    pendenciasCard.length > 0 && plural(pendenciasCard.length, 'débito na Receita/PGFN', 'débitos na Receita/PGFN'),
                     guiasVencidas.length > 0 && plural(guiasVencidas.length, 'guia vencida', 'guias vencidas'),
                     honorariosVencidos.length > 0 && plural(honorariosVencidos.length, 'honorário vencido', 'honorários vencidos'),
                   ].filter(Boolean).join(' · ') + (vencidos.some((v) => v.valor == null) && temValor(vencidos) ? ' · + valores nas guias' : '')}
@@ -339,17 +443,21 @@ export default function PainelCompartilhadoPage({ clienteId, competencia: compet
                     : plural(aVencer.length, 'guia', 'guias')}
                   s={aVencer.length === 0 ? 'ok' : aVencer.some(alertaUrgente) ? 'warn' : 'neutral'} />
               </div>
+              </Ocultavel>
 
               {/* ── 3. Impostos (guias anexadas) ── */}
+              <Ocultavel chave="impostos" {...propsOc}>
               <Secao titulo={`Impostos da competência ${competencia}`} icone={<CalendarIcon size={14} />}
                 extra={temValor(guias) && <Total valor={somaValores(guias)} />}>
                 {guias.length === 0
                   ? <Vazio>Nenhuma guia de imposto anexada para essa competência.</Vazio>
-                  : <div style={LISTA}>{guias.map((g) => <LinhaGuia key={g.id} g={g} onBaixar={baixar} />)}</div>}
+                  : <div style={LISTA}>{guias.map((g) => <LinhaGuia key={g.id} g={g} onBaixar={baixar} editando={editando} onSalvarValor={salvarValorGuia} />)}</div>}
               </Secao>
+              </Ocultavel>
 
               {/* ── Honorários (módulo Honorários) + chave PIX pra copiar ── */}
               {honorarios.length > 0 && (
+                <Ocultavel chave="honorarios" {...propsOc}>
                 <Secao titulo="Honorários" icone={<WalletIcon size={14} />}
                   extra={honorarios.some((h) => !h.concluida) && <Total valor={somaValores(honorarios.filter((h) => !h.concluida))} />}>
                   <div style={LISTA}>{honorarios.map((h) => <LinhaHonorario key={h.id} h={h} />)}</div>
@@ -357,9 +465,11 @@ export default function PainelCompartilhadoPage({ clienteId, competencia: compet
                     <ChavePix chave={dados.configPix.chavePix} favorecido={dados.configPix.favorecido} />
                   )}
                 </Secao>
+                </Ocultavel>
               )}
 
               {/* ── 4. Pendências (Relatório de Situação Fiscal) ── */}
+              <Ocultavel chave="pendencias" {...propsOc}>
               <Secao titulo="Pendências — Relatório de Situação Fiscal" icone={<AlertTriangleIcon size={14} />}
                 extra={pendencias.length > 0 && <Total valor={somaValores(pendencias)} cor="var(--danger)" />}>
                 {!dados.situacaoFiscal
@@ -379,12 +489,15 @@ export default function PainelCompartilhadoPage({ clienteId, competencia: compet
                   </div>
                 )}
               </Secao>
+              </Ocultavel>
 
               {/* ── 5. Obrigações e tarefas (Fiscal/Folha) ── */}
               {itensArea.length > 0 && (
+                <Ocultavel chave="obrigacoes" {...propsOc}>
                 <Secao titulo="Obrigações e tarefas do mês" icone={<ClipboardListIcon size={14} />}>
                   <div style={LISTA}>{itensArea.map((it) => <LinhaObrigacao key={it.id} it={it} onBaixar={baixar} />)}</div>
                 </Secao>
+                </Ocultavel>
               )}
             </div>
           )}
@@ -527,6 +640,46 @@ function ChipSituacao({ situacaoFiscal, cndManual }) {
   );
 }
 
+// Envolve uma seção pra deixá-la ocultável pelo escritório. Fora do modo de
+// edição (inclusive pro cliente, que nunca tem `editando`) a seção oculta
+// simplesmente não renderiza; no modo de edição ela continua aparecendo,
+// esmaecida, com o botão pra mostrar/ocultar numa faixa própria acima (não
+// por cima do conteúdo, onde cobriria o total da seção).
+function Ocultavel({ chave, secoesOcultas, editando, onToggle, children }) {
+  const oculta = secoesOcultas.includes(chave);
+  if (!editando) return oculta ? null : children;
+  return (
+    <div style={{ border: '1px dashed var(--border2)', borderRadius: 'var(--r-md)', padding: 10 }}>
+      <button type="button" onClick={() => onToggle(chave)}
+        style={{ display: 'inline-flex', alignItems: 'center', gap: 5, marginBottom: 10, fontSize: 11, fontWeight: 700, border: 'none', borderRadius: 99,
+          padding: '4px 10px', cursor: 'pointer', background: oculta ? 'var(--surface3)' : 'var(--accent-dim)', color: oculta ? 'var(--text3)' : 'var(--accent)' }}>
+        {oculta ? <EyeOffIcon size={12} /> : <EyeIcon size={12} />}
+        {oculta ? 'Oculto pro cliente — clique pra mostrar' : 'Visível pro cliente — clique pra ocultar'}
+      </button>
+      <div style={{ opacity: oculta ? 0.4 : 1 }}>{children}</div>
+    </div>
+  );
+}
+
+// Campo de valor do modo de edição — salva ao sair do campo ou no Enter.
+function CampoNumero({ valor, onSalvar, placeholder }) {
+  const [texto, setTexto] = useState(valor == null ? '' : String(valor).replace('.', ','));
+  const [invalido, setInvalido] = useState(false);
+  const confirmar = () => {
+    const n = parseNumero(texto);
+    setInvalido(n === undefined);
+    if (n === undefined || n === (valor == null ? null : Number(valor))) return;
+    onSalvar(n);
+  };
+  return (
+    <input value={texto} inputMode="decimal" placeholder={placeholder || '—'}
+      onChange={(e) => setTexto(e.target.value)} onBlur={confirmar}
+      onKeyDown={(e) => { if (e.key === 'Enter') e.target.blur(); }}
+      style={{ width: '100%', minWidth: 0, boxSizing: 'border-box', fontSize: 13, fontWeight: 700, color: 'var(--text1)', background: 'var(--surface)',
+        border: `1px solid ${invalido ? 'var(--danger)' : 'var(--border2)'}`, borderRadius: 6, padding: '4px 7px', fontFamily: 'inherit' }} />
+  );
+}
+
 function Secao({ titulo, icone, extra, children }) {
   return (
     <section>
@@ -613,7 +766,10 @@ function Linha({ corBorda, titulo, competencia, detalhes, direita }) {
   );
 }
 
-function LinhaGuia({ g, onBaixar }) {
+function LinhaGuia({ g, onBaixar, editando, onSalvarValor }) {
+  // só dá pra corrigir o valor de guia anexada (é gravado no documento) e
+  // com a coluna valor_guia já existente no banco
+  const editavel = editando && !g.semMovimento && g.anexo && 'valor_guia' in g.anexo;
   const vencida = alertaVencida(g);
   const urgente = alertaUrgente(g);
   const corBorda = g.semMovimento ? 'var(--ok)' : vencida ? 'var(--danger)' : urgente ? 'var(--warn)' : 'var(--accent)';
@@ -635,6 +791,11 @@ function LinhaGuia({ g, onBaixar }) {
             <span style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--ok)', background: 'var(--ok-dim)', borderRadius: 99, padding: '4px 10px', whiteSpace: 'nowrap' }}>
               Sem movimento
             </span>
+          ) : editavel ? (
+            <div style={{ width: 110 }} title="Valor da guia (R$)">
+              <CampoNumero valor={g.anexo.valor_guia} onSalvar={(v) => onSalvarValor(g.anexo, v)}
+                placeholder={g.valor != null ? String(g.valor).replace('.', ',') : 'Valor (R$)'} />
+            </div>
           ) : (
             <span style={{ fontSize: g.valor != null ? 14 : 11, fontWeight: g.valor != null ? 800 : 500, color: g.valor != null ? 'var(--text1)' : 'var(--text3)', whiteSpace: 'nowrap' }}>
               {g.valor != null ? fmt(g.valor) : g.lendo ? 'lendo guia…' : 'valor na guia'}
