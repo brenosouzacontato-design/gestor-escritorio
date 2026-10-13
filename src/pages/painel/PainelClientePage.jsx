@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import {
   WalletIcon, ClipboardListIcon, CheckSquareIcon, BarChart3Icon,
   CalendarIcon, DownloadIcon, CheckCircleIcon, FileTextIcon, TrendingUpIcon, LayersIcon,
-  AlertTriangleIcon, Share2Icon, ClockIcon, SettingsIcon, EyeIcon, EyeOffIcon, PiggyBankIcon,
+  AlertTriangleIcon, Share2Icon, ClockIcon, SettingsIcon, EyeIcon, EyeOffIcon, PiggyBankIcon, ChevronDownIcon,
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { calcularAliquotaNominal } from '../../lib/simplesNacional';
@@ -427,6 +427,15 @@ export default function PainelClientePage({ clienteId, competencia: competenciaI
                             </button>
                           </div>
                           <GraficoFaturamento dados={historicoFaturamento} />
+                        </div>
+                      </SecaoToggleable>
+                    )}
+
+                    {documentosFiscais.some((d) => d.tipo_movimento === 'entrada') && (
+                      <SecaoToggleable chave="notas_entrada" {...propsSecao}>
+                        <div>
+                          <SecaoTitulo icone={<FileTextIcon size={14} />}>Notas fiscais de entrada</SecaoTitulo>
+                          <NotasEntrada documentos={documentosFiscais} />
                         </div>
                       </SecaoToggleable>
                     )}
@@ -974,6 +983,68 @@ function CardSituacaoCND({ label, situacao, anexo, onBaixarAnexo }) {
       <span style={{ display: 'inline-block', marginTop: 5, fontSize: 12, fontWeight: 700, borderRadius: 99, padding: '3px 10px', color: cor, background: corDim }}>
         {texto}
       </span>
+    </div>
+  );
+}
+
+// Notas fiscais de entrada (compras) capturadas pela integração Omie/OneFlow
+// (documentos_fiscais_erp) — fechado mostra só o valor total; abre pra
+// quebrar nota a nota (NF, data, fornecedor e valor). Usado nas duas
+// versões do painel. Lista limitada de início: cliente com muita compra no
+// mês não deve receber centenas de linhas de uma vez no celular.
+const LIMITE_NOTAS_ENTRADA = 30;
+const COLUNAS_NOTAS_ENTRADA = '58px 68px minmax(0, 1fr) auto';
+export function NotasEntrada({ documentos }) {
+  const [aberto, setAberto] = useState(false);
+  const [verTodas, setVerTodas] = useState(false);
+  const entradas = documentos.filter((d) => d.tipo_movimento === 'entrada');
+  if (entradas.length === 0) return null;
+  const total = entradas.reduce((s, d) => s + Number(d.valor_total || 0), 0);
+  const visiveis = verTodas ? entradas : entradas.slice(0, LIMITE_NOTAS_ENTRADA);
+  const restante = entradas.length - visiveis.length;
+  return (
+    <div style={{ background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', overflow: 'hidden' }}>
+      <button type="button" onClick={() => setAberto((v) => !v)} aria-expanded={aberto}
+        style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 10, padding: '12px 14px', background: 'none', border: 'none',
+          cursor: 'pointer', textAlign: 'left', fontFamily: 'inherit' }}>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 10, color: 'var(--text3)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.03em' }}>
+            Total de entradas · {entradas.length} nota{entradas.length !== 1 ? 's' : ''}
+          </div>
+          <div style={{ fontSize: 18, fontWeight: 800, color: 'var(--text1)', marginTop: 3 }}>{fmt(total)}</div>
+        </div>
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11, fontWeight: 600, color: 'var(--accent)',
+          background: 'var(--accent-dim)', borderRadius: 99, padding: '5px 10px', whiteSpace: 'nowrap' }}>
+          {aberto ? 'Ocultar notas' : 'Ver por nota'}
+          <ChevronDownIcon size={13} style={{ transform: aberto ? 'rotate(180deg)' : 'none', transition: 'transform .15s' }} />
+        </span>
+      </button>
+      {aberto && (
+        <div style={{ borderTop: '1px solid var(--border)', padding: '4px 14px 10px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: COLUNAS_NOTAS_ENTRADA, gap: 8, padding: '7px 0', fontSize: 9.5, color: 'var(--text3)',
+            fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.03em' }}>
+            <span>NF</span><span>Data</span><span>Fornecedor</span><span style={{ textAlign: 'right' }}>Valor</span>
+          </div>
+          {visiveis.map((d) => (
+            <div key={d.id} style={{ display: 'grid', gridTemplateColumns: COLUNAS_NOTAS_ENTRADA, gap: 8, alignItems: 'center', padding: '7px 0',
+              borderTop: '1px solid var(--border)', fontSize: 12 }}>
+              <span style={{ color: 'var(--text2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={`${d.modelo || 'NF'} ${d.numero || ''}`}>{d.numero || '—'}</span>
+              <span style={{ color: 'var(--text2)', whiteSpace: 'nowrap' }}>{d.data_emissao ? fmtData(d.data_emissao).slice(0, 5) : '—'}</span>
+              <span style={{ color: 'var(--text1)', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={d.razao_social_terceiro || ''}>
+                {d.razao_social_terceiro || 'Fornecedor não informado'}
+              </span>
+              <span style={{ color: 'var(--text1)', fontWeight: 700, textAlign: 'right', whiteSpace: 'nowrap' }}>{fmt(d.valor_total)}</span>
+            </div>
+          ))}
+          {restante > 0 && (
+            <button type="button" onClick={() => setVerTodas(true)}
+              style={{ marginTop: 8, width: '100%', fontSize: 11.5, fontWeight: 600, color: 'var(--accent)', background: 'var(--accent-dim)',
+                border: 'none', borderRadius: 8, padding: '7px 10px', cursor: 'pointer' }}>
+              Mostrar mais {restante} nota{restante !== 1 ? 's' : ''}
+            </button>
+          )}
+        </div>
+      )}
     </div>
   );
 }

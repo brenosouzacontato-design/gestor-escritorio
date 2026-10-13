@@ -1,16 +1,16 @@
 import { useEffect, useState } from 'react';
 import {
   CalendarIcon, DownloadIcon, CheckCircleIcon, AlertTriangleIcon, ClockIcon, TrendingUpIcon,
-  ClipboardListIcon, EyeIcon, WalletIcon, CopyIcon,
+  ClipboardListIcon, EyeIcon, WalletIcon, CopyIcon, FileTextIcon,
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { abrirLinkAssinado } from '../documentos/documentosApi';
-import { GraficoFaturamento, ComparativoDas } from './PainelClientePage';
+import { GraficoFaturamento, ComparativoDas, NotasEntrada } from './PainelClientePage';
 import { calcularAliquotaNominal } from '../../lib/simplesNacional';
 import {
   obterResumoObrigacoes, obterResumoTarefas, obterDadosGerenciais, obterDocumentosPorObrigacao,
   obterDocumentosPorTarefa, obterSituacaoFiscalMaisRecente, obterCndManual, obterHistoricoFaturamento,
-  obterUltimaVisualizacaoPainel, extrairValorGuia, obterHonorariosPainel,
+  obterUltimaVisualizacaoPainel, extrairValorGuia, obterHonorariosPainel, obterDocumentosFiscais,
 } from './painelApi';
 import { obterConfigPix } from '../honorarios/honorariosApi';
 
@@ -165,7 +165,7 @@ export default function PainelCompartilhadoPage({ clienteId, competencia: compet
       setCarregando(true);
       setErro(null);
       try {
-        const [{ data: cliente, error: errCliente }, obs, tarefas, gerenciais, historico, situacaoFiscal, cndManual, honorarios, configPix] = await Promise.all([
+        const [{ data: cliente, error: errCliente }, obs, tarefas, gerenciais, historico, situacaoFiscal, cndManual, honorarios, configPix, notasEntrada] = await Promise.all([
           supabase.from('clientes').select('nome, cnpj, regime').eq('id', clienteId).single(),
           obterResumoObrigacoes(clienteId, competencia),
           obterResumoTarefas(clienteId, competencia),
@@ -176,6 +176,7 @@ export default function PainelCompartilhadoPage({ clienteId, competencia: compet
           obterCndManual(clienteId, competencia).catch(() => null),
           obterHonorariosPainel(clienteId, competencia).catch(() => []),
           obterConfigPix().catch(() => ({ chavePix: '', favorecido: '' })),
+          obterDocumentosFiscais(clienteId, competencia, 'entrada').catch(() => []),
         ]);
         if (errCliente) throw errCliente;
         const impostos = obs.itens.filter(ehImposto);
@@ -185,7 +186,7 @@ export default function PainelCompartilhadoPage({ clienteId, competencia: compet
           obterDocumentosPorObrigacao([...impostos, ...outrasObrigacoes].map((o) => o.id)).catch(() => ({})),
           obterDocumentosPorTarefa(tarefasArea.map((t) => t.id)).catch(() => ({})),
         ]);
-        setDados({ cliente, impostos, outrasObrigacoes, tarefasArea, anexos, anexosTarefa, gerenciais, historico, situacaoFiscal, cndManual, honorarios, configPix });
+        setDados({ cliente, impostos, outrasObrigacoes, tarefasArea, anexos, anexosTarefa, gerenciais, historico, situacaoFiscal, cndManual, honorarios, configPix, notasEntrada });
       } catch (e) {
         setErro(e.message);
       } finally {
@@ -311,6 +312,13 @@ export default function PainelCompartilhadoPage({ clienteId, competencia: compet
                       <GraficoFaturamento dados={dados.historico} />
                     </div>
                   )}
+                </Secao>
+              )}
+
+              {/* ── Notas fiscais de entrada (integração Omie/OneFlow): total, abre por nota ── */}
+              {dados.notasEntrada.length > 0 && (
+                <Secao titulo={`Notas fiscais de entrada — ${competencia}`} icone={<FileTextIcon size={14} />}>
+                  <NotasEntrada documentos={dados.notasEntrada} />
                 </Secao>
               )}
 

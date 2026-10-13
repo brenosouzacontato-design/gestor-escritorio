@@ -304,7 +304,9 @@ export async function obterPendenciasAnteriores(clienteId, competenciaAtual) {
 // Documentos fiscais do cliente na competência do painel — mesma tabela
 // alimentada pelo cron diário (netlify/functions/documentos-fiscais-cron.js)
 // e usada na aba Notas Fiscais do Financeiro/visão geral.
-export async function obterDocumentosFiscais(clienteId, competencia) {
+// `tipoMovimento` ('entrada'/'saida', opcional) filtra já na consulta — quem
+// só mostra as entradas não precisa baixar as milhares de saídas do varejo.
+export async function obterDocumentosFiscais(clienteId, competencia, tipoMovimento = null) {
   // O Supabase/PostgREST limita a 1000 linhas por página por padrão —
   // clientes de alto volume (ex: varejo com centenas de vendas/dia) passam
   // disso numa única competência, então sem paginar o painel mostrava só
@@ -313,12 +315,16 @@ export async function obterDocumentosFiscais(clienteId, competencia) {
   let todos = [];
   let pagina = 0;
   while (true) {
-    const { data, error } = await supabase
+    let consulta = supabase
       .from('documentos_fiscais_erp')
       .select('id, modelo, tipo_movimento, numero, serie, razao_social_terceiro, valor_total, data_emissao')
       .eq('cliente_id', clienteId)
-      .eq('competencia', competencia)
+      .eq('competencia', competencia);
+    if (tipoMovimento) consulta = consulta.eq('tipo_movimento', tipoMovimento);
+    const { data, error } = await consulta
       .order('data_emissao', { ascending: false })
+      // desempate estável — sem isso, notas com a mesma data podem repetir/sumir entre páginas
+      .order('id')
       .range(pagina * TAMANHO_PAGINA, pagina * TAMANHO_PAGINA + TAMANHO_PAGINA - 1);
     if (error) throw error;
     todos = todos.concat(data || []);
