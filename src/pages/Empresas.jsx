@@ -171,6 +171,10 @@ export default function Empresas({ onOpenTarefas, clienteInicialId, onClienteIni
   // supabase-schema-cliente-entrega-competencia.sql. Guarda só quem está
   // entregue na competência atual; todo o resto cai em "A entregar".
   const [entregues, setEntregues] = useState(new Set())
+  // Terceiro status geral, "Aguardando cliente": o mês está parado esperando
+  // algo do cliente (coluna aguardando_cliente da mesma tabela, ver
+  // supabase-schema-cliente-entrega-aguardando.sql).
+  const [aguardando, setAguardando] = useState(new Set())
   const [filtroLista, setFiltroLista] = useState('todas') // chip de status ativo na visualização Lista
   const [departamentos,setDepartamentos] = useState([])
   const [showAddDept, setShowAddDept] = useState(false)
@@ -197,23 +201,53 @@ export default function Empresas({ onOpenTarefas, clienteInicialId, onClienteIni
   useEffect(() => { carregarDepartamentos() }, [])
 
   useEffect(() => {
-    supabase.from('cliente_entrega_competencia').select('cliente_id')
-      .eq('competencia', compSel).eq('entregue', true)
-      .then(({ data }) => setEntregues(new Set((data || []).map(r => r.cliente_id))))
+    // '*' em vez de lista fixa: traz aguardando_cliente quando a coluna já
+    // existe, sem quebrar enquanto o schema novo não foi aplicado
+    supabase.from('cliente_entrega_competencia').select('*')
+      .eq('competencia', compSel)
+      .then(({ data }) => {
+        setEntregues(new Set((data || []).filter(r => r.entregue).map(r => r.cliente_id)))
+        setAguardando(new Set((data || []).filter(r => r.aguardando_cliente && !r.entregue).map(r => r.cliente_id)))
+      })
   }, [compSel])
+
+  const statusGeral = (clienteId) =>
+    entregues.has(clienteId) ? 'entregue' : aguardando.has(clienteId) ? 'aguardando_cliente' : 'a_entregar'
 
   // Arrastar um card pra outra coluna (ou soltar em cima de outro card já
   // na coluna de destino) muda a sinalização de entrega — não mexe em
   // nenhuma obrigação/tarefa, é só uma marcação manual do escritório.
-  const handleMudarEntrega = async (clienteId, entregue) => {
-    setEntregues(prev => {
-      const nova = new Set(prev)
-      if (entregue) nova.add(clienteId); else nova.delete(clienteId)
-      return nova
-    })
-    await supabase.from('cliente_entrega_competencia')
-      .upsert({ cliente_id: clienteId, competencia: compSel, entregue, atualizado_em: new Date().toISOString() }, { onConflict: 'cliente_id,competencia' })
+  // `status`: 'a_entregar' | 'aguardando_cliente' | 'entregue' (mesmos ids das colunas).
+  const handleMudarStatusGeral = async (clienteId, status) => {
+    const anterior = statusGeral(clienteId)
+    if (anterior === status) return
+    const aplicar = (st) => {
+      const ajustar = (alvo) => (prev) => {
+        const nova = new Set(prev)
+        if (st === alvo) nova.add(clienteId); else nova.delete(clienteId)
+        return nova
+      }
+      setEntregues(ajustar('entregue'))
+      setAguardando(ajustar('aguardando_cliente'))
+    }
+    aplicar(status)
+    // aguardando_cliente só vai no payload quando entra ou sai desse status —
+    // quem só usa entregue/a entregar continua funcionando sem a coluna nova
+    const mexeAguardando = status === 'aguardando_cliente' || anterior === 'aguardando_cliente'
+    const { error } = await supabase.from('cliente_entrega_competencia')
+      .upsert({
+        cliente_id: clienteId, competencia: compSel, entregue: status === 'entregue',
+        ...(mexeAguardando ? { aguardando_cliente: status === 'aguardando_cliente' } : {}),
+        atualizado_em: new Date().toISOString(),
+      }, { onConflict: 'cliente_id,competencia' })
+    if (error) {
+      aplicar(anterior)
+      show(/aguardando_cliente/.test(error.message || '')
+        ? 'Falta criar a coluna no banco: rode supabase-schema-cliente-entrega-aguardando.sql no SQL Editor do Supabase.'
+        : 'Erro ao mudar o status: ' + error.message)
+    }
   }
+  const handleMudarEntrega = (clienteId, entregue) => handleMudarStatusGeral(clienteId, entregue ? 'entregue' : 'a_entregar')
 
   const carteiras = useMemo(() => {
     const s = new Set(clientes.map(c => c.carteira).filter(Boolean))
@@ -367,10 +401,7 @@ export default function Empresas({ onOpenTarefas, clienteInicialId, onClienteIni
     const arrastado = arrastandoId
     setArrastandoId(null)
     if (!arrastado) return
-    if (colunaAlvo) {
-      const entregueAlvo = colunaAlvo === 'entregue'
-      if (entregues.has(arrastado) !== entregueAlvo) handleMudarEntrega(arrastado, entregueAlvo)
-    }
+    if (colunaAlvo) handleMudarStatusGeral(arrastado, colunaAlvo)
     if (arrastado === targetId) return
     const ids = rowsCards.map(r => r.c.id)
     const de = ids.indexOf(arrastado)
@@ -387,8 +418,7 @@ export default function Empresas({ onOpenTarefas, clienteInicialId, onClienteIni
     const arrastado = arrastandoId
     setArrastandoId(null)
     if (!arrastado) return
-    const entregueAlvo = colunaAlvo === 'entregue'
-    if (entregues.has(arrastado) !== entregueAlvo) handleMudarEntrega(arrastado, entregueAlvo)
+    handleMudarStatusGeral(arrastado, colunaAlvo)
   }
 
   // Drawer: leitura direta do store (sem useMemo) para refletir mudanças imediatas
@@ -817,8 +847,9 @@ export default function Empresas({ onOpenTarefas, clienteInicialId, onClienteIni
 
         {visualizacao === 'cards' && (() => {
           const colunas = [
-            { id:'a_entregar', label:'A entregar', cor:'var(--warn)', itens: rowsCards.filter(r => !entregues.has(r.c.id)) },
-            { id:'entregue',   label:'Entregue',   cor:'var(--ok)',   itens: rowsCards.filter(r => entregues.has(r.c.id)) },
+            { id:'a_entregar',         label:'A entregar',         cor:'var(--warn)', itens: rowsCards.filter(r => statusGeral(r.c.id) === 'a_entregar') },
+            { id:'aguardando_cliente', label:'Aguardando cliente', cor:'var(--info)', itens: rowsCards.filter(r => statusGeral(r.c.id) === 'aguardando_cliente') },
+            { id:'entregue',           label:'Entregue',           cor:'var(--ok)',   itens: rowsCards.filter(r => statusGeral(r.c.id) === 'entregue') },
           ]
           return (
           <div style={{ flex:1, overflow:'auto', padding:'16px' }}>
@@ -826,7 +857,7 @@ export default function Empresas({ onOpenTarefas, clienteInicialId, onClienteIni
               <div style={{ padding:40, textAlign:'center', color:'var(--text3)', fontSize:13 }}>Nenhuma empresa encontrada</div>
             )}
             {rows.length > 0 && (
-            <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:16, alignItems:'start' }}>
+            <div style={{ display:'grid', gridTemplateColumns:`repeat(${colunas.length}, minmax(0, 1fr))`, gap:16, alignItems:'start' }}>
               {colunas.map(coluna => (
                 <div key={coluna.id}
                   onDragOver={e => e.preventDefault()}
@@ -981,7 +1012,7 @@ export default function Empresas({ onOpenTarefas, clienteInicialId, onClienteIni
             const tasksPend = tarefas.filter(t => t.cliente_id === c.id && !t.concluida)
             const tasksAtrasadas = tasksPend.filter(t => t.vencimento && new Date(t.vencimento + 'T00:00:00') < hoje).length
             const proxVenc = obsTotal.filter(o => o.status==='pendente' && o.vencimento).map(o => o.vencimento).sort()[0] || null
-            return { c, deptData, obsTotal, resOk, resVenc, resPend, resVencendo, resPct, resS, tasksPend: tasksPend.length, tasksAtrasadas, proxVenc, entregue: entregues.has(c.id) }
+            return { c, deptData, obsTotal, resOk, resVenc, resPend, resVencendo, resPct, resS, tasksPend: tasksPend.length, tasksAtrasadas, proxVenc, entregue: entregues.has(c.id), status: statusGeral(c.id) }
           })
           const FILTROS = [
             { id:'todas',      label:'Todas',          Icon:Building2Icon,     cor:'var(--text2)',  bg:'var(--surface2)', teste: () => true },
@@ -994,12 +1025,13 @@ export default function Empresas({ onOpenTarefas, clienteInicialId, onClienteIni
           const filtroAtivo = FILTROS.find(f => f.id === filtroLista) || FILTROS[0]
           const visiveis = itensLista.filter(filtroAtivo.teste)
           const secoes = [
-            { id:'a_entregar', label:'A entregar', Icon:HourglassIcon,    cor:'var(--warn)', bg:'var(--warn-dim)', itens: visiveis.filter(r => !r.entregue) },
-            { id:'entregue',   label:'Entregue',   Icon:PackageCheckIcon, cor:'var(--ok)',   bg:'var(--ok-dim)',   itens: visiveis.filter(r => r.entregue) },
+            { id:'a_entregar',         label:'A entregar',         Icon:HourglassIcon,    cor:'var(--warn)', bg:'var(--warn-dim)', itens: visiveis.filter(r => r.status === 'a_entregar') },
+            { id:'aguardando_cliente', label:'Aguardando cliente', Icon:UserIcon,         cor:'var(--info)', bg:'var(--info-dim)', itens: visiveis.filter(r => r.status === 'aguardando_cliente') },
+            { id:'entregue',           label:'Entregue',           Icon:PackageCheckIcon, cor:'var(--ok)',   bg:'var(--ok-dim)',   itens: visiveis.filter(r => r.status === 'entregue') },
           ]
           const totalEntregues = itensLista.filter(r => r.entregue).length
           const pctEntregue = itensLista.length > 0 ? Math.round((totalEntregues / itensLista.length) * 100) : 0
-          const COL_CHECK = 26, COL_GRIP = 16, COL_MODULOS = 170, COL_PROGRESSO = 130
+          const COL_CHECK = 26, COL_AGUARDANDO = 14, COL_GRIP = 16, COL_MODULOS = 170, COL_PROGRESSO = 130
           const HEAD = { fontSize:10, fontWeight:700, color:'var(--text3)', textTransform:'uppercase', letterSpacing:.4 }
           const REGIME = {
             SN: { label:'SN', titulo:'Simples Nacional', cor:'#2563EB' },
@@ -1070,7 +1102,7 @@ export default function Empresas({ onOpenTarefas, clienteInicialId, onClienteIni
                     {/* Cabeçalho de coluna, estilo grid do Microsoft Lists */}
                     <div style={{ display:'flex', alignItems:'center', gap:8, padding:'7px 10px 7px 13px',
                       background:'var(--surface2)', borderBottom:'1px solid var(--border)' }}>
-                      <span style={{ width:COL_CHECK + COL_GRIP + 8, flexShrink:0 }} />
+                      <span style={{ width:COL_CHECK + COL_AGUARDANDO + COL_GRIP + 16, flexShrink:0 }} />
                       <span style={{ ...HEAD, flex:1, minWidth:0 }}>Empresa</span>
                       <span style={{ ...HEAD, width:COL_MODULOS, flexShrink:0 }}>Módulos</span>
                       <span style={{ ...HEAD, width:COL_PROGRESSO, flexShrink:0, textAlign:'right' }}>Obrigações</span>
@@ -1112,6 +1144,17 @@ export default function Empresas({ onOpenTarefas, clienteInicialId, onClienteIni
                               display:'flex', alignItems:'center', justifyContent:'center', marginLeft: (COL_CHECK-18)/2, marginRight: (COL_CHECK-18)/2 }}>
                             {entregue && <CheckIcon size={12} color="#fff" strokeWidth={3} />}
                           </button>
+                          {/* slot de largura fixa mesmo sem botão (entregue), pra não desalinhar as colunas */}
+                          <span style={{ width:COL_AGUARDANDO, flexShrink:0, display:'flex', justifyContent:'center' }}>
+                            {!entregue && (
+                              <button onClick={e => { e.stopPropagation(); handleMudarStatusGeral(c.id, r.status === 'aguardando_cliente' ? 'a_entregar' : 'aguardando_cliente') }}
+                                title={r.status === 'aguardando_cliente' ? 'Voltar pra "A entregar"' : 'Marcar como aguardando cliente'}
+                                style={{ background:'none', border:'none', cursor:'pointer', padding:0, display:'flex',
+                                  color: r.status === 'aguardando_cliente' ? 'var(--info)' : 'var(--text3)' }}>
+                                <UserIcon size={13} />
+                              </button>
+                            )}
+                          </span>
                           <span style={{ width:COL_GRIP, flexShrink:0, display:'flex', justifyContent:'center' }}>
                             <GripVerticalIcon size={13} color="var(--text3)" style={{ cursor:'grab' }} title="Arrastar pra reordenar ou mudar de lista" />
                           </span>
@@ -1160,6 +1203,7 @@ export default function Empresas({ onOpenTarefas, clienteInicialId, onClienteIni
                                   <Selo Icon={BriefcaseIcon} cor="var(--text3)" bg="var(--surface2)">{c.carteira}</Selo>
                                 )}
                                 {entregue && <Selo Icon={PackageCheckIcon} cor="var(--ok)" bg="var(--ok-dim)">entregue</Selo>}
+                                {r.status === 'aguardando_cliente' && <Selo Icon={UserIcon} cor="var(--info)" bg="var(--info-dim)">aguardando cliente</Selo>}
                               </span>
                             </span>
                           </span>
