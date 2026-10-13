@@ -13,7 +13,7 @@ import {
   obterResumoObrigacoes, obterResumoTarefas, obterResumoFinanceiro, obterDadosGerenciais,
   obterDocumentosPorObrigacao, obterSituacaoFiscal, obterHistoricoFaturamento, obterCndManual,
   obterPendenciasAnteriores, obterValoresDasPendencias, obterDocumentosFiscais, definirSecoesOcultasPainel,
-  obterTarefasDoCliente,
+  obterTarefasDoCliente, avisarEventoPainel,
 } from './painelApi';
 
 const STATUS_OBS_LABEL = { pendente: 'Pendente', concluido: 'Concluído', nao_aplica: 'N/A', vencido: 'Vencido' };
@@ -236,6 +236,8 @@ export default function PainelClientePage({ clienteId, competencia: competenciaI
   }, [clienteId, competencia]);
 
   const baixarAnexo = async (documento) => {
+    // download feito pelo cliente (link público) avisa o escritório
+    if (!admin) avisarEventoPainel(clienteId, 'download', { descricao: documento.nome_arquivo, competencia });
     await abrirLinkAssinado(documento.storage_path).catch(() => null);
   };
 
@@ -950,8 +952,10 @@ function ImpostosAVencer({ itens, onBaixarAnexo }) {
     <div style={{ display: 'flex', gap: 10, overflowX: 'auto', paddingBottom: 4 }}>
       {ordenados.map((it) => {
         const dias = diasParaVencer(it.vencimento);
-        const statusKey = it.concluido ? 'concluido' : dias != null && dias < 0 ? 'vencido' : 'pendente';
-        const [cor, corDim] = dias != null && dias > 3 && !it.concluido ? ['var(--text3)', 'var(--surface3)'] : STATUS_OBS_COR[statusKey];
+        // guia com pagamento marcado (comprovante recebido, ver supabase-schema-guia-pagamento.sql)
+        const pago = !!it.anexo?.pago_em;
+        const statusKey = it.concluido || pago ? 'concluido' : dias != null && dias < 0 ? 'vencido' : 'pendente';
+        const [cor, corDim] = dias != null && dias > 3 && !it.concluido && !pago ? ['var(--text3)', 'var(--surface3)'] : STATUS_OBS_COR[statusKey];
         return (
           <div key={it.id} style={{ flexShrink: 0, width: 156, background: 'var(--surface2)',
             borderLeft: `3px solid ${cor}`, borderRadius: 'var(--r-md)', padding: '11px 12px 11px 10px' }}>
@@ -961,7 +965,7 @@ function ImpostosAVencer({ itens, onBaixarAnexo }) {
             {it.valor != null && <div style={{ fontSize: 14, fontWeight: 800, marginTop: 6, color: 'var(--text1)' }}>{fmt(it.valor)}</div>}
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6, marginTop: 7 }}>
               <span style={{ fontSize: 9.5, fontWeight: 700, borderRadius: 99, padding: '2px 8px', color: cor, background: corDim }}>
-                {it.concluido ? 'concluído' : it.vencimento ? fmtDiasParaVencer(dias) : 'guia anexada'}
+                {pago ? 'paga' : it.concluido ? 'concluído' : it.vencimento ? fmtDiasParaVencer(dias) : 'guia anexada'}
               </span>
               {it.anexo && (
                 <button onClick={() => onBaixarAnexo(it.anexo)} title={`Baixar ${it.anexo.nome_arquivo}`}

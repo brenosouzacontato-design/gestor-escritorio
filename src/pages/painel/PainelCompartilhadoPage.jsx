@@ -1,7 +1,7 @@
-import { useEffect, useState } from 'react';
+import { createContext, useContext, useEffect, useState } from 'react';
 import {
   CalendarIcon, DownloadIcon, CheckCircleIcon, AlertTriangleIcon, ClockIcon, TrendingUpIcon,
-  ClipboardListIcon, EyeIcon, EyeOffIcon, WalletIcon, CopyIcon, FileTextIcon, SettingsIcon, UserIcon,
+  ClipboardListIcon, EyeIcon, EyeOffIcon, WalletIcon, CopyIcon, FileTextIcon, SettingsIcon, UserIcon, MessageSquareIcon, PartyPopperIcon, BellIcon, SendIcon,
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { abrirLinkAssinado } from '../documentos/documentosApi';
@@ -12,8 +12,12 @@ import {
   obterDocumentosPorTarefa, obterSituacaoFiscalMaisRecente, obterCndManual, obterHistoricoFaturamento,
   obterUltimaVisualizacaoPainel, extrairValorGuia, obterHonorariosPainel, obterDocumentosFiscais,
   definirSecoesOcultasPainel, atualizarDadosGerenciais, atualizarValorGuia, obterTarefasDoCliente,
+  avisarEventoPainel, obterEventosPainel, obterRecadosPainel, salvarRecadoPainel, marcarGuiaPaga,
 } from './painelApi';
 import { obterConfigPix } from '../honorarios/honorariosApi';
+import {
+  prepararPainelComoApp, situacaoNotificacoesPainel, ativarNotificacoesPainel, contarAparelhosPush, enviarNotificacaoCliente,
+} from './painelPush';
 
 // Nova versão do painel do cliente (link compartilhado, ?painel=<id>&competencia=MM/YYYY
 // — ver main.jsx; a versão completa antiga continua em PainelClientePage.jsx,
@@ -164,6 +168,7 @@ export default function PainelCompartilhadoPage({ clienteId, competencia: compet
   const opcoesComp = opcoesCompetencia(competenciaInicial);
   const [dados, setDados] = useState(null);
   const [ultimaVisualizacao, setUltimaVisualizacao] = useState(undefined); // undefined = carregando/indisponível
+  const [eventos, setEventos] = useState([]); // últimas aberturas/downloads do cliente (painel_eventos)
   const [lendoGuias, setLendoGuias] = useState(() => new Set()); // ids de documentos sendo lidos pela IA
   const [carregando, setCarregando] = useState(true);
   const [erro, setErro] = useState(null);
@@ -174,6 +179,8 @@ export default function PainelCompartilhadoPage({ clienteId, competencia: compet
   useEffect(() => {
     if (!admin) return;
     obterUltimaVisualizacaoPainel(clienteId).then(setUltimaVisualizacao).catch(() => setUltimaVisualizacao(undefined));
+    // tabela nova (supabase-schema-painel-eventos.sql) — tolera ainda não existir
+    obterEventosPainel(clienteId).then(setEventos).catch(() => setEventos([]));
   }, [clienteId, admin]);
 
   useEffect(() => {
@@ -181,7 +188,7 @@ export default function PainelCompartilhadoPage({ clienteId, competencia: compet
       setCarregando(true);
       setErro(null);
       try {
-        const [{ data: cliente, error: errCliente }, obs, tarefas, gerenciais, historico, situacaoFiscal, cndManual, honorarios, configPix, notasEntrada, tarefasCliente] = await Promise.all([
+        const [{ data: cliente, error: errCliente }, obs, tarefas, gerenciais, historico, situacaoFiscal, cndManual, honorarios, configPix, notasEntrada, tarefasCliente, recados] = await Promise.all([
           supabase.from('clientes').select('nome, cnpj, regime, painel_secoes_ocultas').eq('id', clienteId).single(),
           obterResumoObrigacoes(clienteId, competencia),
           obterResumoTarefas(clienteId, competencia),
@@ -194,6 +201,8 @@ export default function PainelCompartilhadoPage({ clienteId, competencia: compet
           obterConfigPix().catch(() => ({ chavePix: '', favorecido: '' })),
           obterDocumentosFiscais(clienteId, competencia, 'entrada').catch(() => []),
           obterTarefasDoCliente(clienteId).catch(() => []),
+          // tabela nova (supabase-schema-painel-recados.sql) — tolera ainda não existir
+          obterRecadosPainel(clienteId).catch(() => ({})),
         ]);
         if (errCliente) throw errCliente;
         const impostos = obs.itens.filter(ehImposto);
@@ -203,7 +212,7 @@ export default function PainelCompartilhadoPage({ clienteId, competencia: compet
           obterDocumentosPorObrigacao([...impostos, ...outrasObrigacoes].map((o) => o.id)).catch(() => ({})),
           obterDocumentosPorTarefa(tarefasArea.map((t) => t.id)).catch(() => ({})),
         ]);
-        setDados({ cliente, impostos, outrasObrigacoes, tarefasArea, anexos, anexosTarefa, gerenciais, historico, situacaoFiscal, cndManual, honorarios, configPix, notasEntrada, tarefasCliente });
+        setDados({ cliente, impostos, outrasObrigacoes, tarefasArea, anexos, anexosTarefa, gerenciais, historico, situacaoFiscal, cndManual, honorarios, configPix, notasEntrada, tarefasCliente, recados });
       } catch (e) {
         setErro(e.message);
       } finally {
@@ -236,7 +245,12 @@ export default function PainelCompartilhadoPage({ clienteId, competencia: compet
     });
   }, [dados]);
 
-  const baixar = (storagePath) => abrirLinkAssinado(storagePath).catch(() => null);
+  // `descricao` diz o que é o arquivo no aviso pro escritório — só o link
+  // público avisa (o download feito na prévia de dentro do app não conta)
+  const baixar = (storagePath, descricao) => {
+    if (!admin) avisarEventoPainel(clienteId, 'download', { descricao, competencia });
+    return abrirLinkAssinado(storagePath).catch(() => null);
+  };
 
   const secoesOcultas = dados?.cliente?.painel_secoes_ocultas || [];
   const oculta = (chave) => secoesOcultas.includes(chave);
@@ -263,6 +277,34 @@ export default function PainelCompartilhadoPage({ clienteId, competencia: compet
     } catch (e) {
       setDados((d) => ({ ...d, gerenciais: anterior }));
       setErroEdicao(`Não foi possível salvar: ${e.message}`);
+    }
+  };
+  // Recado manual do escritório numa linha (guia, honorário, pendência, obrigação)
+  const salvarRecado = async (chave, mensagem) => {
+    const anterior = dados.recados;
+    setDados((d) => ({ ...d, recados: { ...d.recados, [chave]: mensagem.trim() } }));
+    try {
+      await salvarRecadoPainel(clienteId, chave, mensagem);
+      setErroEdicao(null);
+    } catch (e) {
+      setDados((d) => ({ ...d, recados: anterior }));
+      setErroEdicao(/painel_recados/.test(e.message || '')
+        ? 'Não foi possível salvar o recado: falta criar a tabela — rode supabase-schema-painel-recados.sql no SQL Editor do Supabase.'
+        : `Não foi possível salvar o recado: ${e.message}`);
+    }
+  };
+  const salvarGuiaPaga = async (anexo, paga) => {
+    const trocar = (novo) => setDados((d) => ({
+      ...d, anexos: Object.fromEntries(Object.entries(d.anexos).map(([k, a]) => [k, a.id === anexo.id ? novo : a])),
+    }));
+    try {
+      const patch = await marcarGuiaPaga(anexo.id, paga);
+      trocar({ ...anexo, ...patch });
+      setErroEdicao(null);
+    } catch (e) {
+      setErroEdicao(/pago_em|valor_pago|comprovante/.test(e.message || '')
+        ? 'Não foi possível marcar: faltam as colunas de pagamento — rode supabase-schema-guia-pagamento.sql no SQL Editor do Supabase.'
+        : `Não foi possível salvar: ${e.message}`);
     }
   };
   const salvarValorGuia = async (anexo, valor) => {
@@ -296,7 +338,7 @@ export default function PainelCompartilhadoPage({ clienteId, competencia: compet
   // INSS declarado na DCTFWeb antes do dia 20) é "a vencer", não vencido. Se
   // a guia do mesmo tributo/competência já está anexada, ela é que entra na
   // soma — o débito do relatório ficaria contado em dobro.
-  const guiasAVencer = guiasCard.filter((g) => !g.semMovimento && !alertaVencida(g) && !(g.concluida && g.dias != null && g.dias < 0));
+  const guiasAVencer = guiasCard.filter((g) => !g.semMovimento && !g.paga && !alertaVencida(g) && !(g.concluida && g.dias != null && g.dias < 0));
   const pendenciasVencidas = pendenciasCard.filter((p) => !p.aVencer);
   const pendenciasAVencer = pendenciasCard.filter((p) => p.aVencer
     && !guiasCard.some((g) => g.competencia === p.competencia && nomeTributo(g.titulo) === p.nome));
@@ -310,11 +352,19 @@ export default function PainelCompartilhadoPage({ clienteId, competencia: compet
   // os débitos do Relatório de Situação Fiscal (que por definição já
   // passaram do prazo)
   const vencidos = [...guiasVencidas, ...honorariosVencidos, ...pendenciasVencidas];
+  // Tudo quitado: toda guia com valor a pagar da competência está paga, e não
+  // sobrou honorário em aberto, débito vencido na Receita nem tarefa do cliente
+  const guiasAPagar = guias ? guias.filter((g) => !g.semMovimento && g.anexo) : [];
+  const tudoQuitado = !!dados && guiasAPagar.length > 0 && guiasAPagar.every((g) => g.paga)
+    && honorarios.every((h) => h.concluida)
+    && (pendencias || []).every((p) => p.aVencer)
+    && dados.tarefasCliente.length === 0;
   const proximoVencimento = aVencer.find((g) => g.vencimento && g.dias >= 0)?.vencimento;
   const datasAVencer = new Set(aVencer.filter((g) => g.vencimento).map((g) => g.vencimento));
   const semMovimento = dados?.gerenciais?.faturamento_periodo != null && Number(dados.gerenciais.faturamento_periodo) === 0;
 
   return (
+    <RecadosContext.Provider value={{ recados: dados?.recados || {}, editando, salvar: salvarRecado }}>
     <div style={{ minHeight: '100vh', background: 'var(--bg)', padding: '24px 12px' }}>
       <div style={{ maxWidth: 720, margin: '0 auto', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--r-xl)', overflow: 'hidden' }}>
 
@@ -354,7 +404,7 @@ export default function PainelCompartilhadoPage({ clienteId, competencia: compet
           </div>
           {editando && (
             <div style={{ marginTop: 12, fontSize: 11, color: 'var(--navy-text)', background: 'rgba(255,255,255,.08)', borderRadius: 6, padding: '6px 10px' }}>
-              Modo de edição — só você vê isso. Use o olho pra escolher o que o cliente enxerga e corrija os valores nos campos; tudo é salvo na hora.
+              Modo de edição — só você vê isso. Use o olho pra escolher o que o cliente enxerga, corrija os valores nos campos e escreva um recado em qualquer linha; tudo é salvo na hora.
               {erroEdicao && <div style={{ color: '#fff', fontWeight: 700, marginTop: 4 }}>⚠ {erroEdicao}</div>}
             </div>
           )}
@@ -367,6 +417,21 @@ export default function PainelCompartilhadoPage({ clienteId, competencia: compet
                 : <span>O cliente ainda não abriu o link do painel.</span>}
             </div>
           )}
+          {admin ? <EnviarNotificacao clienteId={clienteId} competencia={competencia} /> : <AtivarNotificacoes clienteId={clienteId} />}
+          {admin && eventos.length > 0 && (
+            <div style={{ marginTop: 6, fontSize: 11, color: 'var(--navy-text)', background: 'rgba(255,255,255,.08)', borderRadius: 6, padding: '6px 10px' }}>
+              <div style={{ fontWeight: 700, marginBottom: 3 }}>Atividade recente do cliente</div>
+              {eventos.map((ev) => (
+                <div key={ev.id} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '1px 0' }}>
+                  {ev.tipo === 'download' ? <DownloadIcon size={11} /> : <EyeIcon size={11} />}
+                  <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {ev.tipo === 'download' ? `Baixou ${ev.descricao || 'um arquivo'}` : `Abriu o painel${ev.competencia ? ` (${ev.competencia})` : ''}`}
+                  </span>
+                  <span style={{ marginLeft: 'auto', whiteSpace: 'nowrap', opacity: 0.8 }}>{fmtDataHora(ev.criado_em)}</span>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
 
         <div style={{ padding: 22 }}>
@@ -375,6 +440,19 @@ export default function PainelCompartilhadoPage({ clienteId, competencia: compet
 
           {!carregando && !erro && dados && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
+
+              {/* ── Parabéns: todas as obrigações da competência quitadas ── */}
+              {tudoQuitado && (
+                <Ocultavel chave="parabens" {...propsOc}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '14px 16px', borderRadius: 'var(--r-lg)', background: 'var(--ok)', color: '#fff' }}>
+                    <PartyPopperIcon size={26} style={{ flexShrink: 0 }} />
+                    <div>
+                      <div style={{ fontSize: 15, fontWeight: 800 }}>Parabéns! Tudo quitado em {competencia}.</div>
+                      <div style={{ fontSize: 12, marginTop: 2, opacity: 0.92 }}>Todas as suas obrigações da competência estão pagas. Obrigado pelo comprometimento!</div>
+                    </div>
+                  </div>
+                </Ocultavel>
+              )}
 
               {/* ── Tarefas atribuídas ao cliente e ainda pendentes (qualquer competência) ── */}
               {dados.tarefasCliente.length > 0 && (
@@ -396,7 +474,7 @@ export default function PainelCompartilhadoPage({ clienteId, competencia: compet
                 if (!(g || temGrafico) || !(editando || algoVisivel)) return null;
                 return (
                   <Secao titulo={`Fiscal — competência ${competencia}`} icone={<TrendingUpIcon size={14} />}
-                    extra={g?.storage_path && <BotaoLink onClick={() => baixar(g.storage_path)}>Declaração</BotaoLink>}>
+                    extra={g?.storage_path && <BotaoLink onClick={() => baixar(g.storage_path, `Declaração do Simples ${competencia}`)}>Declaração</BotaoLink>}>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
                       {g && (
                         <Ocultavel chave="kpis" {...propsOc}>
@@ -472,7 +550,7 @@ export default function PainelCompartilhadoPage({ clienteId, competencia: compet
                 extra={temValor(guias) && <Total valor={somaValores(guias)} />}>
                 {guias.length === 0
                   ? <Vazio>Nenhuma guia de imposto anexada para essa competência.</Vazio>
-                  : <div style={LISTA}>{guias.map((g) => <LinhaGuia key={g.id} g={g} onBaixar={baixar} editando={editando} onSalvarValor={salvarValorGuia} />)}</div>}
+                  : <div style={LISTA}>{guias.map((g) => <LinhaGuia key={g.id} g={g} onBaixar={baixar} editando={editando} onSalvarValor={salvarValorGuia} onMarcarPaga={salvarGuiaPaga} />)}</div>}
               </Secao>
               </Ocultavel>
 
@@ -505,7 +583,7 @@ export default function PainelCompartilhadoPage({ clienteId, competencia: compet
                       {pendencias.length > 0 ? ' · saldo atualizado conforme o relatório.' : '.'}
                     </span>
                     {dados.situacaoFiscal.storage_path && (
-                      <BotaoLink onClick={() => baixar(dados.situacaoFiscal.storage_path)}>Baixar relatório</BotaoLink>
+                      <BotaoLink onClick={() => baixar(dados.situacaoFiscal.storage_path, 'Relatório de Situação Fiscal')}>Baixar relatório</BotaoLink>
                     )}
                   </div>
                 )}
@@ -529,6 +607,7 @@ export default function PainelCompartilhadoPage({ clienteId, competencia: compet
         </div>
       </div>
     </div>
+    </RecadosContext.Provider>
   );
 }
 
@@ -558,6 +637,9 @@ function montarGuias({ impostos, anexos, gerenciais }, competencia) {
         // vencida + concluída = o escritório já deu baixa, não é alerta
         dias: diasParaVencer(vencimento),
         concluida: o.status === 'concluido' || o.status === 'nao_aplica',
+        // pagamento confirmado pelo comprovante (ou marcado na mão no modo de edição)
+        paga: !!anexo?.pago_em,
+        pagoEm: anexo?.pago_em || null,
         semMovimento: das && semMovimento,
         valor: das && semMovimento ? null
           : valorGuia ?? (das && gerenciais?.valor_das != null ? Number(gerenciais.valor_das) : null),
@@ -591,7 +673,10 @@ function montarPendencias(situacaoFiscal) {
   // antes do campo vencimento existir só tem o texto da situação ("A VENCER")
   return [...debitos, ...dividas].map((p) => {
     const dias = diasParaVencer(p.vencimento);
-    return { ...p, dias, aVencer: dias != null ? dias >= 0 : /a\s*vencer/i.test(p.situacao || '') };
+    // `chave` identifica o débito pro recado da linha — o id é só a posição
+    // no relatório e mudaria a cada relatório novo enviado
+    const chave = `pend-${p.id.split('-')[0]}-${p.codigo || p.nome}-${p.competencia || ''}`;
+    return { ...p, chave, dias, aVencer: dias != null ? dias >= 0 : /a\s*vencer/i.test(p.situacao || '') };
   }).sort((a, b) => competenciaOrdinal(a.competencia) - competenciaOrdinal(b.competencia));
 }
 
@@ -631,8 +716,8 @@ function montarHonorarios(honorarios) {
   }));
 }
 
-const alertaVencida = (g) => !g.semMovimento && !g.concluida && g.dias != null && g.dias < 0;
-const alertaUrgente = (g) => !g.semMovimento && g.dias != null && g.dias >= 0 && g.dias <= 3;
+const alertaVencida = (g) => !g.semMovimento && !g.concluida && !g.paga && g.dias != null && g.dias < 0;
+const alertaUrgente = (g) => !g.semMovimento && !g.paga && g.dias != null && g.dias >= 0 && g.dias <= 3;
 
 const LISTA = { display: 'flex', flexDirection: 'column', gap: 6 };
 const COR_S = { ok: 'var(--ok)', warn: 'var(--warn)', danger: 'var(--danger)', neutral: 'var(--text1)' };
@@ -665,6 +750,104 @@ function ChipSituacao({ situacaoFiscal, cndManual, soAVencer }) {
       background: pendente ? 'var(--danger)' : 'var(--ok)' }}>
       {pendente ? 'Situação fiscal: com pendências' : 'Situação fiscal: regular'}
     </span>
+  );
+}
+
+// Lado do cliente: botão pra ativar as notificações push do painel naquele
+// aparelho (painelPush.js). Some quando o navegador não tem suporte; no
+// iPhone explica o passo de adicionar à tela de início, sem o qual o iOS
+// não libera notificações.
+function AtivarNotificacoes({ clienteId }) {
+  const [situacao, setSituacao] = useState(null);
+  const [ativando, setAtivando] = useState(false);
+  const [erro, setErro] = useState(null);
+  useEffect(() => {
+    prepararPainelComoApp();
+    situacaoNotificacoesPainel().then(setSituacao).catch(() => setSituacao('sem_suporte'));
+  }, []);
+  const ativar = async () => {
+    setAtivando(true);
+    setErro(null);
+    try {
+      await ativarNotificacoesPainel(clienteId);
+    } catch (e) {
+      setErro(e.message);
+    }
+    setSituacao(await situacaoNotificacoesPainel().catch(() => 'sem_suporte'));
+    setAtivando(false);
+  };
+  if (!situacao || situacao === 'sem_suporte') return null;
+  const caixa = { marginTop: 12, fontSize: 11, color: 'var(--navy-text)', background: 'rgba(255,255,255,.08)', borderRadius: 6, padding: '7px 10px' };
+  if (situacao === 'ativo') {
+    return <div style={{ ...caixa, display: 'flex', alignItems: 'center', gap: 6 }}><BellIcon size={12} /> Notificações ativas neste aparelho.</div>;
+  }
+  if (situacao === 'ios_instalar') {
+    return <div style={caixa}><b style={{ color: '#fff' }}>Quer receber avisos no iPhone?</b> Toque em Compartilhar → “Adicionar à Tela de Início”, abra o painel pelo ícone criado e ative as notificações.</div>;
+  }
+  if (situacao === 'bloqueado') {
+    return <div style={caixa}>As notificações estão bloqueadas neste navegador. Libere nas configurações do site pra receber os avisos do escritório.</div>;
+  }
+  return (
+    <div style={{ ...caixa, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+      <span style={{ flex: '1 1 180px' }}>Receba no celular os avisos do escritório (guia disponível, vencimentos, recados).</span>
+      <button type="button" onClick={ativar} disabled={ativando}
+        style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11.5, fontWeight: 700, color: '#fff', background: 'var(--accent)',
+          border: 'none', borderRadius: 8, padding: '6px 11px', cursor: 'pointer', whiteSpace: 'nowrap', opacity: ativando ? 0.6 : 1 }}>
+        <BellIcon size={13} /> {ativando ? 'Ativando…' : 'Ativar notificações'}
+      </button>
+      {erro && <span style={{ flex: '1 1 100%', color: '#fff', fontWeight: 700 }}>⚠ {erro}</span>}
+    </div>
+  );
+}
+
+// Lado do escritório (prévia de dentro do app): manda uma notificação push
+// pros aparelhos em que o cliente ativou as notificações do painel.
+function EnviarNotificacao({ clienteId, competencia }) {
+  const [aparelhos, setAparelhos] = useState(null); // null = tabela indisponível/carregando
+  const [mensagem, setMensagem] = useState('');
+  const [enviando, setEnviando] = useState(false);
+  const [resultado, setResultado] = useState(null);
+  useEffect(() => {
+    setResultado(null);
+    contarAparelhosPush(clienteId).then(setAparelhos).catch(() => setAparelhos(null));
+  }, [clienteId]);
+  if (aparelhos == null) return null;
+  const enviar = async () => {
+    setEnviando(true);
+    setResultado(null);
+    try {
+      const url = `${window.location.origin}${window.location.pathname}?painel=${clienteId}&competencia=${encodeURIComponent(competencia)}`;
+      const r = await enviarNotificacaoCliente(clienteId, { titulo: 'Recado do seu escritório contábil', mensagem: mensagem.trim(), url });
+      setResultado(r.enviadas > 0 ? `Enviada pra ${plural(r.enviadas, 'aparelho', 'aparelhos')}.` : 'Nenhum aparelho recebeu — o cliente precisa ativar as notificações de novo.');
+      if (r.enviadas > 0) setMensagem('');
+      contarAparelhosPush(clienteId).then(setAparelhos).catch(() => {});
+    } catch (e) {
+      setResultado(`Não enviou: ${e.message}`);
+    }
+    setEnviando(false);
+  };
+  return (
+    <div style={{ marginTop: 6, fontSize: 11, color: 'var(--navy-text)', background: 'rgba(255,255,255,.08)', borderRadius: 6, padding: '7px 10px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 700 }}>
+        <BellIcon size={12} /> Notificação no celular do cliente
+        <span style={{ fontWeight: 400, opacity: 0.85 }}>
+          {aparelhos === 0 ? '— o cliente ainda não ativou as notificações no painel' : `— ${plural(aparelhos, 'aparelho ativo', 'aparelhos ativos')}`}
+        </span>
+      </div>
+      {aparelhos > 0 && (
+        <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
+          <input value={mensagem} onChange={(e) => setMensagem(e.target.value)} maxLength={300} placeholder="Ex: Sua guia do DAS já está disponível no painel."
+            onKeyDown={(e) => { if (e.key === 'Enter' && mensagem.trim() && !enviando) enviar(); }}
+            style={{ flex: 1, minWidth: 0, fontSize: 12, color: '#fff', background: 'rgba(255,255,255,.1)', border: '1px solid rgba(255,255,255,.2)', borderRadius: 6, padding: '6px 8px', fontFamily: 'inherit' }} />
+          <button type="button" onClick={enviar} disabled={enviando || !mensagem.trim()}
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11.5, fontWeight: 700, color: '#fff', background: 'var(--accent)', border: 'none',
+              borderRadius: 6, padding: '0 11px', cursor: 'pointer', whiteSpace: 'nowrap', opacity: enviando || !mensagem.trim() ? 0.6 : 1 }}>
+            <SendIcon size={12} /> {enviando ? 'Enviando…' : 'Enviar'}
+          </button>
+        </div>
+      )}
+      {resultado && <div style={{ marginTop: 5, color: '#fff' }}>{resultado}</div>}
+    </div>
   );
 }
 
@@ -745,9 +928,9 @@ function BotaoLink({ onClick, children }) {
   );
 }
 
-function BotaoGuia({ anexo, onBaixar, label = 'Guia' }) {
+function BotaoGuia({ anexo, onBaixar, label = 'Guia', descricao }) {
   return (
-    <button type="button" onClick={() => onBaixar(anexo.storage_path)} title={`Baixar ${anexo.nome_arquivo}`}
+    <button type="button" onClick={() => onBaixar(anexo.storage_path, descricao || anexo.nome_arquivo)} title={`Baixar ${anexo.nome_arquivo}`}
       style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11.5, fontWeight: 700, color: '#fff', background: 'var(--accent)',
         border: 'none', borderRadius: 8, padding: '6px 11px', cursor: 'pointer', whiteSpace: 'nowrap' }}>
       <DownloadIcon size={13} /> {label}
@@ -779,7 +962,33 @@ function Indicador({ icone, titulo, valor, sub, s }) {
 
 // Linha base: título com a competência ao lado ("INSS Mensal 06/2026"),
 // detalhes embaixo, valor/ações à direita.
-function Linha({ corBorda, titulo, competencia, detalhes, direita }) {
+// Recados por linha: `recados` = { chave do item: mensagem }; no modo de
+// edição cada linha ganha a caixa pra escrever/apagar o recado dela.
+const RecadosContext = createContext({ recados: {}, editando: false, salvar: () => {} });
+
+function RecadoLinha({ chave }) {
+  const { recados, editando, salvar } = useContext(RecadosContext);
+  const atual = recados[chave] || '';
+  const [texto, setTexto] = useState(atual);
+  if (editando) {
+    return (
+      <textarea value={texto} rows={1} placeholder="Recado para o cliente nesta linha (opcional)"
+        onChange={(e) => setTexto(e.target.value)}
+        onBlur={() => { if (texto.trim() !== atual) salvar(chave, texto); }}
+        style={{ flex: '1 1 100%', minWidth: 0, boxSizing: 'border-box', fontSize: 12, color: 'var(--text1)', background: 'var(--surface)',
+          border: '1px dashed var(--border2)', borderRadius: 6, padding: '6px 8px', fontFamily: 'inherit', resize: 'vertical' }} />
+    );
+  }
+  if (!atual) return null;
+  return (
+    <div style={{ flex: '1 1 100%', display: 'flex', alignItems: 'flex-start', gap: 6, fontSize: 12, color: 'var(--text1)',
+      background: 'var(--accent-dim)', borderRadius: 6, padding: '7px 9px', whiteSpace: 'pre-wrap' }}>
+      <MessageSquareIcon size={13} color="var(--accent)" style={{ flexShrink: 0, marginTop: 2 }} /> {atual}
+    </div>
+  );
+}
+
+function Linha({ chave, corBorda, titulo, competencia, detalhes, direita }) {
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', background: 'var(--bg)', border: '1px solid var(--border)',
       borderLeft: `3px solid ${corBorda}`, borderRadius: 'var(--r-md)', flexWrap: 'wrap' }}>
@@ -790,25 +999,31 @@ function Linha({ corBorda, titulo, competencia, detalhes, direita }) {
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 2, flexWrap: 'wrap', fontSize: 10.5 }}>{detalhes}</div>
       </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginLeft: 'auto' }}>{direita}</div>
+      {chave && <RecadoLinha key={chave} chave={chave} />}
     </div>
   );
 }
 
-function LinhaGuia({ g, onBaixar, editando, onSalvarValor }) {
+function LinhaGuia({ g, onBaixar, editando, onSalvarValor, onMarcarPaga }) {
   // só dá pra corrigir o valor de guia anexada (é gravado no documento) e
   // com a coluna valor_guia já existente no banco
   const editavel = editando && !g.semMovimento && g.anexo && 'valor_guia' in g.anexo;
   const vencida = alertaVencida(g);
   const urgente = alertaUrgente(g);
-  const corBorda = g.semMovimento ? 'var(--ok)' : vencida ? 'var(--danger)' : urgente ? 'var(--warn)' : 'var(--accent)';
+  const corBorda = g.semMovimento || g.paga ? 'var(--ok)' : vencida ? 'var(--danger)' : urgente ? 'var(--warn)' : 'var(--accent)';
   return (
-    <Linha corBorda={corBorda} titulo={g.titulo} competencia={g.competencia}
+    <Linha chave={g.id} corBorda={corBorda} titulo={g.titulo} competencia={g.competencia}
       detalhes={(
         <>
           {g.area && <span style={{ color: 'var(--text3)' }}>{g.area}</span>}
           {g.vencimento && !g.semMovimento && (
             <span style={{ color: vencida ? 'var(--danger)' : urgente ? 'var(--warn)' : 'var(--text3)', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 3 }}>
-              <CalendarIcon size={10} /> {fmtData(g.vencimento)}{g.concluida && g.dias < 0 ? '' : ` · ${fmtDias(g.dias)}`}
+              <CalendarIcon size={10} /> {fmtData(g.vencimento)}{g.paga || (g.concluida && g.dias < 0) ? '' : ` · ${fmtDias(g.dias)}`}
+            </span>
+          )}
+          {g.paga && (
+            <span style={{ color: 'var(--ok)', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 3 }}>
+              <CheckCircleIcon size={10} /> Paga em {new Date(g.pagoEm).toLocaleDateString('pt-BR')}
             </span>
           )}
         </>
@@ -829,7 +1044,22 @@ function LinhaGuia({ g, onBaixar, editando, onSalvarValor }) {
               {g.valor != null ? fmt(g.valor) : g.lendo ? 'lendo guia…' : 'valor na guia'}
             </span>
           )}
-          {g.anexo && <BotaoGuia anexo={g.anexo} onBaixar={onBaixar} />}
+          {g.paga && (
+            <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--ok)', background: 'var(--ok-dim)', borderRadius: 99, padding: '3px 9px', whiteSpace: 'nowrap' }}>Paga</span>
+          )}
+          {g.anexo && <BotaoGuia anexo={g.anexo} onBaixar={onBaixar} descricao={`Guia — ${g.titulo} ${g.competencia || ''}`.trim()} />}
+          {g.anexo?.comprovante_path && (
+            <BotaoGuia anexo={{ storage_path: g.anexo.comprovante_path, nome_arquivo: g.anexo.comprovante_nome || 'comprovante' }} onBaixar={onBaixar}
+              label="Comprovante" descricao={`Comprovante — ${g.titulo} ${g.competencia || ''}`.trim()} />
+          )}
+          {editando && g.anexo && !g.semMovimento && (
+            <button type="button" onClick={() => onMarcarPaga(g.anexo, !g.paga)}
+              title={g.paga ? 'Voltar a guia pra "em aberto" (remove o comprovante do painel)' : 'Marcar a guia como paga, sem comprovante'}
+              style={{ fontSize: 11, fontWeight: 600, color: 'var(--text2)', background: 'var(--surface)', border: '1px dashed var(--border2)',
+                borderRadius: 8, padding: '5px 9px', cursor: 'pointer', whiteSpace: 'nowrap' }}>
+              {g.paga ? 'Desfazer pagamento' : 'Marcar paga'}
+            </button>
+          )}
         </>
       )} />
   );
@@ -841,7 +1071,7 @@ function LinhaHonorario({ h }) {
   const [cor, dim] = h.concluida ? STATUS_COR.concluido : vencido ? STATUS_COR.vencido : STATUS_COR.pendente;
   return (
     <Linha corBorda={h.concluida ? 'var(--ok)' : vencido ? 'var(--danger)' : urgente ? 'var(--warn)' : 'var(--accent)'}
-      titulo={h.titulo} competencia={h.competencia}
+      chave={h.id} titulo={h.titulo} competencia={h.competencia}
       detalhes={h.concluida
         ? <span style={{ color: 'var(--text3)' }}>{h.dataPagamento ? `Pago em ${fmtData(h.dataPagamento)}` : 'Pago'}</span>
         : h.vencimento && (
@@ -901,7 +1131,7 @@ function ChavePix({ chave, favorecido }) {
 
 function LinhaPendencia({ p }) {
   return (
-    <Linha corBorda={p.aVencer ? 'var(--accent)' : 'var(--danger)'} titulo={p.nome} competencia={p.competencia}
+    <Linha corBorda={p.aVencer ? 'var(--accent)' : 'var(--danger)'} chave={p.chave} titulo={p.nome} competencia={p.competencia}
       detalhes={(
         <>
           <span style={{ color: p.aVencer ? 'var(--text3)' : 'var(--danger)', fontWeight: 600 }}>{p.origem}</span>
@@ -928,7 +1158,7 @@ function LinhaObrigacao({ it, onBaixar }) {
   const dias = diasParaVencer(it.vencimento);
   const aberta = it.status === 'pendente' || it.status === 'vencido';
   return (
-    <Linha corBorda={cor} titulo={it.titulo} competencia={it.competencia}
+    <Linha chave={it.id} corBorda={cor} titulo={it.titulo} competencia={it.competencia}
       detalhes={(
         <>
           {it.area && <span style={{ color: 'var(--text3)' }}>{it.area}</span>}
@@ -941,7 +1171,7 @@ function LinhaObrigacao({ it, onBaixar }) {
       )}
       direita={(
         <>
-          {it.anexo && <BotaoGuia anexo={it.anexo} onBaixar={onBaixar} label="Baixar" />}
+          {it.anexo && <BotaoGuia anexo={it.anexo} onBaixar={onBaixar} label="Baixar" descricao={`${it.titulo} ${it.competencia || ''}`.trim()} />}
           <span style={{ fontSize: 10, fontWeight: 700, color: cor, background: dim, borderRadius: 99, padding: '3px 9px', whiteSpace: 'nowrap' }}>
             {STATUS_LABEL[it.status] || it.status}
           </span>

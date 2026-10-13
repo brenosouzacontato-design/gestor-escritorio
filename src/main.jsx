@@ -8,7 +8,7 @@ import DocumentoCompartilhadoPage from './pages/documentos/DocumentoCompartilhad
 import PainelClientePage from './pages/painel/PainelClientePage.jsx'
 import PainelCompartilhadoPage from './pages/painel/PainelCompartilhadoPage.jsx'
 import ComprovanteFaturamentoPage from './pages/painel/ComprovanteFaturamentoPage.jsx'
-import { registrarVisualizacaoPainel } from './pages/painel/painelApi.js'
+import { registrarVisualizacaoPainel, avisarEventoPainel } from './pages/painel/painelApi.js'
 import './styles.css'
 
 // Links compartilhados (Balancete/DRE e identificação de lançamentos via
@@ -51,6 +51,8 @@ if (share === 'dre' || share === 'balancete') {
   // log da visita do cliente (a última aparece pro escritório no topo do
   // painel) — falha silenciosa se a tabela ainda não existir
   registrarVisualizacaoPainel(painel, params.get('competencia'), params.get('versao') === '1' ? 'completa' : 'nova').catch(() => {})
+  // e avisa o escritório (WhatsApp do grupo) que o cliente abriu o painel
+  avisarEventoPainel(painel, 'visualizacao', { competencia: params.get('competencia') })
   // versão nova (só impostos anexados + pendências do Relatório de Situação
   // Fiscal) é o padrão; &versao=1 abre o painel completo antigo
   raiz = params.get('versao') === '1'

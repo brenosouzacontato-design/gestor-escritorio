@@ -260,6 +260,19 @@ export async function atualizarValorGuia(documentoId, valor) {
   if (error) throw error;
 }
 
+// Marca/desmarca na mão uma guia como paga (modo de edição do painel) — o
+// caminho automático é o comprovante encaminhado no grupo "Documentos" do
+// WhatsApp (netlify/functions/lib/comprovantePagamento.js). Desmarcar apaga
+// também o vínculo com o comprovante. Devolve os campos alterados.
+export async function marcarGuiaPaga(documentoId, paga) {
+  const patch = paga
+    ? { pago_em: new Date().toISOString() }
+    : { pago_em: null, valor_pago: null, comprovante_path: null, comprovante_nome: null };
+  const { error } = await supabase.from('documentos').update(patch).eq('id', documentoId);
+  if (error) throw error;
+  return patch;
+}
+
 export async function obterDadosGerenciais(clienteId, competencia) {
   const { data, error } = await supabase
     .from('dados_gerenciais_simples')
@@ -563,6 +576,56 @@ export async function registrarVisualizacaoPainel(clienteId, competencia, versao
     user_agent: navigator.userAgent.slice(0, 300),
   });
   if (error) throw error;
+}
+
+// ---------- Recados por linha (escritório → cliente) ----------
+
+// Recado manual que o escritório escreve numa linha do painel compartilhado
+// (guia, honorário, pendência, obrigação) — tabela painel_recados
+// (supabase-schema-painel-recados.sql). Devolve { chave do item: mensagem }.
+export async function obterRecadosPainel(clienteId) {
+  const { data, error } = await supabase
+    .from('painel_recados')
+    .select('item_chave, mensagem')
+    .eq('cliente_id', clienteId);
+  if (error) throw error;
+  return Object.fromEntries((data || []).map((r) => [r.item_chave, r.mensagem]));
+}
+
+// Mensagem vazia apaga o recado da linha.
+export async function salvarRecadoPainel(clienteId, itemChave, mensagem) {
+  const texto = (mensagem || '').trim();
+  const { error } = texto
+    ? await supabase.from('painel_recados')
+      .upsert({ cliente_id: clienteId, item_chave: itemChave, mensagem: texto, atualizado_em: new Date().toISOString() }, { onConflict: 'cliente_id,item_chave' })
+    : await supabase.from('painel_recados').delete().eq('cliente_id', clienteId).eq('item_chave', itemChave);
+  if (error) throw error;
+}
+
+// Avisa o escritório (WhatsApp do grupo + registro em painel_eventos, via
+// netlify/functions/painel-evento.js) que o cliente abriu o painel ou baixou
+// um arquivo. Só o link público chama isso — nunca as prévias de dentro do
+// app. Nunca lança erro nem espera resposta: o aviso não pode atrapalhar o
+// cliente abrindo o painel ou baixando a guia.
+export function avisarEventoPainel(clienteId, tipo, { descricao = null, competencia = null } = {}) {
+  fetch('/.netlify/functions/painel-evento', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ clienteId, tipo, descricao, competencia }),
+    keepalive: true, // a requisição termina mesmo se a aba mudar pro arquivo baixado
+  }).catch(() => {});
+}
+
+// Últimas aberturas/downloads do cliente, pro escritório ver no topo do painel.
+export async function obterEventosPainel(clienteId, limite = 6) {
+  const { data, error } = await supabase
+    .from('painel_eventos')
+    .select('id, tipo, descricao, competencia, criado_em')
+    .eq('cliente_id', clienteId)
+    .order('criado_em', { ascending: false })
+    .limit(limite);
+  if (error) throw error;
+  return data || [];
 }
 
 export async function obterUltimaVisualizacaoPainel(clienteId) {

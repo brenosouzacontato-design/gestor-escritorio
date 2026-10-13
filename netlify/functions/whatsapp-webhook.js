@@ -4,6 +4,7 @@ const { uploadArquivo } = require('./lib/googleDrive')
 const { enviarMensagem } = require('./lib/whatsapp')
 const { identificarDocumento } = require('./lib/identificarDocumento')
 const { listarCandidatosDocumento } = require('./lib/candidatosDocumento')
+const { darBaixaPorComprovante } = require('./lib/comprovantePagamento')
 
 const supabase = createClient(
   process.env.SUPABASE_URL,
@@ -144,6 +145,24 @@ async function processarDocumento(body, midia, remoteJid) {
     })
     if (errLog) console.error('Erro ao gravar log do upload:', errLog.message)
 
+    // Comprovante de pagamento de uma guia em aberto: marca a guia como paga
+    // e deixa o comprovante disponível no painel do cliente
+    // (lib/comprovantePagamento.js) — só quando a IA bate cliente, tributo e
+    // valor com segurança. Qualquer falha/dúvida segue o fluxo normal abaixo.
+    let pareceComprovante = false
+    try {
+      const baixa = await darBaixaPorComprovante(supabase, { arquivoBase64: base64, filename: nomeArquivo, mimeType, apiKey: ANTHROPIC_KEY })
+      if (baixa.guia) {
+        const valor = baixa.valorPago != null ? `\n💰 ${baixa.valorPago.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}` : ''
+        const data = baixa.dataPagamento ? ` em ${baixa.dataPagamento.split('-').reverse().join('/')}` : ''
+        await enviarMensagem(remoteJid, `✅ *Comprovante identificado — guia marcada como paga!*\n👤 ${baixa.guia.clienteNome}\n📄 ${baixa.guia.titulo}${baixa.guia.competencia ? ` ${baixa.guia.competencia}` : ''}${valor}\n📅 Pago${data}\nO comprovante já está disponível no painel do cliente.`)
+        return { statusCode: 200, body: JSON.stringify({ success: true, driveFileId: arquivo.id, guiaPaga: baixa.guia.id }) }
+      }
+      pareceComprovante = baixa.ehComprovante
+    } catch (eComp) {
+      console.error('Erro ao verificar comprovante de pagamento:', eComp.message)
+    }
+
     // Identificação automática (IA) + fila de revisão — mesmo pipeline do
     // upload manual (DocumentosPage.jsx), só que persistido direto (aba "A
     // revisar"), já que aqui não tem ninguém na tela pra confirmar na hora.
@@ -152,7 +171,12 @@ async function processarDocumento(body, midia, remoteJid) {
     let mensagemIdentificacao = '\n\n⚠️ Não consegui rodar a identificação automática — revise manualmente no sistema.'
     try {
       const candidatos = await listarCandidatosDocumento(supabase)
-      const sugestao = await identificarDocumento({ arquivoBase64: base64, filename: nomeArquivo, mimeType, candidatos, apiKey: ANTHROPIC_KEY })
+      // comprovante sem guia identificada com segurança já foi analisado
+      // acima — não gasta uma segunda chamada de IA (o teto de ~29s da
+      // function não comporta as duas), só entra na fila de revisão
+      const sugestao = pareceComprovante
+        ? { tipoDocumento: 'Comprovante de pagamento', clienteId: null, candidatoId: null, confianca: 'baixa', observacao: 'Comprovante de pagamento sem guia identificada com segurança.' }
+        : await identificarDocumento({ arquivoBase64: base64, filename: nomeArquivo, mimeType, candidatos, apiKey: ANTHROPIC_KEY })
       const candidato = sugestao.candidatoId ? candidatos.find((c) => c.id === sugestao.candidatoId) : null
 
       const storagePath = `${crypto.randomUUID()}.${EXTENSAO_POR_MIME[mimeType] || 'bin'}`
@@ -177,7 +201,9 @@ async function processarDocumento(body, midia, remoteJid) {
       if (errDoc) throw errDoc
 
       mensagemIdentificacao = `\n\n🔎 ${sugestao.tipoDocumento}` + (
-        candidato
+        pareceComprovante
+          ? '\n⚠️ Não identifiquei com segurança de qual guia é esse pagamento. Marque a guia como paga no painel do cliente (Editar painel).'
+          : candidato
           ? `\n👤 ${candidato.clienteNome} — ${candidato.rotulo}\nRevise e confirme em Documentos → A revisar.`
           : sugestao.clienteId
             ? `\n👤 Cliente identificado, mas sem correspondência clara. Revise em Documentos → A revisar.`

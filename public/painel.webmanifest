@@ -1,0 +1,7 @@
+{
+  "name": "Painel fiscal",
+  "short_name": "Painel fiscal",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#1e293b"
+}
