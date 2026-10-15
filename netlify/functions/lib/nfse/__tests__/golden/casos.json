@@ -1,0 +1,69 @@
+{
+  "agora": "2026-10-15T14:30:05-03:00",
+  "senha_pfx": "teste",
+  "prestador": {
+    "cnpj": "47619250000178",
+    "inscricao_municipal": "",
+    "razao_social": "EMPRESA TESTE LTDA",
+    "codigo_municipio_ibge": "3154606",
+    "certificado_path": "",
+    "serie_dps": "900",
+    "ambiente": "homologacao",
+    "regra_competencia": "mes_do_atendimento",
+    "servico_padrao": {
+      "cTribNac": "041201",
+      "cNBS": "",
+      "tribISSQN": "1",
+      "tpRetISSQN": "1"
+    },
+    "campos_obrigatorios": [
+      "nome",
+      "cpf",
+      "data",
+      "valor",
+      "descricao",
+      "endereco"
+    ]
+  },
+  "casos": [
+    {
+      "nome": "basico",
+      "ambiente": "homologacao",
+      "serie": "900",
+      "n_dps": 1,
+      "cpf": "52998224725",
+      "tomador": "Maria  da Silva",
+      "descricao": "Limpeza e restauração",
+      "valor": "650",
+      "data_atendimento": "2026-04-16",
+      "competencia": null,
+      "esperado": "basico.xml"
+    },
+    {
+      "nome": "producao_caracteres",
+      "ambiente": "producao",
+      "serie": "900",
+      "n_dps": 123456,
+      "cpf": "99603082430",
+      "tomador": "Cláudia Mendes da Silva",
+      "descricao": "Implantes & prótese <provisória> \"teste\" 'x'  dois  espaços",
+      "valor": "6730.00",
+      "data_atendimento": "2026-01-20",
+      "competencia": "2026-10-01",
+      "esperado": "producao_caracteres.xml"
+    },
+    {
+      "nome": "numero_grande",
+      "ambiente": "producao",
+      "serie": "70000",
+      "n_dps": 999999999999999,
+      "cpf": "01396245979",
+      "tomador": "Cecília Costa Reis Fernandes",
+      "descricao": "1ª etapa cirúrgica implantes",
+      "valor": "2500.5",
+      "data_atendimento": "2026-05-28",
+      "competencia": null,
+      "esperado": "numero_grande.xml"
+    }
+  ]
+}

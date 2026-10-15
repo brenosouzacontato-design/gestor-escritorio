@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react'
-import { LayoutDashboardIcon, CheckSquareIcon, UsersIcon, RefreshCwIcon, SettingsIcon, PlusIcon, TargetIcon, BuildingIcon, AppWindowIcon, CalculatorIcon, ChevronsLeftIcon, ChevronsRightIcon, SunIcon, MoonIcon, PaperclipIcon, BellIcon, BanknoteIcon, MonitorIcon, ReceiptIcon } from 'lucide-react'
+import { LayoutDashboardIcon, CheckSquareIcon, UsersIcon, RefreshCwIcon, SettingsIcon, PlusIcon, TargetIcon, BuildingIcon, AppWindowIcon, CalculatorIcon, ChevronsLeftIcon, ChevronsRightIcon, SunIcon, MoonIcon, PaperclipIcon, BellIcon, BanknoteIcon, MonitorIcon, ReceiptIcon, LogOutIcon, FileSignatureIcon } from 'lucide-react'
 import { useStore } from './store'
 import { ToastContainer } from './components/shared'
+import { sair } from './components/ComLogin'
 import NovaTarefaModal from './components/NovaTarefaModal'
 import OneflowConfigModal from './components/OneflowConfigModal'
 import { NotificacoesBell, NotificacoesPanel } from './components/Notificacoes'
@@ -18,6 +19,7 @@ import NotificacoesPage from './pages/Notificacoes'
 import HonorariosPage from './pages/honorarios/HonorariosPage'
 import PaineisPage from './pages/painel/PaineisPage'
 import NotasFiscaisPage from './pages/notasfiscais/NotasFiscaisPage'
+import NfseEmissaoPage from './pages/nfse/NfseEmissaoPage'
 
 const NAV = [
   { id: 'overview',   label: 'Painel',      Icon: LayoutDashboardIcon },
@@ -32,6 +34,7 @@ const NAV = [
   { id: 'erp',        label: 'ERP',         Icon: RefreshCwIcon },
   { id: 'contabil',   label: 'Financeiro',  Icon: CalculatorIcon },
   { id: 'notasfiscais', label: 'Notas Fiscais', Icon: ReceiptIcon },
+  { id: 'nfse',       label: 'Emitir NFS-e', Icon: FileSignatureIcon },
   { id: 'central',    label: 'Central',     Icon: AppWindowIcon },
 ]
 
@@ -92,6 +95,7 @@ export default function App() {
           </button>
           <NotificacoesBell onClick={() => setShowNotifs(true)} />
           <button className="btn btn-icon btn-ghost" onClick={() => setShowConfig(true)}><SettingsIcon size={18} /></button>
+          <button className="btn btn-icon btn-ghost" onClick={sair} title="Sair"><LogOutIcon size={18} /></button>
         </div>
       </div>
 
@@ -140,6 +144,7 @@ export default function App() {
             {page === 'erp'        && <FechamentosERP onOpenConfig={() => setShowConfig(true)} />}
             {page === 'contabil'   && <ContabilPage />}
             {page === 'notasfiscais' && <NotasFiscaisPage />}
+            {page === 'nfse' && <NfseEmissaoPage />}
             {page === 'central'    && <Central />}
           </>
         )}
