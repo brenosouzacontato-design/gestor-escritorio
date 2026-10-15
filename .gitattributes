@@ -1,0 +1,3 @@
+# Arquivos de referência do módulo NFS-e: comparados byte a byte nos testes, não converter fim de linha
+netlify/functions/lib/nfse/__tests__/golden/** -text
+netlify/functions/lib/nfse/__tests__/fixtures/** -text

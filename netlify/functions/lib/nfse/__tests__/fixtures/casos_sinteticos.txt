@@ -1,0 +1,51 @@
+[10:03, 13/10/2026] Madrinha Heloísa: Renata Souza Ribeiro
+01092815945
+Rua pavuna 150 apartamento 4107 Botafogo
+22/01/26
+Valor:900,00
+Peça solidex
+[10:05, 13/10/2026] Madrinha Heloísa: Por gentileza, fazer nota fiscal pra esse paciente
+Marcos Vinícius Andrade
+507. 529.170-80
+Av. Brasil 2000 CEP 33900-370
+Data 03/02/2026
+Total; 1.590,00
+Implante unitário
+[10:07, 13/10/2026] Madrinha Heloísa: Ana Paula Ferreira
+786.666.176.67
+Rua das Flores
+Valor , 1590,00
+Clareamento
+[10:08, 13/10/2026] Madrinha Heloísa: Bom dia!
+[10:09, 13/10/2026] Madrinha Heloísa: João Pedro Lima
+Alameda dos Anjos 45
+10/03/26
+Valor: 350,00
+[10:10, 13/10/2026] Madrinha Heloísa: Carla Souza
+Rua Sete 7
+15/03/2026
+Valor: 200,00
+Limpeza
+[10:11, 13/10/2026] Madrinha Heloísa: Pedro Henrique
+529.982.247-25
+Valor: 450,00
+Restauração
+
+[09:00, 01/10/2026] X: Maria Clara Dias
+010.928.159-4
+Valor: 100,00
+[09:01, 01/10/2026] X: Maria Clara Dias
+Valor: 100,00
+Total: 300,00
+[13/10/2026, 10:03:15] Ana: José Carlos
+52998224725
+Tel: (31) 99999-8888
+CEP 33900-370
+Bairro Centro
+13/10/2026 10:05 - Ana: Ok
+13/10/2026 10:06 - Ana: Paciente: João Souza
+CPF: 529.982.247-25
+Endereço: Rua A, 10 CEP 30140-071
+Data do atendimento: 31/02/2026
+Serviço: Limpeza
+R$ 1.590,00

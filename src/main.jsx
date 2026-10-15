@@ -1,6 +1,7 @@
 import React from 'react'
 import ReactDOM from 'react-dom/client'
 import App from './App.jsx'
+import ComLogin from './components/ComLogin.jsx'
 import RelatorioCompartilhadoPage from './pages/contabil/RelatorioCompartilhadoPage.jsx'
 import NotasFiscaisCompartilhadoPage from './pages/contabil/NotasFiscaisCompartilhadoPage.jsx'
 import IdentificarLancamentosPage from './pages/contabil/IdentificarLancamentosPage.jsx'
@@ -21,7 +22,8 @@ const identificar = params.get('identificar')
 const doc = params.get('doc')
 const painel = params.get('painel')
 
-let raiz = <App />
+// O gestor exige login; os links públicos abaixo, não.
+let raiz = <ComLogin><App /></ComLogin>
 if (share === 'dre' || share === 'balancete') {
   raiz = <RelatorioCompartilhadoPage
     tipo={share}
