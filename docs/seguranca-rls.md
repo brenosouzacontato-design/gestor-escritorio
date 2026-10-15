@@ -36,8 +36,16 @@ Pontos de projeto:
 
 - **Ter conta no Auth não basta.** A função `is_escritorio()` confere se o usuário está
   em `escritorio_usuarios` e ativo. Se alguém conseguir criar conta (cadastro público
-  ligado por engano), não vê nada. O módulo de NFS-e (`docs/nfse-emissao.md`) deve usar
-  o mesmo `is_escritorio()` em vez de uma lista de usuários própria.
+  ligado por engano), não vê nada.
+- **Login e NFS-e já existem (sessão do módulo NFS-e).** A tela de login
+  (`src/components/ComLogin.jsx`, Supabase Auth com e-mail e senha, só o dono, sem
+  cadastro público) envolve o `<App />` em `src/main.jsx`, e os links públicos ficam
+  fora dela. Esta proposta conta com o role `authenticated` vindo desse login e **não
+  mexe** em `ComLogin.jsx`, `main.jsx`, `App.jsx` nem nas tabelas `nfse_*`
+  (`supabase-schema-nfse.sql`, que já têm RLS próprio). **Atenção ao ligar o passo 2:**
+  o dono precisa estar em `escritorio_usuarios`, senão entra pelo login mas vê zero
+  linhas. Sugestão para o módulo de NFS-e, quando houver mais de um usuário: trocar
+  "authenticated lê" por `is_escritorio()` nas policies `nfse_*`.
 - **Token do painel em vez do id do cliente.** Hoje o link é `?painel=<clientes.id>`, e
   o id não é segredo (a tabela `clientes` inteira é pública). Proposta: coluna
   `clientes.painel_token` (32 caracteres aleatórios), link `?painel=<token>`, e função
@@ -161,9 +169,13 @@ continuar abrindo os painéis.
 
 ## 5. Mudanças no front (não feitas ainda)
 
-1. **Login do escritório.** Tela de login em `App.jsx` com
-   `supabase.auth.signInWithPassword`; sem sessão, o app mostra só o login. Botão de
-   sair. O cliente Supabase de `src/lib/supabase.js` já guarda a sessão sozinho.
+1. **Login do escritório: já feito** em `src/components/ComLogin.jsx` (sessão do módulo
+   NFS-e). Nada a fazer aqui além de cadastrar o dono em `escritorio_usuarios` (passo 1)
+   e, se houver colaboradores, criar as contas deles no Auth.
+   As páginas públicas continuam recebendo o parâmetro de `main.jsx` como hoje (prop
+   `clienteId`/`empresaId`); a troca para token acontece **dentro** das páginas, sem
+   mexer em `main.jsx`: o valor recebido passa a ser o token, a página chama
+   `painel_sessao()` para descobrir o id do cliente e usa esse id nas consultas.
 2. **Cliente Supabase do painel.** Em `src/lib/supabase.js`, exportar
    `criarClientePainel(token)` com `global: { headers: { 'x-painel-token': token } }`
    e `auth: { persistSession: false }`. As páginas públicas e as funções de leitura de
@@ -188,7 +200,7 @@ Cada passo é reversível e não deixa o app fora do ar.
 |---|---|---|---|
 | 0 | Rodar [`supabase-rls-00-diagnostico.sql`](../supabase-rls-00-diagnostico.sql) | Nenhum (só leitura). Confirma estado real das tabelas criadas fora do repo (`obrigacoes`, `parcelamentos`, `parcelamento_parcelas`, `prospectos`, `tarefa_comentarios`) e o tipo da coluna `clientes.carteira`. | Sim (acesso ao banco) |
 | 1 | Rodar [`supabase-rls-01-preparacao.sql`](../supabase-rls-01-preparacao.sql); criar usuários no Auth; desligar cadastro público; vincular em `escritorio_usuarios` | Nenhum: policies em tabela com RLS desligado são ignoradas. A coluna `painel_token` é criada. | **Sim** |
-| 2 | Deploy do front (seção 5) + function `painel-arquivo` + autenticação nas functions | App pede login; painel usa o token. Ainda funciona mesmo sem RLS. | Sim (deploy) |
+| 2 | Deploy do front (seção 5) + function `painel-arquivo` + autenticação nas functions | Painel usa o token (o login já existe). Ainda funciona mesmo sem RLS. | Sim (deploy) |
 | 3 | Reenviar links novos do painel aos clientes | — | — |
 | 4 | Rodar [`supabase-rls-02-ativar.sql`](../supabase-rls-02-ativar.sql) | Chave anônima sozinha passa a ver zero linhas. | **Sim** |
 | 5 | Testes da seção 8 | — | — |

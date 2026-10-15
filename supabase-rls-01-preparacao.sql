@@ -21,7 +21,7 @@ begin;
 -- só quem está nesta tabela é tratado como escritório. Assim, mesmo que o
 -- cadastro público fique ligado por engano, um estranho que crie conta não
 -- enxerga nada. O mesmo critério serve pro módulo de NFS-e
--- (docs/nfse-emissao.md) — usar is_escritorio() lá também.
+-- este script não mexe neles. O dono precisa estar aqui antes do passo 2.
 create table if not exists escritorio_usuarios (
   user_id   uuid primary key references auth.users(id) on delete cascade,
   nome      text not null,
