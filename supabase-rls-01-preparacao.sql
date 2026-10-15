@@ -20,7 +20,7 @@ begin;
 -- O login é o Supabase Auth (e-mail + senha). Ter conta no Auth NÃO basta:
 -- só quem está nesta tabela é tratado como escritório. Assim, mesmo que o
 -- cadastro público fique ligado por engano, um estranho que crie conta não
--- enxerga nada. O mesmo critério serve pro módulo de NFS-e
+-- enxerga nada. O login (ComLogin.jsx) e as tabelas nfse_* são da sessão de NFS-e;
 -- este script não mexe neles. O dono precisa estar aqui antes do passo 2.
 create table if not exists escritorio_usuarios (
   user_id   uuid primary key references auth.users(id) on delete cascade,
