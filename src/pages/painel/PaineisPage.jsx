@@ -1,9 +1,10 @@
 import { useState, useMemo, useEffect } from 'react'
-import { Share2Icon, MonitorIcon } from 'lucide-react'
+import { Share2Icon, MonitorIcon, Building2Icon } from 'lucide-react'
 import { useStore } from '../../store'
 import EmpresaCombobox from '../../components/EmpresaCombobox'
 import PainelClientePage from './PainelClientePage'
 import PainelCompartilhadoPage from './PainelCompartilhadoPage'
+import CompartilharGrupoModal from './CompartilharGrupoModal'
 
 const CHAVE_ULTIMO_CLIENTE = 'paineis-cliente-selecionado'
 
@@ -17,6 +18,7 @@ export default function PaineisPage() {
   const [clienteId, setClienteId] = useState(() => localStorage.getItem(CHAVE_ULTIMO_CLIENTE) || '')
   // 'nova' = PainelCompartilhadoPage (padrão do link); 'completa' = painel antigo (&versao=1)
   const [versao, setVersao] = useState('nova')
+  const [grupoAberto, setGrupoAberto] = useState(false)
 
   const clientesOrdenados = useMemo(() => [...clientes].sort((a, b) => a.nome.localeCompare(b.nome)), [clientes])
 
@@ -72,7 +74,16 @@ export default function PaineisPage() {
         <button onClick={compartilhar} disabled={!clienteAtual} className="btn btn-accent" style={{ padding: '7px 14px' }}>
           <Share2Icon size={13} /> Compartilhar
         </button>
+        <button onClick={() => setGrupoAberto(true)} disabled={!clienteAtual} className="btn" style={{ padding: '7px 14px' }}
+          title="Um link só com várias empresas do mesmo cliente — ele escolhe qual ver no topo do painel">
+          <Building2Icon size={13} /> Grupo de empresas
+        </button>
       </div>
+
+      {grupoAberto && (
+        <CompartilharGrupoModal clientes={clientesOrdenados} clienteInicialId={clienteAtual?.id}
+          competencia={compSel} versao={versao} onClose={() => setGrupoAberto(false)} />
+      )}
 
       {!clienteAtual && (
         <div className="empty">
