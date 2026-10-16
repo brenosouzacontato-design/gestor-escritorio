@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { ArrowDownCircleIcon, ArrowUpCircleIcon, FileTextIcon } from 'lucide-react';
-import { supabase } from '../../lib/supabase';
+import AcessoPainel from '../painel/AcessoPainel';
 import { listarDocumentosFiscais } from './documentosFiscaisApi';
 
 function fmt(v) {
@@ -14,8 +14,18 @@ function fmtData(iso) {
 // Página pública (sem login) pra compartilhar as notas fiscais de uma
 // competência com o cliente via link — painel só de leitura, em cards,
 // mesmo modelo do RelatorioCompartilhadoPage.jsx (DRE/Balancete). Acessada
-// via ?share=notasfiscais&empresa=<id>&competencia=MM/YYYY (ver main.jsx).
-export default function NotasFiscaisCompartilhadoPage({ empresaId, competencia }) {
+// via ?share=notasfiscais&empresa=<token do painel>&competencia=MM/YYYY (ver main.jsx).
+// Link público: &empresa= é o token do painel do cliente — resolve antes de
+// montar a página (AcessoPainel.jsx).
+export default function NotasFiscaisCompartilhadoPage(props) {
+  return (
+    <AcessoPainel valor={props.empresaId}>
+      {(sessao) => <NotasFiscaisCompartilhado {...props} empresaId={sessao.id} sessao={sessao} />}
+    </AcessoPainel>
+  );
+}
+
+function NotasFiscaisCompartilhado({ empresaId, competencia, sessao }) {
   const [empresaNome, setEmpresaNome] = useState('');
   const [documentos, setDocumentos] = useState(null);
   const [erro, setErro] = useState(null);
@@ -25,7 +35,7 @@ export default function NotasFiscaisCompartilhadoPage({ empresaId, competencia }
       setErro(null);
       try {
         const [{ data: cliente, error: errCliente }, docs] = await Promise.all([
-          supabase.from('clientes').select('nome').eq('id', empresaId).single(),
+          Promise.resolve({ data: sessao, error: null }),
           listarDocumentosFiscais({ clienteId: empresaId, competencia }),
         ]);
         if (errCliente) throw errCliente;

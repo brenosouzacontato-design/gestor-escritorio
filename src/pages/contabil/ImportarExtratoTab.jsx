@@ -5,6 +5,7 @@ import { ArrowDownCircleIcon, ArrowUpCircleIcon, CheckCircle2Icon, CircleDashedI
 // carregamento mas não descriptografa o conteúdo de verdade — ver comentário
 // mais abaixo em extrairTransacoesComDivisao)
 import { PDFDocument } from '@cantoo/pdf-lib';
+import { cabecalhosFunctions } from '../../lib/supabase';
 import {
   listarContasBanco, listarContasReceitaDespesa, listarLancamentos, criarLancamentosEmLote,
   listarRegrasClassificacao, salvarRegraClassificacao, encontrarRegraAplicavel,
@@ -45,7 +46,7 @@ async function extrairTransacoesDoPDF(arquivo, nomeArquivo) {
 
   const resp = await fetch('/.netlify/functions/extrair-extrato', {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers: await cabecalhosFunctions(),
     body: JSON.stringify({ pdfBase64, filename: nomeArquivo ?? arquivo.name }),
   });
 

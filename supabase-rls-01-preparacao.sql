@@ -188,10 +188,11 @@ set search_path = public
 as $$
   select to_json(x) from (
     select d.*,
-           json_build_object('nome', c.nome)    as clientes,
-           json_build_object('titulo', o.titulo) as obrigacoes,
-           json_build_object('nome', e.nome)    as etapas_obrigacao,
-           json_build_object('titulo', t.titulo) as tarefas
+           -- mesmo formato do select com join do supabase-js: null quando não há vínculo
+           case when c.id is null then null else json_build_object('nome', c.nome) end    as clientes,
+           case when o.id is null then null else json_build_object('titulo', o.titulo) end as obrigacoes,
+           case when e.id is null then null else json_build_object('nome', e.nome) end    as etapas_obrigacao,
+           case when t.id is null then null else json_build_object('titulo', t.titulo) end as tarefas
       from documentos d
       left join clientes c          on c.id = d.cliente_id
       left join obrigacoes o        on o.id = d.obrigacao_id

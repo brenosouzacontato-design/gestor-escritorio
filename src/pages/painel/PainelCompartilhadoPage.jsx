@@ -3,7 +3,8 @@ import {
   CalendarIcon, DownloadIcon, CheckCircleIcon, AlertTriangleIcon, ClockIcon, TrendingUpIcon,
   ClipboardListIcon, EyeIcon, EyeOffIcon, WalletIcon, CopyIcon, FileTextIcon, SettingsIcon, UserIcon, MessageSquareIcon, PartyPopperIcon, BellIcon, SendIcon,
 } from 'lucide-react';
-import { supabase } from '../../lib/supabase';
+import { chavePainelPorId, urlPublica } from '../../lib/linksPublicos';
+import AcessoPainel, { obterClientePagina } from './AcessoPainel';
 import { abrirLinkAssinado } from '../documentos/documentosApi';
 import { GraficoFaturamento, ComparativoDas, NotasEntrada, TarefasDoCliente } from './PainelClientePage';
 import { calcularAliquotaNominal } from '../../lib/simplesNacional';
@@ -19,7 +20,7 @@ import {
   prepararPainelComoApp, situacaoNotificacoesPainel, ativarNotificacoesPainel, contarAparelhosPush, enviarNotificacaoCliente,
 } from './painelPush';
 
-// Nova versão do painel do cliente (link compartilhado, ?painel=<id>&competencia=MM/YYYY
+// Nova versão do painel do cliente (link compartilhado, ?painel=<token do painel>&competencia=MM/YYYY
 // — ver main.jsx; a versão completa antiga continua em PainelClientePage.jsx,
 // acessível com &versao=1). Página única, nessa ordem:
 //   1. Fiscal: números da Declaração do Simples do mês + evolução do faturamento;
@@ -163,7 +164,18 @@ function parseNumero(texto) {
   return Number.isFinite(n) ? n : undefined;
 }
 
-export default function PainelCompartilhadoPage({ clienteId, competencia: competenciaInicial, admin = false }) {
+// Link público: resolve o token antes de montar a página (AcessoPainel.jsx);
+// dentro do app (admin) o id já é o do cliente.
+export default function PainelCompartilhadoPage(props) {
+  if (props.admin) return <PainelCompartilhado {...props} />;
+  return (
+    <AcessoPainel valor={props.clienteId}>
+      {(sessao) => <PainelCompartilhado {...props} clienteId={sessao.id} sessao={sessao} />}
+    </AcessoPainel>
+  );
+}
+
+function PainelCompartilhado({ clienteId, competencia: competenciaInicial, admin = false, sessao = null }) {
   const [competencia, setCompetencia] = useState(competenciaInicial);
   const opcoesComp = opcoesCompetencia(competenciaInicial);
   const [dados, setDados] = useState(null);
@@ -189,7 +201,7 @@ export default function PainelCompartilhadoPage({ clienteId, competencia: compet
       setErro(null);
       try {
         const [{ data: cliente, error: errCliente }, obs, tarefas, gerenciais, historico, situacaoFiscal, cndManual, honorarios, configPix, notasEntrada, tarefasCliente, recados] = await Promise.all([
-          supabase.from('clientes').select('nome, cnpj, regime, painel_secoes_ocultas').eq('id', clienteId).single(),
+          obterClientePagina(clienteId, sessao, 'nome, cnpj, regime, painel_secoes_ocultas'),
           obterResumoObrigacoes(clienteId, competencia),
           obterResumoTarefas(clienteId, competencia),
           // tabelas novas toleram ainda não existir no banco, igual ao painel completo
@@ -816,7 +828,7 @@ function EnviarNotificacao({ clienteId, competencia }) {
     setEnviando(true);
     setResultado(null);
     try {
-      const url = `${window.location.origin}${window.location.pathname}?painel=${clienteId}&competencia=${encodeURIComponent(competencia)}`;
+      const url = urlPublica({ painel: await chavePainelPorId(clienteId), competencia });
       const r = await enviarNotificacaoCliente(clienteId, { titulo: 'Recado do seu escritório contábil', mensagem: mensagem.trim(), url });
       setResultado(r.enviadas > 0 ? `Enviada pra ${plural(r.enviadas, 'aparelho', 'aparelhos')}.` : 'Nenhum aparelho recebeu — o cliente precisa ativar as notificações de novo.');
       if (r.enviadas > 0) setMensagem('');

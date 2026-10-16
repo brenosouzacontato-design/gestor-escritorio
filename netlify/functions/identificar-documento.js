@@ -17,11 +17,15 @@
 //     confianca: "alta"|"media"|"baixa", observacao: string }
 
 const { identificarDocumento } = require('./lib/identificarDocumento');
+const { exigirEscritorio } = require('./lib/autenticacao');
 
 exports.handler = async (event) => {
   if (event.httpMethod !== 'POST') {
     return resposta(405, { error: 'Método não permitido, use POST.' });
   }
+
+  const negado = await exigirEscritorio(event, 'identificar-documento');
+  if (negado) return negado;
 
   let arquivoBase64, filename, mimeType, candidatos;
   try {

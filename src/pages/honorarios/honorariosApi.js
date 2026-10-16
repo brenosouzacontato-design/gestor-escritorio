@@ -3,7 +3,7 @@
 // cliente, com lembrete automático de WhatsApp direto pro celular do
 // cliente (não pro grupo interno, diferente de lembretes.js) trazendo a
 // chave PIX do escritório.
-import { supabase } from '../../lib/supabase';
+import { supabase, cabecalhosFunctions } from '../../lib/supabase';
 
 // "MM/YYYY" -> data do vencimento daquele mês, no dia configurado (ou 10
 // como padrão quando o cliente ainda não tem um dia escolhido).
@@ -194,7 +194,7 @@ export async function salvarConfigPix({ chavePix, favorecido }) {
 export async function obterPreviaLembrete(honorarioId) {
   const resp = await fetch('/.netlify/functions/honorarios-prever-lembrete', {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers: await cabecalhosFunctions(),
     body: JSON.stringify({ honorarioId }),
   });
   const resultado = await resp.json().catch(() => ({}));
@@ -207,7 +207,7 @@ export async function obterPreviaLembrete(honorarioId) {
 export async function enviarLembreteAgora(honorarioId, textoPersonalizado) {
   const resp = await fetch('/.netlify/functions/honorarios-enviar-lembrete', {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers: await cabecalhosFunctions(),
     body: JSON.stringify({ honorarioId, textoPersonalizado }),
   });
   const resultado = await resp.json().catch(() => ({}));

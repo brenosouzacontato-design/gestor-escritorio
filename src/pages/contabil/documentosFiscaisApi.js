@@ -5,7 +5,7 @@
 // lib/oneflowFiscal.js); aqui é leitura da tabela já sincronizada, o
 // disparo do botão "Sincronizar agora" e a geração de lançamento contábil
 // a partir de um documento.
-import { supabase } from '../../lib/supabase';
+import { supabase, cabecalhosFunctions } from '../../lib/supabase';
 import { listarContas, criarContaFilha, criarLancamento, listarRegrasClassificacao, encontrarRegraAplicavel, salvarRegraClassificacao } from './contabilApi';
 
 // O Supabase/PostgREST limita a 1000 linhas por página por padrão — sem
@@ -51,7 +51,7 @@ export async function obterUltimaSincronizacao() {
 }
 
 export async function sincronizarDocumentosFiscaisAgora() {
-  const resp = await fetch('/.netlify/functions/documentos-fiscais-sincronizar', { method: 'POST' });
+  const resp = await fetch('/.netlify/functions/documentos-fiscais-sincronizar', { method: 'POST', headers: await cabecalhosFunctions() });
   const body = await resp.json().catch(() => ({}));
   if (!resp.ok) throw new Error(body.error || 'Falha ao sincronizar.');
   return body;

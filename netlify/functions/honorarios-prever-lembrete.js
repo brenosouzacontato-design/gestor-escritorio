@@ -9,6 +9,7 @@
 
 const { createClient } = require('@supabase/supabase-js')
 const { montarLembreteHonorario } = require('./lib/honorariosLembrete')
+const { exigirEscritorio } = require('./lib/autenticacao')
 
 const supabase = createClient(
   process.env.SUPABASE_URL,
@@ -19,6 +20,9 @@ exports.handler = async (event) => {
   if (event.httpMethod !== 'POST') {
     return resposta(405, { error: 'Método não permitido, use POST.' })
   }
+
+  const negado = await exigirEscritorio(event, 'honorarios-prever-lembrete')
+  if (negado) return negado
 
   let honorarioId
   try {

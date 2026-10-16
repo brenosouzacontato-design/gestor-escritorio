@@ -4,7 +4,7 @@
 // assinatura (gravada em painel_push_assinaturas) e o escritório passa a
 // poder mandar recados que chegam no celular mesmo com o painel fechado
 // (netlify/functions/painel-push.js + public/painel-sw.js).
-import { supabase } from '../../lib/supabase';
+import { supabase, tokenPainelAtivo, cabecalhosFunctions, rpcAusente } from '../../lib/supabase';
 
 const ehIOS = () => /iphone|ipad|ipod/i.test(navigator.userAgent);
 const instaladoNaTelaInicial = () => window.matchMedia?.('(display-mode: standalone)').matches || window.navigator.standalone === true;
@@ -52,12 +52,24 @@ export async function ativarNotificacoesPainel(clienteId) {
   const assinatura = await registro.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: chaveParaBytes(chavePublica) });
   const { endpoint, keys } = assinatura.toJSON();
 
+  const userAgent = navigator.userAgent.slice(0, 300);
+  // No link público grava pela RPC, que confere o token do painel (o anônimo
+  // não tem acesso direto à tabela). Sem a RPC no banco ainda, grava como antes.
+  if (tokenPainelAtivo()) {
+    const { error } = await supabase.rpc('painel_registrar_push', {
+      p_endpoint: endpoint, p_p256dh: keys.p256dh, p_auth: keys.auth, p_user_agent: userAgent,
+    });
+    if (!rpcAusente(error)) {
+      if (error) throw error;
+      return;
+    }
+  }
   const { error: errGravar } = await supabase.from('painel_push_assinaturas').upsert({
     cliente_id: clienteId,
     endpoint,
     p256dh: keys.p256dh,
     auth: keys.auth,
-    user_agent: navigator.userAgent.slice(0, 300),
+    user_agent: userAgent,
   }, { onConflict: 'endpoint' });
   if (errGravar) throw errGravar;
 }
@@ -76,7 +88,7 @@ export async function contarAparelhosPush(clienteId) {
 export async function enviarNotificacaoCliente(clienteId, { titulo, mensagem, url }) {
   const resp = await fetch('/.netlify/functions/painel-push', {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers: await cabecalhosFunctions(),
     body: JSON.stringify({ clienteId, titulo, mensagem, url }),
   });
   const dados = await resp.json().catch(() => ({}));

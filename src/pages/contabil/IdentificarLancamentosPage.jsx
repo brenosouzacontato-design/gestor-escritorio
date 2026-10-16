@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { PencilIcon } from 'lucide-react';
-import { supabase } from '../../lib/supabase';
+import AcessoPainel from '../painel/AcessoPainel';
 import { listarLancamentosAIdentificar, obterLancamentoIdsDoLink } from './contabilApi';
 import LancamentosIdentificar from './LancamentosIdentificar';
 
@@ -14,13 +14,23 @@ function fmtData(iso) {
 // resumo, tabela dos pendentes com popup de identificação e cards dos já
 // identificados — tudo isso vem de LancamentosIdentificar.jsx, o mesmo
 // componente usado na aba Contábil do Painel do cliente. Acessada via
-// ?identificar=1&empresa=<id>&inicio=&fim= (período inteiro),
-// ?identificar=1&empresa=<id>&link=<id> (link curto que resolve pra lista
+// ?identificar=1&empresa=<token do painel>&inicio=&fim= (período inteiro),
+// ?identificar=1&empresa=<token do painel>&link=<id> (link curto que resolve pra lista
 // de ids em lancamentos_identificacao_links — ver
 // criarLinkIdentificacao/obterLancamentoIdsDoLink em contabilApi.js) ou,
 // pra compatibilidade com links já mandados antes do link curto existir,
-// ?identificar=1&empresa=<id>&ids=<id1,id2,...> — ver main.jsx.
-export default function IdentificarLancamentosPage({ empresaId, dataInicio, dataFim, ids, linkId }) {
+// ?identificar=1&empresa=<token do painel>&ids=<id1,id2,...> — ver main.jsx.
+// Link público: &empresa= é o token do painel do cliente — resolve antes de
+// montar a página (AcessoPainel.jsx).
+export default function IdentificarLancamentosPage(props) {
+  return (
+    <AcessoPainel valor={props.empresaId}>
+      {(sessao) => <IdentificarLancamentos {...props} empresaId={sessao.id} sessao={sessao} />}
+    </AcessoPainel>
+  );
+}
+
+function IdentificarLancamentos({ empresaId, dataInicio, dataFim, ids, linkId, sessao }) {
   const [empresaNome, setEmpresaNome] = useState('');
   const [lancamentos, setLancamentos] = useState([]);
   const [totalFiltrado, setTotalFiltrado] = useState(ids?.length ?? 0);
@@ -33,7 +43,7 @@ export default function IdentificarLancamentosPage({ empresaId, dataInicio, data
       const idsResolvidos = linkId ? await obterLancamentoIdsDoLink(linkId) : ids;
       setTotalFiltrado(idsResolvidos?.length ?? 0);
       const [{ data: cliente, error: errCliente }, itens] = await Promise.all([
-        supabase.from('clientes').select('nome').eq('id', empresaId).single(),
+        Promise.resolve({ data: sessao, error: null }),
         listarLancamentosAIdentificar(empresaId, { dataInicio, dataFim, ids: idsResolvidos }),
       ]);
       if (errCliente) throw errCliente;

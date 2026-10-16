@@ -167,30 +167,37 @@ antigos continuam valendo) e girar o token cliente a cliente depois. **Recomendo
 gerar tokens novos**: os ids estiveram públicos pela API, então quem os copiou poderia
 continuar abrindo os painéis.
 
-## 5. Mudanças no front (não feitas ainda)
+## 5. Mudanças no código (implementadas)
 
-1. **Login do escritório: já feito** em `src/components/ComLogin.jsx` (sessão do módulo
-   NFS-e). Nada a fazer aqui além de cadastrar o dono em `escritorio_usuarios` (passo 1)
-   e, se houver colaboradores, criar as contas deles no Auth.
-   As páginas públicas continuam recebendo o parâmetro de `main.jsx` como hoje (prop
-   `clienteId`/`empresaId`); a troca para token acontece **dentro** das páginas, sem
-   mexer em `main.jsx`: o valor recebido passa a ser o token, a página chama
-   `painel_sessao()` para descobrir o id do cliente e usa esse id nas consultas.
-2. **Cliente Supabase do painel.** Em `src/lib/supabase.js`, exportar
-   `criarClientePainel(token)` com `global: { headers: { 'x-painel-token': token } }`
-   e `auth: { persistSession: false }`. As páginas públicas e as funções de leitura de
-   `painelApi.js`/`contabilApi.js` que elas usam passam a receber esse cliente.
-3. **Gravações do cliente.** `registrarVisualizacaoPainel` continua insert direto (a
-   policy permite); `ativarNotificacoesPainel` → `rpc('painel_registrar_push')`;
-   `salvarObservacaoCliente` → `rpc('painel_salvar_observacao')` quando estiver no
-   painel; `obterDocumentoPublico` → `rpc('documento_publico')`.
-4. **Links.** `CompartilharButton`, `EnviarIdentificacaoButton`, a montagem do link do
-   painel e o lembrete de honorários (se mandar link) passam a usar `painel_token`.
-   Botão "Gerar novo link" no cadastro do cliente chamando `girar_painel_token`.
-5. **Downloads.** `abrirLinkAssinado` nas páginas públicas chama a function
-   `painel-arquivo`.
-6. **Functions chamadas pelo front** passam a mandar `Authorization: Bearer <jwt>` do
-   escritório, ou o token do painel quando vierem do painel (seção 7).
+Feitas sem mexer em `ComLogin.jsx`, `main.jsx`, `App.jsx` nem `nfse_*`. Tudo funciona
+**com e sem** o banco preparado: enquanto `supabase-rls-01-preparacao.sql` não rodar,
+o front cai no caminho antigo (RPC ausente, link com id) e as functions só registram
+aviso no log.
+
+1. **Login do escritório:** já existe em `src/components/ComLogin.jsx` (sessão do
+   módulo NFS-e). Falta só cadastrar o dono em `escritorio_usuarios` (passo 1).
+2. **Cliente Supabase do painel** (`src/lib/supabase.js`): `ativarModoPainel(token)`
+   troca o cliente exportado por um que manda `x-painel-token` em toda consulta. O
+   `export let supabase` é uma ligação viva, então as consultas de `painelApi.js` e
+   `contabilApi.js` não mudaram. `cabecalhosFunctions()` monta os cabeçalhos das
+   chamadas às functions: token do painel no link público, JWT do escritório no app.
+3. **Páginas públicas** (`src/pages/painel/AcessoPainel.jsx`): cada página pública é
+   envolvida por `AcessoPainel`, que liga o modo painel, chama `painel_sessao()` e só
+   então monta a página com o id real do cliente. Os dados do cliente vêm da sessão (o
+   anônimo não lê `clientes`). Token inválido mostra "Link inválido ou expirado".
+   No modo admin (dentro do app) nada muda. Links antigos (com id) continuam abrindo
+   enquanto o RLS estiver desligado.
+4. **Gravações do cliente:** visita é insert direto (a policy permite);
+   push → `painel_registrar_push`; resposta de lançamento → `painel_salvar_observacao`;
+   `?doc=` → `documento_publico`. Sem a RPC no banco, cada uma usa o caminho antigo.
+5. **Downloads:** no link público, `criarLinkAssinado`/`abrirLinkAssinado` pedem a URL
+   à function nova `painel-arquivo`, que confere se o arquivo é do cliente do token
+   (documentos e comprovantes, declaração do Simples, relatório da Receita, anexos de
+   CND). O escritório continua assinando direto no Storage.
+6. **Links** (`src/lib/linksPublicos.js`): painel, DRE/balancete, notas fiscais,
+   comprovante de faturamento e identificação de lançamentos saem com
+   `clientes.painel_token` (ou com o id, enquanto a coluna não existir). Em **Painéis**,
+   o botão **"Gerar novo link"** chama `girar_painel_token` (com confirmação).
 
 ## 6. Ordem de implantação
 
@@ -199,36 +206,44 @@ Cada passo é reversível e não deixa o app fora do ar.
 | Passo | O que | Efeito no app | Precisa de aprovação |
 |---|---|---|---|
 | 0 | Rodar [`supabase-rls-00-diagnostico.sql`](../supabase-rls-00-diagnostico.sql) | Nenhum (só leitura). Confirma estado real das tabelas criadas fora do repo (`obrigacoes`, `parcelamentos`, `parcelamento_parcelas`, `prospectos`, `tarefa_comentarios`) e o tipo da coluna `clientes.carteira`. | Sim (acesso ao banco) |
-| 1 | Rodar [`supabase-rls-01-preparacao.sql`](../supabase-rls-01-preparacao.sql); criar usuários no Auth; desligar cadastro público; vincular em `escritorio_usuarios` | Nenhum: policies em tabela com RLS desligado são ignoradas. A coluna `painel_token` é criada. | **Sim** |
-| 2 | Deploy do front (seção 5) + function `painel-arquivo` + autenticação nas functions | Painel usa o token (o login já existe). Ainda funciona mesmo sem RLS. | Sim (deploy) |
-| 3 | Reenviar links novos do painel aos clientes | — | — |
-| 4 | Rodar [`supabase-rls-02-ativar.sql`](../supabase-rls-02-ativar.sql) | Chave anônima sozinha passa a ver zero linhas. | **Sim** |
-| 5 | Testes da seção 8 | — | — |
-| ↩ | Se quebrar: [`supabase-rls-99-reverter.sql`](../supabase-rls-99-reverter.sql) | Volta ao comportamento de hoje (policies ficam guardadas). | — |
+| 1 | Deploy deste código (com o login de `ComLogin.jsx` junto) | Nada visível: functions aceitam chamadas sem login com aviso no log; links seguem com id. | Sim (deploy) |
+| 2 | Rodar [`supabase-rls-01-preparacao.sql`](../supabase-rls-01-preparacao.sql); criar usuários no Auth; desligar cadastro público; vincular o dono em `escritorio_usuarios` | Links novos passam a sair com token; os antigos ainda abrem. "Gerar novo link" passa a funcionar. | **Sim** |
+| 3 | Reenviar os links do painel aos clientes | — | — |
+| 4 | Rodar [`supabase-rls-02-ativar.sql`](../supabase-rls-02-ativar.sql) e, no Netlify, `EXIGIR_AUTENTICACAO=1` | Chave anônima sozinha vê zero linhas; links antigos param; functions exigem login ou token. | **Sim** |
+| 5 | Webhook do WhatsApp: `WHATSAPP_WEBHOOK_SEGREDO` no Netlify e `setx WHATSAPP_WEBHOOK_SEGREDO ...` na máquina do `iniciar-gestor.bat`, depois rodar o .bat | O webhook passa a recusar chamadas sem o segredo. Ligar as duas pontas juntas, senão os documentos do WhatsApp param de chegar. | Sim |
+| 6 | Testes da seção 8 | — | — |
+| ↩ | Se quebrar: [`supabase-rls-99-reverter.sql`](../supabase-rls-99-reverter.sql) e tirar `EXIGIR_AUTENTICACAO` | Volta ao comportamento de antes (policies ficam guardadas). | — |
 
 Recomendação: fazer os passos 1 a 4 primeiro num **projeto Supabase de teste**
 (branch do Supabase ou cópia do banco) apontado por um deploy de preview do Netlify.
 
-## 7. Netlify Functions: também estão abertas
+### Variáveis de ambiente novas (Netlify)
 
-RLS não protege as functions, porque elas usam a service key. Hoje qualquer um pode
-chamá-las pela URL. Situação e proposta:
+| Variável | Efeito |
+|---|---|
+| `EXIGIR_AUTENTICACAO` | `1` = functions recusam quem não tem login do escritório nem token do painel, e o id dos links antigos deixa de valer. Sem ela, só avisam no log. |
+| `WHATSAPP_WEBHOOK_SEGREDO` | Se definida, `whatsapp-webhook` só aceita `?segredo=<valor>` na URL. |
 
-| Function | Quem chama | Risco hoje | Proposta |
+## 7. Netlify Functions (implementado)
+
+RLS não protege as functions, porque elas usam a service key. A guarda está em
+`netlify/functions/lib/autenticacao.js`: confere o JWT do escritório
+(`supabase.auth.getUser` + `escritorio_usuarios`; antes do passo 2 basta o login), o
+token do painel, ou o segredo interno (function chamando function, derivado da
+service key).
+
+| Function | Quem chama | Risco antes | O que foi feito |
 |---|---|---|---|
-| `painel-evento` | painel (cliente) | Qualquer um manda eventos falsos para o WhatsApp do escritório, com qualquer `clienteId` | Receber o token do painel em vez do id e validar. |
-| `painel-push` (POST) | modo admin do painel | **Qualquer um manda notificação para o celular de qualquer cliente** | Exigir JWT do escritório. GET (chave VAPID pública) pode continuar aberto. |
-| `extrair-valor-guia` | painel (cliente) e escritório | Qualquer um gasta crédito da Anthropic e altera `documentos` | Aceitar JWT do escritório **ou** token do painel dono do documento. |
-| `extrair-declaracao-simples`, `extrair-situacao-fiscal`, `extrair-extrato`, `identificar-documento` | escritório | Gasto de crédito da Anthropic por terceiros | Exigir JWT do escritório. |
-| `honorarios-enviar-lembrete`, `honorarios-prever-lembrete` | escritório | **Qualquer um dispara cobrança por WhatsApp** | Exigir JWT do escritório. |
-| `documentos-fiscais-sincronizar(-background)` | escritório | Dispara sincronização com o OneFlow | Exigir JWT do escritório. |
-| `oneflow-proxy` | escritório | **Proxy aberto**: repassa qualquer requisição para qualquer URL | Exigir JWT do escritório e restringir o host de destino ao domínio do OneFlow. |
-| `whatsapp-webhook` | Evolution API | Qualquer um injeta documentos falsos | Segredo compartilhado (cabeçalho ou `?token=` na URL do webhook configurada na Evolution). |
+| `painel-evento` | painel (cliente) | Eventos falsos para o WhatsApp do escritório, com qualquer `clienteId` | Cliente sai do token do painel; o `clienteId` do corpo só vale fora do modo estrito. |
+| `painel-push` (POST) | modo admin do painel | **Qualquer um mandava notificação para o celular de qualquer cliente** | Exige login do escritório. GET (chave VAPID pública) continua aberto. |
+| `extrair-valor-guia` | painel e escritório | Gasto de crédito da Anthropic e alteração de `documentos` | Escritório, ou token do painel do **dono** do documento. |
+| `extrair-declaracao-simples`, `extrair-situacao-fiscal`, `extrair-extrato`, `identificar-documento` | escritório | Gasto de crédito da Anthropic por terceiros | Exige login do escritório. |
+| `honorarios-enviar-lembrete`, `honorarios-prever-lembrete` | escritório | **Qualquer um disparava cobrança por WhatsApp** | Exige login do escritório. |
+| `documentos-fiscais-sincronizar` / `-background` | escritório / a própria app | Disparo da sincronização com o OneFlow | Exige login; a background exige o segredo interno (mandado por `dispararSincronizacaoBackground`). |
+| `oneflow-proxy` | escritório | Aberto a qualquer um; a lista de hosts usava `startsWith`, então `https://app.omie.com.br.qualquercoisa.com` passava | Exige login e compara o hostname exato. |
+| `painel-arquivo` (nova) | painel e `?doc=` | — | URL assinada só de arquivo do cliente do token (ou do documento do `?doc=`). |
+| `whatsapp-webhook` | Evolution API | Qualquer um injetava documentos falsos | `?segredo=` quando `WHATSAPP_WEBHOOK_SEGREDO` está definida; `iniciar-gestor.bat` monta a URL com ele. |
 | `lembretes-cron`, `honorarios-cron`, `documentos-fiscais-cron` | agendador do Netlify | Pela documentação do Netlify, funções agendadas não são chamáveis por URL em produção (confirmar com um curl) | Nada. |
-
-Validação do JWT dentro da function: `supabase.auth.getUser(jwt)` com a service key e
-depois conferir `escritorio_usuarios`. Vale um helper em `netlify/functions/lib/` usado
-por todas.
 
 Há também `supabase/functions/oneflow-proxy` (Edge Function), que o front não usa (ele
 chama a versão do Netlify). Se estiver publicada no Supabase, remover ou proteger.
@@ -267,7 +282,23 @@ Os scripts foram rodados num Postgres 16 descartável (Docker) com stubs mínimo
 - Usuário autenticado **fora** de `escritorio_usuarios`: zero linhas.
 - Usuário do escritório: vê e altera tudo, gira token, acessa o Storage.
 
-**Não** foi testado contra o Supabase real (PostgREST, Storage, Auth de verdade).
+Depois, com o código das seções 5 e 7, num PostgREST v12 de verdade (Docker) na
+frente desse banco:
+
+- O cabeçalho `x-painel-token` chega às policies por `request.headers`: com `tokA`
+  só aparecem dados de A; sem token, ou com token errado, `[]`.
+- `documento_publico` devolve `null` nos vínculos vazios, no formato do join do
+  supabase-js.
+- `painel-arquivo`, `painel-evento`, `extrair-valor-guia` e as guardas do escritório,
+  rodando com supabase-js e um Auth/Storage simulados, nos dois modos de
+  `EXIGIR_AUTENTICACAO`: A não baixa arquivo de B nem mexe em guia de B; login fora de
+  `escritorio_usuarios` é recusado; link antigo (id) só vale fora do modo estrito.
+- No navegador (Vite apontando para esse banco): link com token inválido mostra "Link
+  inválido ou expirado"; `?painel=tokA` resolve o cliente e as consultas saem com o
+  cabeçalho (a chave PIX só volta com ele).
+- `vite build` passa; todas as functions passam em `node --check`.
+
+**Não** foi testado contra o Supabase real (Auth e Storage de verdade, schema completo).
 O passo 0 e um ensaio num projeto de teste continuam necessários.
 
 ## 9. Pontos de atenção

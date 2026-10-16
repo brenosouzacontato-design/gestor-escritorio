@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { XIcon, ChevronLeftIcon, ChevronRightIcon, Share2Icon } from 'lucide-react';
 import PainelClientePage from './PainelClientePage';
 import PainelCompartilhadoPage from './PainelCompartilhadoPage';
+import { chavePainel, urlPublica } from '../../lib/linksPublicos';
 
 // Visualizador interno do painel do cliente — em vez de abrir uma aba nova
 // por empresa (como "Visualizar painel" fazia antes), abre um overlay
@@ -44,7 +45,7 @@ export default function PainelViewerModal({ clientes, indiceInicial, competencia
   };
 
   const compartilhar = () => {
-    const link = `${window.location.origin}${window.location.pathname}?painel=${clienteAtual.id}&competencia=${encodeURIComponent(competencia)}${versao === 'completa' ? '&versao=1' : ''}`;
+    const link = urlPublica({ painel: chavePainel(clienteAtual), competencia, versao: versao === 'completa' ? 1 : null });
     const mensagem = versao === 'completa'
       ? `Olá! Segue o painel de ${clienteAtual.nome} — competência ${competencia} — com obrigações, financeiro e demais informações:\n${link}`
       : `Olá! Seguem os impostos e as pendências fiscais de ${clienteAtual.nome} — competência ${competencia}:\n${link}`;

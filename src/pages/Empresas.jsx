@@ -3,6 +3,7 @@ import { PlusIcon, XIcon, CheckCircleIcon, ClockIcon, AlertCircleIcon, MinusCirc
 import { useStore } from '../store'
 import { DeptChip, PriDot, fmtDate, isOverdue, useToast } from '../components/shared'
 import { supabase } from '../lib/supabase'
+import { chavePainel, urlPublica } from '../lib/linksPublicos'
 import { listarDepartamentos, criarDepartamento, gerarObrigacoesRecorrentesCompetencia } from './andamento/andamentoApi'
 import { NovaObrigacaoModal, NovaTarefaModuloModal, ModalTarefasLote, ModalObrigacoesLote, ModalBase, ModalAtribuir } from './andamento/modaisObrigacao'
 import { atribuidaAoCliente } from '../lib/responsavel'
@@ -496,8 +497,9 @@ export default function Empresas({ onOpenTarefas, clienteInicialId, onClienteIni
     setEnviandoSituacaoFiscal(false)
   }
 
-  // Link público do painel consolidado (PainelClientePage.jsx via main.jsx)
-  const linkPainel = (cliente) => `${window.location.origin}${window.location.pathname}?painel=${cliente.id}&competencia=${encodeURIComponent(compSel)}`
+  // Link público do painel consolidado (PainelClientePage.jsx via main.jsx) —
+  // leva o token do painel do cliente, não o id (ver docs/seguranca-rls.md)
+  const linkPainel = (cliente) => urlPublica({ painel: chavePainel(cliente), competencia: compSel })
 
   // Abre o carrossel interno de painéis (PainelViewerModal) começando na
   // empresa clicada, na mesma ordem/filtro da visão ativa (cards respeita a

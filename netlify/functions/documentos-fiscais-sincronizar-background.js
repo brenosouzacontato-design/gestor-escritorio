@@ -15,13 +15,18 @@
 
 const { createClient } = require('@supabase/supabase-js')
 const { sincronizarTodosClientes, competenciaAtual, competenciaAnterior } = require('./lib/oneflowFiscal')
+const { exigirEscritorio } = require('./lib/autenticacao')
 
 const supabase = createClient(
   process.env.SUPABASE_URL,
   process.env.SUPABASE_SERVICE_KEY
 )
 
-exports.handler = async () => {
+exports.handler = async (event) => {
+  // só a própria aplicação dispara (dispararSincronizacaoBackground manda o
+  // segredo interno); o Netlify já respondeu 202 pra quem chamou
+  if (await exigirEscritorio(event, 'documentos-fiscais-sincronizar-background')) return
+
   const { data: cfg, error: errCfg } = await supabase
     .from('configuracoes')
     .select('valor')

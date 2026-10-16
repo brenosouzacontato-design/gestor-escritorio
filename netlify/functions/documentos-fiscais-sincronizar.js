@@ -14,6 +14,7 @@
 
 const { createClient } = require('@supabase/supabase-js')
 const { dispararSincronizacaoBackground } = require('./lib/oneflowFiscal')
+const { exigirEscritorio } = require('./lib/autenticacao')
 
 const supabase = createClient(
   process.env.SUPABASE_URL,
@@ -24,6 +25,9 @@ exports.handler = async (event) => {
   if (event.httpMethod !== 'POST') {
     return resposta(405, { error: 'Método não permitido, use POST.' })
   }
+
+  const negado = await exigirEscritorio(event, 'documentos-fiscais-sincronizar')
+  if (negado) return negado
 
   const { data: cfg, error: errCfg } = await supabase
     .from('configuracoes')

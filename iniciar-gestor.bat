@@ -16,7 +16,10 @@ timeout /t 5 /nobreak >nul
 
 echo.
 echo [3/4] Configurando webhook...
-curl -s -X POST http://localhost:8080/webhook/set/gestor-escritorio -H "Content-Type: application/json" -H "apikey: gestor123" -d "{\"url\":\"https://gestorcount.netlify.app/.netlify/functions/whatsapp-webhook\",\"enabled\":true,\"webhook_by_events\":false,\"webhook_base64\":true,\"events\":[\"MESSAGES_UPSERT\"]}" >nul
+rem WHATSAPP_WEBHOOK_SEGREDO: mesmo valor da variavel de ambiente do Netlify
+rem (whatsapp-webhook.js recusa a chamada sem ele). Definir uma vez com:
+rem   setx WHATSAPP_WEBHOOK_SEGREDO "valor-aleatorio"
+curl -s -X POST http://localhost:8080/webhook/set/gestor-escritorio -H "Content-Type: application/json" -H "apikey: gestor123" -d "{\"url\":\"https://gestorcount.netlify.app/.netlify/functions/whatsapp-webhook?segredo=%WHATSAPP_WEBHOOK_SEGREDO%\",\"enabled\":true,\"webhook_by_events\":false,\"webhook_base64\":true,\"events\":[\"MESSAGES_UPSERT\"]}" >nul
 
 echo.
 echo [4/4] Configurando grupos...
