@@ -55,7 +55,12 @@ function Configuracao({ clienteId, status, onAtualizado }) {
   const [aberto, setAberto] = useState(!status.configurada)
   const [form, setForm] = useState({ serie_dps: emp?.serie_dps || '900', regra_competencia: emp?.regra_competencia || 'mes_do_atendimento', ambiente: emp?.ambiente || 'homologacao', whatsapp_origem: emp?.whatsapp_origem || '' })
   // Simples Nacional no leiaute da NT 009 (obrigatórios para ME/EPP ou opção pendente)
-  const [simples, setSimples] = useState({ regApIBSCBSSN: emp?.servico_padrao?.regApIBSCBSSN || '', cAtvSN: emp?.servico_padrao?.cAtvSN || '' })
+  const sp0 = emp?.servico_padrao || {}
+  const [simples, setSimples] = useState({
+    regApIBSCBSSN: sp0.regApIBSCBSSN || '', cAtvSN: sp0.cAtvSN || '',
+    cNBS: sp0.cNBS || '', cIndOp: sp0.cIndOp || '', CST: sp0.CST || '', cClassTrib: sp0.cClassTrib || '',
+  })
+  const faltaIbsCbs = status.configurada && (!sp0.cIndOp || !sp0.CST || !sp0.cClassTrib)
   const optanteSimples = ['3', '4'].includes(emp?.gabarito?.op_simp_nac)
   const faltaSimples = optanteSimples && (!emp?.servico_padrao?.regApIBSCBSSN || !emp?.servico_padrao?.cAtvSN)
   const [gabarito, setGabarito] = useState(null)
@@ -102,6 +107,11 @@ function Configuracao({ clienteId, status, onAtualizado }) {
             {' · '}competência padrão: {emp.regra_competencia === 'mes_da_emissao' ? 'data da emissão' : 'data do atendimento'}
             {optanteSimples && emp.servico_padrao?.cAtvSN && <>{' · '}Simples: IBS/CBS {emp.servico_padrao.regApIBSCBSSN}, atividade {emp.servico_padrao.cAtvSN}</>}
           </span>
+        )}
+        {faltaIbsCbs && (
+          <div style={{ flexBasis: '100%', color: 'var(--danger)', fontSize: 12 }}>
+            Falta informar IBS/CBS (cIndOp, CST e cClassTrib), obrigatório para competência a partir de 10/2026. Clique em Editar.
+          </div>
         )}
         {faltaSimples && (
           <div style={{ flexBasis: '100%', color: 'var(--danger)', fontSize: 12 }}>
@@ -168,6 +178,16 @@ function Configuracao({ clienteId, status, onAtualizado }) {
                 </div>
               </div>
             )}
+            <div style={{ ...suave, margin: '4px 0 6px' }}>IBS/CBS (Reforma Tributária) — tabelas no portal da NFS-e, Anexos VII e VIII</div>
+            <div className="form-row">
+              {[['cNBS', 'NBS do serviço', '123012300'], ['cIndOp', 'Indicador da operação (cIndOp)', '030101'],
+                ['CST', 'CST', '200'], ['cClassTrib', 'cClassTrib', '200028']].map(([campo, rotulo, exemplo]) => (
+                <div className="form-field" key={campo}>
+                  <label className="form-label">{rotulo}</label>
+                  <input value={simples[campo]} placeholder={`ex.: ${exemplo}`} onChange={(e) => setSimples({ ...simples, [campo]: e.target.value })} />
+                </div>
+              ))}
+            </div>
             <div className="form-field">
               <label className="form-label">Competência padrão</label>
               <select value={form.regra_competencia} onChange={(e) => setForm({ ...form, regra_competencia: e.target.value })}>
