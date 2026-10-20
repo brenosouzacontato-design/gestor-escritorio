@@ -130,7 +130,7 @@ function aplicarLeiauteNt009(inf, servicoPadrao = {}, grupos = { finNFSe: true, 
     remover(inf, ['indDest'])
     inserirAntes(inf, novo('indDest', '0'), ['dest', 'interm', 'serv', 'valores', 'IBSCBS'])
   }
-  if (grupos.ibscbs) aplicarIbsCbs(inf, servicoPadrao)
+  if (grupos.ibscbs) aplicarIbsCbs(inf, servicoPadrao, grupos)
   if (!grupos.simples) return
 
   const regTrib = filho(inf, 'prest/regTrib')
@@ -158,9 +158,11 @@ function aplicarLeiauteNt009(inf, servicoPadrao = {}, grupos = { finNFSe: true, 
 // (regApIBSCBSSN = 1) os valores de IBS e CBS não são informados (RN 136 e 173). O NBS do serviço
 // (cNBS, em serv/cServ) vai junto. O IBSCBS do gabarito, se houver, é substituído.
 // NFSE_GIBSCBS_VAZIO=1 inclui um <gIBSCBS/> vazio, se a Sefin passar a exigir o grupo.
+// Antes da fase do indDest (grupos.indDest falso), o esquema da Sefin ainda pede indDest DENTRO de
+// IBSCBS, logo depois de cIndOp (E1235 em 20/10/2026: "expected: tpOper, gRefNFSe, tpEnteGov, indDest").
 const FORMATOS_IBSCBS = { cIndOp: /^\d{6}$/, CST: /^\d{3}$/, cClassTrib: /^\d{6}$/, cNBS: /^\d{9}$/ }
 
-function aplicarIbsCbs(inf, servicoPadrao = {}, env = process.env) {
+function aplicarIbsCbs(inf, servicoPadrao = {}, grupos = { indDest: true }, env = process.env) {
   const v = (campo) => String(servicoPadrao[campo] || '').replace(/\D/g, '')
   for (const campo of ['cIndOp', 'CST', 'cClassTrib']) {
     if (!FORMATOS_IBSCBS[campo].test(v(campo))) {
@@ -178,7 +180,7 @@ function aplicarIbsCbs(inf, servicoPadrao = {}, env = process.env) {
   const valores = novo('valores')
   valores.children = [trib]
   const ibscbs = novo('IBSCBS')
-  ibscbs.children = [novo('cIndOp', v('cIndOp')), valores]
+  ibscbs.children = [novo('cIndOp', v('cIndOp')), ...(grupos.indDest ? [] : [novo('indDest', '0')]), valores]
   remover(inf, ['IBSCBS'])
   inserirAntes(inf, ibscbs, [])
 }

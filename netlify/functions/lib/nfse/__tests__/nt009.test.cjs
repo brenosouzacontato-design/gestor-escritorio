@@ -80,6 +80,8 @@ test('homologação em 20/10/2026: finNFSe e IBSCBS (indDest e campos do Simples
   assert.equal(filho(inf, 'prest/regTrib/regApIBSCBSSN'), null)
   assert.equal(filho(inf, 'serv/cServ/cAtvSN'), null)
   assert.equal(filho(inf, 'IBSCBS/valores/trib/cClassTrib').text, '200028')
+  // antes da fase do indDest, ele vai dentro de IBSCBS, depois de cIndOp (esquema atual da Sefin)
+  assert.deepEqual(tags(filho(inf, 'IBSCBS')), ['cIndOp', 'indDest', 'valores'])
   naOrdem(tags(inf), ORDEM_INFDPS)
 })
 
