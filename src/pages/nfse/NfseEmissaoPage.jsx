@@ -4,6 +4,7 @@ import { useStore } from '../../store'
 import EmpresaCombobox from '../../components/EmpresaCombobox'
 import { Modal, useToast } from '../../components/shared'
 import { chamarNfse, listarLotes, listarNotas, baixarXml, arquivoParaBase64, totais } from './nfseApi'
+import { baixarNfse } from '../painel/nfsePainelApi'
 
 // Emissão de NFS-e pela API da Sefin Nacional, por empresa. Ver docs/nfse-emissao.md.
 // Tudo que grava passa pela function nfse (login conferido no servidor); a tela só lê do Supabase.
@@ -405,6 +406,8 @@ export default function NfseEmissaoPage() {
                         {n.estado === 'autorizada' && <>
                           <div style={{ color: 'var(--ok)', fontWeight: 700 }}>✔ NFS-e nº {n.numero_nfse || '?'}</div>
                           <div style={suave}>{n.chave_acesso}</div>
+                          <a href="#" onClick={(e) => { e.preventDefault(); baixarNfse(clienteId, { id: n.id, numero: n.numero_nfse, chave: n.chave_acesso }, 'pdf', { incluirHomologacao: true }).catch((x) => show(x.message)) }}
+                            title="DANFSe (NT 008/2026) gerado a partir do XML autorizado">PDF (DANFSe)</a>{' · '}
                           <a href="#" onClick={(e) => { e.preventDefault(); baixarXml(n.id, 'xml_retorno').catch((x) => show(x.message)) }}>XML NFS-e</a>{' · '}
                           <a href="#" onClick={(e) => { e.preventDefault(); baixarXml(n.id, 'xml_enviado').catch((x) => show(x.message)) }}>XML DPS</a>
                         </>}

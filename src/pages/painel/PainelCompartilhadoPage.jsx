@@ -5,6 +5,7 @@ import {
 } from 'lucide-react';
 import { chavePainelPorId, urlPublica } from '../../lib/linksPublicos';
 import AcessoPainel, { obterClientePagina } from './AcessoPainel';
+import { listarNfseEmitidas, baixarNfse } from './nfsePainelApi';
 import { abrirLinkAssinado } from '../documentos/documentosApi';
 import { GraficoFaturamento, ComparativoDas, NotasEntrada, TarefasDoCliente } from './PainelClientePage';
 import { calcularAliquotaNominal } from '../../lib/simplesNacional';
@@ -186,7 +187,23 @@ function PainelCompartilhado({ clienteId, competencia: competenciaInicial, admin
   const [erro, setErro] = useState(null);
   const [editandoPainel, setEditandoPainel] = useState(false);
   const [erroEdicao, setErroEdicao] = useState(null);
+  const [nfseEmitidas, setNfseEmitidas] = useState([]); // notas de serviço emitidas pelo gestor (módulo NFS-e)
   const editando = admin && editandoPainel;
+
+  // Fora do Promise.all do painel: sem o módulo de NFS-e no banco (ou com a
+  // function fora do ar) a seção só não aparece.
+  useEffect(() => {
+    let ativo = true;
+    listarNfseEmitidas(clienteId, competencia)
+      .then((notas) => ativo && setNfseEmitidas(notas))
+      .catch(() => ativo && setNfseEmitidas([]));
+    return () => { ativo = false; };
+  }, [clienteId, competencia]);
+
+  const baixarNotaEmitida = (nota, formato) => {
+    if (!admin) avisarEventoPainel(clienteId, 'download', { descricao: `NFS-e nº ${nota.numero} (${formato.toUpperCase()})`, competencia });
+    return baixarNfse(clienteId, nota, formato).catch((e) => window.alert(e.message));
+  };
 
   useEffect(() => {
     if (!admin) return;
@@ -565,6 +582,16 @@ function PainelCompartilhado({ clienteId, competencia: competenciaInicial, admin
                   : <div style={LISTA}>{guias.map((g) => <LinhaGuia key={g.id} g={g} onBaixar={baixar} editando={editando} onSalvarValor={salvarValorGuia} onMarcarPaga={salvarGuiaPaga} />)}</div>}
               </Secao>
               </Ocultavel>
+
+              {/* ── Notas fiscais de serviço emitidas pelo escritório (módulo NFS-e): PDF (DANFSe) e XML ── */}
+              {nfseEmitidas.length > 0 && (
+                <Ocultavel chave="nfse_emitidas" {...propsOc}>
+                <Secao titulo={`Notas fiscais emitidas — ${competencia}`} icone={<FileTextIcon size={14} />}
+                  extra={<Total valor={nfseEmitidas.reduce((s, n) => s + Number(n.valor || 0), 0)} />}>
+                  <div style={LISTA}>{nfseEmitidas.map((n) => <LinhaNfseEmitida key={n.id} n={n} onBaixar={baixarNotaEmitida} />)}</div>
+                </Secao>
+                </Ocultavel>
+              )}
 
               {/* ── Honorários (módulo Honorários) + chave PIX pra copiar ── */}
               {honorarios.length > 0 && (
@@ -1097,6 +1124,27 @@ function LinhaHonorario({ h }) {
           <span style={{ fontSize: 10, fontWeight: 700, color: cor, background: dim, borderRadius: 99, padding: '3px 9px', whiteSpace: 'nowrap' }}>
             {h.concluida ? 'Pago' : vencido ? 'Vencido' : 'A pagar'}
           </span>
+        </>
+      )} />
+  );
+}
+
+function LinhaNfseEmitida({ n, onBaixar }) {
+  const emitida = n.emitidaEm ? fmtData(String(n.emitidaEm).slice(0, 10)) : null;
+  return (
+    <Linha chave={n.id} corBorda="var(--ok)" titulo={`NFS-e nº ${n.numero || '—'}${n.tomador ? ` — ${n.tomador}` : ''}`}
+      detalhes={(
+        <>
+          {emitida && <span style={{ color: 'var(--text3)', display: 'flex', alignItems: 'center', gap: 3 }}><CalendarIcon size={10} /> Emitida em {emitida}</span>}
+          {n.descricao && <span style={{ color: 'var(--text3)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 260 }}>{n.descricao}</span>}
+          {n.ambiente === 'homologacao' && <span style={{ color: 'var(--danger)', fontWeight: 700 }}>Homologação (teste)</span>}
+        </>
+      )}
+      direita={(
+        <>
+          <span style={{ fontSize: 14, fontWeight: 800, color: 'var(--text1)', whiteSpace: 'nowrap' }}>{n.valor != null ? fmt(n.valor) : '—'}</span>
+          <BotaoLink onClick={() => onBaixar(n, 'pdf')}>PDF</BotaoLink>
+          <BotaoLink onClick={() => onBaixar(n, 'xml')}>XML</BotaoLink>
         </>
       )} />
   );

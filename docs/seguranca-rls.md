@@ -242,6 +242,7 @@ service key).
 | `documentos-fiscais-sincronizar` / `-background` | escritório / a própria app | Disparo da sincronização com o OneFlow | Exige login; a background exige o segredo interno (mandado por `dispararSincronizacaoBackground`). |
 | `oneflow-proxy` | escritório | Aberto a qualquer um; a lista de hosts usava `startsWith`, então `https://app.omie.com.br.qualquercoisa.com` passava | Exige login e compara o hostname exato. |
 | `painel-arquivo` (nova) | painel e `?doc=` | — | URL assinada só de arquivo do cliente do token (ou do documento do `?doc=`). |
+| `painel-nfse` (nova) | painel e tela de emissão | — | Notas de serviço emitidas (lista, PDF do DANFSe, XML): cliente só as próprias de produção; escritório qualquer cliente. Ver `docs/nfse-emissao.md`. |
 | `whatsapp-webhook` | Evolution API | Qualquer um injetava documentos falsos | `?segredo=` quando `WHATSAPP_WEBHOOK_SEGREDO` está definida; `iniciar-gestor.bat` monta a URL com ele. |
 | `lembretes-cron`, `honorarios-cron`, `documentos-fiscais-cron` | agendador do Netlify | Pela documentação do Netlify, funções agendadas não são chamáveis por URL em produção (confirmar com um curl) | Nada. |
 

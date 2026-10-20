@@ -30,6 +30,29 @@ Decisões (15/10/2026):
    para a fila "A aprovar".
 5. **Recorrentes**: cadastro (tomador, serviço, valor, dia do mês, competência) + `nfse-cron` diário.
 
+## Painel do cliente: notas emitidas e DANFSe (19/10/2026)
+
+- **Seção "Notas fiscais emitidas — MM/AAAA"** no painel do cliente (`PainelCompartilhadoPage`), com
+  número, tomador, valor e botões **PDF** e **XML**. Só aparece quando há nota autorizada de **produção**
+  na competência (pela `dCompet` da DPS). O escritório pode ocultá-la no modo de edição, como as outras.
+- **Function `painel-nfse`**: lista e entrega PDF/XML. O cliente entra pelo token do painel
+  (`x-painel-token`, ver `docs/seguranca-rls.md`) e só vê as notas dele de produção; o escritório
+  logado vê qualquer cliente e, na tela de emissão, também as de homologação.
+- **DANFSe gerado pelo gestor** (`netlify/functions/lib/nfse/danfse/`). A API pública de DANFSe do
+  Ambiente Nacional foi **suspensa em 03/08/2026** (NT SE/CGNFS-e nº 008/2026 v1.02), e a geração
+  passou para o software emissor. O PDF segue o Anexo I da NT: A4 em uma página, grade e posições do
+  item 2.4.5, logomarca da NFS-e, QR Code da consulta pública, "NFS-e SEM VALIDADE JURÍDICA" em
+  homologação, blocos não identificados suprimidos e traço em campo vazio. Gerado na hora a partir
+  do `xml_retorno` (menos de 1 s); não fica guardado.
+  - Fonte: Helvetica no lugar de Arial/Microsoft Sans Serif (não dá para embutir as fontes da
+    Microsoft); as métricas da Helvetica são as da Arial.
+  - Marca d'água "CANCELADA"/"SUBSTITUÍDA" já existe no gerador (`marcaDagua`), mas o módulo ainda
+    não registra cancelamento/substituição de nota.
+  - Municípios fora do XML (endereço do tomador) vêm da API de localidades do IBGE; se ela falhar,
+    sai o código.
+- Tela "Emitir NFS-e": link **PDF (DANFSe)** ao lado de "XML NFS-e" nas notas autorizadas.
+- Testes: `danfse.test.cjs` e `painelNfse.test.cjs` (`npm run test:nfse`, 42 no total).
+
 ## Regras herdadas do app local (não mudar)
 
 - nDPS reservado e gravado **antes** de qualquer chamada HTTP; número nunca reutilizado.
@@ -50,4 +73,7 @@ Decisões (15/10/2026):
       num lote "migracao" (gerado por emissor-nfse/scripts/gerar_migracao_gestor.py, fora do git).
 - [ ] Netlify: NFSE_CERT_KEY e NFSE_EMAILS_PERMITIDOS; publicar; configurar a Simple Care na tela
       (gabarito + certificado) e testar 1 nota em homologação antes de produção.
+- [x] Painel do cliente com as notas emitidas e DANFSe em PDF (ver seção acima).
+- [ ] Antes de publicar: emitir 1 nota em homologação, conferir o PDF pela tela de emissão e o painel
+      (com uma nota de produção já migrada, ex.: NFS-e 21).
 - [ ] Fases 4 (WhatsApp) e 5 (recorrentes).

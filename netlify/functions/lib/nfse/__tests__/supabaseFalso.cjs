@@ -20,6 +20,8 @@ function criarSupabaseFalso({ usuarios = {}, tabelas = {} } = {}) {
       eq(c, v) { filtros.push((r) => r[c] === v); return q },
       neq(c, v) { filtros.push((r) => r[c] !== v); return q },
       in(c, vs) { filtros.push((r) => vs.includes(r[c])); return q },
+      not(c, operador, v) { filtros.push((r) => (operador === 'is' && v === null ? r[c] != null : r[c] !== v)); return q },
+      limit() { return q },
       order(c) { ordem.push(c); return q },
       insert(d) { op = 'insert'; dados = d; return q },
       update(d) { op = 'update'; dados = d; return q },
