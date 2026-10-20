@@ -1,6 +1,7 @@
 import React from 'react'
 import ReactDOM from 'react-dom/client'
 import App from './App.jsx'
+import ComLogin from './components/ComLogin.jsx'
 import RelatorioCompartilhadoPage from './pages/contabil/RelatorioCompartilhadoPage.jsx'
 import NotasFiscaisCompartilhadoPage from './pages/contabil/NotasFiscaisCompartilhadoPage.jsx'
 import IdentificarLancamentosPage from './pages/contabil/IdentificarLancamentosPage.jsx'
@@ -8,6 +9,7 @@ import DocumentoCompartilhadoPage from './pages/documentos/DocumentoCompartilhad
 import PainelClientePage from './pages/painel/PainelClientePage.jsx'
 import PainelCompartilhadoPage from './pages/painel/PainelCompartilhadoPage.jsx'
 import ComprovanteFaturamentoPage from './pages/painel/ComprovanteFaturamentoPage.jsx'
+import PainelGrupoPage from './pages/painel/PainelGrupoPage.jsx'
 import { registrarVisualizacaoPainel, avisarEventoPainel } from './pages/painel/painelApi.js'
 import './styles.css'
 
@@ -21,7 +23,8 @@ const identificar = params.get('identificar')
 const doc = params.get('doc')
 const painel = params.get('painel')
 
-let raiz = <App />
+// O gestor exige login; os links públicos abaixo, não.
+let raiz = <ComLogin><App /></ComLogin>
 if (share === 'dre' || share === 'balancete') {
   raiz = <RelatorioCompartilhadoPage
     tipo={share}
@@ -47,6 +50,12 @@ if (share === 'dre' || share === 'balancete') {
   />
 } else if (doc) {
   raiz = <DocumentoCompartilhadoPage documentoId={doc} />
+} else if (painel && painel.includes(',')) {
+  // grupo de empresas num link só (?painel=id1,id2,...) — a visita/aviso
+  // são registrados dentro do PainelGrupoPage, por empresa aberta
+  const ids = [...new Set(painel.split(',').map((s) => s.trim()).filter(Boolean))]
+  raiz = <PainelGrupoPage clienteIds={ids} competencia={params.get('competencia')}
+    versao={params.get('versao') === '1' ? 'completa' : 'nova'} empresaInicial={params.get('empresa')} />
 } else if (painel) {
   // log da visita do cliente (a última aparece pro escritório no topo do
   // painel) — falha silenciosa se a tabela ainda não existir

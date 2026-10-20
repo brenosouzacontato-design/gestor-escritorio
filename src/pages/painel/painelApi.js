@@ -653,18 +653,32 @@ export async function obterUltimaVisualizacaoPainel(clienteId) {
 
 // ---------- Honorários (módulo Honorários) ----------
 
-// Honorários do cliente que entram no painel como obrigação a pagar: todos
-// os pendentes (de qualquer competência — atrasado continua aparecendo até
-// ser pago) + o da competência selecionada mesmo se já pago, pro cliente ver
-// que está quitado. Mesma tabela da tela Honorários (honorariosApi.js).
+// Honorários do cliente que entram no painel como obrigação a pagar: o da
+// competência selecionada (mesmo se já pago, pro cliente ver que está
+// quitado) + os pendentes de competências ANTERIORES (atrasado continua
+// aparecendo até ser pago). Competências futuras ficam de fora — o
+// honorário de 10/2026, gerado com antecedência, não aparece no painel de
+// 09/2026. Mesma tabela da tela Honorários (honorariosApi.js).
+// Honorário sem competência (ex: avulso antigo) segue a regra de antes:
+// aparece enquanto estiver pendente.
+function ordinalCompetencia(c) {
+  const m = /^(\d{2})\/(\d{4})$/.exec(c || '');
+  return m ? Number(m[2]) * 100 + Number(m[1]) : null;
+}
 export async function obterHonorariosPainel(clienteId, competencia) {
   const { data, error } = await supabase
     .from('honorarios')
     .select('*')
     .eq('cliente_id', clienteId);
   if (error) throw error;
+  const atual = ordinalCompetencia(competencia);
   return (data || [])
-    .filter((h) => h.status === 'pendente' || h.competencia === competencia)
+    .filter((h) => {
+      if (h.competencia === competencia) return true;
+      if (h.status !== 'pendente') return false;
+      const ord = ordinalCompetencia(h.competencia);
+      return ord == null || atual == null || ord < atual;
+    })
     .sort((a, b) => (a.vencimento || '').localeCompare(b.vencimento || ''));
 }
 
