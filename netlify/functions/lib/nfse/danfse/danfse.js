@@ -321,8 +321,11 @@ async function extrairCampos(xml, { buscarMunicipio = buscarMunicipioIbge } = {}
       mostrarPisCofins: anoCompetencia <= 2026,
     },
     ibscbs: {
-      cst: ou([txt(ibscbsDps, 'valores/trib/gIBSCBS/CST'), txt(ibscbsDps, 'valores/trib/gIBSCBS/cClassTrib')].filter(Boolean).join(' / ')),
-      operacao: ou([txt(ibscbsDps, 'cIndOp'), txt(ibscbsNfse, 'cLocalidadeIncid'), txt(ibscbsNfse, 'xLocalidadeIncid')].filter(Boolean).join(' / ')),
+      // NT 009 (item 2.16): CST e cClassTrib saíram de gIBSCBS para trib; notas antigas ainda os têm em gIBSCBS
+      cst: ou([txt(ibscbsDps, 'valores/trib/CST') || txt(ibscbsDps, 'valores/trib/gIBSCBS/CST'),
+        txt(ibscbsDps, 'valores/trib/cClassTrib') || txt(ibscbsDps, 'valores/trib/gIBSCBS/cClassTrib')].filter(Boolean).join(' / ')),
+      operacao: ou([txt(ibscbsDps, 'cIndOp'), txt(ibscbsNfse, 'cLocalidadeIncid'), txt(ibscbsNfse, 'xLocalidadeIncid'),
+        UF_IBGE[txt(ibscbsNfse, 'cLocalidadeIncid').slice(0, 2)]].filter(Boolean).join(' / ')),
       exclusoes: dinheiro(somar(txt(valDps, 'vDescCondIncond/vDescIncond'), txt(ibscbsNfse, 'valores/vCalcReeRepRes'),
         ibscbsNfse ? txt(valNfse, 'vISSQN') : '', ibscbsNfse ? vPis : '', ibscbsNfse ? vCofins : '')),
       bc: dinheiro(txt(ibscbsNfse, 'valores/vBC')),

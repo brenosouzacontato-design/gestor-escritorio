@@ -181,7 +181,7 @@ function Configuracao({ clienteId, status, onAtualizado }) {
             <div style={{ ...suave, margin: '4px 0 6px' }}>IBS/CBS (Reforma Tributária) — tabelas no portal da NFS-e, Anexos VII e VIII</div>
             <div className="form-row">
               {[['cNBS', 'NBS do serviço', '123012300'], ['cIndOp', 'Indicador da operação (cIndOp)', '030101'],
-                ['CST', 'CST', '200'], ['cClassTrib', 'cClassTrib', '200028']].map(([campo, rotulo, exemplo]) => (
+                ['CST', 'CST', '200'], ['cClassTrib', 'cClassTrib', '200029']].map(([campo, rotulo, exemplo]) => (
                 <div className="form-field" key={campo}>
                   <label className="form-label">{rotulo}</label>
                   <input value={simples[campo]} placeholder={`ex.: ${exemplo}`} onChange={(e) => setSimples({ ...simples, [campo]: e.target.value })} />

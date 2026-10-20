@@ -82,6 +82,39 @@ test('NFS-e no leiaute da NT 009: finalidade e destinatário na raiz de infDPS',
   assert.equal(c.destinatarioEhTomador, true)
 })
 
+// Estrutura de IBS/CBS como a Sefin devolveu na NFS-e nº 4 de homologação (20/10/2026), com o
+// tomador fictício da fixture
+const NFSE_IBSCBS = XML
+  .replace('<xTribNac>Odontologia.</xTribNac>', '<xTribNac>Odontologia.</xTribNac><xNBS>Serviços odontológicos</xNBS>')
+  .replace('<valores><vLiq>20.00</vLiq></valores>', '<valores><vLiq>11.00</vLiq></valores><IBSCBS><cLocalidadeIncid>3154606</cLocalidadeIncid>'
+    + '<xLocalidadeIncid>Ribeirão das Neves</xLocalidadeIncid><valores><vBC>11.00</vBC><uf><pIBSUF>0.10</pIBSUF><pRedAliqUF>60.00</pRedAliqUF>'
+    + '<pAliqEfetUF>0.04</pAliqEfetUF></uf><mun><pIBSMun>0.00</pIBSMun><pRedAliqMun>60.00</pRedAliqMun><pAliqEfetMun>0.00</pAliqEfetMun></mun>'
+    + '<fed><pCBS>0.90</pCBS><pRedAliqCBS>60.00</pRedAliqCBS><pAliqEfetCBS>0.36</pAliqEfetCBS></fed></valores><totCIBS><vTotNF>11.00</vTotNF>'
+    + '<gIBS><vIBSTot>0.00</vIBSTot><gIBSUFTot><vIBSUF>0.00</vIBSUF></gIBSUFTot><gIBSMunTot><vIBSMun>0.00</vIBSMun></gIBSMunTot></gIBS>'
+    + '<gCBS><vCBS>0.04</vCBS></gCBS></totCIBS></IBSCBS>')
+  .replace('<tpEmit>1</tpEmit>', '<tpEmit>1</tpEmit><finNFSe>0</finNFSe>')
+  .replace('<cTribNac>041201</cTribNac>', '<cTribNac>041201</cTribNac><cNBS>123012300</cNBS>')
+  .replace('</valores></infDPS>', '</valores><IBSCBS><cIndOp>030101</cIndOp><indDest>0</indDest><valores><trib><CST>200</CST>'
+    + '<cClassTrib>200029</cClassTrib></trib></valores></IBSCBS></infDPS>')
+
+test('NFS-e com IBS/CBS (NT 009): CST/cClassTrib, alíquotas e valores no DANFSe', async () => {
+  const c = await extrairCampos(NFSE_IBSCBS, semIbge)
+  assert.equal(c.ibscbs.cst, '200 / 200029')
+  assert.equal(c.ibscbs.operacao, '030101 / 3154606 / Ribeirão das Neves / MG')
+  assert.equal(c.ibscbs.bc, 'R$ 11,00')
+  assert.equal(c.ibscbs.reducoes, '60,00% / 60,00% / 60,00%')
+  assert.equal(c.ibscbs.aliquotas, '0,10% / 0,00%')
+  assert.equal(c.ibscbs.pCBS, '0,90%')
+  assert.equal(c.ibscbs.efetivaCBS, '0,36%')
+  assert.equal(c.ibscbs.vCBS, 'R$ 0,04')
+  assert.equal(c.totais.liquidoComIbsCbs, 'R$ 11,00')
+  assert.equal(c.servico.nbs, '123012300')
+  assert.equal(c.identificacao.finalidade, 'NFS-e regular')
+  assert.equal(c.destinatarioEhTomador, true)
+  const pdf = await gerarDanfse(NFSE_IBSCBS, semIbge)
+  assert.equal((await PDFDocument.load(pdf)).getPageCount(), 1)
+})
+
 test('XML que não é NFS-e autorizada é recusado', async () => {
   await assert.rejects(() => gerarDanfse('<DPS><infDPS/></DPS>', semIbge), /NFSe/)
 })
