@@ -64,10 +64,26 @@ de **03/11/2026**. `dps.js` (`aplicarLeiauteNt009`) insere, só a partir dessas 
 - para optante do Simples ME/EPP ou pendente (`opSimpNac` 3 ou 4): `regApIBSCBSSN` (depois de
   `regApTribSN`) e `cAtvSN` (antes de `xDescServ`), obrigatórios pelo Anexo VI (RN 313 e 449). Os dois
   vêm da configuração da empresa (tela "Emitir NFS-e" → Editar), não do gabarito.
-  Simple Care: regApIBSCBSSN = 1 (IBS e CBS pelo SN), cAtvSN = 7 (exclusivamente Anexo III).
+  Simple Care: regApIBSCBSSN = 1 (IBS e CBS pelo SN), cAtvSN = 7 (exclusivamente Anexo III);
+- grupo `IBSCBS` (E0855: obrigatório para competência a partir de 01/10/2026): `cIndOp` e
+  `valores/trib/CST` + `cClassTrib`, mais o NBS do serviço (`cNBS`), também da configuração da empresa.
+  Simple Care: NBS 1.2301.23.00 e cIndOp 030101 (Anexo VIII, odontologia), CST 200 / cClassTrib 200029
+  (saúde humana, Anexo III da LC 214/2025, redução de 60% — a Calculadora recusa 200028, que é educação).
 
-Se a Sefin adiar a produção, a variável `NFSE_NT009_PRODUCAO_A_PARTIR=AAAA-MM-DD` no Netlify muda a
-data. O XSD oficial do leiaute novo ainda não tinha sido publicado em 20/10/2026 (o pacote da
+A Sefin liga a NT em fases, então cada grupo tem a sua data por ambiente (`NT009_DATAS` em `dps.js`):
+
+| Grupo | Homologação | Produção |
+|---|---|---|
+| finNFSe | 16/10/2026 | 03/11/2026 |
+| IBSCBS (com indDest dentro dele até a fase do indDest) | 20/10/2026 | 03/11/2026 |
+| indDest na raiz de infDPS | 30/10/2026 | 03/11/2026 |
+| regApIBSCBSSN e cAtvSN (Simples) | 03/11/2026 | 03/11/2026 |
+
+Cada data muda sem mexer no código pela variável `NFSE_NT009_<GRUPO>_<AMBIENTE>=AAAA-MM-DD` no Netlify
+(ex.: `NFSE_NT009_SIMPLES_HOMOLOGACAO`); `NFSE_NT009_PRODUCAO_A_PARTIR` muda a produção de todos.
+**Validado em 20/10/2026:** NFS-e nº 4 da Simple Care autorizada na produção restrita com finNFSe e IBSCBS
+(DPS série 900 nº 11). Antes de 03/11, emitir de novo em homologação depois de 30/10 para conferir a fase
+do indDest; se a Sefin recusar regApIBSCBSSN/cAtvSN em produção, adiar o grupo SIMPLES pela variável. O XSD oficial do leiaute novo ainda não tinha sido publicado em 20/10/2026 (o pacote da
 produção restrita é de 27/07/2026); a ordem dos campos segue a aba "LEIAUTE DPS_NFS-e - RT" do Anexo VI.
 O DANFSe lê `finNFSe`/`indDest`/`dest` da posição nova e da antiga.
 
