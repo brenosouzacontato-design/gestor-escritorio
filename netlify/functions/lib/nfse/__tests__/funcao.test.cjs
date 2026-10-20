@@ -53,10 +53,14 @@ test('fluxo completo: empresa, certificado cifrado, importar, editar, prévia e 
 
   // série igual à do Emissor Web é recusada
   assert.equal((await chamar({ acao: 'salvar_empresa', cliente_id: CLIENTE, gabarito_xml: gabarito, serie_dps: '70000' })).status, 400)
+  // campos do Simples Nacional da NT 009: validados e mantidos ao salvar de novo sem eles
+  const simples = { regApIBSCBSSN: '1', cAtvSN: '7' }
+  assert.equal((await chamar({ acao: 'salvar_empresa', cliente_id: CLIENTE, gabarito_xml: gabarito, servico_padrao: { cAtvSN: '99' } })).status, 400)
+  assert.equal((await chamar({ acao: 'salvar_empresa', cliente_id: CLIENTE, gabarito_xml: gabarito, servico_padrao: simples })).status, 200)
   const st = await chamar({ acao: 'salvar_empresa', cliente_id: CLIENTE, gabarito_xml: gabarito })
   assert.equal(st.status, 200)
   assert.equal(st.empresa.codigo_municipio, '3154606')
-  assert.deepEqual(st.empresa.servico_padrao, { cTribNac: '041201', tribISSQN: '1', tpRetISSQN: '1' })
+  assert.deepEqual(st.empresa.servico_padrao, { cTribNac: '041201', tribISSQN: '1', tpRetISSQN: '1', ...simples })
   assert.equal(st.empresa.ambiente, 'homologacao')
 
   const pfx = fs.readFileSync(path.join(G, 'teste.pfx')).toString('base64')

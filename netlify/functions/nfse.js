@@ -21,7 +21,7 @@
 const { ErroHttp, exigirUsuario, responder, supabaseServico } = require('./lib/nfse/auth')
 const { cifrar, decifrar } = require('./lib/nfse/cofre')
 const { lerPfx, checar, testarPar, diasRestantes } = require('./lib/nfse/certificado')
-const { carregarGabarito } = require('./lib/nfse/dps')
+const { carregarGabarito, CODIGOS_ATIVIDADE_SN } = require('./lib/nfse/dps')
 const { filho } = require('./lib/nfse/xml')
 const { criarCliente } = require('./lib/nfse/sefin')
 const { RepositorioSupabase, TransicaoInvalida } = require('./lib/nfse/repositorio')
@@ -78,8 +78,21 @@ function analisarGabarito(xml) {
       tpRetISSQN: txt('valores/trib/tribMun/tpRetISSQN'),
     },
     descricao_exemplo: txt('serv/cServ/xDescServ'),
+    op_simp_nac: txt('prest/regTrib/opSimpNac'),
     serie_emissor_web: txt('serie'),
   }
+}
+
+// Campos do Simples Nacional da configuração (NT 009), validados; vazio apaga.
+function camposSimples(sp) {
+  const saida = {}
+  for (const [campo, validos] of [['regApIBSCBSSN', ['1', '2', '3']], ['cAtvSN', CODIGOS_ATIVIDADE_SN]]) {
+    if (!(campo in sp)) continue
+    const v = sp[campo] == null ? '' : String(sp[campo]).trim()
+    exigir(v === '' || validos.includes(v), `${campo} inválido: ${v}`)
+    saida[campo] = v || undefined
+  }
+  return saida
 }
 
 const acoes = {
@@ -114,7 +127,12 @@ const acoes = {
     const registro = {
       cliente_id: clienteId, ambiente, serie_dps: serie, codigo_municipio: g.codigo_municipio, cnpj: g.cnpj,
       regra_competencia: p.regra_competencia || (atual && atual.regra_competencia) || 'mes_do_atendimento',
-      servico_padrao: { ...g.servico_padrao, ...(p.servico_padrao || {}) },
+      // regApIBSCBSSN e cAtvSN (Simples Nacional, NT 009) não vêm do gabarito: ficam os já salvos
+      servico_padrao: {
+        ...g.servico_padrao,
+        ...camposSimples((atual && atual.servico_padrao) || {}),
+        ...camposSimples(p.servico_padrao || {}),
+      },
       campos_obrigatorios: p.campos_obrigatorios || (atual && atual.campos_obrigatorios) || ['nome', 'cpf', 'data', 'valor', 'descricao', 'endereco'],
       gabarito_xml: gabaritoXml,
       whatsapp_origem: p.whatsapp_origem !== undefined ? p.whatsapp_origem || null : (atual && atual.whatsapp_origem) || null,
