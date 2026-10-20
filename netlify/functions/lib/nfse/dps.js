@@ -6,6 +6,12 @@
 // Ordem das tags, regime tributário, códigos de serviço e tributação vêm do gabarito.
 //
 // Porte fiel de app/dps.py do emissor local; os testes golden garantem os mesmos bytes.
+//
+// Leiaute NT SE/CGNFS-e nº 009 v1.01 (Anexo VI v1.04.01): campos novos inseridos por
+// aplicarLeiauteNt009 nas posições do Anexo VI. Produção restrita: a Sefin passou a exigir depois de
+// 15/10/2026 (uma DPS no leiaute antigo ainda foi autorizada às 13:15 desse dia; em 20/10 veio E1235),
+// então vale a partir de 16/10. Produção: a partir de 03/11/2026 (NFSE_NT009_PRODUCAO_A_PARTIR muda
+// essa data, se a Sefin adiar).
 
 const { lerElemento, filho, novo, clonar } = require('./xml')
 
@@ -64,7 +70,62 @@ function definir(raiz, caminho, valor) {
   el.text = String(valor)
 }
 
-// empresa: { cnpj, codigoMunicipio, regraCompetencia, servicoPadrao: { cTribNac, tribISSQN, tpRetISSQN } }
+// ---------- NT 009 ----------
+
+const NT009_A_PARTIR = { homologacao: '2026-10-16', producao: '2026-11-03' }
+
+// Usa o leiaute da NT 009 nesse ambiente na data de emissão (AAAA-MM-DD de Brasília)?
+function usaLeiauteNt009(ambiente, dataEmissao, env = process.env) {
+  const inicio = (ambiente === 'producao' && env.NFSE_NT009_PRODUCAO_A_PARTIR) || NT009_A_PARTIR[ambiente]
+  if (!inicio) throw new Error(`Ambiente desconhecido: ${ambiente}`)
+  return dataEmissao >= inicio
+}
+
+// Códigos de atividade do Simples Nacional aceitos no campo cAtvSN (NT 009, item 2.4)
+const CODIGOS_ATIVIDADE_SN = ['7', '8', '9', '10', '11', '12', '13', '14', '90']
+
+// Insere `elemento` em `pai` antes do primeiro filho cuja tag esteja em `antesDe` (ou no fim).
+function inserirAntes(pai, elemento, antesDe) {
+  const i = pai.children.findIndex((c) => antesDe.includes(c.tag))
+  if (i < 0) pai.children.push(elemento)
+  else pai.children.splice(i, 0, elemento)
+}
+
+const remover = (pai, tags) => { if (pai) pai.children = pai.children.filter((c) => !tags.includes(c.tag)) }
+
+// Ajusta a DPS (cópia do gabarito) para o leiaute da NT 009. Para NFS-e regular (finNFSe = 0) com o
+// destinatário igual ao tomador (indDest = 0); para optante do Simples ME/EPP ou pendente (opSimpNac
+// 3 ou 4), também regApIBSCBSSN e cAtvSN, que são obrigatórios (Anexo VI, RN 313 e 449) e vêm da
+// configuração da empresa (servicoPadrao).
+function aplicarLeiauteNt009(inf, servicoPadrao = {}) {
+  // finNFSe/indDest/dest saem do grupo IBSCBS (posição antiga) e vão para a raiz de infDPS
+  remover(filho(inf, 'IBSCBS'), ['finNFSe', 'indDest', 'dest'])
+  remover(inf, ['finNFSe', 'indDest'])
+  inserirAntes(inf, novo('finNFSe', '0'), ['tpNFSeDebito', 'tpNFSeCredito', 'chNFSeRej', 'cLocEmi'])
+  inserirAntes(inf, novo('indDest', '0'), ['dest', 'interm', 'serv', 'valores', 'IBSCBS'])
+
+  const regTrib = filho(inf, 'prest/regTrib')
+  const cServ = filho(inf, 'serv/cServ')
+  const opSimpNac = (filho(regTrib, 'opSimpNac') || {}).text
+  remover(regTrib, ['regApIBSCBSSN'])
+  remover(cServ, ['cAtvSN'])
+  if (opSimpNac !== '3' && opSimpNac !== '4') return
+
+  const regime = String(servicoPadrao.regApIBSCBSSN || '')
+  const atividade = String(servicoPadrao.cAtvSN || '')
+  if (!['1', '2', '3'].includes(regime)) {
+    throw new Error('Configure o regime de apuração do IBS/CBS no Simples Nacional (regApIBSCBSSN) da empresa')
+  }
+  if (!CODIGOS_ATIVIDADE_SN.includes(atividade)) {
+    throw new Error('Configure o código de atividade do Simples Nacional (cAtvSN) da empresa')
+  }
+  if (!regTrib || !cServ) throw new Error('Gabarito sem prest/regTrib ou serv/cServ')
+  inserirAntes(regTrib, novo('regApIBSCBSSN', regime), ['regEspTrib'])
+  inserirAntes(cServ, novo('cAtvSN', atividade), ['cIntContrib', 'xDescServ'])
+}
+
+// empresa: { cnpj, codigoMunicipio, regraCompetencia,
+//            servicoPadrao: { cTribNac, tribISSQN, tpRetISSQN, regApIBSCBSSN?, cAtvSN? } }
 function montarDps({
   gabarito, empresa, ambiente, serie, nDps, cpfTomador, nomeTomador, descricao, valor,
   dataAtendimento, competencia = null, agora = new Date(),
@@ -102,6 +163,7 @@ function montarDps({
   if (sp.tribISSQN) definir(inf, 'valores/trib/tribMun/tribISSQN', sp.tribISSQN)
   if (sp.tpRetISSQN) definir(inf, 'valores/trib/tribMun/tpRetISSQN', sp.tpRetISSQN)
   definir(inf, 'valores/vServPrest/vServ', formatarValor(valor))
+  if (usaLeiauteNt009(ambiente, emissao.data)) aplicarLeiauteNt009(inf, sp)
   return dps
 }
 
@@ -118,4 +180,7 @@ function folhas(dps) {
   return saida
 }
 
-module.exports = { NS, VER_APLIC, CAMPOS_VARIAVEIS, carregarGabarito, idDps, formatarValor, montarDps, folhas, dataHoraBrasilia }
+module.exports = {
+  NS, VER_APLIC, CAMPOS_VARIAVEIS, CODIGOS_ATIVIDADE_SN, carregarGabarito, idDps, formatarValor, montarDps, folhas,
+  dataHoraBrasilia, usaLeiauteNt009, aplicarLeiauteNt009,
+}

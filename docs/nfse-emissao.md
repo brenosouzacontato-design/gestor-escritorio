@@ -53,6 +53,24 @@ Decisões (15/10/2026):
 - Tela "Emitir NFS-e": link **PDF (DANFSe)** ao lado de "XML NFS-e" nas notas autorizadas.
 - Testes: `danfse.test.cjs` e `painelNfse.test.cjs` (`npm run test:nfse`, 42 no total).
 
+## Leiaute NT 009/2026 (20/10/2026)
+
+A NT SE/CGNFS-e nº 009 v1.01 (Anexo VI v1.04.01) mudou a DPS. Na produção restrita passou a valer
+depois de 15/10/2026 (em 20/10 a Sefin rejeitou com E1235: faltava `finNFSe`); na produção, a partir
+de **03/11/2026**. `dps.js` (`aplicarLeiauteNt009`) insere, só a partir dessas datas:
+
+- `finNFSe = 0` (NFS-e regular) logo depois de `tpEmit`;
+- `indDest = 0` (destinatário = tomador) logo depois de `toma`;
+- para optante do Simples ME/EPP ou pendente (`opSimpNac` 3 ou 4): `regApIBSCBSSN` (depois de
+  `regApTribSN`) e `cAtvSN` (antes de `xDescServ`), obrigatórios pelo Anexo VI (RN 313 e 449). Os dois
+  vêm da configuração da empresa (tela "Emitir NFS-e" → Editar), não do gabarito.
+  Simple Care: regApIBSCBSSN = 1 (IBS e CBS pelo SN), cAtvSN = 7 (exclusivamente Anexo III).
+
+Se a Sefin adiar a produção, a variável `NFSE_NT009_PRODUCAO_A_PARTIR=AAAA-MM-DD` no Netlify muda a
+data. O XSD oficial do leiaute novo ainda não tinha sido publicado em 20/10/2026 (o pacote da
+produção restrita é de 27/07/2026); a ordem dos campos segue a aba "LEIAUTE DPS_NFS-e - RT" do Anexo VI.
+O DANFSe lê `finNFSe`/`indDest`/`dest` da posição nova e da antiga.
+
 ## Regras herdadas do app local (não mudar)
 
 - nDPS reservado e gravado **antes** de qualquer chamada HTTP; número nunca reutilizado.

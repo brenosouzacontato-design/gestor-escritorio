@@ -22,7 +22,7 @@ const nfseXml = (n = '13') => `<NFSe xmlns="http://www.sped.fazenda.gov.br/nfse"
 
 const EMPRESA = {
   cliente_id: 'cli-1', ambiente: 'homologacao', serie_dps: '900', codigo_municipio: '3154606', cnpj: '47619250000178',
-  regra_competencia: 'mes_do_atendimento', servico_padrao: { cTribNac: '041201', tribISSQN: '1', tpRetISSQN: '1' },
+  regra_competencia: 'mes_do_atendimento', servico_padrao: { cTribNac: '041201', tribISSQN: '1', tpRetISSQN: '1', regApIBSCBSSN: '1', cAtvSN: '7' },
   campos_obrigatorios: ['nome', 'cpf', 'data', 'valor', 'descricao', 'endereco'], gabarito_xml: GABARITO,
 }
 

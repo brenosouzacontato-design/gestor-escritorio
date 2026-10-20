@@ -73,6 +73,15 @@ test('município fora do XML é buscado (e cai no código se a busca falhar)', a
   assert.equal(semBusca.tomador.municipio, '3550308 / SP')
 })
 
+test('NFS-e no leiaute da NT 009: finalidade e destinatário na raiz de infDPS', async () => {
+  const nt009 = XML.replace('<tpEmit>1</tpEmit>', '<tpEmit>1</tpEmit><finNFSe>0</finNFSe>')
+    .replace('</toma>', '</toma><indDest>0</indDest>')
+  const c = await extrairCampos(nt009, semIbge)
+  assert.equal(c.identificacao.finalidade, 'NFS-e regular')
+  assert.equal(c.destinatario, null)
+  assert.equal(c.destinatarioEhTomador, true)
+})
+
 test('XML que não é NFS-e autorizada é recusado', async () => {
   await assert.rejects(() => gerarDanfse('<DPS><infDPS/></DPS>', semIbge), /NFSe/)
 })

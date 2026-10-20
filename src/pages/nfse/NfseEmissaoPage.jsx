@@ -54,6 +54,10 @@ function Configuracao({ clienteId, status, onAtualizado }) {
   const emp = status.empresa
   const [aberto, setAberto] = useState(!status.configurada)
   const [form, setForm] = useState({ serie_dps: emp?.serie_dps || '900', regra_competencia: emp?.regra_competencia || 'mes_do_atendimento', ambiente: emp?.ambiente || 'homologacao', whatsapp_origem: emp?.whatsapp_origem || '' })
+  // Simples Nacional no leiaute da NT 009 (obrigatórios para ME/EPP ou opção pendente)
+  const [simples, setSimples] = useState({ regApIBSCBSSN: emp?.servico_padrao?.regApIBSCBSSN || '', cAtvSN: emp?.servico_padrao?.cAtvSN || '' })
+  const optanteSimples = ['3', '4'].includes(emp?.gabarito?.op_simp_nac)
+  const faltaSimples = optanteSimples && (!emp?.servico_padrao?.regApIBSCBSSN || !emp?.servico_padrao?.cAtvSN)
   const [gabarito, setGabarito] = useState(null)
   const [pfx, setPfx] = useState(null)
   const [senha, setSenha] = useState('')
@@ -66,7 +70,7 @@ function Configuracao({ clienteId, status, onAtualizado }) {
       && !window.confirm('Mudar para PRODUÇÃO: as próximas notas emitidas serão notas fiscais reais. Confirmar?')) return
     setSalvando(true)
     try {
-      const dados = { cliente_id: clienteId, ...form }
+      const dados = { cliente_id: clienteId, ...form, servico_padrao: simples }
       if (gabarito) dados.gabarito_xml = await gabarito.text()
       onAtualizado(await chamarNfse('salvar_empresa', dados))
       setGabarito(null)
@@ -96,7 +100,13 @@ function Configuracao({ clienteId, status, onAtualizado }) {
           <span style={suave}>
             CNPJ {emp.cnpj} · município {emp.codigo_municipio} · serviço {emp.servico_padrao?.cTribNac} · série DPS {emp.serie_dps}
             {' · '}competência padrão: {emp.regra_competencia === 'mes_da_emissao' ? 'data da emissão' : 'data do atendimento'}
+            {optanteSimples && emp.servico_padrao?.cAtvSN && <>{' · '}Simples: IBS/CBS {emp.servico_padrao.regApIBSCBSSN}, atividade {emp.servico_padrao.cAtvSN}</>}
           </span>
+        )}
+        {faltaSimples && (
+          <div style={{ flexBasis: '100%', color: 'var(--danger)', fontSize: 12 }}>
+            Falta informar o regime de IBS/CBS e a atividade do Simples Nacional (obrigatórios no leiaute novo da NFS-e). Clique em Editar.
+          </div>
         )}
         <button className="btn" style={{ marginLeft: 'auto' }} onClick={() => setAberto((a) => !a)}>{aberto ? 'Fechar' : 'Editar'}</button>
       </div>
@@ -130,6 +140,34 @@ function Configuracao({ clienteId, status, onAtualizado }) {
                 </select>
               </div>
             </div>
+            {optanteSimples && (
+              <div className="form-row">
+                <div className="form-field">
+                  <label className="form-label">IBS/CBS no Simples (regApIBSCBSSN)</label>
+                  <select value={simples.regApIBSCBSSN} onChange={(e) => setSimples({ ...simples, regApIBSCBSSN: e.target.value })}>
+                    <option value="">— escolher —</option>
+                    <option value="1">1 - IBS e CBS apurados pelo SN</option>
+                    <option value="2">2 - CBS pelo SN e IBS pelo regime regular</option>
+                    <option value="3">3 - IBS e CBS pelo regime regular</option>
+                  </select>
+                </div>
+                <div className="form-field">
+                  <label className="form-label">Atividade no Simples (cAtvSN)</label>
+                  <select value={simples.cAtvSN} onChange={(e) => setSimples({ ...simples, cAtvSN: e.target.value })}>
+                    <option value="">— escolher —</option>
+                    <option value="7">7 - Serviços exclusivamente do Anexo III</option>
+                    <option value="8">8 - Serviços contábeis com ISS fixo (Anexo III)</option>
+                    <option value="9">9 - Sujeitos ao Fator R (Anexo III ou V)</option>
+                    <option value="10">10 - Transporte municipal de passageiros (Anexo III)</option>
+                    <option value="11">11 - Locação de bens móveis e outras sem ISS (Anexo III)</option>
+                    <option value="12">12 - Construção civil 7.02/7.05 (Anexo III)</option>
+                    <option value="13">13 - Construção civil 7.02/7.05 (Anexo IV)</option>
+                    <option value="14">14 - Serviços do Anexo IV</option>
+                    <option value="90">90 - Operações não tributadas</option>
+                  </select>
+                </div>
+              </div>
+            )}
             <div className="form-field">
               <label className="form-label">Competência padrão</label>
               <select value={form.regra_competencia} onChange={(e) => setForm({ ...form, regra_competencia: e.target.value })}>

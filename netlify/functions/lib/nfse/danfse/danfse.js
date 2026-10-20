@@ -43,7 +43,7 @@ const C_STAT = {
   100: 'NFS-e Gerada', 101: 'NFS-e de Substituição Gerada',
   102: 'NFS-e de Decisão Judicial ou Administrativa', 103: 'NFS-e Avulsa',
 }
-const FIN_NFSE = { 0: 'NFS-e regular' }
+const FIN_NFSE = { 0: 'NFS-e regular', 1: 'NFS-e de crédito', 2: 'NFS-e de débito' }
 const AMB_GER = { 1: 'Prefeitura', 2: 'Sistema Nacional NFS-e' }
 const TP_AMB = { 1: 'Produção', 2: 'Homologação' }
 const OP_SIMP_NAC = { 1: 'Não Optante', 2: 'Optante - Microempreendedor Individual (MEI)', 3: 'Optante - Microempresa ou Empresa de Pequeno Porte (ME/EPP)' }
@@ -177,7 +177,11 @@ async function extrairCampos(xml, { buscarMunicipio = buscarMunicipioIbge } = {}
   const toma = filho(infDPS, 'toma')
   const interm = filho(infDPS, 'interm')
   const ibscbsDps = filho(infDPS, 'IBSCBS')
-  const dest = ibscbsDps && filho(ibscbsDps, 'dest')
+  // NT 009: finNFSe, indDest e dest saíram de IBSCBS para a raiz de infDPS; notas antigas ainda os
+  // têm em IBSCBS
+  const daDps = (campo) => filho(infDPS, campo) || (ibscbsDps && filho(ibscbsDps, campo))
+  const dest = daDps('dest')
+  const indDest = (daDps('indDest') || { text: '' }).text.trim()
   const ibscbsNfse = filho(inf, 'IBSCBS')
   const valNfse = filho(inf, 'valores')
   const valDps = filho(infDPS, 'valores')
@@ -269,12 +273,12 @@ async function extrairCampos(xml, { buscarMunicipio = buscarMunicipioIbge } = {}
       dhEmi: dataHora(txt(infDPS, 'dhEmi')),
       emitente: descricao(TP_EMIT, tpEmit),
       situacao: descricao(C_STAT, txt(inf, 'cStat')),
-      finalidade: descricao(FIN_NFSE, txt(ibscbsDps, 'finNFSe')),
+      finalidade: descricao(FIN_NFSE, (daDps('finNFSe') || { text: '' }).text.trim()),
     },
     prestador,
     tomador: toma ? pessoa(toma, filho(toma, 'end')) : null,
     destinatario: dest ? pessoa(dest, filho(dest, 'end')) : null,
-    destinatarioEhTomador: !!ibscbsDps && !dest,
+    destinatarioEhTomador: indDest === '0' || (!!ibscbsDps && !dest),
     intermediario: interm ? pessoa(interm, filho(interm, 'end')) : null,
     servico: {
       codigo: ou([codTribNac(cTribNac), txt(cServ, 'cTribMun')].filter(Boolean).join(' / ')),
