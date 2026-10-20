@@ -9,10 +9,14 @@
 // mesmo quando a IA não acha valor), então abrir o painel de novo não gera
 // nova chamada. Um documento por requisição pra caber no timeout da função.
 //
+// Quem pode chamar: o escritório logado ou o cliente do painel (x-painel-token),
+// e o cliente só pras guias dele (ver lib/autenticacao.js).
+//
 // Variáveis de ambiente: ANTHROPIC_API_KEY, SUPABASE_URL, SUPABASE_SERVICE_KEY
 
 const { createClient } = require('@supabase/supabase-js');
 const { extrairValorGuia } = require('./lib/extrairValorGuia');
+const { usuarioEscritorio, chamadaInterna, clienteDoPainel, modoEstrito, negar } = require('./lib/autenticacao');
 
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY);
 
@@ -30,11 +34,21 @@ exports.handler = async (event) => {
   try {
     const { data: doc, error: errDoc } = await supabase
       .from('documentos')
-      .select('id, storage_path, nome_arquivo, tipo_mime, valor_guia, vencimento_guia, valor_guia_extraido_em')
+      .select('id, cliente_id, storage_path, nome_arquivo, tipo_mime, valor_guia, vencimento_guia, valor_guia_extraido_em')
       .eq('id', documentoId)
       .maybeSingle();
     if (errDoc) throw errDoc;
     if (!doc) return resposta(404, { error: 'Documento não encontrado.' });
+
+    const escritorio = chamadaInterna(event) || await usuarioEscritorio(event);
+    if (!escritorio) {
+      const cliente = await clienteDoPainel(event);
+      if (cliente && cliente.id !== doc.cliente_id) return resposta(404, { error: 'Documento não encontrado.' });
+      if (!cliente) {
+        if (modoEstrito()) return negar('extrair-valor-guia', 'sem login e sem token do painel');
+        console.warn('extrair-valor-guia: chamada sem login nem token — aceito porque EXIGIR_AUTENTICACAO não está ligado');
+      }
+    }
 
     // já lido antes — devolve o que tem, sem chamar a IA de novo
     if (doc.valor_guia_extraido_em) {

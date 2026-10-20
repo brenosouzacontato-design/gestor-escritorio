@@ -4,7 +4,8 @@ import {
   CalendarIcon, DownloadIcon, CheckCircleIcon, FileTextIcon, TrendingUpIcon, LayersIcon,
   AlertTriangleIcon, Share2Icon, ClockIcon, SettingsIcon, EyeIcon, EyeOffIcon, PiggyBankIcon, ChevronDownIcon, UserIcon,
 } from 'lucide-react';
-import { supabase } from '../../lib/supabase';
+import { chavePainelPorId, urlPublica } from '../../lib/linksPublicos';
+import AcessoPainel, { obterClientePagina } from './AcessoPainel';
 import { calcularAliquotaNominal } from '../../lib/simplesNacional';
 import { listarLancamentosAIdentificar } from '../contabil/contabilApi';
 import LancamentosIdentificar from '../contabil/LancamentosIdentificar';
@@ -147,7 +148,7 @@ function moduloCND(situacaoFiscal, cndManual) {
 // Página pública (sem login) com a visão consolidada do cliente naquela
 // competência: financeiro, obrigações, tarefas, documentos, lançamentos a
 // identificar (quando houver) e dados gerenciais do Simples Nacional
-// (quando enviados). Acessada via ?painel=<clienteId>&competencia=MM/YYYY
+// (quando enviados). Acessada via ?painel=<token do painel>&competencia=MM/YYYY
 // (ver main.jsx). Mesmo padrão visual de RelatorioCompartilhadoPage.jsx /
 // IdentificarLancamentosPage.jsx.
 //
@@ -155,7 +156,18 @@ function moduloCND(situacaoFiscal, cndManual) {
 // PainelViewerModal.jsx/PaineisPage.jsx) — habilita o modo de edição que
 // mostra/esconde seções do Resumo pro cliente. No link público (main.jsx)
 // essa prop nunca é passada, então o cliente nunca vê o controle.
-export default function PainelClientePage({ clienteId, competencia: competenciaInicial, admin = false }) {
+// Link público: resolve o token antes de montar a página (AcessoPainel.jsx);
+// dentro do app (admin) o id já é o do cliente.
+export default function PainelClientePage(props) {
+  if (props.admin) return <PainelCliente {...props} />;
+  return (
+    <AcessoPainel valor={props.clienteId}>
+      {(sessao) => <PainelCliente {...props} clienteId={sessao.id} sessao={sessao} />}
+    </AcessoPainel>
+  );
+}
+
+function PainelCliente({ clienteId, competencia: competenciaInicial, admin = false, sessao = null }) {
   const [competencia, setCompetencia] = useState(competenciaInicial);
   const opcoesComp = opcoesCompetencia(competenciaInicial);
   const [cliente, setCliente] = useState(null); // {nome, cnpj, regime, carteira, painel_secoes_ocultas}
@@ -184,7 +196,7 @@ export default function PainelClientePage({ clienteId, competencia: competenciaI
       try {
         const { dataInicio, dataFim } = competenciaParaPeriodo(competencia);
         const [{ data: clienteData, error: errCliente }, resObs, resTarefas, resFinanceiro, itensIdentificar, dadosSimples, historico, situFiscal, cndManualData, pendenciasAnt, docsFiscais, tarefasDoCliente] = await Promise.all([
-          supabase.from('clientes').select('nome, cnpj, regime, carteira, painel_secoes_ocultas').eq('id', clienteId).single(),
+          obterClientePagina(clienteId, sessao, 'nome, cnpj, regime, carteira, painel_secoes_ocultas'),
           obterResumoObrigacoes(clienteId, competencia),
           obterResumoTarefas(clienteId, competencia),
           obterResumoFinanceiro(clienteId, { dataInicio, dataFim }),
@@ -435,7 +447,14 @@ export default function PainelClientePage({ clienteId, competencia: competenciaI
                               <TrendingUpIcon size={12} /> Evolução do faturamento
                             </div>
                             <button type="button"
-                              onClick={() => window.open(`${window.location.origin}${window.location.pathname}?share=faturamento&empresa=${clienteId}`, '_blank')}
+                              onClick={() => {
+                                // abre a aba antes do await pra não cair no bloqueio de pop-up
+                                const aba = window.open('', '_blank');
+                                chavePainelPorId(clienteId).then((chave) => {
+                                  const url = urlPublica({ share: 'faturamento', empresa: chave });
+                                  if (aba) aba.location = url; else window.open(url, '_blank');
+                                });
+                              }}
                               title="Gerar comprovante de faturamento (declaração pra banco, financiamento etc.)"
                               style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11, fontWeight: 600, color: 'var(--accent)',
                                 background: 'var(--accent-dim)', border: 'none', borderRadius: 99, padding: '5px 10px', cursor: 'pointer', whiteSpace: 'nowrap' }}>

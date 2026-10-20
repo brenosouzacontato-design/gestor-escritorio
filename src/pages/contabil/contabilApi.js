@@ -1,7 +1,7 @@
 // contabilApi.js
 // Camada de dados do módulo contábil. Importa o client Supabase já
 // existente no Gestor.
-import { supabase } from '../../lib/supabase';
+import { supabase, tokenPainelAtivo, rpcAusente } from '../../lib/supabase';
 
 // ---------- PLANO DE CONTAS ----------
 
@@ -570,7 +570,17 @@ export async function listarLancamentosAIdentificar(empresaId, { dataInicio, dat
   });
 }
 
+// No link público (cliente respondendo) grava pela RPC, que só mexe na
+// coluna observacao_cliente e só em lançamento da empresa do token. Dentro
+// do app, ou sem a RPC no banco ainda, grava direto como antes.
 export async function salvarObservacaoCliente(lancamentoId, observacao) {
+  if (tokenPainelAtivo()) {
+    const { error } = await supabase.rpc('painel_salvar_observacao', { p_lancamento_id: lancamentoId, p_observacao: observacao });
+    if (!rpcAusente(error)) {
+      if (error) throw error;
+      return;
+    }
+  }
   const { error } = await supabase
     .from('lancamentos_contabeis')
     .update({ observacao_cliente: observacao })

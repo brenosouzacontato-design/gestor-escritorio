@@ -12,6 +12,7 @@
 
 const { createClient } = require('@supabase/supabase-js')
 const { enviarMensagem } = require('./lib/whatsapp')
+const { clienteDoPainel } = require('./lib/autenticacao')
 
 const supabase = createClient(
   process.env.SUPABASE_URL,
@@ -39,17 +40,18 @@ exports.handler = async (event) => {
   } catch {
     return resposta(400, { error: 'Body inválido: esperado JSON com { clienteId, tipo }.' })
   }
-  if (!clienteId || !TIPOS.includes(tipo)) {
-    return resposta(400, { error: 'clienteId ou tipo inválido.' })
+  if (!TIPOS.includes(tipo)) {
+    return resposta(400, { error: 'Tipo inválido.' })
   }
 
   try {
-    // o nome vem do banco (não do navegador) — e um id que não é de cliente
-    // nenhum não gera aviso
-    const { data: cliente, error: errCliente } = await supabase
-      .from('clientes').select('id, nome').eq('id', clienteId).maybeSingle()
-    if (errCliente) throw errCliente
+    // o cliente sai do token do painel (cabeçalho x-painel-token), não do
+    // navegador; o clienteId do corpo só vale pros links antigos enquanto
+    // EXIGIR_AUTENTICACAO não estiver ligado (ver lib/autenticacao.js).
+    // O nome vem do banco — e um token/id que não é de cliente nenhum não gera aviso.
+    const cliente = await clienteDoPainel(event, clienteId)
     if (!cliente) return resposta(404, { error: 'Cliente não encontrado.' })
+    clienteId = cliente.id
 
     const desde = new Date(Date.now() - JANELA_REPETICAO_MS).toISOString()
     let repetido = supabase.from('painel_eventos').select('id', { count: 'exact', head: true })

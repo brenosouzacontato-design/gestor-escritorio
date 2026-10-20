@@ -1,9 +1,10 @@
 import { useState, useMemo, useEffect } from 'react'
-import { Share2Icon, MonitorIcon, Building2Icon } from 'lucide-react'
+import { Share2Icon, MonitorIcon, RefreshCwIcon, Building2Icon } from 'lucide-react'
 import { useStore } from '../../store'
 import EmpresaCombobox from '../../components/EmpresaCombobox'
 import PainelClientePage from './PainelClientePage'
 import PainelCompartilhadoPage from './PainelCompartilhadoPage'
+import { chavePainel, urlPublica, girarTokenPainel } from '../../lib/linksPublicos'
 import CompartilharGrupoModal from './CompartilharGrupoModal'
 
 const CHAVE_ULTIMO_CLIENTE = 'paineis-cliente-selecionado'
@@ -39,11 +40,29 @@ export default function PaineisPage() {
 
   const compartilhar = () => {
     if (!clienteAtual) return
-    const link = `${window.location.origin}${window.location.pathname}?painel=${clienteAtual.id}&competencia=${encodeURIComponent(compSel)}${versao === 'completa' ? '&versao=1' : ''}`
+    const link = urlPublica({ painel: chavePainel(clienteAtual), competencia: compSel, versao: versao === 'completa' ? 1 : null })
     const mensagem = versao === 'completa'
       ? `Olá! Segue o painel de ${clienteAtual.nome} — competência ${compSel} — com obrigações, financeiro e demais informações:\n${link}`
       : `Olá! Seguem os impostos e as pendências fiscais de ${clienteAtual.nome} — competência ${compSel}:\n${link}`
     window.open(`https://wa.me/?text=${encodeURIComponent(mensagem)}`, '_blank')
+  }
+
+  // Link vazou ou foi parar com quem não devia: troca o token do painel do
+  // cliente. Todos os links já enviados (painel, DRE/balancete, notas,
+  // identificação de lançamentos) param de funcionar — ver docs/seguranca-rls.md.
+  const [gerandoLink, setGerandoLink] = useState(false)
+  const gerarNovoLink = async () => {
+    if (!clienteAtual) return
+    if (!window.confirm(`Gerar um link novo pro painel de ${clienteAtual.nome}? Todos os links já enviados pra esse cliente param de funcionar.`)) return
+    setGerandoLink(true)
+    try {
+      const token = await girarTokenPainel(clienteAtual.id)
+      useStore.setState(s => ({ clientes: s.clientes.map(c => c.id === clienteAtual.id ? { ...c, painel_token: token } : c) }))
+      window.alert('Link novo gerado. Use "Compartilhar" pra mandar ao cliente.')
+    } catch (e) {
+      window.alert('Não consegui gerar o link novo: ' + e.message)
+    }
+    setGerandoLink(false)
   }
 
   return (
@@ -77,6 +96,10 @@ export default function PaineisPage() {
         <button onClick={() => setGrupoAberto(true)} disabled={!clienteAtual} className="btn" style={{ padding: '7px 14px' }}
           title="Um link só com várias empresas do mesmo cliente — ele escolhe qual ver no topo do painel">
           <Building2Icon size={13} /> Grupo de empresas
+        </button>
+        <button onClick={gerarNovoLink} disabled={!clienteAtual || gerandoLink} className="btn btn-ghost" style={{ padding: '7px 14px' }}
+          title="Troca o link do cliente: os links já enviados param de funcionar">
+          <RefreshCwIcon size={13} /> {gerandoLink ? 'Gerando...' : 'Gerar novo link'}
         </button>
       </div>
 

@@ -15,6 +15,7 @@
 
 const { createClient } = require('@supabase/supabase-js')
 const webpush = require('web-push')
+const { exigirEscritorio } = require('./lib/autenticacao')
 
 const supabase = createClient(
   process.env.SUPABASE_URL,
@@ -35,6 +36,10 @@ exports.handler = async (event) => {
   if (event.httpMethod !== 'POST') {
     return resposta(405, { error: 'Método não permitido.' })
   }
+
+  // GET (chave pública) fica aberto pro cliente; mandar notificação é só do escritório
+  const negado = await exigirEscritorio(event, 'painel-push')
+  if (negado) return negado
 
   let clienteId, titulo, mensagem, url
   try {

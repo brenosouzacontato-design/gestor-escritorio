@@ -58,10 +58,15 @@ Regras:
 - Se o PDF não parecer uma declaração/apuração do Simples Nacional, devolva todos os campos numéricos como null, receitaPorTipo vazio, e explique em "observacao".`;
 }
 
+const { exigirEscritorio } = require('./lib/autenticacao');
+
 exports.handler = async (event) => {
   if (event.httpMethod !== 'POST') {
     return resposta(405, { error: 'Método não permitido, use POST.' });
   }
+
+  const negado = await exigirEscritorio(event, 'extrair-declaracao-simples');
+  if (negado) return negado;
 
   let pdfBase64, filename, clientes;
   try {

@@ -1,3 +1,5 @@
+import { cabecalhosFunctions } from './supabase'
+
 const PROXY_URL = window.location.origin + '/.netlify/functions/oneflow-proxy'
 const OMIE_BASE = 'https://app.omie.com.br/api/portal'
 const ONEFLOW_BASE = 'https://rest.oneflow.com.br/api/oneflow'
@@ -6,7 +8,7 @@ async function proxyFetch(url, token, bodyData) {
   const payload = { url: url, method: 'GET' }
   if (token) payload.authorization = token
   if (bodyData) { payload.method = 'POST'; payload.bodyData = bodyData }
-  const res = await fetch(PROXY_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
+  const res = await fetch(PROXY_URL, { method: 'POST', headers: await cabecalhosFunctions(), body: JSON.stringify(payload) })
   if (!res.ok) {
     let detalhe = ''
     try {

@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { RefreshCwIcon, InfoIcon, ChevronDownIcon, ChevronRightIcon, ArrowDownCircleIcon, ArrowUpCircleIcon, FileEditIcon, CheckCircleIcon, SearchIcon, AlertTriangleIcon, SparklesIcon, TrendingUpIcon, Share2Icon } from 'lucide-react';
 import { useStore } from '../../store';
+import { chavePainel, urlPublica } from '../../lib/linksPublicos';
 import { listarDocumentosFiscais, obterUltimaSincronizacao, sincronizarDocumentosFiscaisAgora, obterEvolucaoMensal } from '../contabil/documentosFiscaisApi';
 import GerarLancamentoModal from '../contabil/GerarLancamentoModal';
 import { useToast } from '../../components/shared';
@@ -109,7 +110,8 @@ export default function NotasFiscaisPage() {
   // CompartilharButton.jsx (DRE/Balancete): só o link, sem precisar saber
   // o telefone do cliente aqui.
   const compartilharPainel = (g) => {
-    const url = `${window.location.origin}${window.location.pathname}?share=notasfiscais&empresa=${g.clienteId}&competencia=${encodeURIComponent(competencia)}`;
+    const empresa = chavePainel(clientes.find((c) => c.id === g.clienteId)) || g.clienteId;
+    const url = urlPublica({ share: 'notasfiscais', empresa, competencia });
     const mensagem = `Olá! Seguem as notas fiscais de ${g.nome} — competência ${competencia} — pra conferência:\n${url}`;
     window.open(`https://wa.me/?text=${encodeURIComponent(mensagem)}`, '_blank');
   };

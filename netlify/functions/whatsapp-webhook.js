@@ -18,6 +18,10 @@ const EVOLUTION_URL = process.env.EVOLUTION_API_URL
 const EVOLUTION_KEY = process.env.EVOLUTION_API_KEY
 const EVOLUTION_INSTANCE = process.env.EVOLUTION_INSTANCE
 const ANTHROPIC_KEY = process.env.ANTHROPIC_API_KEY
+// Segredo na URL do webhook configurada na Evolution API
+// (.../whatsapp-webhook?segredo=...; ver iniciar-gestor.bat). Sem a variável,
+// aceita qualquer chamada, como antes.
+const WEBHOOK_SEGREDO = process.env.WHATSAPP_WEBHOOK_SEGREDO
 
 const EXTENSAO_POR_MIME = { 'application/pdf': 'pdf', 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp' }
 
@@ -239,9 +243,20 @@ async function processarDocumento(body, midia, remoteJid) {
   }
 }
 
+function segredoConfere(event) {
+  if (!WEBHOOK_SEGREDO) return true
+  const recebido = Buffer.from(String(event.queryStringParameters?.segredo || ''))
+  const esperado = Buffer.from(WEBHOOK_SEGREDO)
+  return recebido.length === esperado.length && crypto.timingSafeEqual(recebido, esperado)
+}
+
 exports.handler = async (event) => {
   if (event.httpMethod !== 'POST') {
     return { statusCode: 200, body: 'OK' }
+  }
+  if (!segredoConfere(event)) {
+    console.warn('whatsapp-webhook: chamada sem o segredo certo — ignorada')
+    return { statusCode: 401, body: 'Unauthorized' }
   }
 
   let body

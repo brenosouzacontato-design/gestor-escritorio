@@ -5,7 +5,7 @@
 // match sugerido (que efetivamente dá baixa reaproveitando concluirEtapa já
 // existente em andamentoApi.js, ou marcando a tarefa como concluída do mesmo
 // jeito que toggleTarefa faz em store/index.js).
-import { supabase } from '../../lib/supabase';
+import { supabase, tokenPainelAtivo, cabecalhosFunctions, rpcAusente } from '../../lib/supabase';
 import { concluirEtapa } from '../andamento/andamentoApi';
 
 const BUCKET = 'documentos';
@@ -50,7 +50,7 @@ export async function identificarDocumento(arquivo, candidatos) {
   const arquivoBase64 = await arquivoParaBase64(arquivo);
   const resp = await fetch('/.netlify/functions/identificar-documento', {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers: await cabecalhosFunctions(),
     body: JSON.stringify({ arquivoBase64, filename: arquivo.name, mimeType: arquivo.type, candidatos }),
   });
   if (!resp.ok) {
@@ -224,7 +224,12 @@ export async function pagarGuiaComComprovante(documentoId, guiaId) {
 
 // Signed URL avulsa (botão "Baixar" na aba Concluídos) — bucket é privado,
 // não dá pra linkar direto pelo storage_path.
+//
+// No link público do painel o cliente não acessa o Storage (só o escritório
+// tem policy no bucket): a URL sai da function painel-arquivo, que confere se
+// o arquivo é do cliente do token. Ver docs/seguranca-rls.md.
 export async function criarLinkAssinado(storagePath, segundos = 60 * 5) {
+  if (tokenPainelAtivo()) return assinarPeloServidor({ storagePath, segundos });
   const { data, error } = await supabase.storage.from(BUCKET).createSignedUrl(storagePath, segundos);
   if (error) throw error;
   return data.signedUrl;
@@ -255,20 +260,51 @@ export async function abrirLinkAssinado(storagePath, segundos = 60 * 5) {
 // acessada via ?doc=<id> — ver main.jsx). Gera uma signed URL nova a cada
 // acesso (o bucket é privado, não dá pra usar getPublicUrl) — o link
 // ?doc=<id> em si não expira, só o acesso ao arquivo dentro dele.
+//
+// Com RLS ligado o anônimo não lê a tabela documentos: os dados vêm da RPC
+// documento_publico (só o documento daquele id) e a URL assinada da function
+// painel-arquivo. Sem a RPC no banco ainda, cai na leitura direta de antes.
 export async function obterDocumentoPublico(documentoId) {
-  const { data: doc, error } = await supabase
-    .from('documentos')
-    .select('*, clientes(nome), obrigacoes(titulo), etapas_obrigacao(nome), tarefas(titulo)')
-    .eq('id', documentoId)
-    .single();
-  if (error) throw error;
+  let doc;
+  const { data: viaRpc, error: errRpc } = await supabase.rpc('documento_publico', { p_documento_id: documentoId });
+  if (rpcAusente(errRpc)) {
+    const { data, error } = await supabase
+      .from('documentos')
+      .select('*, clientes(nome), obrigacoes(titulo), etapas_obrigacao(nome), tarefas(titulo)')
+      .eq('id', documentoId)
+      .single();
+    if (error) throw error;
+    doc = data;
+  } else {
+    if (errRpc) throw errRpc;
+    doc = viaRpc;
+  }
+  if (!doc) throw new Error('Documento não encontrado.');
 
-  const { data: signed, error: errSigned } = await supabase.storage
-    .from(BUCKET)
-    .createSignedUrl(doc.storage_path, 60 * 60); // 1h, renovado a cada visita
-  if (errSigned) throw errSigned;
+  let urlArquivo;
+  try {
+    urlArquivo = await assinarPeloServidor({ documentoId }); // 1h, renovado a cada visita
+  } catch (e) {
+    // function fora do ar (ex.: `vite` local sem `netlify dev`) — tenta direto
+    // no Storage, o que só funciona enquanto o bucket ainda estiver aberto
+    const { data: signed, error: errSigned } = await supabase.storage.from(BUCKET).createSignedUrl(doc.storage_path, 60 * 60);
+    if (errSigned) throw e;
+    urlArquivo = signed.signedUrl;
+  }
+  return { ...doc, urlArquivo };
+}
 
-  return { ...doc, urlArquivo: signed.signedUrl };
+// netlify/functions/painel-arquivo.js — { storagePath } (link do painel, com
+// o token no cabeçalho) ou { documentoId } (link ?doc=). Devolve a URL assinada.
+async function assinarPeloServidor(corpo) {
+  const resp = await fetch('/.netlify/functions/painel-arquivo', {
+    method: 'POST',
+    headers: await cabecalhosFunctions(),
+    body: JSON.stringify(corpo),
+  });
+  const dados = await resp.json().catch(() => ({}));
+  if (!resp.ok || !dados.url) throw new Error(dados.error || 'Não foi possível abrir o arquivo.');
+  return dados.url;
 }
 
 // ---------- BACKUP WHATSAPP → DRIVE (só consulta, tabela "documentos_whatsapp") ----------

@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { supabase } from '../../lib/supabase';
+import AcessoPainel from './AcessoPainel';
 import { obterHistoricoFaturamento } from './painelApi';
 
 const MES_ABREV = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
@@ -40,8 +40,18 @@ function fmtHoje() {
 // Declarações do Simples enviadas em Empresas.jsx (dados_gerenciais_simples,
 // ver obterHistoricoFaturamento em painelApi.js). Mesmo modelo de link
 // público do RelatorioCompartilhadoPage.jsx (DRE/Balancete): acessada via
-// ?share=faturamento&empresa=<id> (ver main.jsx).
-export default function ComprovanteFaturamentoPage({ empresaId }) {
+// ?share=faturamento&empresa=<token do painel> (ver main.jsx).
+// Link público: &empresa= é o token do painel do cliente — resolve antes de
+// montar a página (AcessoPainel.jsx).
+export default function ComprovanteFaturamentoPage(props) {
+  return (
+    <AcessoPainel valor={props.empresaId}>
+      {(sessao) => <ComprovanteFaturamento {...props} empresaId={sessao.id} sessao={sessao} />}
+    </AcessoPainel>
+  );
+}
+
+function ComprovanteFaturamento({ empresaId, sessao }) {
   const [cliente, setCliente] = useState(null);
   const [historico, setHistorico] = useState(null);
   const [erro, setErro] = useState(null);
@@ -51,7 +61,7 @@ export default function ComprovanteFaturamentoPage({ empresaId }) {
       setErro(null);
       try {
         const [{ data: c, error: errCliente }, hist] = await Promise.all([
-          supabase.from('clientes').select('nome, cnpj, regime, municipio, data_abertura, socio_nome').eq('id', empresaId).single(),
+          Promise.resolve({ data: sessao, error: null }),
           obterHistoricoFaturamento(empresaId),
         ]);
         if (errCliente) throw errCliente;

@@ -4,8 +4,9 @@ import { supabase } from '../../lib/supabase';
 import PainelClientePage from './PainelClientePage';
 import PainelCompartilhadoPage from './PainelCompartilhadoPage';
 import { registrarVisualizacaoPainel, avisarEventoPainel } from './painelApi';
+import { sessaoDoToken } from './AcessoPainel';
 
-// Painel de um GRUPO de empresas num link só (?painel=id1,id2,...) — pra
+// Painel de um GRUPO de empresas num link só (?painel=token1,token2,...) — pra
 // cliente dono de mais de uma empresa não receber um link por empresa. Uma
 // barra no topo troca a empresa exibida; o painel em si é o mesmo de
 // sempre (PainelCompartilhadoPage, ou PainelClientePage com &versao=1).
@@ -13,6 +14,9 @@ import { registrarVisualizacaoPainel, avisarEventoPainel } from './painelApi';
 // Visita/aviso pro escritório são registrados por empresa, quando o
 // cliente abre cada uma (não só a primeira).
 // `admin` = prévia de dentro do gestor: não registra visita nem mexe na URL.
+// No link público cada item de `clienteIds` é o token do painel da empresa
+// (ver AcessoPainel.jsx): o nome sai de painel_sessao com o token de cada
+// uma, e o painel exibido usa o token da empresa escolhida.
 export default function PainelGrupoPage({ clienteIds, competencia, versao, empresaInicial, admin = false }) {
   const [empresas, setEmpresas] = useState(null); // [{ id, nome, cnpj }] na ordem do link
   const [selecionada, setSelecionada] = useState(
@@ -20,12 +24,20 @@ export default function PainelGrupoPage({ clienteIds, competencia, versao, empre
   );
 
   useEffect(() => {
-    supabase.from('clientes').select('id, nome, cnpj').in('id', clienteIds)
-      .then(({ data }) => {
-        const porId = new Map((data || []).map((c) => [c.id, c]));
-        setEmpresas(clienteIds.map((id) => porId.get(id)).filter(Boolean));
-      });
-  }, [clienteIds.join(',')]);
+    if (admin) {
+      supabase.from('clientes').select('id, nome, cnpj').in('id', clienteIds)
+        .then(({ data }) => {
+          const porId = new Map((data || []).map((c) => [c.id, c]));
+          setEmpresas(clienteIds.map((id) => porId.get(id)).filter(Boolean));
+        });
+      return;
+    }
+    // token que não abre (trocado pelo escritório) some da barra
+    Promise.all(clienteIds.map((token) => sessaoDoToken(token)
+      .then((s) => ({ id: token, nome: s.nome, cnpj: s.cnpj }))
+      .catch(() => null)))
+      .then((lista) => setEmpresas(lista.filter(Boolean)));
+  }, [clienteIds.join(','), admin]);
 
   useEffect(() => {
     if (admin) return;

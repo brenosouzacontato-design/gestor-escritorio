@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { supabase } from '../../lib/supabase';
+import AcessoPainel from '../painel/AcessoPainel';
 import { calcularDREPorConta, calcularBalancete, comSomasDeFilhas, somarRaizes } from './contabilApi';
 import BalanceteLista from './BalanceteLista';
 
@@ -16,9 +16,19 @@ const ORDEM_TIPO_BALANCETE = ['ativo', 'passivo', 'patrimonio_liquido', 'receita
 
 // Página pública (sem login) pra compartilhar Balancete ou DRE com o
 // cliente via link — só leitura, sem sidebar de lançamentos nem edição.
-// Acessada via ?share=dre|balancete&empresa=<id>&inicio=&fim= (ver App.jsx,
+// Acessada via ?share=dre|balancete&empresa=<token do painel>&inicio=&fim= (ver App.jsx,
 // que renderiza essa página no lugar do app inteiro quando detecta o param).
-export default function RelatorioCompartilhadoPage({ tipo, empresaId, dataInicio, dataFim }) {
+// Link público: &empresa= é o token do painel do cliente — resolve antes de
+// montar a página (AcessoPainel.jsx).
+export default function RelatorioCompartilhadoPage(props) {
+  return (
+    <AcessoPainel valor={props.empresaId}>
+      {(sessao) => <RelatorioCompartilhado {...props} empresaId={sessao.id} sessao={sessao} />}
+    </AcessoPainel>
+  );
+}
+
+function RelatorioCompartilhado({ tipo, empresaId, dataInicio, dataFim, sessao }) {
   const [empresaNome, setEmpresaNome] = useState('');
   const [dre, setDre] = useState(null);
   const [balancete, setBalancete] = useState(null);
@@ -31,7 +41,7 @@ export default function RelatorioCompartilhadoPage({ tipo, empresaId, dataInicio
       setErro(null);
       try {
         const [{ data: cliente, error: errCliente }, resultado] = await Promise.all([
-          supabase.from('clientes').select('nome').eq('id', empresaId).single(),
+          Promise.resolve({ data: sessao, error: null }),
           tipo === 'dre'
             ? calcularDREPorConta(empresaId, { dataInicio, dataFim })
             : calcularBalancete(empresaId, { dataInicio, dataFim }),

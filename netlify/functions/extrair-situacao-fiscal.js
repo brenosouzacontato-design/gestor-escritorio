@@ -43,10 +43,15 @@ Regras:
 - Se o PDF não parecer um Relatório de Situação Fiscal da RFB, devolva situacaoGeral null, listas vazias, e explique em "observacao".`;
 }
 
+const { exigirEscritorio } = require('./lib/autenticacao');
+
 exports.handler = async (event) => {
   if (event.httpMethod !== 'POST') {
     return resposta(405, { error: 'Método não permitido, use POST.' });
   }
+
+  const negado = await exigirEscritorio(event, 'extrair-situacao-fiscal');
+  if (negado) return negado;
 
   let pdfBase64, filename, clientes;
   try {

@@ -3,8 +3,11 @@
 // ver PainelClientePage.jsx) — obrigações/tarefas do mês, resumo
 // financeiro e upload+extração da Declaração do Simples Nacional. A
 // página pública não tem store/sessão, então tudo aqui é query direta via
-// supabase (anon key, sem RLS — mesmo modelo do resto do app).
-import { supabase } from '../../lib/supabase';
+// supabase. No link público o cliente Supabase manda o token do painel
+// (x-painel-token) e o RLS só libera as linhas daquele cliente — ver
+// AcessoPainel.jsx e docs/seguranca-rls.md.
+import { supabase, cabecalhosFunctions } from '../../lib/supabase';
+import { resolverPainel } from './AcessoPainel';
 import { calcularDREPorConta } from '../contabil/contabilApi';
 
 const BUCKET = 'documentos'; // mesmo bucket já criado pra anexos de documentos
@@ -137,7 +140,7 @@ export async function uploadDeclaracaoSimples(arquivo, competenciaFallback, { cl
   const pdfBase64 = await arquivoParaBase64(arquivo);
   const resp = await fetch('/.netlify/functions/extrair-declaracao-simples', {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers: await cabecalhosFunctions(),
     body: JSON.stringify({ pdfBase64, filename: arquivo.name, clientes: clienteId ? null : clientes }),
   });
   if (!resp.ok) {
@@ -406,7 +409,7 @@ export async function uploadSituacaoFiscal(arquivo, competencia, { clienteId = n
   const pdfBase64 = await arquivoParaBase64(arquivo);
   const resp = await fetch('/.netlify/functions/extrair-situacao-fiscal', {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers: await cabecalhosFunctions(),
     body: JSON.stringify({ pdfBase64, filename: arquivo.name, clientes: clienteId ? null : clientes }),
   });
   if (!resp.ok) {
@@ -568,7 +571,11 @@ export async function obterTarefasDoCliente(clienteId) {
 // Gravado só quando o link público é aberto (main.jsx) — as prévias de
 // dentro do app (PaineisPage/PainelViewerModal) não contam como visita do
 // cliente. Tabela em supabase-schema-painel-visualizacoes.sql.
-export async function registrarVisualizacaoPainel(clienteId, competencia, versao) {
+// `valorDoLink` é o ?painel= da URL (token do painel): resolverPainel() já
+// liga o modo painel, então o aviso que main.jsx manda logo em seguida
+// (avisarEventoPainel) sai com o token no cabeçalho.
+export async function registrarVisualizacaoPainel(valorDoLink, competencia, versao) {
+  const { id: clienteId } = await resolverPainel(valorDoLink);
   const { error } = await supabase.from('painel_visualizacoes').insert({
     cliente_id: clienteId,
     competencia: competencia || null,
@@ -607,13 +614,17 @@ export async function salvarRecadoPainel(clienteId, itemChave, mensagem) {
 // um arquivo. Só o link público chama isso — nunca as prévias de dentro do
 // app. Nunca lança erro nem espera resposta: o aviso não pode atrapalhar o
 // cliente abrindo o painel ou baixando a guia.
+// A function identifica o cliente pelo token do painel (cabeçalho); o
+// clienteId do corpo só vale pros links antigos, durante a transição.
 export function avisarEventoPainel(clienteId, tipo, { descricao = null, competencia = null } = {}) {
-  fetch('/.netlify/functions/painel-evento', {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ clienteId, tipo, descricao, competencia }),
-    keepalive: true, // a requisição termina mesmo se a aba mudar pro arquivo baixado
-  }).catch(() => {});
+  cabecalhosFunctions()
+    .then((headers) => fetch('/.netlify/functions/painel-evento', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ clienteId, tipo, descricao, competencia }),
+      keepalive: true, // a requisição termina mesmo se a aba mudar pro arquivo baixado
+    }))
+    .catch(() => {});
 }
 
 // Últimas aberturas/downloads do cliente, pro escritório ver no topo do painel.
@@ -677,7 +688,7 @@ export async function obterHonorariosPainel(clienteId, competencia) {
 export async function extrairValorGuia(documentoId) {
   const resp = await fetch('/.netlify/functions/extrair-valor-guia', {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers: await cabecalhosFunctions(),
     body: JSON.stringify({ documentoId }),
   });
   if (!resp.ok) {

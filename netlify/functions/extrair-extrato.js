@@ -29,10 +29,15 @@ Regras:
 - Se não conseguir ler uma linha com confiança, não invente: pule essa linha em vez de adivinhar.
 - Se o PDF não parecer um extrato bancário, devolva um array vazio: []`;
 
+const { exigirEscritorio } = require('./lib/autenticacao');
+
 exports.handler = async (event) => {
   if (event.httpMethod !== 'POST') {
     return resposta(405, { error: 'Método não permitido, use POST.' });
   }
+
+  const negado = await exigirEscritorio(event, 'extrair-extrato');
+  if (negado) return negado;
 
   let pdfBase64, filename;
   try {

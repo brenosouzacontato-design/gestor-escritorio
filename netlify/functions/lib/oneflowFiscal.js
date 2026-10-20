@@ -189,7 +189,9 @@ function competenciaAnterior() {
 // completando certinho no servidor.
 async function dispararSincronizacaoBackground() {
   const base = process.env.URL
-  await fetch(`${base}/.netlify/functions/documentos-fiscais-sincronizar-background`, { method: 'POST' })
+  // a background function exige ser chamada pela própria aplicação (ou pelo escritório)
+  const { cabecalhoInterno } = require('./autenticacao')
+  await fetch(`${base}/.netlify/functions/documentos-fiscais-sincronizar-background`, { method: 'POST', headers: cabecalhoInterno() })
 }
 
 module.exports = {

@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { HelpCircleIcon, LinkIcon } from 'lucide-react';
 import { useToast } from '../../components/shared';
 import { criarLinkIdentificacao } from './contabilApi';
+import { chavePainelPorId, urlPublica } from '../../lib/linksPublicos';
 
 function fmtData(iso) {
   return new Date(iso + 'T00:00:00').toLocaleDateString('pt-BR');
@@ -30,9 +31,11 @@ export default function EnviarIdentificacaoButton({ empresaId, empresaNome, peri
   const temFiltro = lancamentoIds && lancamentoIds.length > 0;
 
   async function montarUrlEMensagem() {
+    // &empresa= leva o token do painel da empresa, não o id (ver docs/seguranca-rls.md)
+    const empresa = await chavePainelPorId(empresaId);
     const url = temFiltro
-      ? `${window.location.origin}${window.location.pathname}?identificar=1&empresa=${empresaId}&link=${await criarLinkIdentificacao(empresaId, lancamentoIds)}`
-      : `${window.location.origin}${window.location.pathname}?identificar=1&empresa=${empresaId}&inicio=${periodo.dataInicio}&fim=${periodo.dataFim}`;
+      ? urlPublica({ identificar: 1, empresa, link: await criarLinkIdentificacao(empresaId, lancamentoIds) })
+      : urlPublica({ identificar: 1, empresa, inicio: periodo.dataInicio, fim: periodo.dataFim });
     const descricaoPeriodo = temFiltro
       ? `${lancamentoIds.length} movimentaç${lancamentoIds.length > 1 ? 'ões' : 'ão'}`
       : `período de ${fmtData(periodo.dataInicio)} a ${fmtData(periodo.dataFim)}`;

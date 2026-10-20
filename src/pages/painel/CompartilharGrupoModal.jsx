@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { Building2Icon, CopyIcon, Share2Icon, SearchIcon, XIcon } from 'lucide-react'
 import { Modal, useToast } from '../../components/shared'
+import { chavePainel } from '../../lib/linksPublicos'
 
 // Grupos já montados ficam lembrados neste navegador (por empresa) — ao
 // abrir o modal a partir de qualquer empresa do grupo, ele já vem marcado.
@@ -22,8 +23,9 @@ function normalizar(texto) {
   return (texto || '').normalize('NFD').replace(/\p{Diacritic}/gu, '').toLowerCase()
 }
 
-export function linkPainelGrupo(ids, competencia, versao) {
-  return `${window.location.origin}${window.location.pathname}?painel=${ids.join(',')}&competencia=${encodeURIComponent(competencia)}${versao === 'completa' ? '&versao=1' : ''}`
+// `chaves` = token do painel de cada empresa (chavePainel), não o id.
+export function linkPainelGrupo(chaves, competencia, versao) {
+  return `${window.location.origin}${window.location.pathname}?painel=${chaves.join(',')}&competencia=${encodeURIComponent(competencia)}${versao === 'completa' ? '&versao=1' : ''}`
 }
 
 // Monta um link de painel com várias empresas (grupo econômico do mesmo
@@ -47,7 +49,7 @@ export default function CompartilharGrupoModal({ clientes, clienteInicialId, com
 
   const alternar = (id) => setSelecionados((s) => (s.includes(id) ? s.filter((x) => x !== id) : [...s, id]))
   const pronto = selecionados.length >= 2
-  const link = pronto ? linkPainelGrupo(selecionados, competencia, versao) : ''
+  const link = pronto ? linkPainelGrupo(selecionados.map((id) => chavePainel(porId.get(id)) || id), competencia, versao) : ''
   const nomes = selecionados.map((id) => porId.get(id)?.nome).filter(Boolean)
 
   const copiar = async () => {

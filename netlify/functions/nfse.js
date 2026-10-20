@@ -1,0 +1,232 @@
+// netlify/functions/nfse.js
+//
+// API do módulo de emissão de NFS-e (Sefin Nacional). Ver docs/nfse-emissao.md.
+//
+// POST /.netlify/functions/nfse   Authorization: Bearer <token da sessão do gestor>
+//   { acao: 'status', cliente_id }
+//   { acao: 'salvar_empresa', cliente_id, gabarito_xml, ambiente?, serie_dps?, regra_competencia?, campos_obrigatorios?, whatsapp_origem? }
+//   { acao: 'salvar_certificado', cliente_id, pfx_base64, senha }
+//   { acao: 'importar', cliente_id, texto }  |  { acao: 'importar', cliente_id, planilha_base64, nome_arquivo }
+//   { acao: 'editar', nota_id, campos }
+//   { acao: 'competencia', nota_ids, competencia }
+//   { acao: 'excluir', nota_id }  |  { acao: 'copiar', nota_id }
+//   { acao: 'previa', nota_id }
+//   { acao: 'emitir', nota_id, ambiente }       ← ambiente confirmado na tela; se divergir, nada é enviado
+//
+// Leitura de lotes/notas é feita direto pelo navegador (RLS: usuário logado só lê). Toda escrita passa
+// por aqui, onde valem a máquina de estados, a reserva de número e a duplicidade.
+//
+// Variáveis no Netlify: SUPABASE_URL, SUPABASE_SERVICE_KEY, NFSE_CERT_KEY, NFSE_EMAILS_PERMITIDOS (opcional)
+
+const { ErroHttp, exigirUsuario, responder, supabaseServico } = require('./lib/nfse/auth')
+const { cifrar, decifrar } = require('./lib/nfse/cofre')
+const { lerPfx, checar, testarPar, diasRestantes } = require('./lib/nfse/certificado')
+const { carregarGabarito } = require('./lib/nfse/dps')
+const { filho } = require('./lib/nfse/xml')
+const { criarCliente } = require('./lib/nfse/sefin')
+const { RepositorioSupabase, TransicaoInvalida } = require('./lib/nfse/repositorio')
+const lotes = require('./lib/nfse/lotes')
+const { criarEmissor, EmissaoBloqueada } = require('./lib/nfse/emissor')
+const { importarTextoWhatsapp, importarLinhas } = require('./lib/nfse/importador')
+
+// Timeout da Sefin abaixo do limite da function: se estourar, a nota fica "indeterminada" e a
+// próxima tentativa reconsulta antes de reenviar (nunca há envio em dobro).
+const TIMEOUT_SEFIN_MS = 8000
+
+// Dependências externas (substituídas nos testes)
+const deps = { supabase: () => supabaseServico(), criarCliente }
+
+const exigir = (cond, msg, status = 400) => { if (!cond) throw new ErroHttp(status, msg) }
+const uuid = (v, nome) => { exigir(/^[0-9a-f-]{36}$/i.test(String(v || '')), `${nome} inválido`); return v }
+
+async function empresaDaNota(repo, notaId) {
+  const nota = await repo.obterNota(uuid(notaId, 'nota_id'))
+  exigir(nota, 'Nota não encontrada', 404)
+  const empresa = await repo.obterEmpresa(nota.cliente_id)
+  exigir(empresa, 'Empresa sem configuração de NFS-e', 409)
+  return { nota, empresa }
+}
+
+async function carregarCertificado(db, empresa) {
+  const { data, error } = await db.from('nfse_certificados').select('pfx_cifrado, senha_cifrada').eq('cliente_id', empresa.cliente_id).maybeSingle()
+  if (error) throw new Error(error.message)
+  exigir(data, 'Empresa sem certificado A1 cadastrado', 409)
+  const cert = lerPfx(decifrar(data.pfx_cifrado), decifrar(data.senha_cifrada).toString('utf8'))
+  const { bloqueios } = checar(cert, empresa.cnpj)
+  exigir(!bloqueios.length, `Emissão bloqueada: ${bloqueios.join('; ')}`, 409)
+  return cert
+}
+
+async function emissorDa(db, repo, empresa, usuario) {
+  const certificado = await carregarCertificado(db, empresa)
+  const cliente = deps.criarCliente({ tls: certificado.tls, ambiente: empresa.ambiente, timeoutMs: TIMEOUT_SEFIN_MS })
+  return criarEmissor({ repo, empresa, certificado, cliente, usuario: usuario.email })
+}
+
+// Extrai da NFS-e de exemplo o que dá para pré-preencher: CNPJ, município e tributação do serviço.
+function analisarGabarito(xml) {
+  const dps = carregarGabarito(xml)
+  const inf = filho(dps, 'infDPS')
+  const txt = (c) => (filho(inf, c) || {}).text || ''
+  exigir(filho(inf, 'toma/CPF') || filho(inf, 'toma/CNPJ'), 'O gabarito precisa ter tomador (toma)')
+  return {
+    cnpj: txt('prest/CNPJ'),
+    codigo_municipio: txt('cLocEmi'),
+    servico_padrao: {
+      cTribNac: txt('serv/cServ/cTribNac'),
+      tribISSQN: txt('valores/trib/tribMun/tribISSQN'),
+      tpRetISSQN: txt('valores/trib/tribMun/tpRetISSQN'),
+    },
+    descricao_exemplo: txt('serv/cServ/xDescServ'),
+    serie_emissor_web: txt('serie'),
+  }
+}
+
+const acoes = {
+  async status({ db, repo }, { cliente_id }) {
+    const empresa = await repo.obterEmpresa(uuid(cliente_id, 'cliente_id'))
+    if (!empresa) return { configurada: false }
+    const { gabarito_xml, ...semGabarito } = empresa
+    let certificado = null
+    if (empresa.cert_valido_ate) {
+      const fake = { cnpj: empresa.cert_cnpj, validoDe: new Date(0), validoAte: new Date(empresa.cert_valido_ate) }
+      certificado = { titular: empresa.cert_titular, cnpj: empresa.cert_cnpj, valido_ate: empresa.cert_valido_ate,
+        dias_restantes: diasRestantes(fake), ...checar(fake, empresa.cnpj) }
+    }
+    return { configurada: true, empresa: { ...semGabarito, gabarito: analisarGabarito(gabarito_xml) }, certificado }
+  },
+
+  async salvar_empresa({ db, repo }, p) {
+    const clienteId = uuid(p.cliente_id, 'cliente_id')
+    const { data: cli } = await db.from('clientes').select('id, cnpj, nome').eq('id', clienteId).maybeSingle()
+    exigir(cli, 'Cliente não encontrado', 404)
+    const atual = await repo.obterEmpresa(clienteId)
+    const gabaritoXml = p.gabarito_xml || (atual && atual.gabarito_xml)
+    exigir(gabaritoXml, 'Envie o XML de uma NFS-e já emitida por esta empresa (gabarito)')
+    const g = analisarGabarito(gabaritoXml)
+    const cnpjCliente = String(cli.cnpj || '').replace(/\D/g, '')
+    exigir(!cnpjCliente || cnpjCliente === g.cnpj, `O gabarito é do CNPJ ${g.cnpj}, mas o cliente ${cli.nome} tem CNPJ ${cnpjCliente}`)
+    const ambiente = p.ambiente || (atual && atual.ambiente) || 'homologacao'
+    exigir(['homologacao', 'producao'].includes(ambiente), 'Ambiente inválido')
+    const serie = String(p.serie_dps || (atual && atual.serie_dps) || '900')
+    exigir(/^\d{1,5}$/.test(serie), 'Série inválida')
+    exigir(serie !== g.serie_emissor_web, `A série ${serie} é a mesma do Emissor Web (gabarito); use outra para não colidir a numeração`)
+    const registro = {
+      cliente_id: clienteId, ambiente, serie_dps: serie, codigo_municipio: g.codigo_municipio, cnpj: g.cnpj,
+      regra_competencia: p.regra_competencia || (atual && atual.regra_competencia) || 'mes_do_atendimento',
+      servico_padrao: { ...g.servico_padrao, ...(p.servico_padrao || {}) },
+      campos_obrigatorios: p.campos_obrigatorios || (atual && atual.campos_obrigatorios) || ['nome', 'cpf', 'data', 'valor', 'descricao', 'endereco'],
+      gabarito_xml: gabaritoXml,
+      whatsapp_origem: p.whatsapp_origem !== undefined ? p.whatsapp_origem || null : (atual && atual.whatsapp_origem) || null,
+      updated_at: new Date().toISOString(),
+    }
+    const { error } = await db.from('nfse_empresas').upsert(registro, { onConflict: 'cliente_id' })
+    if (error) throw new Error(error.message)
+    return acoes.status({ db, repo }, { cliente_id: clienteId })
+  },
+
+  async salvar_certificado({ db, repo }, p) {
+    const clienteId = uuid(p.cliente_id, 'cliente_id')
+    const empresa = await repo.obterEmpresa(clienteId)
+    exigir(empresa, 'Configure a empresa (gabarito) antes do certificado', 409)
+    exigir(p.pfx_base64 && p.senha, 'Envie o arquivo .pfx e a senha')
+    const pfx = Buffer.from(p.pfx_base64, 'base64')
+    let cert
+    try { cert = lerPfx(pfx, p.senha) } catch (e) { throw new ErroHttp(400, e.message) }
+    exigir(testarPar(cert), 'A chave privada não corresponde ao certificado')
+    const { bloqueios } = checar(cert, empresa.cnpj)
+    exigir(!bloqueios.length, bloqueios.join('; '))
+    const { error } = await db.from('nfse_certificados').upsert({
+      cliente_id: clienteId, pfx_cifrado: cifrar(pfx), senha_cifrada: cifrar(p.senha), enviado_em: new Date().toISOString(),
+    }, { onConflict: 'cliente_id' })
+    if (error) throw new Error(error.message)
+    const { error: e2 } = await db.from('nfse_empresas').update({
+      cert_titular: cert.titular, cert_cnpj: cert.cnpj, cert_valido_ate: cert.validoAte.toISOString(),
+    }).eq('cliente_id', clienteId)
+    if (e2) throw new Error(e2.message)
+    return acoes.status({ db, repo }, { cliente_id: clienteId })
+  },
+
+  async importar({ repo }, p) {
+    const empresa = await repo.obterEmpresa(uuid(p.cliente_id, 'cliente_id'))
+    exigir(empresa, 'Empresa sem configuração de NFS-e', 409)
+    let registros
+    let origem
+    let descricao = ''
+    if (p.planilha_base64) {
+      const XLSX = require('xlsx')
+      const wb = XLSX.read(Buffer.from(p.planilha_base64, 'base64'), { type: 'buffer', cellDates: true, UTC: true })
+      const linhas = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1, raw: true, defval: '' })
+      try { registros = importarLinhas(linhas) } catch (e) { throw new ErroHttp(400, e.message) }
+      origem = 'planilha'
+      descricao = String(p.nome_arquivo || '').slice(0, 200)
+    } else {
+      exigir(String(p.texto || '').trim(), 'Cole o texto das mensagens')
+      registros = importarTextoWhatsapp(p.texto)
+      origem = 'colado'
+    }
+    exigir(registros.length, 'Nenhum atendimento encontrado')
+    const loteId = await lotes.criarLote(repo, { empresa, origem, descricao, registros })
+    return { lote_id: loteId }
+  },
+
+  async editar({ repo }, p) {
+    const { nota, empresa } = await empresaDaNota(repo, p.nota_id)
+    await lotes.atualizarNota(repo, empresa, nota.id, p.campos || {})
+    return { lote_id: nota.lote_id }
+  },
+
+  async competencia({ repo }, p) {
+    const ids = (p.nota_ids || []).map((i) => uuid(i, 'nota_id'))
+    exigir(ids.length, 'Selecione ao menos uma nota')
+    const { nota, empresa } = await empresaDaNota(repo, ids[0])
+    await lotes.definirCompetencia(repo, empresa, ids, p.competencia)
+    return { lote_id: nota.lote_id }
+  },
+
+  async excluir({ repo }, p) {
+    const { nota, empresa } = await empresaDaNota(repo, p.nota_id)
+    await lotes.excluirNota(repo, empresa, nota.id)
+    return { lote_id: nota.lote_id }
+  },
+
+  async copiar({ repo }, p) {
+    const { nota, empresa } = await empresaDaNota(repo, p.nota_id)
+    const nova = await lotes.copiarNota(repo, empresa, nota.id)
+    return { lote_id: nota.lote_id, nota_id: nova }
+  },
+
+  async previa({ db, repo, usuario }, p) {
+    const { empresa } = await empresaDaNota(repo, p.nota_id)
+    return (await emissorDa(db, repo, empresa, usuario)).previa(p.nota_id)
+  },
+
+  async emitir({ db, repo, usuario }, p) {
+    const { nota, empresa } = await empresaDaNota(repo, p.nota_id)
+    exigir(p.ambiente === empresa.ambiente && p.ambiente === nota.ambiente,
+      `Ambiente confirmado (${p.ambiente}) difere do configurado (${empresa.ambiente}). Nada foi enviado.`, 409)
+    const resultado = await (await emissorDa(db, repo, empresa, usuario)).emitir(nota.id)
+    return { resultado, nota: await repo.obterNota(nota.id) }
+  },
+}
+
+exports.handler = responder(async (event) => {
+  if (event.httpMethod !== 'POST') throw new ErroHttp(405, 'Use POST')
+  const db = deps.supabase()
+  const usuario = await exigirUsuario(event, { supabase: db })
+  let corpo
+  try { corpo = JSON.parse(event.body || '{}') } catch { throw new ErroHttp(400, 'JSON inválido') }
+  const acao = acoes[corpo.acao]
+  exigir(acao, `Ação desconhecida: ${corpo.acao}`)
+  const repo = new RepositorioSupabase(db)
+  try {
+    return await acao({ db, repo, usuario }, corpo)
+  } catch (e) {
+    if (e instanceof EmissaoBloqueada || e instanceof lotes.NotaNaoEditavel || e instanceof TransicaoInvalida) throw new ErroHttp(409, e.message)
+    if (/^(Data|Valor|Competência) inválid/.test(e.message)) throw new ErroHttp(400, e.message)
+    throw e
+  }
+})
+
+exports._deps = deps // testes
+exports._analisarGabarito = analisarGabarito
