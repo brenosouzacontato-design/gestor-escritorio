@@ -54,7 +54,7 @@ test('fluxo completo: empresa, certificado cifrado, importar, editar, prévia e 
   // série igual à do Emissor Web é recusada
   assert.equal((await chamar({ acao: 'salvar_empresa', cliente_id: CLIENTE, gabarito_xml: gabarito, serie_dps: '70000' })).status, 400)
   // campos do Simples Nacional da NT 009: validados e mantidos ao salvar de novo sem eles
-  const simples = { regApIBSCBSSN: '1', cAtvSN: '7' }
+  const simples = { regApIBSCBSSN: '1', cAtvSN: '7', cNBS: '123012300', cIndOp: '030101', CST: '200', cClassTrib: '200028' }
   assert.equal((await chamar({ acao: 'salvar_empresa', cliente_id: CLIENTE, gabarito_xml: gabarito, servico_padrao: { cAtvSN: '99' } })).status, 400)
   assert.equal((await chamar({ acao: 'salvar_empresa', cliente_id: CLIENTE, gabarito_xml: gabarito, servico_padrao: simples })).status, 200)
   const st = await chamar({ acao: 'salvar_empresa', cliente_id: CLIENTE, gabarito_xml: gabarito })

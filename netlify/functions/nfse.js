@@ -21,7 +21,7 @@
 const { ErroHttp, exigirUsuario, responder, supabaseServico } = require('./lib/nfse/auth')
 const { cifrar, decifrar } = require('./lib/nfse/cofre')
 const { lerPfx, checar, testarPar, diasRestantes } = require('./lib/nfse/certificado')
-const { carregarGabarito, CODIGOS_ATIVIDADE_SN } = require('./lib/nfse/dps')
+const { carregarGabarito, CODIGOS_ATIVIDADE_SN, FORMATOS_IBSCBS } = require('./lib/nfse/dps')
 const { filho } = require('./lib/nfse/xml')
 const { criarCliente } = require('./lib/nfse/sefin')
 const { RepositorioSupabase, TransicaoInvalida } = require('./lib/nfse/repositorio')
@@ -83,13 +83,23 @@ function analisarGabarito(xml) {
   }
 }
 
-// Campos do Simples Nacional da configuração (NT 009), validados; vazio apaga.
+// Campos da configuração que não vêm do gabarito (NT 009: Simples Nacional e IBS/CBS), validados;
+// vazio apaga.
+const VALIDOS_CONFIG = {
+  regApIBSCBSSN: (v) => ['1', '2', '3'].includes(v),
+  cAtvSN: (v) => CODIGOS_ATIVIDADE_SN.includes(v),
+  cIndOp: (v) => FORMATOS_IBSCBS.cIndOp.test(v),
+  CST: (v) => FORMATOS_IBSCBS.CST.test(v),
+  cClassTrib: (v) => FORMATOS_IBSCBS.cClassTrib.test(v),
+  cNBS: (v) => FORMATOS_IBSCBS.cNBS.test(v),
+}
 function camposSimples(sp) {
   const saida = {}
-  for (const [campo, validos] of [['regApIBSCBSSN', ['1', '2', '3']], ['cAtvSN', CODIGOS_ATIVIDADE_SN]]) {
+  for (const [campo, valido] of Object.entries(VALIDOS_CONFIG)) {
     if (!(campo in sp)) continue
-    const v = sp[campo] == null ? '' : String(sp[campo]).trim()
-    exigir(v === '' || validos.includes(v), `${campo} inválido: ${v}`)
+    let v = sp[campo] == null ? '' : String(sp[campo]).trim()
+    if (['cIndOp', 'CST', 'cClassTrib', 'cNBS'].includes(campo)) v = v.replace(/\D/g, '')
+    exigir(v === '' || valido(v), `${campo} inválido: ${v}`)
     saida[campo] = v || undefined
   }
   return saida

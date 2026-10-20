@@ -29,7 +29,7 @@ function gerar({ ambiente = 'homologacao', agora = '2026-11-05T09:30:00-03:00', 
     gabarito: carregarGabarito(gabarito), ambiente, serie: '900', nDps: 5,
     empresa: {
       cnpj: p.cnpj, codigoMunicipio: p.codigo_municipio_ibge, regraCompetencia: p.regra_competencia,
-      servicoPadrao: { ...p.servico_padrao, regApIBSCBSSN: '1', cAtvSN: '7', ...servicoPadrao },
+      servicoPadrao: { ...p.servico_padrao, regApIBSCBSSN: '1', cAtvSN: '7', cNBS: '123012300', cIndOp: '030101', CST: '200', cClassTrib: '200028', ...servicoPadrao },
     },
     cpfTomador: '52998224725', nomeTomador: 'Paciente de Teste', descricao: 'Consulta', valor: '10.00',
     dataAtendimento: '2026-10-20', agora: new Date(agora),
@@ -45,21 +45,41 @@ const naOrdem = (lista, ordem) => {
 
 test('fases: cada grupo da NT 009 liga na sua data por ambiente', () => {
   assert.equal(usaLeiauteNt009('homologacao', '2026-10-15', {}), false)
-  assert.deepEqual(gruposNt009('homologacao', '2026-10-20', {}), { finNFSe: true, indDest: false, simples: false })
-  assert.deepEqual(gruposNt009('homologacao', '2026-10-30', {}), { finNFSe: true, indDest: true, simples: false })
-  assert.deepEqual(gruposNt009('producao', '2026-11-02', {}), { finNFSe: false, indDest: false, simples: false })
-  assert.deepEqual(gruposNt009('producao', '2026-11-03', {}), { finNFSe: true, indDest: true, simples: true })
+  assert.deepEqual(gruposNt009('homologacao', '2026-10-19', {}), { finNFSe: true, indDest: false, simples: false, ibscbs: false })
+  assert.deepEqual(gruposNt009('homologacao', '2026-10-20', {}), { finNFSe: true, indDest: false, simples: false, ibscbs: true })
+  assert.deepEqual(gruposNt009('homologacao', '2026-10-30', {}), { finNFSe: true, indDest: true, simples: false, ibscbs: true })
+  assert.deepEqual(gruposNt009('producao', '2026-11-02', {}), { finNFSe: false, indDest: false, simples: false, ibscbs: false })
+  assert.deepEqual(gruposNt009('producao', '2026-11-03', {}), { finNFSe: true, indDest: true, simples: true, ibscbs: true })
   // datas mudam por variável de ambiente, por grupo ou para toda a produção
   assert.equal(gruposNt009('homologacao', '2026-10-20', { NFSE_NT009_SIMPLES_HOMOLOGACAO: '2026-10-20' }).simples, true)
   assert.equal(usaLeiauteNt009('producao', '2026-11-03', { NFSE_NT009_PRODUCAO_A_PARTIR: '2026-12-01' }), false)
 })
 
-test('homologação em 20/10/2026: só finNFSe (indDest e campos do Simples ainda recusados pela Sefin)', () => {
+test('grupo IBSCBS: cIndOp e CST/cClassTrib da configuração, NBS no serviço, no fim de infDPS', () => {
+  const inf = filho(gerar(), 'infDPS')
+  const ibscbs = filho(inf, 'IBSCBS')
+  assert.equal(tags(inf).at(-1), 'IBSCBS')
+  assert.deepEqual(tags(ibscbs), ['cIndOp', 'valores'])
+  assert.equal(filho(ibscbs, 'cIndOp').text, '030101')
+  assert.deepEqual(tags(filho(ibscbs, 'valores/trib')), ['CST', 'cClassTrib'])
+  assert.equal(filho(ibscbs, 'valores/trib/CST').text, '200')
+  assert.equal(filho(ibscbs, 'valores/trib/cClassTrib').text, '200028')
+  assert.equal(filho(inf, 'serv/cServ/cNBS').text, '123012300')
+  naOrdem(tags(filho(inf, 'serv/cServ')), ORDEM_CSERV)
+})
+
+test('sem CST/cClassTrib/cIndOp configurados: erro antes de gastar número', () => {
+  assert.throws(() => gerar({ servicoPadrao: { CST: '' } }), /CST/)
+  assert.throws(() => gerar({ servicoPadrao: { cIndOp: '' } }), /cIndOp/)
+})
+
+test('homologação em 20/10/2026: finNFSe e IBSCBS (indDest e campos do Simples ainda recusados pela Sefin)', () => {
   const inf = filho(gerar({ agora: '2026-10-20T09:30:00-03:00' }), 'infDPS')
   assert.equal(filho(inf, 'finNFSe').text, '0')
   assert.equal(filho(inf, 'indDest'), null)
   assert.equal(filho(inf, 'prest/regTrib/regApIBSCBSSN'), null)
   assert.equal(filho(inf, 'serv/cServ/cAtvSN'), null)
+  assert.equal(filho(inf, 'IBSCBS/valores/trib/cClassTrib').text, '200028')
   naOrdem(tags(inf), ORDEM_INFDPS)
 })
 
@@ -100,11 +120,12 @@ test('não optante do Simples não leva regApIBSCBSSN nem cAtvSN (Anexo VI, RN 3
   assert.equal(filho(inf, 'finNFSe').text, '0')
 })
 
-test('gabarito com finNFSe/indDest dentro de IBSCBS (posição antiga): saem de lá e vão para infDPS', () => {
+test('gabarito com IBSCBS no leiaute antigo: finNFSe/indDest vão para infDPS e o grupo vem da configuração', () => {
   const comIbscbs = gabaritoXml.replace('</valores></infDPS>',
     '</valores><IBSCBS><finNFSe>0</finNFSe><indFinal>0</indFinal><cIndOp>030101</cIndOp><indDest>0</indDest></IBSCBS></infDPS>')
   const inf = filho(gerar({ gabarito: comIbscbs }), 'infDPS')
-  assert.deepEqual(tags(filho(inf, 'IBSCBS')), ['indFinal', 'cIndOp'])
+  assert.deepEqual(tags(filho(inf, 'IBSCBS')), ['cIndOp', 'valores'])
+  assert.equal(filho(inf, 'IBSCBS/cIndOp').text, '030101')
   assert.equal(tags(inf).filter((t) => t === 'finNFSe').length, 1)
   naOrdem(tags(inf), ORDEM_INFDPS)
 })

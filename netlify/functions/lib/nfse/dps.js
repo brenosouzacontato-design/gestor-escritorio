@@ -12,7 +12,9 @@
 // campos tem a sua data por ambiente (NT009_DATAS). O que se observou na produção restrita:
 //   - finNFSe: exigido depois de 15/10/2026 (DPS sem ele autorizada às 13:15 desse dia; E1235 em 20/10);
 //   - regApIBSCBSSN: ainda recusado pelo esquema em 20/10/2026 (E1235 "invalid child element");
-//   - indDest/dest: fase de 30/10/2026 segundo o cronograma divulgado.
+//   - indDest/dest: fase de 30/10/2026 segundo o cronograma divulgado;
+//   - grupo IBSCBS: em 20/10/2026 a Sefin passou a rejeitar sem ele (E0855: "obrigatório declarar
+//     informações de IBS/CBS quando a data de competência for igual ou posterior a 01/10/2026").
 // Produção: tudo em 03/11/2026. Qualquer data muda sem mexer no código pela variável
 // NFSE_NT009_<GRUPO>_<AMBIENTE>=AAAA-MM-DD (ex.: NFSE_NT009_SIMPLES_HOMOLOGACAO=2026-11-03);
 // NFSE_NT009_PRODUCAO_A_PARTIR muda a data de produção de todos os grupos de uma vez.
@@ -80,6 +82,7 @@ const NT009_DATAS = {
   finNFSe: { homologacao: '2026-10-16', producao: '2026-11-03' },
   indDest: { homologacao: '2026-10-30', producao: '2026-11-03' },
   simples: { homologacao: '2026-11-03', producao: '2026-11-03' },
+  ibscbs: { homologacao: '2026-10-20', producao: '2026-11-03' },
 }
 
 // Grupos da NT 009 que valem nesse ambiente na data de emissão (AAAA-MM-DD de Brasília).
@@ -127,6 +130,7 @@ function aplicarLeiauteNt009(inf, servicoPadrao = {}, grupos = { finNFSe: true, 
     remover(inf, ['indDest'])
     inserirAntes(inf, novo('indDest', '0'), ['dest', 'interm', 'serv', 'valores', 'IBSCBS'])
   }
+  if (grupos.ibscbs) aplicarIbsCbs(inf, servicoPadrao)
   if (!grupos.simples) return
 
   const regTrib = filho(inf, 'prest/regTrib')
@@ -149,8 +153,39 @@ function aplicarLeiauteNt009(inf, servicoPadrao = {}, grupos = { finNFSe: true, 
   inserirAntes(cServ, novo('cAtvSN', atividade), ['cIntContrib', 'xDescServ'])
 }
 
+// Grupo IBSCBS da DPS no leiaute da NT 009 (Anexo VI, itens 373-425): indicador da operação e
+// CST/cClassTrib, que vêm da configuração da empresa. Com o regime de IBS/CBS pelo Simples
+// (regApIBSCBSSN = 1) os valores de IBS e CBS não são informados (RN 136 e 173). O NBS do serviço
+// (cNBS, em serv/cServ) vai junto. O IBSCBS do gabarito, se houver, é substituído.
+// NFSE_GIBSCBS_VAZIO=1 inclui um <gIBSCBS/> vazio, se a Sefin passar a exigir o grupo.
+const FORMATOS_IBSCBS = { cIndOp: /^\d{6}$/, CST: /^\d{3}$/, cClassTrib: /^\d{6}$/, cNBS: /^\d{9}$/ }
+
+function aplicarIbsCbs(inf, servicoPadrao = {}, env = process.env) {
+  const v = (campo) => String(servicoPadrao[campo] || '').replace(/\D/g, '')
+  for (const campo of ['cIndOp', 'CST', 'cClassTrib']) {
+    if (!FORMATOS_IBSCBS[campo].test(v(campo))) {
+      throw new Error(`Configure ${campo} de IBS/CBS da empresa (obrigatório para competência a partir de 10/2026)`)
+    }
+  }
+  const cServ = filho(inf, 'serv/cServ')
+  if (cServ && FORMATOS_IBSCBS.cNBS.test(v('cNBS'))) {
+    remover(cServ, ['cNBS'])
+    inserirAntes(cServ, novo('cNBS', v('cNBS')), ['cAtvSN', 'cIntContrib', 'xDescServ'])
+  }
+  const trib = novo('trib')
+  trib.children = [novo('CST', v('CST')), novo('cClassTrib', v('cClassTrib'))]
+  if (env.NFSE_GIBSCBS_VAZIO === '1') trib.children.push(novo('gIBSCBS'))
+  const valores = novo('valores')
+  valores.children = [trib]
+  const ibscbs = novo('IBSCBS')
+  ibscbs.children = [novo('cIndOp', v('cIndOp')), valores]
+  remover(inf, ['IBSCBS'])
+  inserirAntes(inf, ibscbs, [])
+}
+
 // empresa: { cnpj, codigoMunicipio, regraCompetencia,
-//            servicoPadrao: { cTribNac, tribISSQN, tpRetISSQN, regApIBSCBSSN?, cAtvSN? } }
+//            servicoPadrao: { cTribNac, tribISSQN, tpRetISSQN, regApIBSCBSSN?, cAtvSN?,
+//                             cIndOp?, CST?, cClassTrib?, cNBS? } }
 function montarDps({
   gabarito, empresa, ambiente, serie, nDps, cpfTomador, nomeTomador, descricao, valor,
   dataAtendimento, competencia = null, agora = new Date(),
@@ -208,5 +243,5 @@ function folhas(dps) {
 
 module.exports = {
   NS, VER_APLIC, CAMPOS_VARIAVEIS, CODIGOS_ATIVIDADE_SN, carregarGabarito, idDps, formatarValor, montarDps, folhas,
-  dataHoraBrasilia, usaLeiauteNt009, gruposNt009, aplicarLeiauteNt009,
+  dataHoraBrasilia, usaLeiauteNt009, gruposNt009, aplicarLeiauteNt009, aplicarIbsCbs, FORMATOS_IBSCBS,
 }
