@@ -6,7 +6,7 @@ const assert = require('node:assert/strict')
 const fs = require('fs')
 const path = require('path')
 
-const { carregarGabarito, montarDps, usaLeiauteNt009 } = require('../dps')
+const { carregarGabarito, montarDps, usaLeiauteNt009, gruposNt009 } = require('../dps')
 const { assinar, verificar } = require('../assinatura')
 const { serializar, lerElemento, filho } = require('../xml')
 const { lerPfx } = require('../certificado')
@@ -23,7 +23,8 @@ const ORDEM_INFDPS = ['tpAmb', 'dhEmi', 'verAplic', 'serie', 'nDPS', 'dCompet', 
 const ORDEM_REGTRIB = ['opSimpNac', 'regApTribSN', 'regApIBSCBSSN', 'regEspTrib']
 const ORDEM_CSERV = ['cTribNac', 'cTribMun', 'cNBS', 'cAtvSN', 'cIntContrib', 'xDescServ']
 
-function gerar({ ambiente = 'homologacao', agora = '2026-10-20T09:30:00-03:00', servicoPadrao = {}, gabarito = gabaritoXml } = {}) {
+// Por padrão, uma data em que todos os grupos já valem nos dois ambientes
+function gerar({ ambiente = 'homologacao', agora = '2026-11-05T09:30:00-03:00', servicoPadrao = {}, gabarito = gabaritoXml } = {}) {
   return montarDps({
     gabarito: carregarGabarito(gabarito), ambiente, serie: '900', nDps: 5,
     empresa: {
@@ -42,13 +43,24 @@ const naOrdem = (lista, ordem) => {
   assert.deepEqual(pos, [...pos].sort((a, b) => a - b), `ordem errada: ${lista.join(', ')}`)
 }
 
-test('datas de corte: homologação desde 16/10/2026, produção a partir de 03/11/2026', () => {
+test('fases: cada grupo da NT 009 liga na sua data por ambiente', () => {
   assert.equal(usaLeiauteNt009('homologacao', '2026-10-15', {}), false)
-  assert.equal(usaLeiauteNt009('homologacao', '2026-10-16', {}), true)
-  assert.equal(usaLeiauteNt009('producao', '2026-11-02', {}), false)
-  assert.equal(usaLeiauteNt009('producao', '2026-11-03', {}), true)
-  // se a Sefin adiar a produção, a data muda por variável de ambiente
+  assert.deepEqual(gruposNt009('homologacao', '2026-10-20', {}), { finNFSe: true, indDest: false, simples: false })
+  assert.deepEqual(gruposNt009('homologacao', '2026-10-30', {}), { finNFSe: true, indDest: true, simples: false })
+  assert.deepEqual(gruposNt009('producao', '2026-11-02', {}), { finNFSe: false, indDest: false, simples: false })
+  assert.deepEqual(gruposNt009('producao', '2026-11-03', {}), { finNFSe: true, indDest: true, simples: true })
+  // datas mudam por variável de ambiente, por grupo ou para toda a produção
+  assert.equal(gruposNt009('homologacao', '2026-10-20', { NFSE_NT009_SIMPLES_HOMOLOGACAO: '2026-10-20' }).simples, true)
   assert.equal(usaLeiauteNt009('producao', '2026-11-03', { NFSE_NT009_PRODUCAO_A_PARTIR: '2026-12-01' }), false)
+})
+
+test('homologação em 20/10/2026: só finNFSe (indDest e campos do Simples ainda recusados pela Sefin)', () => {
+  const inf = filho(gerar({ agora: '2026-10-20T09:30:00-03:00' }), 'infDPS')
+  assert.equal(filho(inf, 'finNFSe').text, '0')
+  assert.equal(filho(inf, 'indDest'), null)
+  assert.equal(filho(inf, 'prest/regTrib/regApIBSCBSSN'), null)
+  assert.equal(filho(inf, 'serv/cServ/cAtvSN'), null)
+  naOrdem(tags(inf), ORDEM_INFDPS)
 })
 
 test('DPS no leiaute NT 009: finNFSe, indDest e campos do Simples, na ordem do Anexo VI', () => {

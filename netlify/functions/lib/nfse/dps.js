@@ -8,10 +8,14 @@
 // Porte fiel de app/dps.py do emissor local; os testes golden garantem os mesmos bytes.
 //
 // Leiaute NT SE/CGNFS-e nº 009 v1.01 (Anexo VI v1.04.01): campos novos inseridos por
-// aplicarLeiauteNt009 nas posições do Anexo VI. Produção restrita: a Sefin passou a exigir depois de
-// 15/10/2026 (uma DPS no leiaute antigo ainda foi autorizada às 13:15 desse dia; em 20/10 veio E1235),
-// então vale a partir de 16/10. Produção: a partir de 03/11/2026 (NFSE_NT009_PRODUCAO_A_PARTIR muda
-// essa data, se a Sefin adiar).
+// aplicarLeiauteNt009 nas posições do Anexo VI. A Sefin liga a NT em fases, então cada grupo de
+// campos tem a sua data por ambiente (NT009_DATAS). O que se observou na produção restrita:
+//   - finNFSe: exigido depois de 15/10/2026 (DPS sem ele autorizada às 13:15 desse dia; E1235 em 20/10);
+//   - regApIBSCBSSN: ainda recusado pelo esquema em 20/10/2026 (E1235 "invalid child element");
+//   - indDest/dest: fase de 30/10/2026 segundo o cronograma divulgado.
+// Produção: tudo em 03/11/2026. Qualquer data muda sem mexer no código pela variável
+// NFSE_NT009_<GRUPO>_<AMBIENTE>=AAAA-MM-DD (ex.: NFSE_NT009_SIMPLES_HOMOLOGACAO=2026-11-03);
+// NFSE_NT009_PRODUCAO_A_PARTIR muda a data de produção de todos os grupos de uma vez.
 
 const { lerElemento, filho, novo, clonar } = require('./xml')
 
@@ -72,14 +76,26 @@ function definir(raiz, caminho, valor) {
 
 // ---------- NT 009 ----------
 
-const NT009_A_PARTIR = { homologacao: '2026-10-16', producao: '2026-11-03' }
-
-// Usa o leiaute da NT 009 nesse ambiente na data de emissão (AAAA-MM-DD de Brasília)?
-function usaLeiauteNt009(ambiente, dataEmissao, env = process.env) {
-  const inicio = (ambiente === 'producao' && env.NFSE_NT009_PRODUCAO_A_PARTIR) || NT009_A_PARTIR[ambiente]
-  if (!inicio) throw new Error(`Ambiente desconhecido: ${ambiente}`)
-  return dataEmissao >= inicio
+const NT009_DATAS = {
+  finNFSe: { homologacao: '2026-10-16', producao: '2026-11-03' },
+  indDest: { homologacao: '2026-10-30', producao: '2026-11-03' },
+  simples: { homologacao: '2026-11-03', producao: '2026-11-03' },
 }
+
+// Grupos da NT 009 que valem nesse ambiente na data de emissão (AAAA-MM-DD de Brasília).
+function gruposNt009(ambiente, dataEmissao, env = process.env) {
+  if (!['homologacao', 'producao'].includes(ambiente)) throw new Error(`Ambiente desconhecido: ${ambiente}`)
+  const ativos = {}
+  for (const [grupo, datas] of Object.entries(NT009_DATAS)) {
+    const inicio = env[`NFSE_NT009_${grupo.toUpperCase()}_${ambiente.toUpperCase()}`]
+      || (ambiente === 'producao' && env.NFSE_NT009_PRODUCAO_A_PARTIR) || datas[ambiente]
+    ativos[grupo] = dataEmissao >= inicio
+  }
+  return ativos
+}
+
+const usaLeiauteNt009 = (ambiente, dataEmissao, env = process.env) =>
+  Object.values(gruposNt009(ambiente, dataEmissao, env)).some(Boolean)
 
 // Códigos de atividade do Simples Nacional aceitos no campo cAtvSN (NT 009, item 2.4)
 const CODIGOS_ATIVIDADE_SN = ['7', '8', '9', '10', '11', '12', '13', '14', '90']
@@ -97,12 +113,21 @@ const remover = (pai, tags) => { if (pai) pai.children = pai.children.filter((c)
 // destinatário igual ao tomador (indDest = 0); para optante do Simples ME/EPP ou pendente (opSimpNac
 // 3 ou 4), também regApIBSCBSSN e cAtvSN, que são obrigatórios (Anexo VI, RN 313 e 449) e vêm da
 // configuração da empresa (servicoPadrao).
-function aplicarLeiauteNt009(inf, servicoPadrao = {}) {
+// grupos: quais partes aplicar ({ finNFSe, indDest, simples }, ver gruposNt009); padrão: todas.
+function aplicarLeiauteNt009(inf, servicoPadrao = {}, grupos = { finNFSe: true, indDest: true, simples: true }) {
   // finNFSe/indDest/dest saem do grupo IBSCBS (posição antiga) e vão para a raiz de infDPS
-  remover(filho(inf, 'IBSCBS'), ['finNFSe', 'indDest', 'dest'])
-  remover(inf, ['finNFSe', 'indDest'])
-  inserirAntes(inf, novo('finNFSe', '0'), ['tpNFSeDebito', 'tpNFSeCredito', 'chNFSeRej', 'cLocEmi'])
-  inserirAntes(inf, novo('indDest', '0'), ['dest', 'interm', 'serv', 'valores', 'IBSCBS'])
+  const ibscbs = filho(inf, 'IBSCBS')
+  if (grupos.finNFSe) {
+    remover(ibscbs, ['finNFSe'])
+    remover(inf, ['finNFSe'])
+    inserirAntes(inf, novo('finNFSe', '0'), ['tpNFSeDebito', 'tpNFSeCredito', 'chNFSeRej', 'cLocEmi'])
+  }
+  if (grupos.indDest) {
+    remover(ibscbs, ['indDest', 'dest'])
+    remover(inf, ['indDest'])
+    inserirAntes(inf, novo('indDest', '0'), ['dest', 'interm', 'serv', 'valores', 'IBSCBS'])
+  }
+  if (!grupos.simples) return
 
   const regTrib = filho(inf, 'prest/regTrib')
   const cServ = filho(inf, 'serv/cServ')
@@ -163,7 +188,8 @@ function montarDps({
   if (sp.tribISSQN) definir(inf, 'valores/trib/tribMun/tribISSQN', sp.tribISSQN)
   if (sp.tpRetISSQN) definir(inf, 'valores/trib/tribMun/tpRetISSQN', sp.tpRetISSQN)
   definir(inf, 'valores/vServPrest/vServ', formatarValor(valor))
-  if (usaLeiauteNt009(ambiente, emissao.data)) aplicarLeiauteNt009(inf, sp)
+  const grupos = gruposNt009(ambiente, emissao.data)
+  if (Object.values(grupos).some(Boolean)) aplicarLeiauteNt009(inf, sp, grupos)
   return dps
 }
 
@@ -182,5 +208,5 @@ function folhas(dps) {
 
 module.exports = {
   NS, VER_APLIC, CAMPOS_VARIAVEIS, CODIGOS_ATIVIDADE_SN, carregarGabarito, idDps, formatarValor, montarDps, folhas,
-  dataHoraBrasilia, usaLeiauteNt009, aplicarLeiauteNt009,
+  dataHoraBrasilia, usaLeiauteNt009, gruposNt009, aplicarLeiauteNt009,
 }
