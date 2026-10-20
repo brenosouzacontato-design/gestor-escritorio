@@ -14,16 +14,26 @@ const clienteEscritorio = createClient(supabaseUrl, supabaseKey)
 export let supabase = clienteEscritorio
 
 let tokenPainel = null
+const clientesPorToken = new Map()
+
+// Cliente Supabase que manda o token de um painel, sem mudar o da página — o
+// painel de grupo usa pra descobrir o nome de cada empresa do link.
+export function clienteComToken(token) {
+  if (!clientesPorToken.has(token)) {
+    clientesPorToken.set(token, createClient(supabaseUrl, supabaseKey, {
+      global: { headers: { 'x-painel-token': token } },
+      // o cliente do painel nunca loga — e não pode pisar na sessão do escritório
+      // se alguém do escritório abrir o link no mesmo navegador
+      auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false, storageKey: `sb-painel-${clientesPorToken.size}` },
+    }))
+  }
+  return clientesPorToken.get(token)
+}
 
 export function ativarModoPainel(token) {
   if (!token || token === tokenPainel) return
   tokenPainel = token
-  supabase = createClient(supabaseUrl, supabaseKey, {
-    global: { headers: { 'x-painel-token': token } },
-    // o cliente do painel nunca loga — e não pode pisar na sessão do escritório
-    // se alguém do escritório abrir o link no mesmo navegador
-    auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false, storageKey: 'sb-painel' },
-  })
+  supabase = clienteComToken(token)
 }
 
 // Token do painel em uso nesta página (null dentro do app do escritório).

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { supabase, ativarModoPainel, rpcAusente } from '../../lib/supabase';
+import { supabase, ativarModoPainel, clienteComToken, rpcAusente } from '../../lib/supabase';
 
 // Acesso das páginas públicas (painel do cliente e links compartilhados).
 // O valor que vem na URL (?painel=, &empresa=) é o token do painel do cliente
@@ -15,16 +15,17 @@ import { supabase, ativarModoPainel, rpcAusente } from '../../lib/supabase';
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const sessoes = new Map();
 
-export function resolverPainel(valor) {
+// Dados do cliente dono do token, sem trocar o token da página.
+export function sessaoDoToken(valor) {
   if (!valor) return Promise.reject(new Error('Link incompleto.'));
   if (!sessoes.has(valor)) {
-    ativarModoPainel(valor);
+    const cliente = clienteComToken(valor);
     sessoes.set(valor, (async () => {
-      const { data, error } = await supabase.rpc('painel_sessao');
+      const { data, error } = await cliente.rpc('painel_sessao');
       if (!error && data?.length) return data[0];
       if (error && !rpcAusente(error)) console.warn('painel_sessao:', error.message);
       if (UUID.test(valor)) {
-        const { data: legado } = await supabase.from('clientes').select('*').eq('id', valor).maybeSingle();
+        const { data: legado } = await cliente.from('clientes').select('*').eq('id', valor).maybeSingle();
         if (legado) return legado;
       }
       throw new Error('Link inválido ou expirado. Peça um link novo ao escritório.');
@@ -33,6 +34,14 @@ export function resolverPainel(valor) {
     sessoes.get(valor).catch(() => sessoes.delete(valor));
   }
   return sessoes.get(valor);
+}
+
+// Liga o token na página (toda consulta passa a mandá-lo) e devolve o cliente.
+// Chamado de novo a cada troca de empresa no painel de grupo — por isso o
+// ativarModoPainel fica fora do cache.
+export function resolverPainel(valor) {
+  if (valor) ativarModoPainel(valor);
+  return sessaoDoToken(valor);
 }
 
 // Envolve a página pública: só monta a página depois de saber o cliente, e
