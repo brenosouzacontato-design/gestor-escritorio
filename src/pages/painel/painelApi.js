@@ -711,6 +711,22 @@ export async function obterHonorariosPainel(clienteId, competencia) {
     .sort((a, b) => (a.vencimento || '').localeCompare(b.vencimento || ''));
 }
 
+// Grava o código de barras e o PIX copia e cola lidos da guia no navegador
+// (codigosGuia.js) — netlify/functions/painel-codigos-guia.js confere os
+// dígitos verificadores/CRC antes de gravar e devolve o que ficou valendo.
+export async function salvarCodigosGuia(documentoId, { linhasDigitaveis, pixCopiaCola }) {
+  const resp = await fetch('/.netlify/functions/painel-codigos-guia', {
+    method: 'POST',
+    headers: await cabecalhosFunctions(),
+    body: JSON.stringify({ documentoId, linhasDigitaveis, pixCopiaCola }),
+  });
+  if (!resp.ok) {
+    const erro = await resp.json().catch(() => ({}));
+    throw new Error(erro.error || 'Falha ao gravar os códigos da guia.');
+  }
+  return resp.json(); // { documentoId, linhaDigitavel, pixCopiaCola }
+}
+
 // Pede pra IA ler valor/vencimento de uma guia já anexada
 // (netlify/functions/extrair-valor-guia.js) — a função grava em
 // documentos.valor_guia e só lê cada documento uma vez.

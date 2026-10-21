@@ -13,6 +13,7 @@
     "@cantoo/pdf-lib": "^2.7.4",
     "@supabase/supabase-js": "^2.45.0",
     "date-fns": "^3.6.0",
+    "jsqr": "^1.4.0",
     "lucide-react": "^0.460.0",
     "node-forge": "1.4.0",
     "pdfjs-dist": "^4.10.38",

@@ -1,13 +1,14 @@
-import { createContext, useContext, useEffect, useState } from 'react';
+import { createContext, useContext, useEffect, useRef, useState } from 'react';
 import {
   CalendarIcon, DownloadIcon, CheckCircleIcon, AlertTriangleIcon, ClockIcon, TrendingUpIcon,
-  ClipboardListIcon, EyeIcon, EyeOffIcon, WalletIcon, CopyIcon, FileTextIcon, SettingsIcon, UserIcon, MessageSquareIcon, PartyPopperIcon, BellIcon, SendIcon,
+  ClipboardListIcon, EyeIcon, EyeOffIcon, WalletIcon, CopyIcon, FileTextIcon, SettingsIcon, UserIcon, MessageSquareIcon, PartyPopperIcon, BellIcon, SendIcon, BarcodeIcon, QrCodeIcon,
 } from 'lucide-react';
 import { chavePainelPorId, urlPublica } from '../../lib/linksPublicos';
 import AcessoPainel, { obterClientePagina } from './AcessoPainel';
 import { listarNfseEmitidas, baixarNfse } from './nfsePainelApi';
 import { descreverAparelho } from './aparelho';
-import { abrirLinkAssinado } from '../documentos/documentosApi';
+import { abrirLinkAssinado, criarLinkAssinado } from '../documentos/documentosApi';
+import { lerCodigosDaGuia } from './codigosGuia';
 import { GraficoFaturamento, ComparativoDas, NotasEntrada, TarefasDoCliente } from './PainelClientePage';
 import { calcularAliquotaNominal } from '../../lib/simplesNacional';
 import {
@@ -15,7 +16,7 @@ import {
   obterDocumentosPorTarefa, obterSituacaoFiscalMaisRecente, obterCndManual, obterHistoricoFaturamento,
   obterUltimaVisualizacaoPainel, extrairValorGuia, obterHonorariosPainel, obterDocumentosFiscais,
   definirSecoesOcultasPainel, atualizarDadosGerenciais, atualizarValorGuia, obterTarefasDoCliente,
-  avisarEventoPainel, obterEventosPainel, obterRecadosPainel, salvarRecadoPainel, marcarGuiaPaga,
+  avisarEventoPainel, obterEventosPainel, obterRecadosPainel, salvarRecadoPainel, marcarGuiaPaga, salvarCodigosGuia,
 } from './painelApi';
 import { obterConfigPix } from '../honorarios/honorariosApi';
 import {
@@ -279,6 +280,37 @@ function PainelCompartilhado({ clienteId, competencia: competenciaInicial, admin
         .catch(() => {})
         .finally(() => setLendoGuias((prev) => { const n = new Set(prev); n.delete(anexo.id); return n; }));
     });
+  }, [dados]);
+
+  // Código de barras e PIX copia e cola das guias em aberto: lidos uma vez
+  // por guia no navegador de quem abrir o painel primeiro (codigosGuia.js) e
+  // gravados já conferidos (painel-codigos-guia.js). Uma guia por vez, pra
+  // não baixar e desenhar vários PDFs ao mesmo tempo no celular do cliente.
+  // Só roda quando a coluna codigos_extraidos_em existe (schema aplicado).
+  const codigosEmLeitura = useRef(new Set());
+  useEffect(() => {
+    if (!dados) return;
+    const pendentes = dados.impostos
+      .map((o) => dados.anexos[o.id])
+      .filter((a) => a && 'codigos_extraidos_em' in a && !a.codigos_extraidos_em && !a.pago_em && !codigosEmLeitura.current.has(a.id));
+    if (pendentes.length === 0) return;
+    pendentes.forEach((a) => codigosEmLeitura.current.add(a.id));
+    (async () => {
+      for (const anexo of pendentes) {
+        try {
+          const lidos = await lerCodigosDaGuia(await criarLinkAssinado(anexo.storage_path), anexo.tipo_mime);
+          const r = await salvarCodigosGuia(anexo.id, lidos);
+          setDados((d) => d && {
+            ...d,
+            anexos: Object.fromEntries(Object.entries(d.anexos).map(([k, a]) => [k, a.id === anexo.id
+              ? { ...a, linha_digitavel: r.linhaDigitavel, pix_copia_cola: r.pixCopiaCola, codigos_extraidos_em: new Date().toISOString() }
+              : a])),
+          });
+        } catch {
+          // falha de rede/leitura: tenta de novo na próxima vez que o painel abrir
+        }
+      }
+    })();
   }, [dados]);
 
   // `descricao` diz o que é o arquivo no aviso pro escritório — só o link
@@ -1097,6 +1129,15 @@ function LinhaGuia({ g, onBaixar, editando, onSalvarValor, onMarcarPaga }) {
             <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--ok)', background: 'var(--ok-dim)', borderRadius: 99, padding: '3px 9px', whiteSpace: 'nowrap' }}>Paga</span>
           )}
           {g.anexo && <BotaoGuia anexo={g.anexo} onBaixar={onBaixar} descricao={`Guia — ${g.titulo} ${g.competencia || ''}`.trim()} />}
+          {/* pagar sem baixar a guia: código de barras e PIX copia e cola lidos da própria guia */}
+          {!g.paga && !g.semMovimento && g.anexo?.linha_digitavel && (
+            <BotaoCopiar texto={g.anexo.linha_digitavel} icone={<BarcodeIcon size={13} />} label="Código de barras"
+              title="Copiar a linha digitável pra colar no app do banco" />
+          )}
+          {!g.paga && !g.semMovimento && g.anexo?.pix_copia_cola && (
+            <BotaoCopiar texto={g.anexo.pix_copia_cola} icone={<QrCodeIcon size={13} />} label="PIX copia e cola"
+              title="Copiar o PIX copia e cola da guia pra colar no app do banco" />
+          )}
           {g.anexo?.comprovante_path && (
             <BotaoGuia anexo={{ storage_path: g.anexo.comprovante_path, nome_arquivo: g.anexo.comprovante_nome || 'comprovante' }} onBaixar={onBaixar}
               label="Comprovante" descricao={`Comprovante — ${g.titulo} ${g.competencia || ''}`.trim()} />
@@ -1162,22 +1203,44 @@ function LinhaNfseEmitida({ n, onBaixar }) {
 
 // Chave PIX do escritório (Honorários → Configurar PIX) com botão de copiar
 // — o cliente cola direto no app do banco.
+async function copiarTexto(texto) {
+  try {
+    await navigator.clipboard.writeText(texto);
+  } catch {
+    // fallback pra navegador/webview sem Clipboard API (ex: navegador interno do WhatsApp)
+    const el = document.createElement('textarea');
+    el.value = texto;
+    el.style.position = 'fixed';
+    el.style.opacity = '0';
+    document.body.appendChild(el);
+    el.select();
+    document.execCommand('copy');
+    el.remove();
+  }
+}
+
+// Botão de copiar um código de pagamento da guia, com confirmação na hora.
+function BotaoCopiar({ texto, icone, label, title }) {
+  const [copiado, setCopiado] = useState(false);
+  const copiar = async () => {
+    await copiarTexto(texto);
+    setCopiado(true);
+    setTimeout(() => setCopiado(false), 2500);
+  };
+  return (
+    <button type="button" onClick={copiar} title={title}
+      style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11.5, fontWeight: 700, whiteSpace: 'nowrap', cursor: 'pointer',
+        borderRadius: 8, padding: '5px 10px', border: `1px solid ${copiado ? 'var(--ok)' : 'var(--accent)'}`,
+        color: copiado ? '#fff' : 'var(--accent)', background: copiado ? 'var(--ok)' : 'var(--surface)' }}>
+      {copiado ? <CheckCircleIcon size={13} /> : icone} {copiado ? 'Copiado!' : label}
+    </button>
+  );
+}
+
 function ChavePix({ chave, favorecido }) {
   const [copiado, setCopiado] = useState(false);
   const copiar = async () => {
-    try {
-      await navigator.clipboard.writeText(chave);
-    } catch {
-      // fallback pra navegador/webview sem Clipboard API (ex: navegador interno do WhatsApp)
-      const el = document.createElement('textarea');
-      el.value = chave;
-      el.style.position = 'fixed';
-      el.style.opacity = '0';
-      document.body.appendChild(el);
-      el.select();
-      document.execCommand('copy');
-      el.remove();
-    }
+    await copiarTexto(chave);
     setCopiado(true);
     setTimeout(() => setCopiado(false), 2500);
   };
