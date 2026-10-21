@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
   BriefcaseIcon, SearchIcon, ArrowLeftIcon, ChevronLeftIcon, ChevronRightIcon, Share2Icon, CopyIcon, CheckIcon, Building2Icon,
+  MonitorIcon, ClipboardListIcon,
 } from 'lucide-react';
 import PainelCompartilhadoPage from './PainelCompartilhadoPage';
 import { listarEmpresasCarteira } from './carteiraApi';
+import { useTrabalhoCarteira, TrabalhoEmpresaCarteira, QuadroCarteira } from './TrabalhoCarteira';
 import { urlPublica } from '../../lib/linksPublicos';
 
 // Página do link da carteira (?carteira=<token>) — pra pessoa responsável
@@ -40,6 +42,10 @@ export default function PainelCarteiraPage({ token, competencia: competenciaDoLi
   const [competencia, setCompetencia] = useState(competenciaDoLink || competenciaPadrao());
   const [selecionada, setSelecionada] = useState(empresaInicial || null); // chave da empresa aberta
   const [copiado, setCopiado] = useState(false);
+  // dentro de uma empresa: o painel do cliente ou as tarefas/obrigações dela
+  const [abaEmpresa, setAbaEmpresa] = useState('painel');
+  // tarefas, obrigações e anexos de todas as empresas da carteira (carteira-acao)
+  const trabalho = useTrabalhoCarteira(token, competencia);
 
   useEffect(() => {
     listarEmpresasCarteira(token)
@@ -121,12 +127,38 @@ export default function PainelCarteiraPage({ token, competencia: competenciaDoLi
                 {copiado ? <><CheckIcon size={13} /> Copiado</> : <><CopyIcon size={13} /> Copiar link do cliente</>}
               </button>
             </div>
+            <div style={{ display: 'flex', background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: 8, padding: 2 }}>
+              {[['painel', 'Painel do cliente', MonitorIcon], ['trabalho', 'Tarefas e obrigações', ClipboardListIcon]].map(([id, label, Icone]) => {
+                const pendentes = id === 'trabalho' ? trabalho.itens.filter((i) => i.clienteId === atual.id && !i.concluido).length : 0;
+                return (
+                  <button key={id} type="button" onClick={() => setAbaEmpresa(id)}
+                    style={{ flex: 1, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 5, border: 'none', borderRadius: 6,
+                      padding: '6px 8px', cursor: 'pointer', fontSize: 12, fontWeight: 700,
+                      background: abaEmpresa === id ? 'var(--navy)' : 'transparent', color: abaEmpresa === id ? '#fff' : 'var(--text2)' }}>
+                    <Icone size={13} /> {label}
+                    {pendentes > 0 && <span style={{ fontSize: 10, borderRadius: 99, padding: '0 6px', background: abaEmpresa === id ? 'rgba(255,255,255,.2)' : 'var(--warn-dim)', color: abaEmpresa === id ? '#fff' : 'var(--warn)' }}>{pendentes}</span>}
+                  </button>
+                );
+              })}
+            </div>
           </div>
         </div>
-        <PainelCompartilhadoPage key={`${atual.chave}-${competencia}`} clienteId={atual.chave} competencia={competencia} semRegistro />
+        {abaEmpresa === 'trabalho'
+          ? <TrabalhoEmpresaCarteira trabalho={trabalho} empresa={atual} />
+          : <PainelCompartilhadoPage key={`${atual.chave}-${competencia}`} clienteId={atual.chave} competencia={competencia} semRegistro />}
       </div>
     );
   }
+
+  // situação de cada empresa nos cards (vencidas / a fazer)
+  const resumoEmpresa = (id) => {
+    const abertos = trabalho.itens.filter((i) => i.clienteId === id && !i.concluido);
+    return { vencidas: abertos.filter((i) => i.vencido).length, aFazer: abertos.filter((i) => !i.vencido).length };
+  };
+  const abrirEmpresaPorId = (empresa) => {
+    const e = empresas.find((x) => x.id === empresa.id);
+    if (e) { setAbaEmpresa('trabalho'); setSelecionada(e.chave); }
+  };
 
   // ── Lista das empresas da carteira ──
   return (
@@ -168,6 +200,16 @@ export default function PainelCarteiraPage({ token, competencia: competenciaDoLi
                   <div style={{ fontSize: 10.5, color: 'var(--text3)', marginTop: 2 }}>{[e.cnpj, e.regime].filter(Boolean).join(' · ')}</div>
                 </div>
               </div>
+              {trabalho.dados && (() => {
+                const r = resumoEmpresa(e.id);
+                return (
+                  <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
+                    {r.vencidas > 0 && <span style={{ ...selo, background: 'var(--danger-dim)', color: 'var(--danger)' }}>{r.vencidas} vencida{r.vencidas !== 1 ? 's' : ''}</span>}
+                    {r.aFazer > 0 && <span style={{ ...selo, background: 'var(--warn-dim)', color: 'var(--warn)' }}>{r.aFazer} a fazer</span>}
+                    {r.vencidas === 0 && r.aFazer === 0 && <span style={{ ...selo, background: 'var(--ok-dim)', color: 'var(--ok)' }}>tudo em dia</span>}
+                  </div>
+                );
+              })()}
               <div style={{ display: 'flex', gap: 6 }}>
                 <span style={{ ...botaoAcao, flex: 1, background: 'var(--navy)', color: '#fff', border: 'none' }}>Ver painel</span>
                 <button type="button" title="Enviar o link do painel ao cliente pelo WhatsApp"
@@ -181,6 +223,11 @@ export default function PainelCarteiraPage({ token, competencia: competenciaDoLi
         </div>
         {filtradas.length === 0 && <div style={{ textAlign: 'center', color: 'var(--text3)', fontSize: 13, padding: 20 }}>Nenhuma empresa encontrada.</div>}
       </div>
+
+      {/* Tarefas e obrigações de todas as empresas, por coluna — mais largo que a lista */}
+      <div style={{ maxWidth: 1100, margin: '20px auto 0' }}>
+        <QuadroCarteira trabalho={trabalho} competencia={competencia} onAbrirEmpresa={abrirEmpresaPorId} />
+      </div>
     </div>
   );
 }
@@ -193,6 +240,7 @@ const botaoSeta = {
   width: 32, height: 32, borderRadius: 8, cursor: 'pointer', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
   border: '1px solid var(--border)', background: 'var(--surface2)', color: 'var(--text1)',
 };
+const selo = { fontSize: 10.5, fontWeight: 700, borderRadius: 99, padding: '1px 8px' };
 const botaoAcao = {
   flex: 1, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 5, height: 32, borderRadius: 8, cursor: 'pointer',
   border: '1px solid var(--border)', background: 'var(--surface2)', color: 'var(--text1)', fontSize: 12, fontWeight: 700,

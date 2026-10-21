@@ -150,6 +150,37 @@ export async function listarDocumentosPorCliente(clienteId) {
   return data;
 }
 
+// Anexo direto numa obrigação ou tarefa (botão 📎 do card em Empresas.jsx) —
+// o item já é conhecido, então não passa pela IA: sobe o arquivo e grava o
+// documento já confirmado e vinculado. alvo = { tipo: 'obrigacao' | 'tarefa', id }.
+// darBaixa marca a obrigação como concluída / a tarefa como feita.
+export async function anexarDocumentoAoItem({ clienteId, alvo, arquivo, darBaixa = false }) {
+  const storagePath = await uploadArquivo(arquivo);
+  const agora = new Date().toISOString();
+  const { data, error } = await supabase.from('documentos').insert({
+    cliente_id: clienteId,
+    nome_arquivo: arquivo.name,
+    storage_path: storagePath,
+    tipo_mime: arquivo.type || null,
+    tamanho_bytes: arquivo.size,
+    obrigacao_id: alvo.tipo === 'obrigacao' ? alvo.id : null,
+    tarefa_id: alvo.tipo === 'tarefa' ? alvo.id : null,
+    status: 'confirmado',
+    confirmado_em: agora,
+  }).select().single();
+  if (error) {
+    await supabase.storage.from(BUCKET).remove([storagePath]).catch(() => {});
+    throw error;
+  }
+  if (darBaixa) {
+    const { error: errBaixa } = alvo.tipo === 'obrigacao'
+      ? await supabase.from('obrigacoes').update({ status: 'concluido', updated_at: agora }).eq('id', alvo.id)
+      : await supabase.from('tarefas').update({ concluida: true, concluida_em: agora, updated_at: agora }).eq('id', alvo.id);
+    if (errBaixa) throw errBaixa;
+  }
+  return data;
+}
+
 // Documentos ainda não confirmados, com a sugestão da IA já resolvida —
 // alimenta a aba "A revisar" de DocumentosPage.jsx. Cobre tanto o upload
 // manual quanto os que chegam pelo grupo "Documentos" do WhatsApp

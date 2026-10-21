@@ -148,6 +148,8 @@ Todas as tabelas abaixo ganham a policy `escritorio_total` (tudo para
 |---|---|
 | `carteira_links` | Já nasce com RLS ligado e sem acesso anônimo. Antes do passo 1: qualquer login do gestor lê/gera; **depois do passo 1, rodar o script de novo** troca a policy para `is_escritorio()`. |
 | RPC `carteira_painel(token)` | `security definer`, liberada pro anônimo: devolve só nome, CNPJ, regime e a chave do painel (`painel_token`, ou o id antes do passo 1) das empresas da carteira dona do token. Quem tem o link da carteira abre o painel de todas as empresas dela — "Novo link" em Painéis → Por carteira invalida o anterior. |
+| Function `carteira-acao` | Tarefas, obrigações e anexos pelo link da carteira (listar, dar baixa, criar tarefa, anexar, baixar anexo). Service key, mas só depois de conferir o token (`x-carteira-token`) e que a empresa/obrigação/tarefa/documento é da carteira. Upload por URL assinada; não tem ação de excluir. Não depende do RLS. |
+| `carteira_acoes` (`supabase-schema-carteira-acoes.sql`) | Registro do que foi feito pelo link da carteira. RLS ligado, sem anônimo; grava só a function; escritório lê (rodar o script de novo depois do passo 1 troca pra `is_escritorio()`). |
 
 ## 4. Páginas públicas e o que muda nelas
 

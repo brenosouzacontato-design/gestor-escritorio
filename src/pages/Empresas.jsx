@@ -12,7 +12,9 @@ import PainelViewerModal from './painel/PainelViewerModal'
 import {
   listarDocumentosPorCliente, abrirLinkAssinado, uploadArquivo, listarCandidatos,
   identificarDocumento, criarDocumento, confirmarDocumento, excluirDocumento, reatribuirDocumento,
+  anexarDocumentoAoItem,
 } from './documentos/documentosApi'
+import { BotaoAnexos, AnexosItemModal } from '../components/AnexosItem'
 import { criarLembrete, listarLembretesPorItens, excluirLembrete } from './andamento/lembretesApi'
 
 // Casamento histórico tipo-texto → departamento, só pra competências
@@ -450,6 +452,23 @@ export default function Empresas({ onOpenTarefas, clienteInicialId, onClienteIni
   const recarregarLembretes = () =>
     listarLembretesPorItens({ obrigacaoIds: drawerObs.map(o => o.id), tarefaIds: drawerTasks.map(t => t.id) })
       .then(setLembretesPendentes).catch(() => {})
+
+  // Anexos da empresa aberta no drawer — alimenta o 📎 de cada obrigação/tarefa
+  const [anexosDrawer, setAnexosDrawer] = useState([])
+  const [anexoAlvo, setAnexoAlvo] = useState(null) // { tipo: 'obrigacao' | 'tarefa', item }
+  const recarregarAnexosDrawer = (clienteId) =>
+    listarDocumentosPorCliente(clienteId).then(d => setAnexosDrawer(d || [])).catch(() => setAnexosDrawer([]))
+  useEffect(() => {
+    if (!drawer) { setAnexosDrawer([]); return }
+    recarregarAnexosDrawer(drawer.c.id)
+  }, [drawer?.c?.id, drawerTab]) // drawerTab: o que foi anexado na aba "Anexos" aparece no 📎 ao voltar
+  const anexosDoItem = (tipo, id) => anexosDrawer.filter(d => (tipo === 'obrigacao' ? d.obrigacao_id : d.tarefa_id) === id)
+  const enviarAnexoItem = async (arquivo, { darBaixa }) => {
+    await anexarDocumentoAoItem({ clienteId: drawer.c.id, alvo: { tipo: anexoAlvo.tipo, id: anexoAlvo.item.id }, arquivo, darBaixa })
+    await recarregarAnexosDrawer(drawer.c.id)
+    if (darBaixa) await (anexoAlvo.tipo === 'obrigacao' ? fetchObrigacoes() : fetchTarefas())
+    show?.(`Documento anexado${darBaixa ? ' e baixa aplicada' : ''}`)
+  }
 
   const openDrawer = (c, dept) => { setDrawer({c, dept}); setDrawerTab('obrig') }
 
@@ -1438,6 +1457,8 @@ export default function Empresas({ onOpenTarefas, clienteInicialId, onClienteIni
                         borderLeft: vencendo ? `3px solid ${COR_VENCENDO}` : '1px solid var(--border)', borderRadius:8, padding:'10px 12px' }}>
                         <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:6, marginBottom: (o.vencimento || o.responsavel) ? 6 : 0 }}>
                           <span style={{ fontSize:12, fontWeight:500, color:'var(--text1)' }}>{o.titulo || o.tipo}</span>
+                          <BotaoAnexos qtd={anexosDoItem('obrigacao', o.id).length} tamanho={13}
+                            onClick={() => setAnexoAlvo({ tipo: 'obrigacao', item: o })} />
                           <button onClick={() => setLembreteAlvo({ obrigacaoId: o.id, titulo: o.titulo || o.tipo, lembrete })}
                             title={lembrete ? `Lembrete pra ${new Date(lembrete.data_hora).toLocaleString('pt-BR')}` : 'Marcar lembrete'}
                             style={{ background:'none', border:'none', cursor:'pointer', padding:2, flexShrink:0,
@@ -1528,6 +1549,8 @@ export default function Empresas({ onOpenTarefas, clienteInicialId, onClienteIni
                               {t.responsavel && <ChipResponsavel item={t} />}
                             </div>
                           </div>
+                          <BotaoAnexos qtd={anexosDoItem('tarefa', t.id).length}
+                            onClick={() => setAnexoAlvo({ tipo: 'tarefa', item: t })} />
                           <button onClick={() => setLembreteAlvo({ tarefaId: t.id, titulo: t.titulo, lembrete })}
                             title={lembrete ? `Lembrete pra ${new Date(lembrete.data_hora).toLocaleString('pt-BR')}` : 'Marcar lembrete'}
                             style={{ background:'none', border:'none', cursor:'pointer', padding:2, flexShrink:0,
@@ -1676,6 +1699,19 @@ export default function Empresas({ onOpenTarefas, clienteInicialId, onClienteIni
           alvo={atribuirAlvo}
           onClose={() => setAtribuirAlvo(null)}
           onSaved={async () => { const ehObrigacao = !!atribuirAlvo.obrigacaoId; setAtribuirAlvo(null); await (ehObrigacao ? fetchObrigacoes() : fetchTarefas()) }}
+        />
+      )}
+
+      {/* Anexos de uma obrigação/tarefa (📎 do card) */}
+      {anexoAlvo && drawer && (
+        <AnexosItemModal
+          titulo={anexoAlvo.item.titulo || anexoAlvo.item.tipo}
+          subtitulo={`${anexoAlvo.tipo === 'obrigacao' ? 'Obrigação' : 'Tarefa'} · ${drawer.c.nome}`}
+          anexos={anexosDoItem(anexoAlvo.tipo, anexoAlvo.item.id)}
+          concluido={anexoAlvo.tipo === 'obrigacao' ? ['concluido', 'nao_aplica'].includes(anexoAlvo.item.status) : !!anexoAlvo.item.concluida}
+          onEnviar={enviarAnexoItem}
+          onAbrir={(doc) => abrirLinkAssinado(doc.storage_path).catch(e => show?.('Erro: ' + e.message))}
+          onClose={() => setAnexoAlvo(null)}
         />
       )}
 
