@@ -180,7 +180,9 @@ export default function PainelCompartilhadoPage(props) {
 // `semRegistro`: link público aberto pelo escritório (link da carteira,
 // PainelCarteiraPage.jsx) — mesma página do cliente, mas download não vira
 // evento do cliente e não oferece ativar as notificações dele.
-function PainelCompartilhado({ clienteId, competencia: competenciaInicial, admin = false, sessao = null, semRegistro = false }) {
+// `largura`: o cliente vê no celular (720); telas de trabalho do escritório
+// (link da carteira) passam uma largura maior pra usar a tela toda.
+function PainelCompartilhado({ clienteId, competencia: competenciaInicial, admin = false, sessao = null, semRegistro = false, largura = 720 }) {
   const registrar = !admin && !semRegistro;
   const [competencia, setCompetencia] = useState(competenciaInicial);
   const opcoesComp = opcoesCompetencia(competenciaInicial);
@@ -400,7 +402,7 @@ function PainelCompartilhado({ clienteId, competencia: competenciaInicial, admin
   return (
     <RecadosContext.Provider value={{ recados: dados?.recados || {}, editando, salvar: salvarRecado }}>
     <div style={{ minHeight: '100vh', background: 'var(--bg)', padding: '24px 12px' }}>
-      <div style={{ maxWidth: 720, margin: '0 auto', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--r-xl)', overflow: 'hidden' }}>
+      <div style={{ maxWidth: largura, margin: '0 auto', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--r-xl)', overflow: 'hidden' }}>
 
         {/* ── Cabeçalho ── */}
         <div style={{ padding: '20px 22px', background: 'var(--navy)' }}>

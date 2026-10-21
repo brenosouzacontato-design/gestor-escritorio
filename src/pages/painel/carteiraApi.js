@@ -63,6 +63,8 @@ export const listarItensCarteira = (token, competencia) => chamarCarteira(token,
 export const mudarStatusObrigacaoCarteira = (token, id, status) => chamarCarteira(token, 'status_obrigacao', { id, status });
 export const concluirTarefaCarteira = (token, id, concluida) => chamarCarteira(token, 'concluir_tarefa', { id, concluida });
 export const criarTarefaCarteira = (token, tarefa) => chamarCarteira(token, 'criar_tarefa', tarefa);
+// alvo = { tipo: 'obrigacao' | 'tarefa', id }; texto vazio apaga a observação
+export const salvarObservacaoCarteira = (token, alvo, texto) => chamarCarteira(token, 'observacao', { alvo, texto });
 
 // alvo = { tipo: 'obrigacao' | 'tarefa', id }. O arquivo vai direto pro
 // Storage por uma URL de upload assinada que a function gera — o navegador

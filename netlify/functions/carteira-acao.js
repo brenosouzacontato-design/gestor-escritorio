@@ -19,6 +19,7 @@
 //   url_upload        { alvo: { tipo, id }, nomeArquivo, tipoMime, tamanho } → URL assinada de upload
 //   registrar_anexo   { alvo, storagePath, nomeArquivo, tipoMime, tamanho, darBaixa }
 //   url_download      { documentoId }                 → URL assinada do anexo (5 min)
+//   observacao        { alvo, texto }                 → grava a observação (vazio apaga)
 // alvo.tipo é 'obrigacao' ou 'tarefa'. Não existe ação de excluir: apagar
 // continua sendo só pelo gestor, com login.
 //
@@ -60,6 +61,7 @@ exports.handler = async (event) => {
       case 'url_upload': return await urlUpload(contexto, body)
       case 'registrar_anexo': return await registrarAnexo(contexto, body)
       case 'url_download': return await urlDownload(contexto, body)
+      case 'observacao': return await salvarObservacao(contexto, body)
       default: return resposta(400, { error: 'Ação desconhecida.' })
     }
   } catch (e) {
@@ -241,6 +243,18 @@ async function registrarAnexo(ctx, { alvo, storagePath, nomeArquivo, tipoMime, t
   }
   await registrarAcao(ctx, 'anexar', item.cliente_id, item.id, `${doc.nome_arquivo}${darBaixa ? ' (com baixa)' : ''}`)
   return resposta(200, { anexo: doc })
+}
+
+async function salvarObservacao(ctx, { alvo, texto }) {
+  const item = await itemDaCarteira(ctx, alvo?.tipo, alvo?.id)
+  if (!item) return resposta(404, { error: 'Item não encontrado nessa carteira.' })
+  const obs = String(texto || '').trim().slice(0, 2000) || null
+  const tabela = alvo.tipo === 'obrigacao' ? 'obrigacoes' : 'tarefas'
+  const { error } = await supabase.from(tabela).update({ observacao: obs, updated_at: new Date().toISOString() }).eq('id', item.id)
+  if (error && ['42703', 'PGRST204'].includes(error.code)) return resposta(400, { error: 'Esse tipo de item ainda não aceita observação.' })
+  if (error) throw error
+  await registrarAcao(ctx, 'observacao', item.cliente_id, item.id, obs ? `${item.titulo || item.tipo}: ${obs}` : `${item.titulo || item.tipo}: observação apagada`)
+  return resposta(200, { ok: true })
 }
 
 async function urlDownload(ctx, { documentoId }) {

@@ -16,6 +16,10 @@ import { urlPublica } from '../../lib/linksPublicos';
 // (supabase-schema-painel-carteira.sql); "chave" é o token do painel da
 // empresa (ou o id, antes do passo 1 do RLS) — a mesma que vai no link do cliente.
 
+// Página de trabalho do escritório (não do cliente): usa a largura da tela,
+// até esse limite, em vez da faixa estreita de 720px do painel do cliente.
+const LARGURA = 1400;
+
 const nomeCurto = (nome) => (nome || '').replace(/^[\d./-]+\s+/, '');
 const normalizar = (t) => (t || '').normalize('NFD').replace(/\p{Diacritic}/gu, '').toLowerCase();
 
@@ -100,8 +104,8 @@ export default function PainelCarteiraPage({ token, competencia: competenciaDoLi
   if (atual) {
     return (
       <div style={{ background: 'var(--bg)', minHeight: '100vh' }}>
-        <div style={{ position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg)', padding: '12px 12px 0' }}>
-          <div style={{ maxWidth: 720, margin: '0 auto', background: 'var(--surface)', border: '1px solid var(--border)',
+        <div style={{ position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg)', padding: '12px 16px 0' }}>
+          <div style={{ maxWidth: LARGURA, margin: '0 auto', background: 'var(--surface)', border: '1px solid var(--border)',
             borderRadius: 'var(--r-lg)', padding: '10px 12px', boxShadow: 'var(--shadow-sm)', display: 'flex', flexDirection: 'column', gap: 8 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <button type="button" onClick={() => setSelecionada(null)} style={botaoBarra} title="Voltar à lista de empresas">
@@ -145,7 +149,7 @@ export default function PainelCarteiraPage({ token, competencia: competenciaDoLi
         </div>
         {abaEmpresa === 'trabalho'
           ? <TrabalhoEmpresaCarteira trabalho={trabalho} empresa={atual} />
-          : <PainelCompartilhadoPage key={`${atual.chave}-${competencia}`} clienteId={atual.chave} competencia={competencia} semRegistro />}
+          : <PainelCompartilhadoPage key={`${atual.chave}-${competencia}`} clienteId={atual.chave} competencia={competencia} semRegistro largura={LARGURA} />}
       </div>
     );
   }
@@ -162,8 +166,8 @@ export default function PainelCarteiraPage({ token, competencia: competenciaDoLi
 
   // ── Lista das empresas da carteira ──
   return (
-    <div style={{ minHeight: '100vh', background: 'var(--bg)', padding: '20px 12px' }}>
-      <div style={{ maxWidth: 720, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 12 }}>
+    <div style={{ minHeight: '100vh', background: 'var(--bg)', padding: '20px 16px' }}>
+      <div style={{ maxWidth: LARGURA, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 12 }}>
         <div style={{ background: 'var(--navy)', borderRadius: 'var(--r-xl)', padding: '18px 20px', color: '#fff' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: 'var(--navy-text)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.04em' }}>
             <BriefcaseIcon size={13} /> Carteira
@@ -225,7 +229,7 @@ export default function PainelCarteiraPage({ token, competencia: competenciaDoLi
       </div>
 
       {/* Tarefas e obrigações de todas as empresas, por coluna — mais largo que a lista */}
-      <div style={{ maxWidth: 1100, margin: '20px auto 0' }}>
+      <div style={{ maxWidth: LARGURA, margin: '20px auto 0' }}>
         <QuadroCarteira trabalho={trabalho} competencia={competencia} onAbrirEmpresa={abrirEmpresaPorId} />
       </div>
     </div>

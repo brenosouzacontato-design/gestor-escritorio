@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect } from 'react'
-import { PlusIcon, XIcon, CheckCircleIcon, ClockIcon, AlertCircleIcon, MinusCircleIcon, ChevronRightIcon, CalendarIcon, CheckIcon, ZapIcon, RefreshCwIcon, Trash2Icon, ListIcon, LayoutGridIcon, Rows3Icon, ClipboardListIcon, BarChart3Icon, Share2Icon, EyeIcon, CheckSquareIcon, FileIcon, DownloadIcon, PencilIcon, FileTextIcon, GripVerticalIcon, BellIcon, BellRingIcon, UserIcon, UploadCloudIcon, Loader2Icon, SparklesIcon, Building2Icon, AlertTriangleIcon, HourglassIcon, PackageCheckIcon, InboxIcon, CircleDashedIcon, BriefcaseIcon } from 'lucide-react'
+import { PlusIcon, XIcon, CheckCircleIcon, ClockIcon, AlertCircleIcon, MinusCircleIcon, ChevronRightIcon, CalendarIcon, CheckIcon, ZapIcon, RefreshCwIcon, Trash2Icon, ListIcon, LayoutGridIcon, Rows3Icon, ClipboardListIcon, BarChart3Icon, Share2Icon, EyeIcon, CheckSquareIcon, FileIcon, DownloadIcon, PencilIcon, FileTextIcon, GripVerticalIcon, BellIcon, BellRingIcon, UserIcon, UploadCloudIcon, Loader2Icon, SparklesIcon, Building2Icon, AlertTriangleIcon, HourglassIcon, PackageCheckIcon, InboxIcon, CircleDashedIcon, BriefcaseIcon, MessageSquareIcon } from 'lucide-react'
 import { useStore } from '../store'
 import { DeptChip, PriDot, fmtDate, isOverdue, useToast } from '../components/shared'
 import { supabase } from '../lib/supabase'
@@ -129,6 +129,54 @@ function ChipResponsavel({ item }) {
         color: cliente ? 'var(--accent)' : 'var(--text2)', background: cliente ? 'var(--accent-dim)' : 'var(--surface3)' }}>
       <UserIcon size={9} /> {item.responsavel}
     </span>
+  )
+}
+
+// Observação de uma obrigação/tarefa, embaixo do card (clicar edita, quando há onClick)
+function ObservacaoCard({ texto, onClick }) {
+  return (
+    <div onClick={onClick} title={onClick ? 'Editar observação' : undefined}
+      style={{ display:'flex', gap:5, marginTop:6, cursor: onClick ? 'pointer' : 'inherit', background:'var(--surface2)', borderRadius:6,
+        padding:'4px 7px', fontSize:10.5, color:'var(--text2)', whiteSpace:'pre-wrap', lineHeight:1.4 }}>
+      <MessageSquareIcon size={10} style={{ flexShrink:0, marginTop:2 }} /> {texto}
+    </div>
+  )
+}
+
+// Editar a observação (vazio apaga) — mesma ideia do link da carteira (TrabalhoCarteira.jsx)
+function ModalObservacao({ titulo, subtitulo, texto: textoInicial, onSalvar, onClose }) {
+  const [texto, setTexto] = useState(textoInicial)
+  const [salvando, setSalvando] = useState(false)
+  const [erro, setErro] = useState(null)
+  const salvar = async () => {
+    setSalvando(true)
+    setErro(null)
+    try { await onSalvar(texto) } catch (e) { setErro(e.message); setSalvando(false) }
+  }
+  return (
+    <div onClick={onClose} style={{ position:'fixed', inset:0, background:'rgba(0,0,0,.45)', zIndex:1000, display:'flex', alignItems:'center', justifyContent:'center', padding:16 }}>
+      <div onClick={e => e.stopPropagation()} style={{ width:'100%', maxWidth:460, background:'var(--surface)', borderRadius:'var(--r-lg)', border:'1px solid var(--border)', padding:18, display:'flex', flexDirection:'column', gap:10 }}>
+        <div style={{ display:'flex', alignItems:'flex-start', gap:10 }}>
+          <span style={{ width:32, height:32, borderRadius:8, background:'var(--accent-dim)', color:'var(--accent)', flexShrink:0, display:'flex', alignItems:'center', justifyContent:'center' }}><MessageSquareIcon size={16} /></span>
+          <div style={{ flex:1, minWidth:0 }}>
+            <div style={{ fontSize:14, fontWeight:700, color:'var(--text1)' }}>Observação</div>
+            <div style={{ fontSize:11.5, color:'var(--text3)' }}>{titulo} · {subtitulo}</div>
+          </div>
+          <button onClick={onClose} style={{ background:'none', border:'none', cursor:'pointer', color:'var(--text3)' }}><XIcon size={16} /></button>
+        </div>
+        <textarea autoFocus rows={6} value={texto} onChange={e => setTexto(e.target.value)} maxLength={2000}
+          placeholder="Ex.: cliente pediu pra pagar dia 25; aguardando extrato do banco..."
+          style={{ width:'100%', background:'var(--surface2)', border:'1px solid var(--border)', borderRadius:8, padding:'9px 11px', fontSize:13, color:'var(--text1)', resize:'vertical' }} />
+        <div style={{ fontSize:11, color:'var(--text3)', textAlign:'right' }}>{texto.length}/2000 · deixe vazio pra apagar</div>
+        {erro && <div style={{ fontSize:12, color:'var(--danger)' }}>{erro}</div>}
+        <div style={{ display:'flex', gap:8 }}>
+          <button className="btn btn-ghost" style={{ flex:1, justifyContent:'center' }} onClick={onClose}>Cancelar</button>
+          <button className="btn btn-accent" style={{ flex:2, justifyContent:'center' }} onClick={salvar} disabled={salvando || texto.trim() === (textoInicial || '').trim()}>
+            {salvando ? 'Salvando...' : 'Salvar observação'}
+          </button>
+        </div>
+      </div>
+    </div>
   )
 }
 
@@ -468,6 +516,18 @@ export default function Empresas({ onOpenTarefas, clienteInicialId, onClienteIni
     await recarregarAnexosDrawer(drawer.c.id)
     if (darBaixa) await (anexoAlvo.tipo === 'obrigacao' ? fetchObrigacoes() : fetchTarefas())
     show?.(`Documento anexado${darBaixa ? ' e baixa aplicada' : ''}`)
+  }
+
+  // Observação de uma obrigação/tarefa (💬 do card)
+  const [obsAlvo, setObsAlvo] = useState(null) // { tipo: 'obrigacao' | 'tarefa', item }
+  const salvarObservacao = async (texto) => {
+    const tabela = obsAlvo.tipo === 'obrigacao' ? 'obrigacoes' : 'tarefas'
+    const { error } = await supabase.from(tabela)
+      .update({ observacao: texto.trim() || null, updated_at: new Date().toISOString() }).eq('id', obsAlvo.item.id)
+    if (error) throw error
+    await (obsAlvo.tipo === 'obrigacao' ? fetchObrigacoes() : fetchTarefas())
+    setObsAlvo(null)
+    show?.(texto.trim() ? 'Observação salva' : 'Observação apagada')
   }
 
   const openDrawer = (c, dept) => { setDrawer({c, dept}); setDrawerTab('obrig') }
@@ -1457,6 +1517,12 @@ export default function Empresas({ onOpenTarefas, clienteInicialId, onClienteIni
                         borderLeft: vencendo ? `3px solid ${COR_VENCENDO}` : '1px solid var(--border)', borderRadius:8, padding:'10px 12px' }}>
                         <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:6, marginBottom: (o.vencimento || o.responsavel) ? 6 : 0 }}>
                           <span style={{ fontSize:12, fontWeight:500, color:'var(--text1)' }}>{o.titulo || o.tipo}</span>
+                          <button onClick={() => setObsAlvo({ tipo: 'obrigacao', item: o })}
+                            title={o.observacao ? `Observação: ${o.observacao}` : 'Escrever observação'}
+                            style={{ background:'none', border:'none', cursor:'pointer', padding:2, flexShrink:0, marginLeft:'auto',
+                              color: o.observacao ? 'var(--text1)' : 'var(--text3)' }}>
+                            <MessageSquareIcon size={13} />
+                          </button>
                           <BotaoAnexos qtd={anexosDoItem('obrigacao', o.id).length} tamanho={13}
                             onClick={() => setAnexoAlvo({ tipo: 'obrigacao', item: o })} />
                           <button onClick={() => setLembreteAlvo({ obrigacaoId: o.id, titulo: o.titulo || o.tipo, lembrete })}
@@ -1493,6 +1559,7 @@ export default function Empresas({ onOpenTarefas, clienteInicialId, onClienteIni
                           </div>
                         )}
                         {o.responsavel && <div style={{ marginTop: o.vencimento ? 5 : 0 }}><ChipResponsavel item={o} /></div>}
+                        {o.observacao && <ObservacaoCard texto={o.observacao} onClick={() => setObsAlvo({ tipo: 'obrigacao', item: o })} />}
                       </div>
                     )
                   }
@@ -1548,7 +1615,14 @@ export default function Empresas({ onOpenTarefas, clienteInicialId, onClienteIni
                               )}
                               {t.responsavel && <ChipResponsavel item={t} />}
                             </div>
+                            {t.observacao && <ObservacaoCard texto={t.observacao} />}
                           </div>
+                          <button onClick={() => setObsAlvo({ tipo: 'tarefa', item: t })}
+                            title={t.observacao ? `Observação: ${t.observacao}` : 'Escrever observação'}
+                            style={{ background:'none', border:'none', cursor:'pointer', padding:2, flexShrink:0,
+                              color: t.observacao ? 'var(--text1)' : 'var(--text3)' }}>
+                            <MessageSquareIcon size={12} />
+                          </button>
                           <BotaoAnexos qtd={anexosDoItem('tarefa', t.id).length}
                             onClick={() => setAnexoAlvo({ tipo: 'tarefa', item: t })} />
                           <button onClick={() => setLembreteAlvo({ tarefaId: t.id, titulo: t.titulo, lembrete })}
@@ -1699,6 +1773,17 @@ export default function Empresas({ onOpenTarefas, clienteInicialId, onClienteIni
           alvo={atribuirAlvo}
           onClose={() => setAtribuirAlvo(null)}
           onSaved={async () => { const ehObrigacao = !!atribuirAlvo.obrigacaoId; setAtribuirAlvo(null); await (ehObrigacao ? fetchObrigacoes() : fetchTarefas()) }}
+        />
+      )}
+
+      {/* Observação de uma obrigação/tarefa (💬 do card) */}
+      {obsAlvo && (
+        <ModalObservacao
+          titulo={obsAlvo.item.titulo || obsAlvo.item.tipo}
+          subtitulo={`${obsAlvo.tipo === 'obrigacao' ? 'Obrigação' : 'Tarefa'}${drawer ? ` · ${drawer.c.nome}` : ''}`}
+          texto={obsAlvo.item.observacao || ''}
+          onSalvar={salvarObservacao}
+          onClose={() => setObsAlvo(null)}
         />
       )}
 
