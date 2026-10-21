@@ -6,8 +6,9 @@
 // supabase. No link público o cliente Supabase manda o token do painel
 // (x-painel-token) e o RLS só libera as linhas daquele cliente — ver
 // AcessoPainel.jsx e docs/seguranca-rls.md.
-import { supabase, cabecalhosFunctions } from '../../lib/supabase';
+import { supabase, cabecalhosFunctions, navegadorDoEscritorio } from '../../lib/supabase';
 import { resolverPainel } from './AcessoPainel';
+import { idAparelho } from './aparelho';
 import { calcularDREPorConta } from '../contabil/contabilApi';
 
 const BUCKET = 'documentos'; // mesmo bucket já criado pra anexos de documentos
@@ -574,14 +575,20 @@ export async function obterTarefasDoCliente(clienteId) {
 // `valorDoLink` é o ?painel= da URL (token do painel): resolverPainel() já
 // liga o modo painel, então o aviso que main.jsx manda logo em seguida
 // (avisarEventoPainel) sai com o token no cabeçalho.
+// Navegador com o login do gestor (escritório conferindo o link) não grava:
+// senão a "última visualização do cliente" mostraria o teste do escritório.
 export async function registrarVisualizacaoPainel(valorDoLink, competencia, versao) {
   const { id: clienteId } = await resolverPainel(valorDoLink);
-  const { error } = await supabase.from('painel_visualizacoes').insert({
+  if (await navegadorDoEscritorio()) return;
+  const linha = {
     cliente_id: clienteId,
     competencia: competencia || null,
     versao,
     user_agent: navigator.userAgent.slice(0, 300),
-  });
+  };
+  let { error } = await supabase.from('painel_visualizacoes').insert({ ...linha, aparelho_id: idAparelho() });
+  // coluna nova (supabase-schema-painel-eventos-aparelho.sql) ainda não existe: grava sem ela
+  if (error && ['42703', 'PGRST204'].includes(error.code)) ({ error } = await supabase.from('painel_visualizacoes').insert(linha));
   if (error) throw error;
 }
 
@@ -616,25 +623,47 @@ export async function salvarRecadoPainel(clienteId, itemChave, mensagem) {
 // cliente abrindo o painel ou baixando a guia.
 // A function identifica o cliente pelo token do painel (cabeçalho); o
 // clienteId do corpo só vale pros links antigos, durante a transição.
+// Vai junto o id anônimo do aparelho (aparelho.js) pro relatório de acessos,
+// e `escritorio: true` quando o navegador tem o login do gestor — a function
+// grava como origem "escritorio" e não manda aviso de "cliente abriu".
 export function avisarEventoPainel(clienteId, tipo, { descricao = null, competencia = null } = {}) {
-  cabecalhosFunctions()
-    .then((headers) => fetch('/.netlify/functions/painel-evento', {
+  Promise.all([cabecalhosFunctions(), navegadorDoEscritorio()])
+    .then(([headers, escritorio]) => fetch('/.netlify/functions/painel-evento', {
       method: 'POST',
       headers,
-      body: JSON.stringify({ clienteId, tipo, descricao, competencia }),
+      body: JSON.stringify({ clienteId, tipo, descricao, competencia, aparelhoId: idAparelho(), escritorio }),
       keepalive: true, // a requisição termina mesmo se a aba mudar pro arquivo baixado
     }))
     .catch(() => {});
 }
 
 // Últimas aberturas/downloads do cliente, pro escritório ver no topo do painel.
+// select('*'): aparelho_id/user_agent/origem só existem depois de
+// supabase-schema-painel-eventos-aparelho.sql — pedir as colunas pelo nome
+// daria erro antes disso. Acessos do próprio escritório ficam de fora.
 export async function obterEventosPainel(clienteId, limite = 6) {
   const { data, error } = await supabase
     .from('painel_eventos')
-    .select('id, tipo, descricao, competencia, criado_em')
+    .select('*')
     .eq('cliente_id', clienteId)
     .order('criado_em', { ascending: false })
-    .limit(limite);
+    .limit(limite * 3);
+  if (error) throw error;
+  return (data || []).filter((e) => e.origem !== 'escritorio').slice(0, limite);
+}
+
+// Relatório de acessos (RelatorioAcessosPainel.jsx): todos os eventos do
+// período, de todas as empresas. `ate` é inclusivo (dia inteiro).
+export async function obterEventosPainelPeriodo(desde, ate) {
+  const fim = new Date(`${ate}T00:00:00`);
+  fim.setDate(fim.getDate() + 1);
+  const { data, error } = await supabase
+    .from('painel_eventos')
+    .select('*')
+    .gte('criado_em', new Date(`${desde}T00:00:00`).toISOString())
+    .lt('criado_em', fim.toISOString())
+    .order('criado_em', { ascending: false })
+    .limit(10000);
   if (error) throw error;
   return data || [];
 }

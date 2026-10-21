@@ -12,6 +12,7 @@ export default function ContaCombobox({ contas, value, onChange, placeholder = '
   const [busca, setBusca] = useState('');
   const [destaque, setDestaque] = useState(0);
   const wrapperRef = useRef(null);
+  const inputRef = useRef(null);
 
   const contasVisiveis = useMemo(
     () => contas.filter((c) => !excluirCodigos.includes(c.codigo)),
@@ -39,14 +40,26 @@ export default function ContaCombobox({ contas, value, onChange, placeholder = '
     return () => document.removeEventListener('mousedown', onClickFora);
   }, []);
 
+  function abrir() {
+    setAberto(true);
+    setBusca('');
+    setDestaque(0);
+  }
+
+  // perde o foco ao escolher: focado e fechado, clicar de novo não reabria
+  // (onFocus não dispara em quem já tem foco) — mesmo bug do EmpresaCombobox
   function escolher(conta) {
     onChange(conta.id);
     setAberto(false);
     setBusca('');
+    inputRef.current?.blur();
   }
 
   function onKeyDown(e) {
-    if (!aberto) return;
+    if (!aberto) {
+      if (e.key === 'ArrowDown' || e.key === 'Enter') { e.preventDefault(); abrir(); }
+      return;
+    }
     if (e.key === 'ArrowDown') { e.preventDefault(); setDestaque((i) => Math.min(i + 1, filtradas.length - 1)); }
     else if (e.key === 'ArrowUp') { e.preventDefault(); setDestaque((i) => Math.max(i - 1, 0)); }
     else if (e.key === 'Enter') { e.preventDefault(); if (filtradas[destaque]) escolher(filtradas[destaque]); }
@@ -63,8 +76,10 @@ export default function ContaCombobox({ contas, value, onChange, placeholder = '
         disabled={disabled}
         value={aberto ? busca : (contaSelecionada ? `${contaSelecionada.codigo} - ${contaSelecionada.nome}` : '')}
         placeholder={placeholder}
-        onFocus={() => { setAberto(true); setBusca(''); setDestaque(0); }}
-        onChange={(e) => { setBusca(e.target.value); setDestaque(0); }}
+        ref={inputRef}
+        onFocus={abrir}
+        onMouseDown={() => { if (!aberto && document.activeElement === inputRef.current) abrir(); }}
+        onChange={(e) => { setAberto(true); setBusca(e.target.value); setDestaque(0); }}
         onKeyDown={onKeyDown}
         style={{ width: '100%', padding: '6px 10px', border: '1px solid var(--border)', borderRadius: 8, fontSize: '0.85rem' }}
       />

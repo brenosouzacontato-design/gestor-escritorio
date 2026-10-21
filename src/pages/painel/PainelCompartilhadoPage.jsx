@@ -6,6 +6,7 @@ import {
 import { chavePainelPorId, urlPublica } from '../../lib/linksPublicos';
 import AcessoPainel, { obterClientePagina } from './AcessoPainel';
 import { listarNfseEmitidas, baixarNfse } from './nfsePainelApi';
+import { descreverAparelho } from './aparelho';
 import { abrirLinkAssinado } from '../documentos/documentosApi';
 import { GraficoFaturamento, ComparativoDas, NotasEntrada, TarefasDoCliente } from './PainelClientePage';
 import { calcularAliquotaNominal } from '../../lib/simplesNacional';
@@ -176,7 +177,11 @@ export default function PainelCompartilhadoPage(props) {
   );
 }
 
-function PainelCompartilhado({ clienteId, competencia: competenciaInicial, admin = false, sessao = null }) {
+// `semRegistro`: link público aberto pelo escritório (link da carteira,
+// PainelCarteiraPage.jsx) — mesma página do cliente, mas download não vira
+// evento do cliente e não oferece ativar as notificações dele.
+function PainelCompartilhado({ clienteId, competencia: competenciaInicial, admin = false, sessao = null, semRegistro = false }) {
+  const registrar = !admin && !semRegistro;
   const [competencia, setCompetencia] = useState(competenciaInicial);
   const opcoesComp = opcoesCompetencia(competenciaInicial);
   const [dados, setDados] = useState(null);
@@ -201,7 +206,7 @@ function PainelCompartilhado({ clienteId, competencia: competenciaInicial, admin
   }, [clienteId, competencia]);
 
   const baixarNotaEmitida = (nota, formato) => {
-    if (!admin) avisarEventoPainel(clienteId, 'download', { descricao: `NFS-e nº ${nota.numero} (${formato.toUpperCase()})`, competencia });
+    if (registrar) avisarEventoPainel(clienteId, 'download', { descricao: `NFS-e nº ${nota.numero} (${formato.toUpperCase()})`, competencia });
     return baixarNfse(clienteId, nota, formato).catch((e) => window.alert(e.message));
   };
 
@@ -277,7 +282,7 @@ function PainelCompartilhado({ clienteId, competencia: competenciaInicial, admin
   // `descricao` diz o que é o arquivo no aviso pro escritório — só o link
   // público avisa (o download feito na prévia de dentro do app não conta)
   const baixar = (storagePath, descricao) => {
-    if (!admin) avisarEventoPainel(clienteId, 'download', { descricao, competencia });
+    if (registrar) avisarEventoPainel(clienteId, 'download', { descricao, competencia });
     return abrirLinkAssinado(storagePath).catch(() => null);
   };
 
@@ -446,7 +451,7 @@ function PainelCompartilhado({ clienteId, competencia: competenciaInicial, admin
                 : <span>O cliente ainda não abriu o link do painel.</span>}
             </div>
           )}
-          {admin ? <EnviarNotificacao clienteId={clienteId} competencia={competencia} /> : <AtivarNotificacoes clienteId={clienteId} />}
+          {admin ? <EnviarNotificacao clienteId={clienteId} competencia={competencia} /> : registrar && <AtivarNotificacoes clienteId={clienteId} />}
           {admin && eventos.length > 0 && (
             <div style={{ marginTop: 6, fontSize: 11, color: 'var(--navy-text)', background: 'rgba(255,255,255,.08)', borderRadius: 6, padding: '6px 10px' }}>
               <div style={{ fontWeight: 700, marginBottom: 3 }}>Atividade recente do cliente</div>
@@ -456,6 +461,9 @@ function PainelCompartilhado({ clienteId, competencia: competenciaInicial, admin
                   <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     {ev.tipo === 'download' ? `Baixou ${ev.descricao || 'um arquivo'}` : `Abriu o painel${ev.competencia ? ` (${ev.competencia})` : ''}`}
                   </span>
+                  {ev.user_agent && (
+                    <span style={{ whiteSpace: 'nowrap', opacity: 0.7, flexShrink: 0 }}>· {descreverAparelho(ev.user_agent).nome}</span>
+                  )}
                   <span style={{ marginLeft: 'auto', whiteSpace: 'nowrap', opacity: 0.8 }}>{fmtDataHora(ev.criado_em)}</span>
                 </div>
               ))}

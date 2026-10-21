@@ -13,6 +13,7 @@
 const { createClient } = require('@supabase/supabase-js')
 const { enviarMensagem } = require('./lib/whatsapp')
 const { clienteDoPainel } = require('./lib/autenticacao')
+const { descreverAparelho } = require('./lib/aparelho')
 
 const supabase = createClient(
   process.env.SUPABASE_URL,
@@ -30,13 +31,17 @@ exports.handler = async (event) => {
     return resposta(405, { error: 'Método não permitido, use POST.' })
   }
 
-  let clienteId, tipo, descricao, competencia
+  let clienteId, tipo, descricao, competencia, aparelhoId, doEscritorio
   try {
     const body = JSON.parse(event.body)
     clienteId = body.clienteId
     tipo = body.tipo
     descricao = body.descricao ? String(body.descricao).slice(0, 200) : null
     competencia = body.competencia ? String(body.competencia).slice(0, 7) : null
+    // id anônimo do navegador (src/pages/painel/aparelho.js) — só aceita o formato que ele gera
+    aparelhoId = /^[a-z0-9]{8,40}$/i.test(body.aparelhoId || '') ? body.aparelhoId : null
+    // aberto num navegador com o login do gestor: é o escritório testando o link
+    doEscritorio = body.escritorio === true
   } catch {
     return resposta(400, { error: 'Body inválido: esperado JSON com { clienteId, tipo }.' })
   }
@@ -60,15 +65,29 @@ exports.handler = async (event) => {
     const { count } = await repetido
     if (count > 0) return resposta(200, { repetido: true })
 
-    const { error: errInsert } = await supabase.from('painel_eventos')
-      .insert({ cliente_id: clienteId, tipo, descricao, competencia })
+    const userAgent = String(cabecalho(event, 'user-agent') || '').slice(0, 300) || null
+    const linha = { cliente_id: clienteId, tipo, descricao, competencia }
+    let { error: errInsert } = await supabase.from('painel_eventos')
+      .insert({ ...linha, aparelho_id: aparelhoId, user_agent: userAgent, origem: doEscritorio ? 'escritorio' : 'cliente' })
+    // colunas novas (supabase-schema-painel-eventos-aparelho.sql) ainda não
+    // existem no banco: grava como antes, sem o aparelho — menos o acesso do
+    // escritório, que sem a coluna "origem" ia parecer visita do cliente
+    if (errInsert && ['42703', 'PGRST204'].includes(errInsert.code)) {
+      if (doEscritorio) return resposta(200, { ok: true, escritorio: true })
+      ;({ error: errInsert } = await supabase.from('painel_eventos').insert(linha))
+    }
     if (errInsert) throw errInsert
+
+    // teste do próprio escritório não vira aviso de "cliente abriu"
+    if (doEscritorio) return resposta(200, { ok: true, escritorio: true })
 
     let whatsapp = { sucesso: false, erro: 'WHATSAPP_GROUP_ID não configurada.' }
     if (GRUPO_ID) {
+      const aparelho = descreverAparelho(userAgent)
+      const linhaAparelho = aparelho ? `\n📱 ${aparelho}` : ''
       const texto = tipo === 'download'
-        ? `⬇️ *Cliente baixou um arquivo do painel*\n👤 ${cliente.nome}${descricao ? `\n📄 ${descricao}` : ''}`
-        : `👀 *Cliente abriu o painel*\n👤 ${cliente.nome}${competencia ? `\n📅 Competência ${competencia}` : ''}`
+        ? `⬇️ *Cliente baixou um arquivo do painel*\n👤 ${cliente.nome}${descricao ? `\n📄 ${descricao}` : ''}${linhaAparelho}`
+        : `👀 *Cliente abriu o painel*\n👤 ${cliente.nome}${competencia ? `\n📅 Competência ${competencia}` : ''}${linhaAparelho}`
       whatsapp = await enviarMensagem(GRUPO_ID, texto)
     }
     return resposta(200, { ok: true, whatsapp: whatsapp.sucesso })
@@ -76,6 +95,12 @@ exports.handler = async (event) => {
     console.error('painel-evento:', e.message)
     return resposta(500, { error: e.message })
   }
+}
+
+function cabecalho(event, nome) {
+  const headers = event.headers || {}
+  const chave = Object.keys(headers).find((k) => k.toLowerCase() === nome)
+  return chave ? headers[chave] : undefined
 }
 
 function resposta(statusCode, body) {

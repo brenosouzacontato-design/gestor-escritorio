@@ -1,13 +1,26 @@
 import { useState, useMemo, useEffect } from 'react'
-import { Share2Icon, MonitorIcon, RefreshCwIcon, Building2Icon } from 'lucide-react'
+import { Share2Icon, MonitorIcon, RefreshCwIcon, Building2Icon, BriefcaseIcon, BarChart3Icon } from 'lucide-react'
 import { useStore } from '../../store'
 import EmpresaCombobox from '../../components/EmpresaCombobox'
 import PainelClientePage from './PainelClientePage'
 import PainelCompartilhadoPage from './PainelCompartilhadoPage'
 import { chavePainel, urlPublica, girarTokenPainel } from '../../lib/linksPublicos'
 import CompartilharGrupoModal from './CompartilharGrupoModal'
+import CarteirasPainel from './CarteirasPainel'
+import RelatorioAcessosPainel from './RelatorioAcessosPainel'
 
 const CHAVE_ULTIMO_CLIENTE = 'paineis-cliente-selecionado'
+const CHAVE_ABA = 'paineis-aba'
+const ABAS = [
+  { id: 'empresa', label: 'Por empresa', Icone: MonitorIcon },
+  { id: 'carteira', label: 'Por carteira', Icone: BriefcaseIcon },
+  { id: 'relatorio', label: 'Relatório de acessos', Icone: BarChart3Icon },
+]
+const DESCRICAO_ABA = {
+  empresa: 'Escolha a empresa pra ver e compartilhar o painel',
+  carteira: 'As empresas de cada carteira, com o link da carteira pra quem cuida dela',
+  relatorio: 'Quem abriu o painel, quantas vezes, o que baixou e de qual aparelho',
+}
 
 // Módulo dedicado a ver e compartilhar o painel dos clientes — abre direto
 // no painel (sem passar por uma listagem antes), trocando de empresa pela
@@ -20,6 +33,13 @@ export default function PaineisPage() {
   // 'nova' = PainelCompartilhadoPage (padrão do link); 'completa' = painel antigo (&versao=1)
   const [versao, setVersao] = useState('nova')
   const [grupoAberto, setGrupoAberto] = useState(false)
+  const [aba, setAba] = useState(() => {
+    try { return ABAS.some(a => a.id === localStorage.getItem(CHAVE_ABA)) ? localStorage.getItem(CHAVE_ABA) : 'empresa' } catch { return 'empresa' }
+  })
+  const escolherAba = (id) => {
+    setAba(id)
+    try { localStorage.setItem(CHAVE_ABA, id) } catch { /* sem localStorage */ }
+  }
 
   const clientesOrdenados = useMemo(() => [...clientes].sort((a, b) => a.nome.localeCompare(b.nome)), [clientes])
 
@@ -73,11 +93,28 @@ export default function PaineisPage() {
             <MonitorIcon size={18} /> Painéis
           </h2>
           <p style={{ fontSize: 12, color: 'var(--text3)', marginTop: 2 }}>
-            Escolha a empresa pra ver e compartilhar o painel — competência {compSel}.
+            {DESCRICAO_ABA[aba]}{aba !== 'relatorio' ? ` — competência ${compSel}` : ''}.
           </p>
         </div>
       </div>
 
+      <div className="tabs" style={{ marginBottom: 16 }}>
+        {ABAS.map(({ id, label, Icone }) => (
+          <button key={id} className={`tab-btn ${aba === id ? 'active' : ''}`} onClick={() => escolherAba(id)}
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+            <Icone size={13} /> {label}
+          </button>
+        ))}
+      </div>
+
+      {aba === 'carteira' && (
+        <CarteirasPainel clientes={clientesOrdenados} competencia={compSel} versao={versao}
+          onVerPainel={(id) => { setClienteId(id); escolherAba('empresa') }} />
+      )}
+
+      {aba === 'relatorio' && <RelatorioAcessosPainel clientes={clientesOrdenados} />}
+
+      {aba === 'empresa' && <>
       <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 16, flexWrap: 'wrap' }}>
         <EmpresaCombobox empresas={clientesOrdenados} value={clienteId} onChange={setClienteId}
           placeholder="Escolher empresa..." style={{ flex: 1, minWidth: 240 }} />
@@ -118,6 +155,7 @@ export default function PaineisPage() {
       {clienteAtual && (versao === 'nova'
         ? <PainelCompartilhadoPage key={`${clienteAtual.id}-${compSel}`} clienteId={clienteAtual.id} competencia={compSel} admin />
         : <PainelClientePage key={clienteAtual.id} clienteId={clienteAtual.id} competencia={compSel} admin />)}
+      </>}
     </div>
   )
 }

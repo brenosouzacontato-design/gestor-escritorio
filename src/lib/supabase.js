@@ -55,6 +55,18 @@ export async function cabecalhosFunctions(extra = {}) {
   return headers
 }
 
+// O navegador tem o login do gestor (sessão do escritório guardada nele)?
+// Nas páginas públicas isso indica que é alguém do escritório abrindo o link
+// do cliente (pra testar ou conferir): não conta como visita do cliente.
+export async function navegadorDoEscritorio() {
+  try {
+    const { data } = await clienteEscritorio.auth.getSession()
+    return !!data?.session
+  } catch {
+    return false
+  }
+}
+
 // RPC que ainda não existe no banco (script supabase-rls-01-preparacao.sql
 // não rodado): o chamador cai no caminho antigo.
 export function rpcAusente(error) {

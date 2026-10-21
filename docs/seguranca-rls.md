@@ -126,7 +126,7 @@ Todas as tabelas abaixo ganham a policy `escritorio_total` (tudo para
 | Tabela | Quem lê hoje | Quem grava hoje | Política proposta |
 |---|---|---|---|
 | `painel_visualizacoes` | E (última visita) | P (cada abertura do link) | + anônimo com token **só insere**, e só para o próprio cliente. |
-| `painel_eventos` | E (modo admin do painel) | F (painel-evento) | Só escritório (a function grava com service key). |
+| `painel_eventos` | E (modo admin do painel, Painéis → Relatório de acessos e Por carteira) | F (painel-evento) | Só escritório (a function grava com service key). Colunas `aparelho_id`, `user_agent` e `origem` em `supabase-schema-painel-eventos-aparelho.sql`. |
 | `painel_recados` | P (painel) | E (modo de edição) | + anônimo com token lê os do próprio cliente. |
 | `painel_push_assinaturas` | E (conta aparelhos), F (painel-push) | P (upsert ao ativar notificações), F (apaga expiradas) | Só escritório. Cliente grava pela RPC `painel_registrar_push`. |
 
@@ -141,6 +141,13 @@ Todas as tabelas abaixo ganham a policy `escritorio_total` (tudo para
 | Tabela | Política |
 |---|---|
 | `escritorio_usuarios` | RLS ligado. Escritório lê; só o `dono` inclui, altera ou desativa. |
+
+### Link da carteira (`supabase-schema-painel-carteira.sql`, fora desta proposta)
+
+| Objeto | Política |
+|---|---|
+| `carteira_links` | Já nasce com RLS ligado e sem acesso anônimo. Antes do passo 1: qualquer login do gestor lê/gera; **depois do passo 1, rodar o script de novo** troca a policy para `is_escritorio()`. |
+| RPC `carteira_painel(token)` | `security definer`, liberada pro anônimo: devolve só nome, CNPJ, regime e a chave do painel (`painel_token`, ou o id antes do passo 1) das empresas da carteira dona do token. Quem tem o link da carteira abre o painel de todas as empresas dela — "Novo link" em Painéis → Por carteira invalida o anterior. |
 
 ## 4. Páginas públicas e o que muda nelas
 

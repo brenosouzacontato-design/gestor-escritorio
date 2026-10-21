@@ -10,6 +10,7 @@ import PainelClientePage from './pages/painel/PainelClientePage.jsx'
 import PainelCompartilhadoPage from './pages/painel/PainelCompartilhadoPage.jsx'
 import ComprovanteFaturamentoPage from './pages/painel/ComprovanteFaturamentoPage.jsx'
 import PainelGrupoPage from './pages/painel/PainelGrupoPage.jsx'
+import PainelCarteiraPage from './pages/painel/PainelCarteiraPage.jsx'
 import { registrarVisualizacaoPainel, avisarEventoPainel } from './pages/painel/painelApi.js'
 import './styles.css'
 
@@ -22,6 +23,7 @@ const share = params.get('share')
 const identificar = params.get('identificar')
 const doc = params.get('doc')
 const painel = params.get('painel')
+const carteira = params.get('carteira')
 
 // O gestor exige login; os links públicos abaixo, não.
 let raiz = <ComLogin><App /></ComLogin>
@@ -50,6 +52,10 @@ if (share === 'dre' || share === 'balancete') {
   />
 } else if (doc) {
   raiz = <DocumentoCompartilhadoPage documentoId={doc} />
+} else if (carteira) {
+  // link da carteira (pessoa responsável pela carteira, sem login): lista as
+  // empresas dela e abre o painel de cada uma — não conta como visita do cliente
+  raiz = <PainelCarteiraPage token={carteira} competencia={params.get('competencia')} empresaInicial={params.get('empresa')} />
 } else if (painel && painel.includes(',')) {
   // grupo de empresas num link só (?painel=id1,id2,...) — a visita/aviso
   // são registrados dentro do PainelGrupoPage, por empresa aberta
