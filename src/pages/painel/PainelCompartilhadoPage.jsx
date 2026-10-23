@@ -30,7 +30,8 @@ import {
 //   1. Fiscal: números da Declaração do Simples do mês + evolução do faturamento;
 //   2. cards de impostos em aberto (Relatório de Situação Fiscal), a vencer e
 //      vencidos (guias anexadas);
-//   3. impostos da competência com guia anexada (valor + download) — o DAS de
+//   3. impostos da competência: com guia anexada (valor + download) ou "aguardando
+//      guia" (só o vencimento, sem entrar nos cards) — o DAS de
 //      mês com faturamento zerado aparece como "Sem movimento";
 //   4. pendências do Relatório de Situação Fiscal (RFB/PGFN), com nome legível
 //      do tributo, competência e valor atualizado;
@@ -459,7 +460,9 @@ function PainelCompartilhado({ clienteId, competencia: competenciaInicial, admin
   const honorarios = dados ? montarHonorarios(dados.honorarios) : [];
   // Seção oculta pro cliente também sai da soma dos cards de vencidos/a
   // vencer — senão o total mostraria um valor que ele não tem como conferir
-  const guiasCard = guias && !oculta('impostos') ? guias : [];
+  // "Aguardando guia" fica só na lista de impostos: sem valor nem guia, não entra nos cards
+  // de vencidos / a vencer nem na conta de "tudo quitado".
+  const guiasCard = guias && !oculta('impostos') ? guias.filter((g) => !g.aguardandoGuia) : [];
   const honorariosCard = oculta('honorarios') ? [] : honorarios;
   const pendenciasCard = pendencias && !oculta('pendencias') ? pendencias : [];
   const honorariosAVencer = honorariosCard.filter((h) => !h.concluida && !(h.dias != null && h.dias < 0));
@@ -677,12 +680,12 @@ function PainelCompartilhado({ clienteId, competencia: competenciaInicial, admin
               </div>
               </Ocultavel>
 
-              {/* ── 3. Impostos (guias anexadas) ── */}
+              {/* ── 3. Impostos (com guia anexada ou aguardando guia) ── */}
               <Ocultavel chave="impostos" {...propsOc}>
               <Secao titulo={`Impostos da competência ${competencia}`} icone={<CalendarIcon size={14} />}
                 extra={temValor(guias) && <Total valor={somaValores(guias)} />}>
                 {guias.length === 0
-                  ? <Vazio>Nenhuma guia de imposto anexada para essa competência.</Vazio>
+                  ? <Vazio>Nenhum imposto previsto para essa competência.</Vazio>
                   : <div style={LISTA}>{guias.map((g) => <LinhaGuia key={g.id} g={g} onBaixar={baixar} editando={editando} onSalvarValor={salvarValorGuia} onMarcarPaga={salvarGuiaPaga} />)}</div>}
               </Secao>
               </Ocultavel>
@@ -755,16 +758,19 @@ function PainelCompartilhado({ clienteId, competencia: competenciaInicial, admin
   );
 }
 
-// Só impostos da competência com guia anexada. Exceção: o DAS de um mês
+// Impostos da competência: com guia anexada, ou "aguardando guia" se ainda não concluídos. Exceção: o DAS de um mês
 // com faturamento zerado na Declaração do Simples não tem guia (não há o
 // que pagar) — entra como "Sem movimento" pro cliente saber que está ok.
 function montarGuias({ impostos, anexos, gerenciais }, competencia) {
   const semMovimento = gerenciais != null && gerenciais.faturamento_periodo != null && Number(gerenciais.faturamento_periodo) === 0;
   const guias = impostos
-    .filter((o) => anexos[o.id] || (semMovimento && ehDas(o)))
+    // Sem guia anexada ainda: aparece como "aguardando guia" (com o vencimento), a não ser que a
+    // obrigação já esteja concluída / não se aplique (ex.: apurado sem valor a pagar).
+    .filter((o) => anexos[o.id] || (semMovimento && ehDas(o)) || !(o.status === 'concluido' || o.status === 'nao_aplica'))
     .map((o) => {
       const das = ehDas(o);
       const anexo = anexos[o.id] || null;
+      const aguardandoGuia = !anexo && !(das && semMovimento);
       // valor lido da própria guia (IA) tem prioridade — já vem com multa/
       // juros se for o caso; o DAS cai no valor da declaração enquanto a
       // guia não foi lida
@@ -785,7 +791,8 @@ function montarGuias({ impostos, anexos, gerenciais }, competencia) {
         paga: !!anexo?.pago_em,
         pagoEm: anexo?.pago_em || null,
         semMovimento: das && semMovimento,
-        valor: das && semMovimento ? null
+        aguardandoGuia,
+        valor: (das && semMovimento) || aguardandoGuia ? null
           : valorGuia ?? (das && gerenciais?.valor_das != null ? Number(gerenciais.valor_das) : null),
         anexo,
       };
@@ -1154,7 +1161,7 @@ function LinhaGuia({ g, onBaixar, editando, onSalvarValor, onMarcarPaga }) {
   const editavel = editando && !g.semMovimento && g.anexo && 'valor_guia' in g.anexo;
   const vencida = alertaVencida(g);
   const urgente = alertaUrgente(g);
-  const corBorda = g.semMovimento || g.paga ? 'var(--ok)' : vencida ? 'var(--danger)' : urgente ? 'var(--warn)' : 'var(--accent)';
+  const corBorda = g.semMovimento || g.paga ? 'var(--ok)' : vencida ? 'var(--danger)' : urgente ? 'var(--warn)' : g.aguardandoGuia ? 'var(--border)' : 'var(--accent)';
   return (
     <Linha chave={g.id} corBorda={corBorda} titulo={g.titulo} competencia={g.competencia}
       detalhes={(
@@ -1177,6 +1184,12 @@ function LinhaGuia({ g, onBaixar, editando, onSalvarValor, onMarcarPaga }) {
           {g.semMovimento ? (
             <span style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--ok)', background: 'var(--ok-dim)', borderRadius: 99, padding: '4px 10px', whiteSpace: 'nowrap' }}>
               Sem movimento
+            </span>
+          ) : g.aguardandoGuia ? (
+            <span title="O escritório ainda vai apurar e anexar a guia deste imposto"
+              style={{ fontSize: 11, fontWeight: 600, color: 'var(--text3)', background: 'var(--surface2, var(--bg))', border: '1px solid var(--border)',
+                borderRadius: 99, padding: '4px 10px', whiteSpace: 'nowrap', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+              <ClockIcon size={11} /> Aguardando guia
             </span>
           ) : editavel ? (
             <div style={{ width: 110 }} title="Valor da guia (R$)">
