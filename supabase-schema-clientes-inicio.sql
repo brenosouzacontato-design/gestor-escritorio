@@ -3,7 +3,10 @@
 -- recorrentes não cria nada antes dele. Vazio = sem limite (clientes antigos).
 -- Clientes novos começam no mês do cadastro. Pode rodar mais de uma vez.
 
-alter table clientes add column if not exists inicio_escritorio date default date_trunc('month', current_date)::date;
+-- Em dois passos: com o default já no "add column", o Postgres preencheria todos os clientes antigos
+-- com o mês de hoje (e o painel deles perderia o histórico).
+alter table clientes add column if not exists inicio_escritorio date;
+alter table clientes alter column inicio_escritorio set default date_trunc('month', current_date)::date;
 
 -- painel_sessao (supabase-rls-01-preparacao.sql) passa a devolver o início, para o painel público.
 drop function if exists public.painel_sessao();
