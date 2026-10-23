@@ -294,6 +294,63 @@ function importarTextoWhatsapp(texto) {
   return registros
 }
 
+// --------------------------------------------------------------------------- lista datada
+//
+// Formato de agenda/controle, sem cabeçalho do WhatsApp:
+//   9/09/2026
+//   Ana Souza Lima 480,00
+//   Pedro Alves 100,00
+//   11/09/2026
+//   José Ricardo F Costa (recibo em nome de Maria Helena) 750,00
+// Cada linha "nome valor" é um atendimento na última data vista. Observação entre parênteses vira aviso.
+
+const LISTA_DATA = /^\s*(?:data\s*[:\-]?\s*)?(\d{1,2})\s*[/.\-]\s*(\d{1,2})\s*[/.\-]\s*(\d{4}|\d{2})\s*$/i
+const LISTA_ITEM = /^\s*(.*?[A-Za-zÀ-ÿ].*?)\s*[-–:;,]?\s*(?:r\$\s*)?(\d{1,3}(?:\.\d{3})*,\d{2}|\d+,\d{2}|\d+(?:\.\d{2})?)\s*$/i
+
+function pareceListaDatada(texto) {
+  const linhas = texto.split(QUEBRAS).map((l) => l.trim()).filter(Boolean)
+  if (linhas.some((l) => CAB_HORA_DATA.test(l) || CAB_DATA_HORA.test(l) || CAB_EXPORTADO.test(l))) return false
+  const datas = linhas.filter((l) => LISTA_DATA.test(l)).length
+  const itens = linhas.filter((l) => !LISTA_DATA.test(l) && LISTA_ITEM.test(l)).length
+  return datas >= 1 && itens >= 1 && datas + itens >= linhas.length * 0.8
+}
+
+function importarListaDatada(texto) {
+  const registros = []
+  let data = null
+  let linhaData = ''
+  for (const bruta of texto.split(QUEBRAS)) {
+    const linha = limparLinha(bruta)
+    if (!linha) continue
+    const md = linha.match(LISTA_DATA)
+    if (md) {
+      data = montarData(md[1], md[2], md[3])
+      linhaData = linha
+      continue
+    }
+    const mi = linha.match(LISTA_ITEM)
+    const reg = novoRegistro({ origem: 'colado', textoOriginal: `${linhaData}\n${linha}`.trim() })
+    if (!mi) {
+      reg.descricao = linha
+      reg.avisos.push(`Linha não entendida: '${linha}'`)
+    } else {
+      const obs = [...mi[1].matchAll(/\(([^)]*)\)/g)].map((m) => m[1].trim()).filter(Boolean)
+      reg.nome = mi[1].replace(/\([^)]*\)/g, ' ').replace(/\s+/g, ' ').trim()
+      reg.valor = parseValor(mi[2])
+      for (const o of obs) reg.avisos.push(`Observação na mensagem: ${o}`)
+    }
+    reg.data = data
+    if (!data) reg.avisos.push('Sem data antes desta linha')
+    registros.push(reg)
+  }
+  return registros
+}
+
+// Texto colado: lista datada (agenda) ou mensagens do WhatsApp.
+function importarTexto(texto) {
+  return pareceListaDatada(texto) ? importarListaDatada(texto) : importarTextoWhatsapp(texto)
+}
+
 // --------------------------------------------------------------------------- planilha
 
 const ALIASES_COLUNAS = {
@@ -393,5 +450,6 @@ function importarCsv(texto) {
 
 module.exports = {
   importarTextoWhatsapp, interpretarMensagem, separarMensagens, importarLinhas, importarCsv,
+  importarTexto, importarListaDatada, pareceListaDatada,
   parseValor, parseData, montarData, soDigitos, semAcento, novoRegistro,
 }

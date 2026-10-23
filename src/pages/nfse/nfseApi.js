@@ -33,6 +33,13 @@ export async function listarNotas(loteId) {
   return data || []
 }
 
+// Cadastro de clientes do prestador (tomadores)
+export async function listarTomadores(clienteId) {
+  const { data, error } = await supabase.from('nfse_tomadores').select('*').eq('cliente_id', clienteId).order('nome')
+  if (error) throw new Error(error.message)
+  return data || []
+}
+
 export async function baixarXml(notaId, campo) {
   const { data, error } = await supabase.from('nfse_notas').select(`${campo}, chave_acesso, id_dps`).eq('id', notaId).single()
   if (error) throw new Error(error.message)

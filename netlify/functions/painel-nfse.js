@@ -5,6 +5,12 @@
 //        → { notas: [{ id, numero, chave, competencia, emitidaEm, tomador, valor, descricao, ambiente }] }
 //   POST { acao: 'pdf', nota_id, cliente_id? }   → o DANFSe em PDF (lib/nfse/danfse, NT 008/2026)
 //   POST { acao: 'xml', nota_id, cliente_id? }   → o XML da NFS-e autorizada (o documento com validade)
+//   POST { acao: 'pendentes', cliente_id? }       → notas ainda não emitidas, com o que falta preencher
+//   POST { acao: 'completar', nota_id, cpf?, nome?, descricao? } → o cliente completa a nota; o CPF
+//        também vai para o cadastro de clientes do prestador (nfse_tomadores)
+//   POST { acao: 'link', nota_id }                → link público assinado do PDF (para mandar ao
+//        paciente pelo WhatsApp), válido por LINK_DIAS dias
+//   GET  ?nota=…&exp=…&sig=…                      → o PDF, sem login, se a assinatura e o prazo baterem
 //
 // Quem pode:
 //   - o cliente, com o token do painel no cabeçalho x-painel-token: só as notas dele, só de
@@ -17,7 +23,11 @@
 
 const { createClient } = require('@supabase/supabase-js')
 const { clienteDoPainel, usuarioEscritorio } = require('./lib/autenticacao')
+const crypto = require('crypto')
 const { gerarDanfse } = require('./lib/nfse/danfse/danfse')
+const { RepositorioSupabase, EDITAVEIS } = require('./lib/nfse/repositorio')
+const lotes = require('./lib/nfse/lotes')
+const { cpfValido } = require('./lib/nfse/validador')
 
 // Dependências externas (substituídas nos testes, ver lib/nfse/__tests__/painelNfse.test.cjs)
 const deps = {
@@ -27,9 +37,12 @@ const deps = {
 }
 const db = () => deps.supabase || (deps.supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY))
 
+const LINK_DIAS = 30
+
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 exports.handler = async (event) => {
+  if (event.httpMethod === 'GET') return pdfPorLink(event.queryStringParameters || {})
   if (event.httpMethod !== 'POST') return json(405, { error: 'Método não permitido, use POST.' })
 
   let corpo
@@ -45,6 +58,19 @@ exports.handler = async (event) => {
 
     if (corpo.acao === 'listar') return json(200, { notas: await listar(acesso, corpo.competencia) })
 
+    if (corpo.acao === 'pendentes') return json(200, { notas: await pendentes(acesso) })
+
+    if (corpo.acao === 'completar') {
+      const nota = await completar(acesso, corpo)
+      return nota ? json(200, { nota }) : json(404, { error: 'Nota não encontrada ou já emitida.' })
+    }
+
+    if (corpo.acao === 'link') {
+      const nota = await notaDoCliente(acesso, corpo.nota_id)
+      if (!nota) return json(404, { error: 'Nota não encontrada.' })
+      return json(200, { url: linkAssinado(event, nota.id), dias: LINK_DIAS })
+    }
+
     if (corpo.acao === 'pdf' || corpo.acao === 'xml') {
       const nota = await notaDoCliente(acesso, corpo.nota_id)
       if (!nota) return json(404, { error: 'Nota não encontrada.' })
@@ -57,6 +83,7 @@ exports.handler = async (event) => {
 
     return json(400, { error: 'Ação desconhecida.' })
   } catch (e) {
+    if (e instanceof ErroCliente || /inválid|não pode/i.test(e.message)) return json(400, { error: e.message })
     console.error('painel-nfse:', e.message)
     return json(500, { error: e.message })
   }
@@ -120,6 +147,93 @@ async function notaDoCliente(acesso, notaId) {
   return data
 }
 
+// Notas ainda não emitidas (importada/validada), para o cliente completar. Só produção: as de
+// homologação são teste do escritório.
+async function pendentes(acesso) {
+  const { data, error } = await db().from('nfse_notas')
+    .select('id, nome, cpf, data, valor, descricao, status_validacao, pendencias, erros, avisos, criado_em')
+    .eq('cliente_id', acesso.clienteId)
+    .eq('ambiente', 'producao')
+    .in('estado', EDITAVEIS)
+    .order('data', { ascending: true })
+    .limit(500)
+  if (error) throw error
+  return (data || []).map(resumoPendente)
+}
+
+const resumoPendente = (n) => ({
+  id: n.id, nome: n.nome, cpf: n.cpf, data: n.data, valor: n.valor, descricao: n.descricao,
+  pronta: n.status_validacao === 'pronto', pendencias: n.pendencias || [], erros: n.erros || [], avisos: n.avisos || [],
+})
+
+// O cliente completa CPF / nome / descrição. Valida de novo o lote (fica "pronta" se não faltar
+// nada) e guarda o CPF no cadastro de clientes do prestador, para as próximas notas virem completas.
+async function completar(acesso, corpo) {
+  if (!UUID.test(corpo.nota_id || '')) return null
+  const repo = new RepositorioSupabase(db())
+  const nota = await repo.obterNota(corpo.nota_id)
+  if (!nota || nota.cliente_id !== acesso.clienteId || nota.ambiente !== 'producao' || !EDITAVEIS.includes(nota.estado)) return null
+  const empresa = await repo.obterEmpresa(acesso.clienteId)
+  if (!empresa) return null
+
+  const campos = {}
+  for (const k of ['cpf', 'nome', 'descricao']) if (typeof corpo[k] === 'string') campos[k] = corpo[k].slice(0, 500)
+  if ('cpf' in campos) {
+    const cpf = campos.cpf.replace(/\D/g, '')
+    if (cpf && !cpfValido(cpf)) throw new ErroCliente('CPF inválido — confira os números.')
+  }
+  const salva = await lotes.atualizarNota(repo, empresa, nota.id, campos)
+  await guardarTomador(repo, acesso.clienteId, salva)
+  return resumoPendente(salva)
+}
+
+async function guardarTomador(repo, clienteId, nota) {
+  if (!nota.cpf || !cpfValido(nota.cpf) || !nota.nome) return
+  try {
+    const existentes = await repo.listarTomadores(clienteId)
+    if (existentes.some((t) => t.cpf === nota.cpf)) return
+    await repo.salvarTomador({ cliente_id: clienteId, cpf: nota.cpf, nome: nota.nome, apelidos: [], observacao: 'Informado pelo cliente no painel' })
+  } catch (e) {
+    console.error('painel-nfse: cadastro do tomador:', e.message) // a nota já foi salva; o cadastro é só conveniência
+  }
+}
+
+class ErroCliente extends Error {}
+
+// Link público do PDF: HMAC do id da nota + validade, com uma chave derivada da service key
+// (não precisa de variável nova; trocar a service key invalida os links antigos).
+const chaveLink = () => crypto.createHmac('sha256', process.env.SUPABASE_SERVICE_KEY || '').update('nfse-link-pdf-v1').digest()
+const assinar = (notaId, exp) => crypto.createHmac('sha256', chaveLink()).update(`${notaId}.${exp}`).digest('base64url')
+
+function linkAssinado(event, notaId, agora = Date.now()) {
+  const exp = Math.floor(agora / 1000) + LINK_DIAS * 86400
+  const h = event.headers || {}
+  const host = h['x-forwarded-host'] || h.host || ''
+  const base = host ? `https://${host}` : (process.env.URL || '')
+  return `${base}/.netlify/functions/painel-nfse?nota=${notaId}&exp=${exp}&sig=${assinar(notaId, exp)}`
+}
+
+async function pdfPorLink({ nota, exp, sig }) {
+  const pagina = (status, texto) => ({ statusCode: status, headers: { 'content-type': 'text/plain; charset=utf-8' }, body: texto })
+  if (!UUID.test(nota || '') || !/^\d+$/.test(exp || '') || !sig) return pagina(400, 'Link inválido.')
+  const esperado = Buffer.from(assinar(nota, exp))
+  const recebido = Buffer.from(String(sig))
+  if (esperado.length !== recebido.length || !crypto.timingSafeEqual(esperado, recebido)) return pagina(403, 'Link inválido.')
+  if (Number(exp) * 1000 < Date.now()) return pagina(410, 'Este link expirou. Peça a nota de novo a quem a enviou.')
+  try {
+    const { data, error } = await db().from('nfse_notas')
+      .select('id, estado, ambiente, numero_nfse, chave_acesso, xml_retorno').eq('id', nota).maybeSingle()
+    if (error) throw error
+    if (!data || data.estado !== 'autorizada' || data.ambiente !== 'producao' || !data.xml_retorno) return pagina(404, 'Nota não encontrada.')
+    const r = arquivo(await gerarDanfse(data.xml_retorno), 'application/pdf', `NFS-e ${data.numero_nfse || data.chave_acesso}.pdf`)
+    r.headers['content-disposition'] = r.headers['content-disposition'].replace('attachment', 'inline')
+    return r
+  } catch (e) {
+    console.error('painel-nfse link:', e.message)
+    return pagina(500, 'Não foi possível gerar o PDF agora. Tente de novo em instantes.')
+  }
+}
+
 function arquivo(buffer, tipo, nome) {
   return {
     statusCode: 200,
@@ -134,6 +248,7 @@ function arquivo(buffer, tipo, nome) {
 }
 
 exports._deps = deps // testes
+exports._linkAssinado = linkAssinado
 
 function json(statusCode, body) {
   return { statusCode, headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }

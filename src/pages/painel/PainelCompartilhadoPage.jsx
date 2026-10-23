@@ -5,7 +5,7 @@ import {
 } from 'lucide-react';
 import { chavePainelPorId, urlPublica } from '../../lib/linksPublicos';
 import AcessoPainel, { obterClientePagina } from './AcessoPainel';
-import { listarNfseEmitidas, baixarNfse } from './nfsePainelApi';
+import { listarNfseEmitidas, baixarNfse, listarNfsePendentes, completarNfse, linkPdfNfse, numeroWhatsapp } from './nfsePainelApi';
 import { descreverAparelho } from './aparelho';
 import { abrirLinkAssinado, criarLinkAssinado } from '../documentos/documentosApi';
 import { lerCodigosDaGuia } from './codigosGuia';
@@ -196,6 +196,7 @@ function PainelCompartilhado({ clienteId, competencia: competenciaInicial, admin
   const [editandoPainel, setEditandoPainel] = useState(false);
   const [erroEdicao, setErroEdicao] = useState(null);
   const [nfseEmitidas, setNfseEmitidas] = useState([]); // notas de serviço emitidas pelo gestor (módulo NFS-e)
+  const [nfsePendentes, setNfsePendentes] = useState([]); // notas a emitir em que falta informação (o cliente completa)
   const editando = admin && editandoPainel;
 
   // Fora do Promise.all do painel: sem o módulo de NFS-e no banco (ou com a
@@ -207,6 +208,37 @@ function PainelCompartilhado({ clienteId, competencia: competenciaInicial, admin
       .catch(() => ativo && setNfseEmitidas([]));
     return () => { ativo = false; };
   }, [clienteId, competencia]);
+
+  // Pendentes não dependem da competência do painel: são tudo o que ainda falta emitir
+  useEffect(() => {
+    let ativo = true;
+    listarNfsePendentes(clienteId)
+      .then((notas) => ativo && setNfsePendentes(notas))
+      .catch(() => ativo && setNfsePendentes([]));
+    return () => { ativo = false; };
+  }, [clienteId]);
+
+  const completarPendente = async (nota, campos) => {
+    const salva = await completarNfse(clienteId, nota.id, campos);
+    setNfsePendentes((lista) => lista.map((n) => (n.id === salva.id ? salva : n)));
+    return salva;
+  };
+
+  const enviarNotaWhatsapp = async (nota, numero) => {
+    // abre a aba já no clique (antes do await) para não cair no bloqueio de pop-up
+    const aba = window.open('', '_blank');
+    try {
+      const { url } = await linkPdfNfse(clienteId, nota.id);
+      const texto = `Olá${nota.tomador ? `, ${nota.tomador.split(' ')[0]}` : ''}! Segue a nota fiscal de serviço nº ${nota.numero || ''}`
+        + `${nota.valor != null ? ` (${fmt(nota.valor)})` : ''}: ${url}`;
+      const destino = `https://wa.me/${numero}?text=${encodeURIComponent(texto)}`;
+      if (aba) aba.location.href = destino; else window.location.href = destino;
+      if (registrar) avisarEventoPainel(clienteId, 'download', { descricao: `NFS-e nº ${nota.numero} enviada por WhatsApp`, competencia });
+    } catch (e) {
+      if (aba) aba.close();
+      window.alert(e.message);
+    }
+  };
 
   const baixarNotaEmitida = (nota, formato) => {
     if (registrar) avisarEventoPainel(clienteId, 'download', { descricao: `NFS-e nº ${nota.numero} (${formato.toUpperCase()})`, competencia });
@@ -640,7 +672,21 @@ function PainelCompartilhado({ clienteId, competencia: competenciaInicial, admin
                 <Ocultavel chave="nfse_emitidas" {...propsOc}>
                 <Secao titulo={`Notas fiscais emitidas — ${competencia}`} icone={<FileTextIcon size={14} />}
                   extra={<Total valor={nfseEmitidas.reduce((s, n) => s + Number(n.valor || 0), 0)} />}>
-                  <div style={LISTA}>{nfseEmitidas.map((n) => <LinhaNfseEmitida key={n.id} n={n} onBaixar={baixarNotaEmitida} />)}</div>
+                  <div style={LISTA}>{nfseEmitidas.map((n) => <LinhaNfseEmitida key={n.id} n={n} onBaixar={baixarNotaEmitida} onWhatsapp={enviarNotaWhatsapp} />)}</div>
+                </Secao>
+                </Ocultavel>
+              )}
+
+              {/* ── Notas a emitir em que falta informação: o cliente completa aqui e o escritório emite ── */}
+              {nfsePendentes.length > 0 && (
+                <Ocultavel chave="nfse_pendentes" {...propsOc}>
+                <Secao titulo="Notas fiscais a emitir" icone={<AlertTriangleIcon size={14} />}
+                  extra={<span style={{ fontSize: 11, color: 'var(--text3)' }}>
+                    {nfsePendentes.filter((n) => !n.pronta).length} com informação faltando</span>}>
+                  <div style={{ fontSize: 11.5, color: 'var(--text3)', marginBottom: 8 }}>
+                    Complete o que falta (normalmente o CPF do paciente). Quando a nota fica pronta, o escritório emite e ela aparece em "Notas fiscais emitidas", com o botão para enviar pelo WhatsApp.
+                  </div>
+                  <div style={LISTA}>{nfsePendentes.map((n) => <LinhaNfsePendente key={n.id} n={n} onSalvar={completarPendente} />)}</div>
                 </Secao>
                 </Ocultavel>
               )}
@@ -1190,9 +1236,14 @@ function LinhaHonorario({ h }) {
   );
 }
 
-function LinhaNfseEmitida({ n, onBaixar }) {
+function LinhaNfseEmitida({ n, onBaixar, onWhatsapp }) {
   const emitida = n.emitidaEm ? fmtData(String(n.emitidaEm).slice(0, 10)) : null;
+  const [enviando, setEnviando] = useState(false); // mostra o campo do número
+  const [numero, setNumero] = useState('');
+  const destino = numeroWhatsapp(numero);
+  const enviar = () => { if (destino) { onWhatsapp(n, destino); setEnviando(false); setNumero(''); } };
   return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
     <Linha chave={n.id} corBorda="var(--ok)" titulo={`NFS-e nº ${n.numero || '—'}${n.tomador ? ` — ${n.tomador}` : ''}`}
       detalhes={(
         <>
@@ -1206,8 +1257,93 @@ function LinhaNfseEmitida({ n, onBaixar }) {
           <span style={{ fontSize: 14, fontWeight: 800, color: 'var(--text1)', whiteSpace: 'nowrap' }}>{n.valor != null ? fmt(n.valor) : '—'}</span>
           <BotaoLink onClick={() => onBaixar(n, 'pdf')}>PDF</BotaoLink>
           <BotaoLink onClick={() => onBaixar(n, 'xml')}>XML</BotaoLink>
+          {onWhatsapp && n.ambiente !== 'homologacao' && (
+            <button type="button" onClick={() => setEnviando((v) => !v)} title="Enviar o PDF para o paciente pelo WhatsApp"
+              style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11, fontWeight: 700, color: '#fff', background: '#25D366',
+                border: 'none', borderRadius: 99, padding: '4px 10px', cursor: 'pointer', whiteSpace: 'nowrap' }}>
+              <SendIcon size={11} /> WhatsApp
+            </button>
+          )}
         </>
       )} />
+    {enviando && (
+      <form onSubmit={(e) => { e.preventDefault(); enviar(); }}
+        style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap', padding: '0 4px 4px' }}>
+        <input autoFocus type="tel" inputMode="tel" placeholder="WhatsApp do paciente, ex: (31) 99999-9999" value={numero}
+          onChange={(e) => setNumero(e.target.value)}
+          style={{ flex: '1 1 220px', fontSize: 13, padding: '7px 10px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--surface, var(--bg))', color: 'var(--text1)' }} />
+        <button type="submit" disabled={!destino}
+          style={{ fontSize: 12, fontWeight: 700, color: '#fff', background: destino ? '#25D366' : 'var(--text3)', border: 'none', borderRadius: 8, padding: '7px 12px', cursor: destino ? 'pointer' : 'default' }}>
+          Abrir no WhatsApp
+        </button>
+        <span style={{ fontSize: 10.5, color: 'var(--text3)', flexBasis: '100%' }}>
+          Vai uma mensagem com o link do PDF (vale por 30 dias). Você confere e envia no WhatsApp.
+        </span>
+      </form>
+    )}
+    </div>
+  );
+}
+
+// Nota ainda não emitida: o cliente preenche o que falta (CPF, nome, descrição)
+function LinhaNfsePendente({ n, onSalvar }) {
+  const falta = (rotulo) => n.pendencias.includes(rotulo);
+  const [cpf, setCpf] = useState(n.cpf || '');
+  const [nome, setNome] = useState(n.nome || '');
+  const [descricao, setDescricao] = useState(n.descricao || '');
+  const [salvando, setSalvando] = useState(false);
+  const [erro, setErro] = useState(null);
+  const pedeCpf = falta('CPF') || n.erros.some((e) => /CPF/.test(e));
+  const pedeNome = falta('Nome');
+  const pedeDescricao = falta('Descrição');
+  const temCampos = pedeCpf || pedeNome || pedeDescricao;
+  const corBorda = n.pronta ? 'var(--ok)' : n.erros.length ? 'var(--danger)' : 'var(--warn)';
+
+  const salvar = async (e) => {
+    e.preventDefault();
+    const campos = {};
+    if (pedeCpf) campos.cpf = cpf;
+    if (pedeNome) campos.nome = nome;
+    if (pedeDescricao) campos.descricao = descricao;
+    setSalvando(true); setErro(null);
+    try { await onSalvar(n, campos); } catch (err) { setErro(err.message); } finally { setSalvando(false); }
+  };
+
+  const campo = { fontSize: 13, padding: '7px 10px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--surface, var(--bg))', color: 'var(--text1)' };
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 6, padding: '10px 12px', background: 'var(--bg)', border: '1px solid var(--border)',
+      borderLeft: `3px solid ${corBorda}`, borderRadius: 'var(--r-md)' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+        <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text1)', flex: '1 1 180px' }}>{n.nome || 'Paciente sem nome'}</span>
+        {n.data && <span style={{ fontSize: 11, color: 'var(--text3)', display: 'flex', alignItems: 'center', gap: 3 }}><CalendarIcon size={10} /> {fmtData(n.data)}</span>}
+        <span style={{ fontSize: 14, fontWeight: 800, color: 'var(--text1)' }}>{n.valor != null ? fmt(n.valor) : '—'}</span>
+      </div>
+      {n.pronta ? (
+        <span style={{ fontSize: 11.5, color: 'var(--ok)', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 4 }}>
+          <CheckCircleIcon size={12} /> Pronta — o escritório vai emitir
+        </span>
+      ) : (
+        <>
+          <span style={{ fontSize: 11, color: n.erros.length ? 'var(--danger)' : 'var(--warn)', fontWeight: 600 }}>
+            {[...n.erros, ...(n.pendencias.length ? [`Falta: ${n.pendencias.join(', ')}`] : [])].join(' · ')}
+          </span>
+          {n.avisos.length > 0 && <span style={{ fontSize: 10.5, color: 'var(--text3)' }}>{n.avisos.join(' · ')}</span>}
+          {temCampos && (
+            <form onSubmit={salvar} style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+              {pedeNome && <input placeholder="Nome completo do paciente" value={nome} onChange={(e) => setNome(e.target.value)} style={{ ...campo, flex: '2 1 200px' }} />}
+              {pedeCpf && <input placeholder="CPF do paciente" inputMode="numeric" value={cpf} onChange={(e) => setCpf(e.target.value)} style={{ ...campo, flex: '1 1 150px' }} />}
+              {pedeDescricao && <input placeholder="Descrição do serviço" value={descricao} onChange={(e) => setDescricao(e.target.value)} style={{ ...campo, flex: '2 1 200px' }} />}
+              <button type="submit" disabled={salvando}
+                style={{ fontSize: 12, fontWeight: 700, color: '#fff', background: 'var(--accent)', border: 'none', borderRadius: 8, padding: '7px 14px', cursor: 'pointer' }}>
+                {salvando ? 'Salvando…' : 'Salvar'}
+              </button>
+            </form>
+          )}
+          {!temCampos && <span style={{ fontSize: 11, color: 'var(--text3)' }}>O escritório vai conferir esta nota.</span>}
+          {erro && <span style={{ fontSize: 11, color: 'var(--danger)' }}>{erro}</span>}
+        </>
+      )}
+    </div>
   );
 }
 

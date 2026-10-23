@@ -12,6 +12,8 @@
 //   { acao: 'excluir', nota_id }  |  { acao: 'copiar', nota_id }
 //   { acao: 'previa', nota_id }
 //   { acao: 'emitir', nota_id, ambiente }       ← ambiente confirmado na tela; se divergir, nada é enviado
+//   { acao: 'tomador_salvar', cliente_id, tomador }  |  { acao: 'tomador_excluir', cliente_id, id }
+//   { acao: 'tomadores_importar', cliente_id, planilha_base64, gravar? }  ← sem gravar: só a prévia
 //
 // Leitura de lotes/notas é feita direto pelo navegador (RLS: usuário logado só lê). Toda escrita passa
 // por aqui, onde valem a máquina de estados, a reserva de número e a duplicidade.
@@ -27,7 +29,9 @@ const { criarCliente } = require('./lib/nfse/sefin')
 const { RepositorioSupabase, TransicaoInvalida } = require('./lib/nfse/repositorio')
 const lotes = require('./lib/nfse/lotes')
 const { criarEmissor, EmissaoBloqueada } = require('./lib/nfse/emissor')
-const { importarTextoWhatsapp, importarLinhas } = require('./lib/nfse/importador')
+const { importarTexto, importarLinhas, parseValor, soDigitos } = require('./lib/nfse/importador')
+const { completarComCadastro, lerPlanilhaTomadores, planejarImportacao } = require('./lib/nfse/tomadores')
+const { cpfValido } = require('./lib/nfse/validador')
 
 // Timeout da Sefin abaixo do limite da function: se estourar, a nota fica "indeterminada" e a
 // próxima tentativa reconsulta antes de reenviar (nunca há envio em dobro).
@@ -146,10 +150,16 @@ const acoes = {
       campos_obrigatorios: p.campos_obrigatorios || (atual && atual.campos_obrigatorios) || ['nome', 'cpf', 'data', 'valor', 'descricao', 'endereco'],
       gabarito_xml: gabaritoXml,
       whatsapp_origem: p.whatsapp_origem !== undefined ? p.whatsapp_origem || null : (atual && atual.whatsapp_origem) || null,
+      descricao_padrao: p.descricao_padrao !== undefined ? String(p.descricao_padrao || '').trim().slice(0, 2000) : (atual && atual.descricao_padrao) || '',
       updated_at: new Date().toISOString(),
     }
     const { error } = await db.from('nfse_empresas').upsert(registro, { onConflict: 'cliente_id' })
     if (error) throw new Error(error.message)
+    // Regras novas (campos obrigatórios, descrição padrão, competência) valem já para os lotes em aberto
+    const empresaSalva = await repo.obterEmpresa(clienteId)
+    for (const loteId of await repo.listarLotesEmAberto(clienteId, empresaSalva.ambiente)) {
+      await lotes.revalidarLote(repo, loteId, empresaSalva)
+    }
     return acoes.status({ db, repo }, { cliente_id: clienteId })
   },
 
@@ -190,10 +200,12 @@ const acoes = {
       descricao = String(p.nome_arquivo || '').slice(0, 200)
     } else {
       exigir(String(p.texto || '').trim(), 'Cole o texto das mensagens')
-      registros = importarTextoWhatsapp(p.texto)
+      registros = importarTexto(p.texto)
       origem = 'colado'
     }
     exigir(registros.length, 'Nenhum atendimento encontrado')
+    // CPF, endereço e descrição que faltarem vêm do cadastro de clientes (só quando o nome bate sem dúvida)
+    registros = completarComCadastro(registros, await repo.listarTomadores(empresa.cliente_id), { descricaoPadrao: empresa.descricao_padrao || '' })
     const loteId = await lotes.criarLote(repo, { empresa, origem, descricao, registros })
     return { lote_id: loteId }
   },
@@ -236,6 +248,76 @@ const acoes = {
     const resultado = await (await emissorDa(db, repo, empresa, usuario)).emitir(nota.id)
     return { resultado, nota: await repo.obterNota(nota.id) }
   },
+
+  // ---------------------------------------------------------------- cadastro de clientes (tomadores)
+
+  async tomador_salvar({ db, repo }, p) {
+    const clienteId = await clienteExistente(db, p.cliente_id)
+    return { tomador: await repo.salvarTomador(normalizarTomador(p.tomador || {}, clienteId)) }
+  },
+
+  async tomador_excluir({ db, repo }, p) {
+    const clienteId = await clienteExistente(db, p.cliente_id)
+    await repo.excluirTomador(uuidOuId(p.id), clienteId)
+    return { ok: true }
+  },
+
+  async tomadores_importar({ db, repo }, p) {
+    const clienteId = await clienteExistente(db, p.cliente_id)
+    exigir(p.planilha_base64, 'Envie a planilha de clientes')
+    const XLSX = require('xlsx')
+    const wb = XLSX.read(Buffer.from(p.planilha_base64, 'base64'), { type: 'buffer', cellDates: true, UTC: true })
+    const linhas = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1, raw: true, defval: '' })
+    let lidos
+    try { lidos = lerPlanilhaTomadores(linhas) } catch (e) { throw new ErroHttp(400, e.message) }
+    const plano = planejarImportacao(lidos, await repo.listarTomadores(clienteId))
+    if (!p.gravar) return { plano }
+    // Uma linha com problema não derruba as outras: o erro volta na própria linha do plano
+    let gravados = 0
+    for (const item of plano) {
+      if (item.acao === 'conflito') continue
+      const { acao, avisos, ...t } = item
+      try {
+        await repo.salvarTomador(normalizarTomador(t, clienteId, { aceitarCpfInvalido: true }))
+        gravados += 1
+      } catch (e) {
+        item.acao = 'erro'
+        item.avisos = [...avisos, e.message]
+      }
+    }
+    return { plano, gravados }
+  },
+}
+
+async function clienteExistente(db, id) {
+  const clienteId = uuid(id, 'cliente_id')
+  const { data } = await db.from('clientes').select('id').eq('id', clienteId).maybeSingle()
+  exigir(data, 'Cliente não encontrado', 404)
+  return clienteId
+}
+
+const uuidOuId = (v) => { exigir(/^[\w-]{1,64}$/.test(String(v || '')), 'id inválido'); return v }
+
+// Valida e limpa um tomador vindo da tela ou da planilha.
+function normalizarTomador(t, clienteId, { aceitarCpfInvalido = false } = {}) {
+  const nome = String(t.nome || '').replace(/\s+/g, ' ').trim()
+  exigir(nome, 'Informe o nome do cliente')
+  const cpf = soDigitos(t.cpf || '')
+  exigir(!cpf || cpf.length === 11, `CPF de ${nome} precisa ter 11 dígitos`)
+  // Da planilha, CPF com dígito errado entra para conferência (aparece com aviso); pela tela, não
+  exigir(!cpf || aceitarCpfInvalido || cpfValido(cpf), `CPF de ${nome} com dígito verificador errado`)
+  const apelidos = (Array.isArray(t.apelidos) ? t.apelidos : String(t.apelidos || '').split(/[;,]/))
+    .map((a) => String(a).replace(/\s+/g, ' ').trim()).filter(Boolean)
+  const valor = t.valor_padrao === null || t.valor_padrao === undefined || t.valor_padrao === '' ? null : parseValor(String(t.valor_padrao))
+  exigir(valor === null || Number(valor) > 0, 'Valor padrão inválido')
+  const saida = {
+    cliente_id: clienteId, nome, cpf: cpf || null, apelidos: [...new Set(apelidos)],
+    endereco: String(t.endereco || '').trim(), cep: soDigitos(t.cep || ''), email: String(t.email || '').trim(),
+    telefone: String(t.telefone || '').trim(), descricao_padrao: String(t.descricao_padrao || '').trim().slice(0, 2000),
+    valor_padrao: valor, observacao: String(t.observacao || '').trim(), ativo: t.ativo !== false,
+  }
+  if (t.id) saida.id = uuidOuId(t.id)
+  return saida
 }
 
 exports.handler = responder(async (event) => {
