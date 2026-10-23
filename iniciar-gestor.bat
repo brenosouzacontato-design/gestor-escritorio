@@ -1,4 +1,6 @@
 @echo off
+rem Depois de migrar o WhatsApp para o servidor (docs/whatsapp-servidor.md),
+rem este script nao e mais necessario: nao rode os dois ao mesmo tempo.
 echo ========================================
 echo   Iniciando Gestor Escritorio Contabil
 echo ========================================
