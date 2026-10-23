@@ -97,3 +97,77 @@ test('sem login nem token: 401', async () => {
   const r = await chamar({ acao: 'listar' })
   assert.equal(r.status, 401)
 })
+
+// --- notas pendentes: o cliente completa o que falta; link do PDF para mandar pelo WhatsApp ---
+
+const CPF_FICTICIO = '52998224725' // CPF de exemplo (dígitos válidos), não é de ninguém
+
+function montarComPendentes() {
+  const chamar = montar()
+  const supa = funcao._deps.supabase
+  const pendente = (id, cliente, extra = {}) => ({
+    id, cliente_id: cliente, lote_id: `lote-${cliente.slice(0, 1)}`, ambiente: 'producao', estado: 'importada',
+    nome: 'Paciente Sem Cpf', cpf: null, data: '2026-09-10', valor: '150.00', descricao: 'consulta', endereco: '',
+    status_validacao: 'pendente', pendencias: ['CPF'], erros: [], avisos: [], criado_em: '2026-09-10T12:00:00Z', ...extra,
+  })
+  return supa.from('nfse_empresas').insert([
+    { cliente_id: A, ambiente: 'producao', campos_obrigatorios: ['nome', 'cpf', 'data', 'valor', 'descricao'] },
+    { cliente_id: B, ambiente: 'producao', campos_obrigatorios: ['nome', 'cpf', 'data', 'valor', 'descricao'] },
+  ]).then(() => supa.from('nfse_notas').insert([
+    pendente('cccccccc-0000-4000-8000-000000000001', A),
+    pendente('cccccccc-0000-4000-8000-000000000002', A, { ambiente: 'homologacao' }),
+    pendente('dddddddd-0000-4000-8000-000000000001', B),
+  ])).then(() => ({ chamar, supa }))
+}
+
+test('cliente vê as próprias notas pendentes de produção, com o que falta', async () => {
+  const { chamar } = await montarComPendentes()
+  const r = await chamar({ acao: 'pendentes' }, { 'x-painel-token': 'tokA' })
+  assert.equal(r.status, 200)
+  assert.deepEqual(r.corpo.notas.map((n) => n.id), ['cccccccc-0000-4000-8000-000000000001'])
+  assert.deepEqual(r.corpo.notas[0].pendencias, ['CPF'])
+  assert.equal(r.corpo.notas[0].pronta, false)
+})
+
+test('cliente completa o CPF: a nota fica pronta e o paciente entra no cadastro', async () => {
+  const { chamar, supa } = await montarComPendentes()
+  const r = await chamar({ acao: 'completar', nota_id: 'cccccccc-0000-4000-8000-000000000001', cpf: '529.982.247-25' }, { 'x-painel-token': 'tokA' })
+  assert.equal(r.status, 200)
+  assert.equal(r.corpo.nota.cpf, CPF_FICTICIO)
+  assert.equal(r.corpo.nota.pronta, true)
+  const { data: nota } = await supa.from('nfse_notas').select('*').eq('id', 'cccccccc-0000-4000-8000-000000000001').maybeSingle()
+  assert.equal(nota.estado, 'validada')
+  const { data: cadastro } = await supa.from('nfse_tomadores').select('*').eq('cliente_id', A)
+  assert.deepEqual(cadastro.map((t) => [t.cpf, t.nome]), [[CPF_FICTICIO, 'Paciente Sem Cpf']])
+})
+
+test('CPF com dígito errado é recusado; nota de outro cliente ou já emitida não muda', async () => {
+  const { chamar } = await montarComPendentes()
+  const errado = await chamar({ acao: 'completar', nota_id: 'cccccccc-0000-4000-8000-000000000001', cpf: '52998224700' }, { 'x-painel-token': 'tokA' })
+  assert.equal(errado.status, 400)
+  const outro = await chamar({ acao: 'completar', nota_id: 'dddddddd-0000-4000-8000-000000000001', cpf: CPF_FICTICIO }, { 'x-painel-token': 'tokA' })
+  assert.equal(outro.status, 404)
+  const emitida = await chamar({ acao: 'completar', nota_id: 'aaaaaaaa-0000-4000-8000-000000000001', nome: 'Outro' }, { 'x-painel-token': 'tokA' })
+  assert.equal(emitida.status, 404)
+})
+
+test('link assinado abre o PDF sem login; adulterado ou vencido, não', async () => {
+  const { chamar } = await montarComPendentes()
+  const r = await chamar({ acao: 'link', nota_id: 'aaaaaaaa-0000-4000-8000-000000000001' }, { 'x-painel-token': 'tokA', host: 'gestor.exemplo' })
+  assert.equal(r.status, 200)
+  const url = new URL(r.corpo.url)
+  assert.equal(url.host, 'gestor.exemplo')
+  const abrir = (q) => funcao.handler({ httpMethod: 'GET', headers: {}, queryStringParameters: q })
+  const q = Object.fromEntries(url.searchParams)
+  const ok = await abrir(q)
+  assert.equal(ok.statusCode, 200)
+  assert.equal(Buffer.from(ok.body, 'base64').subarray(0, 5).toString(), '%PDF-')
+  assert.equal((await abrir({ ...q, nota: 'aaaaaaaa-0000-4000-8000-000000000002' })).statusCode, 403)
+  assert.equal((await abrir({ ...q, exp: String(Number(q.exp) + 1) })).statusCode, 403)
+
+  const vencido = new URL(funcao._linkAssinado({ headers: {} }, q.nota, Date.now() - 31 * 86400 * 1000), 'https://x')
+  assert.equal((await abrir(Object.fromEntries(vencido.searchParams))).statusCode, 410)
+
+  const alheia = await chamar({ acao: 'link', nota_id: 'bbbbbbbb-0000-4000-8000-000000000001' }, { 'x-painel-token': 'tokA' })
+  assert.equal(alheia.status, 404)
+})

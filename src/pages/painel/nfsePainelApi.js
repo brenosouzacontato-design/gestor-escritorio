@@ -39,3 +39,35 @@ export async function baixarNfse(clienteId, nota, formato, { incluirHomologacao 
   a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 60 * 1000);
 }
+
+// Notas ainda não emitidas, com o que falta: [{ id, nome, cpf, data, valor, descricao, pronta, pendencias, erros, avisos }]
+export async function listarNfsePendentes(clienteId) {
+  const resp = await chamar({ acao: 'pendentes', cliente_id: clienteId });
+  const dados = await resp.json().catch(() => ({}));
+  if (!resp.ok) throw new Error(dados.error || 'Não foi possível carregar as notas pendentes.');
+  return dados.notas || [];
+}
+
+// O cliente completa a nota (cpf / nome / descrição). Devolve a nota revalidada.
+export async function completarNfse(clienteId, notaId, campos) {
+  const resp = await chamar({ acao: 'completar', cliente_id: clienteId, nota_id: notaId, ...campos });
+  const dados = await resp.json().catch(() => ({}));
+  if (!resp.ok) throw new Error(dados.error || 'Não foi possível salvar.');
+  return dados.nota;
+}
+
+// Link público (assinado, com validade) do PDF da nota, para mandar ao tomador
+export async function linkPdfNfse(clienteId, notaId) {
+  const resp = await chamar({ acao: 'link', cliente_id: clienteId, nota_id: notaId });
+  const dados = await resp.json().catch(() => ({}));
+  if (!resp.ok) throw new Error(dados.error || 'Não foi possível gerar o link.');
+  return dados;
+}
+
+// Número digitado → só dígitos com DDI 55. null se não parecer celular/fixo brasileiro.
+export function numeroWhatsapp(digitado) {
+  let d = String(digitado || '').replace(/\D/g, '');
+  if (d.startsWith('0')) d = d.replace(/^0+/, '');
+  if (!d.startsWith('55') || d.length < 12) d = `55${d}`;
+  return d.length === 12 || d.length === 13 ? d : null;
+}
