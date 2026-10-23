@@ -94,9 +94,9 @@ export default function Overview({ onAddTarefa, onOpenCliente, onOpenEmpresa, on
         </div>
         <select value={compSel} onChange={e => setCompSel(e.target.value)}
           style={{ fontSize:12, padding:'6px 10px', borderRadius:'var(--r-sm)', border:'1px solid var(--border)', background:'var(--surface2)', color:'var(--text1)' }}>
-          {[0,1,2,3].map(i => {
+          {[-1,0,1,2,3].map(i => {
             const c = compMesAtras(i)
-            return <option key={c} value={c}>{i===0?`Atual (${c})`:i===1?`Anterior (${c})`:c}</option>
+            return <option key={c} value={c}>{i===-1?`Futura (${c})`:i===0?`Atual (${c})`:i===1?`Anterior (${c})`:c}</option>
           })}
         </select>
       </div>
