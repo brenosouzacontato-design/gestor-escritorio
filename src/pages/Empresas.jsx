@@ -241,6 +241,7 @@ export default function Empresas({ onOpenTarefas, clienteInicialId, onClienteIni
   const [updatingId,  setUpdatingId]  = useState(null)
   const [nomeColW,    setNomeColW]    = useState(200)
   const [gerando,     setGerando]     = useState(false)
+  const [progressoGeracao, setProgressoGeracao] = useState("")
   // Modal nova obrigação / nova tarefa / tarefas em lote
   const [showNovaObs,     setShowNovaObs]     = useState(false)
   const [showNovaTarefa,  setShowNovaTarefa]  = useState(false)
@@ -700,12 +701,15 @@ export default function Empresas({ onOpenTarefas, clienteInicialId, onClienteIni
 
   const handleGerarCompetencia = async () => {
     setGerando(true)
+    setProgressoGeracao('')
     try {
-      const n = await gerarObrigacoesRecorrentesCompetencia(compSel, clientes.map(c => c.id))
+      const n = await gerarObrigacoesRecorrentesCompetencia(compSel, clientes.map(c => c.id),
+        (feitas, total) => setProgressoGeracao(`${feitas}/${total}`))
       await fetchObrigacoes()
       show?.(n > 0 ? `${n} obrigação${n!==1?'ões':''} gerada${n!==1?'s':''} para ${compSel}` : `Nada novo pra gerar em ${compSel}`)
-    } catch (e) { show?.('Erro: ' + e.message) }
+    } catch (e) { show?.('Erro: ' + e.message); await fetchObrigacoes() }
     setGerando(false)
+    setProgressoGeracao('')
   }
 
   return (
@@ -763,7 +767,7 @@ export default function Empresas({ onOpenTarefas, clienteInicialId, onClienteIni
           <button onClick={handleGerarCompetencia} disabled={gerando}
             title="Gerar obrigações recorrentes desta competência (automático, todas as empresas)"
             style={{ display:'flex', alignItems:'center', gap:5, background:'var(--surface2)', border:'1px solid var(--border)', borderRadius:8, padding:'5px 10px', fontSize:11, color:'var(--text2)', cursor:'pointer', fontWeight:500, opacity:gerando?.6:1 }}>
-            <RefreshCwIcon size={12} /> {gerando ? 'Gerando...' : `Gerar ${compSel}`}
+            <RefreshCwIcon size={12} /> {gerando ? `Gerando ${compSel}… ${progressoGeracao}` : `Gerar ${compSel}`}
           </button>
           <button onClick={() => setShowLoteObs(true)}
             title="Criar uma obrigação escolhida à mão pra várias empresas"

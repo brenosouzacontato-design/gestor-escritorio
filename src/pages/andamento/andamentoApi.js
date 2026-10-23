@@ -267,7 +267,8 @@ function primeiroDiaCompetencia(comp) {
 // anual=12) — não tenta alinhar em trimestres de calendário fixo, só evita
 // gerar de novo perto demais da última. Idempotente: rodar de novo pra
 // mesma competência não recria o que já existe.
-export async function gerarObrigacoesRecorrentesCompetencia(competencia, clienteIds) {
+// onProgresso(feitas, total): chamado a cada obrigação criada (a tela mostra "Gerando 12/170").
+export async function gerarObrigacoesRecorrentesCompetencia(competencia, clienteIds, onProgresso = null) {
   if (!clienteIds || clienteIds.length === 0) return 0;
 
   const { data: tipos, error: errTipos } = await supabase
@@ -305,7 +306,7 @@ export async function gerarObrigacoesRecorrentesCompetencia(competencia, cliente
   clienteIds = clienteIds.filter((id) => !antesDoInicio.has(id));
   if (clienteIds.length === 0) return 0;
   const dataInicio = primeiroDiaCompetencia(competencia);
-  let criadas = 0;
+  const fila = [];
 
   for (const tipo of tipos) {
     const janela = JANELA_MESES_POR_PERIODICIDADE[tipo.periodicidade] ?? 1;
@@ -320,12 +321,34 @@ export async function gerarObrigacoesRecorrentesCompetencia(competencia, cliente
         return diff >= 0 && diff < janela;
       });
       if (jaTemNaJanela) continue;
-      await criarObrigacaoComEtapas({
+      fila.push({
         clienteId, tipoObrigacaoId: tipo.id, departamentoId: tipo.departamento_id,
         titulo: tipo.nome, competencia, dataInicio, vencimentoUnico,
       });
-      criadas++;
     }
+  }
+
+  // Várias ao mesmo tempo (cada uma são 3-4 chamadas ao banco): uma por vez levava minutos.
+  let criadas = 0;
+  let proxima = 0;
+  const erros = [];
+  const trabalhador = async () => {
+    while (proxima < fila.length) {
+      const item = fila[proxima++];
+      try {
+        await criarObrigacaoComEtapas(item);
+        criadas++;
+      } catch (e) {
+        erros.push(`${item.titulo}: ${e.message}`);
+      }
+      if (onProgresso) onProgresso(criadas + erros.length, fila.length);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(6, fila.length) }, trabalhador));
+  if (erros.length) {
+    const e = new Error(`${criadas} criada(s), ${erros.length} com erro — ${erros[0]}`);
+    e.criadas = criadas;
+    throw e;
   }
   return criadas;
 }

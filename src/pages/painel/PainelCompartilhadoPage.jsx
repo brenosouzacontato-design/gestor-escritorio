@@ -1243,62 +1243,61 @@ function LinhaHonorario({ h }) {
   );
 }
 
-// Mesmo formato das notas de entrada: fechado mostra só os totais; "Ver por nota" abre as listas.
-// Se alguma nota a emitir precisa de informação do cliente, o aviso aparece já no resumo.
+// Mesmo formato das notas de entrada: cada grupo (Emitidas / A emitir) fechado mostra o total e a
+// quantidade; "Ver por nota" abre a lista dele. Se alguma a emitir precisa de informação do
+// cliente, o aviso aparece no resumo.
 function NotasServico({ emitidas, pendentes, onBaixar, onWhatsapp, onCompletar }) {
-  const [aberto, setAberto] = useState(false);
-  const soma = (lista) => lista.reduce((t, n) => t + Number(n.valor || 0), 0);
   const faltando = pendentes.filter((n) => !n.pronta).length;
-  const bloco = (rotulo, lista, cor) => (
-    <div style={{ flex: '1 1 140px', minWidth: 0 }}>
-      <div style={{ fontSize: 10, color: 'var(--text3)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.03em' }}>
-        {rotulo} · {lista.length} nota{lista.length !== 1 ? 's' : ''}
-      </div>
-      <div style={{ fontSize: 18, fontWeight: 800, color: cor, marginTop: 3 }}>{fmt(soma(lista))}</div>
-    </div>
-  );
   return (
-    <div style={{ background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', overflow: 'hidden' }}>
-      <button type="button" onClick={() => setAberto((v) => !v)} aria-expanded={aberto}
-        style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 12, padding: '12px 14px', background: 'none', border: 'none',
-          cursor: 'pointer', textAlign: 'left', fontFamily: 'inherit', flexWrap: 'wrap' }}>
-        {bloco('Emitidas', emitidas, 'var(--text1)')}
-        {bloco('A emitir', pendentes, pendentes.length ? 'var(--warn)' : 'var(--text3)')}
-        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11, fontWeight: 600, color: 'var(--accent)',
-          background: 'var(--accent-dim)', borderRadius: 99, padding: '5px 10px', whiteSpace: 'nowrap', marginLeft: 'auto' }}>
-          {aberto ? 'Ocultar notas' : 'Ver por nota'}
-          <ChevronDownIcon size={13} style={{ transform: aberto ? 'rotate(180deg)' : 'none', transition: 'transform .15s' }} />
-        </span>
-        {faltando > 0 && (
-          <span style={{ flexBasis: '100%', fontSize: 11, color: 'var(--warn)', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 4 }}>
-            <AlertTriangleIcon size={12} /> {faltando} nota{faltando !== 1 ? 's' : ''} a emitir precisa{faltando !== 1 ? 'm' : ''} de informação sua (ex.: CPF do paciente)
-          </span>
-        )}
-      </button>
-      {aberto && (
-        <div style={{ borderTop: '1px solid var(--border)', padding: '10px 14px 12px', display: 'flex', flexDirection: 'column', gap: 12 }}>
-          {emitidas.length > 0 && (
-            <div>
-              <div style={SUBTITULO_NOTAS}>Emitidas</div>
-              <div style={LISTA}>{emitidas.map((n) => <LinhaNfseEmitida key={n.id} n={n} onBaixar={onBaixar} onWhatsapp={onWhatsapp} />)}</div>
-            </div>
-          )}
-          {pendentes.length > 0 && (
-            <div>
-              <div style={SUBTITULO_NOTAS}>A emitir</div>
-              <div style={{ fontSize: 11.5, color: 'var(--text3)', marginBottom: 8 }}>
-                Complete o que falta (normalmente o CPF do paciente). Quando a nota fica pronta, o escritório emite e ela passa para "Emitidas", com o botão para enviar pelo WhatsApp.
-              </div>
-              <div style={LISTA}>{pendentes.map((n) => <LinhaNfsePendente key={n.id} n={n} onSalvar={onCompletar} />)}</div>
-            </div>
-          )}
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+      <GrupoNotas rotulo="Emitidas" lista={emitidas} cor="var(--ok)" vazio="Nenhuma nota emitida nesta competência.">
+        <div style={LISTA}>{emitidas.map((n) => <LinhaNfseEmitida key={n.id} n={n} onBaixar={onBaixar} onWhatsapp={onWhatsapp} />)}</div>
+      </GrupoNotas>
+      <GrupoNotas rotulo="A emitir" lista={pendentes} cor="var(--warn)" vazio="Nenhuma nota aguardando emissão."
+        aviso={faltando > 0 && `${faltando} nota${faltando !== 1 ? 's' : ''} precisa${faltando !== 1 ? 'm' : ''} de informação sua (ex.: CPF do paciente)`}
+        abertoInicial={faltando > 0}>
+        <div style={{ fontSize: 11.5, color: 'var(--text3)', marginBottom: 8 }}>
+          Complete o que falta (normalmente o CPF do paciente). Quando a nota fica pronta, o escritório emite e ela passa para "Emitidas", com o botão para enviar pelo WhatsApp.
         </div>
-      )}
+        <div style={LISTA}>{pendentes.map((n) => <LinhaNfsePendente key={n.id} n={n} onSalvar={onCompletar} />)}</div>
+      </GrupoNotas>
     </div>
   );
 }
 
-const SUBTITULO_NOTAS = { fontSize: 10, color: 'var(--text3)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.03em', marginBottom: 6 };
+function GrupoNotas({ rotulo, lista, cor, vazio, aviso = null, abertoInicial = false, children }) {
+  const [aberto, setAberto] = useState(abertoInicial);
+  const total = lista.reduce((t, n) => t + Number(n.valor || 0), 0);
+  const temNotas = lista.length > 0;
+  return (
+    <div style={{ background: 'var(--bg)', border: '1px solid var(--border)', borderLeft: `3px solid ${temNotas ? cor : 'var(--border)'}`,
+      borderRadius: 'var(--r-md)', overflow: 'hidden' }}>
+      <button type="button" onClick={() => temNotas && setAberto((v) => !v)} aria-expanded={aberto} disabled={!temNotas}
+        style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 10, padding: '12px 14px', background: 'none', border: 'none',
+          cursor: temNotas ? 'pointer' : 'default', textAlign: 'left', fontFamily: 'inherit', flexWrap: 'wrap' }}>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 10, color: 'var(--text3)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.03em' }}>
+            {rotulo} · {lista.length} nota{lista.length !== 1 ? 's' : ''}
+          </div>
+          <div style={{ fontSize: 18, fontWeight: 800, color: temNotas ? 'var(--text1)' : 'var(--text3)', marginTop: 3 }}>{fmt(total)}</div>
+        </div>
+        {temNotas ? (
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11, fontWeight: 600, color: 'var(--accent)',
+            background: 'var(--accent-dim)', borderRadius: 99, padding: '5px 10px', whiteSpace: 'nowrap' }}>
+            {aberto ? 'Ocultar notas' : 'Ver por nota'}
+            <ChevronDownIcon size={13} style={{ transform: aberto ? 'rotate(180deg)' : 'none', transition: 'transform .15s' }} />
+          </span>
+        ) : <span style={{ fontSize: 11, color: 'var(--text3)' }}>{vazio}</span>}
+        {aviso && (
+          <span style={{ flexBasis: '100%', fontSize: 11, color: 'var(--warn)', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 4 }}>
+            <AlertTriangleIcon size={12} /> {aviso}
+          </span>
+        )}
+      </button>
+      {aberto && temNotas && <div style={{ borderTop: '1px solid var(--border)', padding: '10px 14px 12px' }}>{children}</div>}
+    </div>
+  );
+}
 
 function LinhaNfseEmitida({ n, onBaixar, onWhatsapp }) {
   const emitida = n.emitidaEm ? fmtData(String(n.emitidaEm).slice(0, 10)) : null;
