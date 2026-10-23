@@ -126,3 +126,16 @@ O DANFSe lê `finNFSe`/`indDest`/`dest` da posição nova e da antiga.
 - [ ] Antes de publicar: emitir 1 nota em homologação, conferir o PDF pela tela de emissão e o painel
       (com uma nota de produção já migrada, ex.: NFS-e 21).
 - [ ] Fases 4 (WhatsApp) e 5 (recorrentes).
+
+## Trava de duplicidade e nota cancelada
+
+Conferida na hora de emitir (não só na importação), contra as notas já emitidas ou em emissão do mesmo CPF:
+
+- **Igual** — mesmo CPF, mesma data de atendimento e mesmo valor: bloqueada, nada é enviado.
+- **Parecida** — mesmo CPF e mesmo valor, com data ou competência no mesmo mês: a tela pergunta
+  nota por nota "Emitir mesmo assim?" (Cancelar pula a nota). Na revalidação do lote ela já aparece
+  com o aviso "Possível nota repetida".
+
+Nota cancelada no portal nacional: na linha da nota, **Cancelada no portal** registra o motivo. Ela sai do
+painel do cliente, dos totais e da trava (a nota certa pode ser emitida de novo). Requer
+`supabase-schema-nfse-cancelamento.sql` aplicado no Supabase.

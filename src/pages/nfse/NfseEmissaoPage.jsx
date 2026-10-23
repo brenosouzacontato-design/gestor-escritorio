@@ -25,6 +25,7 @@ const COR_STATUS = {
   indeterminada: ['var(--warn-dim)', 'var(--warn)'],
   enviada: ['var(--warn-dim)', 'var(--warn)'],
   numero_reservado: ['var(--surface3)', 'var(--text2)'],
+  cancelada: ['var(--surface3)', 'var(--text3)'],
 }
 const EDITAVEL = (n) => n.estado === 'importada' || n.estado === 'validada'
 
@@ -311,13 +312,21 @@ export default function NfseEmissaoPage() {
   async function emitirSelecionadas() {
     setConfirmar(false)
     const fila = notas.filter((n) => selecionadas.has(n.id) && n.estado === 'validada').map((n) => n.id)
-    const conta = { autorizada: 0, rejeitada: 0, indeterminada: 0 }
+    const conta = { autorizada: 0, rejeitada: 0, indeterminada: 0, pulada: 0 }
     setOcupado(true)
     try {
       for (const [i, id] of fila.entries()) {
         setProgresso(`Emitindo ${i + 1} de ${fila.length}…`)
         try {
-          const r = await chamarNfse('emitir', { nota_id: id, ambiente })
+          let r
+          try {
+            r = await chamarNfse('emitir', { nota_id: id, ambiente })
+          } catch (e) {
+            // Nota parecida com outra já emitida: só segue se o usuário confirmar, nota por nota
+            if (!e.message.startsWith('Possível nota repetida')) throw e
+            if (!window.confirm(`${e.message}\n\nEmitir mesmo assim? (Cancelar = pular esta nota)`)) { conta.pulada++; continue }
+            r = await chamarNfse('emitir', { nota_id: id, ambiente, confirmar_repetida: true })
+          }
           conta[r.resultado.estado] = (conta[r.resultado.estado] || 0) + 1
         } catch (e) {
           show(`Emissão interrompida: ${e.message}`)
@@ -328,10 +337,17 @@ export default function NfseEmissaoPage() {
       }
     } finally {
       setOcupado(false)
-      setProgresso(`Concluído: ${conta.autorizada} autorizada(s), ${conta.rejeitada} rejeitada(s), ${conta.indeterminada} indeterminada(s)`)
+      setProgresso(`Concluído: ${conta.autorizada} autorizada(s), ${conta.rejeitada} rejeitada(s), ${conta.indeterminada} indeterminada(s)${conta.pulada ? `, ${conta.pulada} pulada(s) por parecer repetida` : ''}`)
       setSelecionadas(new Set())
       await carregarNotas()
     }
+  }
+
+  async function marcarCancelada(nota) {
+    const motivo = window.prompt(`NFS-e nº ${nota.numero_nfse || '?'} — ${nota.nome || ''}\n\nEla já foi cancelada no portal nacional? Informe o motivo para registrar aqui (some do painel do cliente e dos totais):`, 'Nota emitida em duplicidade')
+    if (!motivo || !motivo.trim()) return
+    await acao(() => chamarNfse('marcar_cancelada', { nota_id: nota.id, motivo }), 'Nota marcada como cancelada')
+    await carregarNotas()
   }
 
   async function reconsultar(nota) {
@@ -483,7 +499,13 @@ export default function NfseEmissaoPage() {
                           <a href="#" onClick={(e) => { e.preventDefault(); baixarNfse(clienteId, { id: n.id, numero: n.numero_nfse, chave: n.chave_acesso }, 'pdf', { incluirHomologacao: true }).catch((x) => show(x.message)) }}
                             title="DANFSe (NT 008/2026) gerado a partir do XML autorizado">PDF (DANFSe)</a>{' · '}
                           <a href="#" onClick={(e) => { e.preventDefault(); baixarXml(n.id, 'xml_retorno').catch((x) => show(x.message)) }}>XML NFS-e</a>{' · '}
-                          <a href="#" onClick={(e) => { e.preventDefault(); baixarXml(n.id, 'xml_enviado').catch((x) => show(x.message)) }}>XML DPS</a>
+                          <a href="#" onClick={(e) => { e.preventDefault(); baixarXml(n.id, 'xml_enviado').catch((x) => show(x.message)) }}>XML DPS</a>{' · '}
+                          <a href="#" style={{ color: 'var(--danger)' }} onClick={(e) => { e.preventDefault(); if (!ocupado) marcarCancelada(n) }}
+                            title="Use depois de cancelar a nota no portal nacional (www.nfse.gov.br)">Cancelada no portal</a>
+                        </>}
+                        {n.estado === 'cancelada' && <>
+                          <div style={{ color: 'var(--text3)', textDecoration: 'line-through' }}>NFS-e nº {n.numero_nfse || '?'}</div>
+                          <div style={suave}>{n.mensagem_sefin || 'Cancelada no portal nacional'}</div>
                         </>}
                         {n.estado === 'rejeitada' && <>
                           <div style={{ color: 'var(--danger)' }}>✖ {n.mensagem_sefin}</div>

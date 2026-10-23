@@ -191,3 +191,54 @@ test('nota de outra empresa é recusada', async () => {
   repo.notas.find((n) => n.id === a).cliente_id = 'outra'
   await assert.rejects(emissor.emitir(a), /outra empresa/)
 })
+
+// --- trava de duplicidade na hora de emitir e nota cancelada no portal ---
+
+async function comNotaJaEmitida(extra) {
+  const amb = await ambiente()
+  await amb.repo.inserirNotas([{ lote_id: 'lote-antigo', cliente_id: 'cli-1', ambiente: 'homologacao', estado: 'autorizada',
+    nome: 'Maria Silva', cpf: '52998224725', valor: '650.00', numero_nfse: '1', ...extra }])
+  const [antiga] = await amb.repo.listarNotasLote('lote-antigo')
+  return { ...amb, antiga: antiga.id }
+}
+
+test('nota parecida (mesmo CPF e valor no mesmo mês) só sai com confirmação', async () => {
+  const { repo, sefin, emissor, a } = await comNotaJaEmitida({ data: '2026-04-02' })
+  await assert.rejects(emissor.emitir(a), (e) => e instanceof EmissaoBloqueada && /^Possível nota repetida: Maria Silva já tem NFS-e nº 1/.test(e.message))
+  assert.deepEqual(sefin.chamadas, []) // nada enviado
+  assert.equal((await repo.obterNota(a)).estado, 'validada') // nem número gasto
+  assert.equal((await emissor.emitir(a, { confirmarRepetida: true })).estado, 'autorizada')
+})
+
+test('nota igual (mesmo CPF, data e valor) é bloqueada mesmo confirmando', async () => {
+  const { sefin, emissor, a } = await comNotaJaEmitida({ data: '2026-04-16' })
+  await assert.rejects(emissor.emitir(a, { confirmarRepetida: true }), /Nota repetida: Maria Silva/)
+  assert.deepEqual(sefin.chamadas, [])
+})
+
+test('competência no mesmo mês também conta como parecida (o caso da nota migrada)', async () => {
+  const { emissor, a, repo } = await comNotaJaEmitida({ data: '2026-03-20', competencia: '2026-04-01' })
+  await assert.rejects(emissor.emitir(a), /Possível nota repetida/)
+  // outro valor ou outro mês: segue normal
+  await repo.atualizarNota(a, { valor: '700.00' })
+  assert.equal((await emissor.emitir(a)).estado, 'autorizada')
+})
+
+test('depois de marcar a anterior como cancelada, emite sem travar; cancelada não reenvia', async () => {
+  const { repo, emissor, a, antiga } = await comNotaJaEmitida({ data: '2026-04-16' })
+  await repo.mudarEstado(antiga, 'autorizada', 'cancelada', 'Cancelada no portal nacional: duplicidade')
+  assert.equal((await emissor.emitir(a)).estado, 'autorizada')
+  await assert.rejects(emissor.emitir(antiga), /cancelada/)
+  await assert.rejects(repo.mudarEstado(antiga, 'cancelada', 'autorizada'), /cancelada → autorizada/)
+})
+
+test('revalidação avisa nota parecida antes da emissão; cancelada sai dos totais', async () => {
+  const { repo, a, antiga } = await comNotaJaEmitida({ data: '2026-04-02' })
+  const { revalidarLote } = require('../lotes')
+  const nota = await repo.obterNota(a)
+  await revalidarLote(repo, nota.lote_id, EMPRESA, HOJE)
+  assert.ok((await repo.obterNota(a)).avisos.some((x) => x.startsWith('Possível nota repetida')))
+  assert.equal((await repo.obterNota(a)).estado, 'validada') // aviso, não erro
+  await repo.mudarEstado(antiga, 'autorizada', 'cancelada', 'teste')
+  assert.equal(totais(await repo.listarNotasLote('lote-antigo')).servico, '0.00')
+})
