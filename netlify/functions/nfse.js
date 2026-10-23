@@ -155,6 +155,11 @@ const acoes = {
     }
     const { error } = await db.from('nfse_empresas').upsert(registro, { onConflict: 'cliente_id' })
     if (error) throw new Error(error.message)
+    // Regras novas (campos obrigatórios, descrição padrão, competência) valem já para os lotes em aberto
+    const empresaSalva = await repo.obterEmpresa(clienteId)
+    for (const loteId of await repo.listarLotesEmAberto(clienteId, empresaSalva.ambiente)) {
+      await lotes.revalidarLote(repo, loteId, empresaSalva)
+    }
     return acoes.status({ db, repo }, { cliente_id: clienteId })
   },
 

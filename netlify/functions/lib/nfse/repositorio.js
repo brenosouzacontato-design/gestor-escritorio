@@ -100,6 +100,13 @@ class RepositorioSupabase {
     return (r ? Number(r.ultimo_numero) : 0) + 1
   }
 
+  // Lotes da empresa com notas ainda editáveis (para revalidar quando a configuração muda)
+  async listarLotesEmAberto(clienteId, ambiente) {
+    const linhas = await this._q(this.db.from('nfse_notas').select('lote_id')
+      .eq('cliente_id', clienteId).eq('ambiente', ambiente).in('estado', EDITAVEIS))
+    return [...new Set(linhas.map((l) => l.lote_id))]
+  }
+
   // Cadastro de clientes do prestador (nfse_tomadores)
   listarTomadores(clienteId) {
     return this._q(this.db.from('nfse_tomadores').select('*').eq('cliente_id', clienteId).order('nome'))
@@ -191,6 +198,11 @@ class RepositorioMemoria {
   }
 
   async proximoNumero(clienteId, ambiente, serie) { return (this.sequencias[`${clienteId}|${ambiente}|${serie}`] || 0) + 1 }
+
+  async listarLotesEmAberto(clienteId, ambiente) {
+    return [...new Set(this.notas.filter((n) => n.cliente_id === clienteId && n.ambiente === ambiente && EDITAVEIS.includes(n.estado))
+      .map((n) => n.lote_id))]
+  }
 
   async listarTomadores(clienteId) {
     return (this.tomadores || []).filter((t) => t.cliente_id === clienteId).map((t) => this._copia(t))

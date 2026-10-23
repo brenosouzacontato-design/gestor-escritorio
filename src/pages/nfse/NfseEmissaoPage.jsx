@@ -262,7 +262,8 @@ export default function NfseEmissaoPage() {
     if (!id) { setNotas([]); return }
     const n = await listarNotas(id)
     setNotas(n)
-    setSelecionadas((s) => new Set([...s].filter((x) => n.some((y) => y.id === x && y.estado === 'validada'))))
+    // Seleção vale para notas ainda editáveis (competência em massa); a emissão usa só as prontas
+    setSelecionadas((s) => new Set([...s].filter((x) => n.some((y) => y.id === x && EDITAVEL(y)))))
   }
 
   useEffect(() => {
@@ -346,7 +347,9 @@ export default function NfseEmissaoPage() {
   const t = totais(notas)
   const visiveis = notas.filter((n) => !filtro || (filtro.startsWith('estado:') ? n.estado === filtro.slice(7) : EDITAVEL(n) && n.status_validacao === filtro))
   const prontas = notas.filter((n) => n.estado === 'validada')
-  const sel = notas.filter((n) => selecionadas.has(n.id))
+  const editaveis = notas.filter(EDITAVEL)
+  const marcadas = notas.filter((n) => selecionadas.has(n.id)) // para competência em massa
+  const sel = marcadas.filter((n) => n.estado === 'validada') // o que de fato pode ser emitido
   const totalSel = sel.reduce((s, n) => s + Number(n.valor || 0), 0)
   const conta = (f) => notas.filter(f).length
   const competencias = Object.entries(sel.reduce((m, n) => {
@@ -413,7 +416,7 @@ export default function NfseEmissaoPage() {
           </div>
 
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 10, marginBottom: 12 }}>
-            {[['Serviço', brl(t.servico)], ['Emitido', brl(t.emitido)], ['Faltando', brl(t.faltando)], ['Selecionado', sel.length ? `${sel.length} · ${brl(totalSel)}` : '—']].map(([r, v]) => (
+            {[['Serviço', brl(t.servico)], ['Emitido', brl(t.emitido)], ['Faltando', brl(t.faltando)], ['Selecionado', marcadas.length ? `${marcadas.length}${marcadas.length !== sel.length ? ` (${sel.length} pronta${sel.length === 1 ? '' : 's'})` : ''} · ${brl(totalSel)}` : '—']].map(([r, v]) => (
               <div key={r} style={{ background: 'var(--surface2)', borderRadius: 8, padding: '8px 12px' }}>
                 <div style={suave}>{r}</div><div style={{ fontSize: 17, fontWeight: 700, color: 'var(--text1)' }}>{v}</div>
               </div>
@@ -422,9 +425,14 @@ export default function NfseEmissaoPage() {
 
           <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginBottom: 10 }}>
             <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12 }}>
-              <input type="checkbox" style={{ width: 'auto' }} checked={prontas.length > 0 && prontas.every((n) => selecionadas.has(n.id))}
+              <input type="checkbox" style={{ width: 'auto' }} checked={editaveis.length > 0 && editaveis.every((n) => selecionadas.has(n.id))}
+                onChange={(e) => setSelecionadas(e.target.checked ? new Set(editaveis.map((n) => n.id)) : new Set())} />
+              selecionar todas as não emitidas
+            </label>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12 }}>
+              <input type="checkbox" style={{ width: 'auto' }} checked={prontas.length > 0 && prontas.every((n) => selecionadas.has(n.id)) && marcadas.length === prontas.length}
                 onChange={(e) => setSelecionadas(e.target.checked ? new Set(prontas.map((n) => n.id)) : new Set())} />
-              selecionar todos os prontos
+              só as prontas
             </label>
             <select value={filtro} onChange={(e) => setFiltro(e.target.value)} style={{ width: 'auto' }}>
               <option value="">todos</option><option value="pronto">prontos</option><option value="pendente">pendentes</option>
@@ -458,7 +466,7 @@ export default function NfseEmissaoPage() {
                   const padraoComp = status.empresa.regra_competencia === 'mes_da_emissao' ? 'data da emissão' : dataBR(n.data)
                   return (
                     <tr key={n.id} style={{ background: fundo, borderBottom: '1px solid var(--border)', verticalAlign: 'top' }}>
-                      <td style={{ padding: 6 }}><input type="checkbox" style={{ width: 'auto' }} disabled={n.estado !== 'validada'} checked={selecionadas.has(n.id)}
+                      <td style={{ padding: 6 }}><input type="checkbox" style={{ width: 'auto' }} disabled={!EDITAVEL(n)} checked={selecionadas.has(n.id)}
                         onChange={(e) => setSelecionadas((s) => { const x = new Set(s); e.target.checked ? x.add(n.id) : x.delete(n.id); return x })} /></td>
                       <td style={{ padding: 6 }}><Pill tipo={tipo}>{tipo.replace('_', ' ')}</Pill></td>
                       <td style={{ padding: 2 }}>{inp(n, 'nome', n.nome, 180)}</td>

@@ -170,3 +170,17 @@ test('function: importa planilha de clientes (prévia e gravação), edita e usa
   assert.equal((await chamar({ acao: 'tomador_excluir', cliente_id: CLIENTE, id: carla.id })).status, 200)
   assert.equal(supa.db.nfse_tomadores.length, 6)
 })
+
+test('function: salvar a configuração revalida os lotes em aberto (ex.: endereço deixa de ser obrigatório)', async () => {
+  const { supa, chamar } = montar()
+  const gabarito = fs.readFileSync(path.join(__dirname, 'golden', 'gabarito_dps.xml'), 'utf8')
+  await chamar({ acao: 'salvar_empresa', cliente_id: CLIENTE, gabarito_xml: gabarito, descricao_padrao: 'Sessão' })
+  const imp = await chamar({ acao: 'importar', cliente_id: CLIENTE, texto: '9/09/2026\nAdriana Teste 480,00' })
+  const nota = () => supa.db.nfse_notas.find((n) => n.lote_id === imp.lote_id)
+  await chamar({ acao: 'editar', nota_id: nota().id, campos: { cpf: '529.982.247-25' } })
+  assert.deepEqual(nota().pendencias, ['Endereço'])
+  supa.db.nfse_empresas[0].campos_obrigatorios = ['nome', 'cpf', 'data', 'valor', 'descricao']
+  assert.equal((await chamar({ acao: 'salvar_empresa', cliente_id: CLIENTE })).status, 200)
+  assert.equal(nota().status_validacao, 'pronto')
+  assert.equal(nota().estado, 'validada')
+})
