@@ -203,9 +203,15 @@ export default function Empresas({ onOpenTarefas, clienteInicialId, onClienteIni
   const deleteCliente   = useStore(s => s.deleteCliente)
   const { show }        = useToast()
 
-  // Competência única do app — só o Painel tem o seletor; essa tela lê o
-  // mesmo valor do store, sem controle próprio.
+  // Competência única do app (store): o Painel e esta tela mudam o mesmo valor.
+  // Aqui o seletor oferece a anterior, a atual e a futura, para gerar obrigações adiantado.
   const compSel = useStore(s => s.competenciaSelecionada)
+  const setCompSel = useStore(s => s.setCompetenciaSelecionada)
+  const opcoesComp = (() => {
+    const mes = (n) => { const d = new Date(); d.setDate(1); d.setMonth(d.getMonth() + n); return String(d.getMonth() + 1).padStart(2, '0') + '/' + d.getFullYear() }
+    const lista = [[mes(-1), 'Anterior'], [mes(0), 'Atual'], [mes(1), 'Futura']]
+    return lista.some(([c]) => c === compSel) ? lista : [[compSel, 'Selecionada'], ...lista]
+  })()
   const [busca,       setBusca]       = useState('')
   const [filtro,      setFiltro]      = useState('todos')
   const [carteira,    setCarteira]    = useState('todas')
@@ -750,6 +756,10 @@ export default function Empresas({ onOpenTarefas, clienteInicialId, onClienteIni
           </button>
         </div>
         <div style={{ marginLeft:'auto', display:'flex', alignItems:'center', gap:8 }}>
+          <select value={compSel} onChange={e => setCompSel(e.target.value)} title="Competência da tela e da geração de obrigações"
+            style={{ background:'var(--surface2)', border:'1px solid var(--border)', borderRadius:8, padding:'5px 8px', fontSize:11, color:'var(--text2)' }}>
+            {opcoesComp.map(([c, rotulo]) => <option key={c} value={c}>{rotulo} ({c})</option>)}
+          </select>
           <button onClick={handleGerarCompetencia} disabled={gerando}
             title="Gerar obrigações recorrentes desta competência (automático, todas as empresas)"
             style={{ display:'flex', alignItems:'center', gap:5, background:'var(--surface2)', border:'1px solid var(--border)', borderRadius:8, padding:'5px 10px', fontSize:11, color:'var(--text2)', cursor:'pointer', fontWeight:500, opacity:gerando?.6:1 }}>

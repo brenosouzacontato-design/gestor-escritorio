@@ -1,9 +1,10 @@
 import { createContext, useContext, useEffect, useRef, useState } from 'react';
 import {
-  CalendarIcon, DownloadIcon, CheckCircleIcon, AlertTriangleIcon, ClockIcon, TrendingUpIcon,
+  CalendarIcon, ChevronDownIcon, DownloadIcon, CheckCircleIcon, AlertTriangleIcon, ClockIcon, TrendingUpIcon,
   ClipboardListIcon, EyeIcon, EyeOffIcon, WalletIcon, CopyIcon, FileTextIcon, SettingsIcon, UserIcon, MessageSquareIcon, PartyPopperIcon, BellIcon, SendIcon, BarcodeIcon, QrCodeIcon,
 } from 'lucide-react';
 import { chavePainelPorId, urlPublica } from '../../lib/linksPublicos';
+import { supabase } from '../../lib/supabase';
 import AcessoPainel, { obterClientePagina } from './AcessoPainel';
 import { listarNfseEmitidas, baixarNfse, listarNfsePendentes, completarNfse, linkPdfNfse, numeroWhatsapp } from './nfsePainelApi';
 import { descreverAparelho } from './aparelho';
@@ -135,14 +136,18 @@ function fmtDias(dias) {
   if (dias > 0) return `vence em ${dias} dia${dias !== 1 ? 's' : ''}`;
   return `venceu há ${Math.abs(dias)} dia${Math.abs(dias) !== 1 ? 's' : ''}`;
 }
-function opcoesCompetencia(base) {
+// inicio: 'AAAA-MM-DD' (clientes.inicio_escritorio) — nada antes do mês em que o cliente entrou
+function opcoesCompetencia(base, inicio = null) {
   const [mesBase, anoBase] = base.split('/').map(Number);
   const opcoes = [];
   for (let i = 4; i >= -1; i--) {
     const d = new Date(anoBase, mesBase - 1 - i, 1);
     opcoes.push(`${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`);
   }
-  return opcoes;
+  if (!inicio) return opcoes;
+  const primeira = `${String(inicio).slice(5, 7)}/${String(inicio).slice(0, 4)}`;
+  const validas = opcoes.filter((c) => competenciaOrdinal(c) >= competenciaOrdinal(primeira));
+  return validas.length ? validas : [primeira];
 }
 function competenciaOrdinal(c) {
   if (!c) return 0;
@@ -186,7 +191,22 @@ export default function PainelCompartilhadoPage(props) {
 function PainelCompartilhado({ clienteId, competencia: competenciaInicial, admin = false, sessao = null, semRegistro = false, largura = 720 }) {
   const registrar = !admin && !semRegistro;
   const [competencia, setCompetencia] = useState(competenciaInicial);
-  const opcoesComp = opcoesCompetencia(competenciaInicial);
+  // Início do cliente no escritório: no link público vem da sessão; dentro do app, do banco
+  // (sem a coluna no banco, a consulta falha e o seletor fica sem limite).
+  const [inicioEscritorio, setInicioEscritorio] = useState(sessao ? sessao.inicio_escritorio || null : null);
+  useEffect(() => {
+    if (sessao) return undefined;
+    let ativo = true;
+    supabase.from('clientes').select('inicio_escritorio').eq('id', clienteId).maybeSingle()
+      .then(({ data, error }) => { if (ativo && !error) setInicioEscritorio(data?.inicio_escritorio || null); });
+    return () => { ativo = false; };
+  }, [clienteId, sessao]);
+  const opcoesComp = opcoesCompetencia(competenciaInicial, inicioEscritorio);
+  const chaveOpcoes = opcoesComp.join();
+  // Link com competência anterior ao início: abre na primeira competência permitida
+  useEffect(() => {
+    if (!chaveOpcoes.split(',').includes(competencia)) setCompetencia(chaveOpcoes.split(',')[0]);
+  }, [chaveOpcoes, competencia]);
   const [dados, setDados] = useState(null);
   const [ultimaVisualizacao, setUltimaVisualizacao] = useState(undefined); // undefined = carregando/indisponível
   const [eventos, setEventos] = useState([]); // últimas aberturas/downloads do cliente (painel_eventos)
@@ -667,26 +687,13 @@ function PainelCompartilhado({ clienteId, competencia: competenciaInicial, admin
               </Secao>
               </Ocultavel>
 
-              {/* ── Notas fiscais de serviço emitidas pelo escritório (módulo NFS-e): PDF (DANFSe) e XML ── */}
-              {nfseEmitidas.length > 0 && (
+              {/* ── Notas fiscais de serviço (módulo NFS-e): totais emitido / a emitir, recolhidos;
+                  abrindo, as emitidas (PDF, XML, WhatsApp) e as que faltam informação ── */}
+              {(nfseEmitidas.length > 0 || nfsePendentes.length > 0) && (
                 <Ocultavel chave="nfse_emitidas" {...propsOc}>
-                <Secao titulo={`Notas fiscais emitidas — ${competencia}`} icone={<FileTextIcon size={14} />}
-                  extra={<Total valor={nfseEmitidas.reduce((s, n) => s + Number(n.valor || 0), 0)} />}>
-                  <div style={LISTA}>{nfseEmitidas.map((n) => <LinhaNfseEmitida key={n.id} n={n} onBaixar={baixarNotaEmitida} onWhatsapp={enviarNotaWhatsapp} />)}</div>
-                </Secao>
-                </Ocultavel>
-              )}
-
-              {/* ── Notas a emitir em que falta informação: o cliente completa aqui e o escritório emite ── */}
-              {nfsePendentes.length > 0 && (
-                <Ocultavel chave="nfse_pendentes" {...propsOc}>
-                <Secao titulo="Notas fiscais a emitir" icone={<AlertTriangleIcon size={14} />}
-                  extra={<span style={{ fontSize: 11, color: 'var(--text3)' }}>
-                    {nfsePendentes.filter((n) => !n.pronta).length} com informação faltando</span>}>
-                  <div style={{ fontSize: 11.5, color: 'var(--text3)', marginBottom: 8 }}>
-                    Complete o que falta (normalmente o CPF do paciente). Quando a nota fica pronta, o escritório emite e ela aparece em "Notas fiscais emitidas", com o botão para enviar pelo WhatsApp.
-                  </div>
-                  <div style={LISTA}>{nfsePendentes.map((n) => <LinhaNfsePendente key={n.id} n={n} onSalvar={completarPendente} />)}</div>
+                <Secao titulo={`Notas fiscais de serviço — ${competencia}`} icone={<FileTextIcon size={14} />}>
+                  <NotasServico emitidas={nfseEmitidas} pendentes={nfsePendentes}
+                    onBaixar={baixarNotaEmitida} onWhatsapp={enviarNotaWhatsapp} onCompletar={completarPendente} />
                 </Secao>
                 </Ocultavel>
               )}
@@ -1235,6 +1242,63 @@ function LinhaHonorario({ h }) {
       )} />
   );
 }
+
+// Mesmo formato das notas de entrada: fechado mostra só os totais; "Ver por nota" abre as listas.
+// Se alguma nota a emitir precisa de informação do cliente, o aviso aparece já no resumo.
+function NotasServico({ emitidas, pendentes, onBaixar, onWhatsapp, onCompletar }) {
+  const [aberto, setAberto] = useState(false);
+  const soma = (lista) => lista.reduce((t, n) => t + Number(n.valor || 0), 0);
+  const faltando = pendentes.filter((n) => !n.pronta).length;
+  const bloco = (rotulo, lista, cor) => (
+    <div style={{ flex: '1 1 140px', minWidth: 0 }}>
+      <div style={{ fontSize: 10, color: 'var(--text3)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.03em' }}>
+        {rotulo} · {lista.length} nota{lista.length !== 1 ? 's' : ''}
+      </div>
+      <div style={{ fontSize: 18, fontWeight: 800, color: cor, marginTop: 3 }}>{fmt(soma(lista))}</div>
+    </div>
+  );
+  return (
+    <div style={{ background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', overflow: 'hidden' }}>
+      <button type="button" onClick={() => setAberto((v) => !v)} aria-expanded={aberto}
+        style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 12, padding: '12px 14px', background: 'none', border: 'none',
+          cursor: 'pointer', textAlign: 'left', fontFamily: 'inherit', flexWrap: 'wrap' }}>
+        {bloco('Emitidas', emitidas, 'var(--text1)')}
+        {bloco('A emitir', pendentes, pendentes.length ? 'var(--warn)' : 'var(--text3)')}
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11, fontWeight: 600, color: 'var(--accent)',
+          background: 'var(--accent-dim)', borderRadius: 99, padding: '5px 10px', whiteSpace: 'nowrap', marginLeft: 'auto' }}>
+          {aberto ? 'Ocultar notas' : 'Ver por nota'}
+          <ChevronDownIcon size={13} style={{ transform: aberto ? 'rotate(180deg)' : 'none', transition: 'transform .15s' }} />
+        </span>
+        {faltando > 0 && (
+          <span style={{ flexBasis: '100%', fontSize: 11, color: 'var(--warn)', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 4 }}>
+            <AlertTriangleIcon size={12} /> {faltando} nota{faltando !== 1 ? 's' : ''} a emitir precisa{faltando !== 1 ? 'm' : ''} de informação sua (ex.: CPF do paciente)
+          </span>
+        )}
+      </button>
+      {aberto && (
+        <div style={{ borderTop: '1px solid var(--border)', padding: '10px 14px 12px', display: 'flex', flexDirection: 'column', gap: 12 }}>
+          {emitidas.length > 0 && (
+            <div>
+              <div style={SUBTITULO_NOTAS}>Emitidas</div>
+              <div style={LISTA}>{emitidas.map((n) => <LinhaNfseEmitida key={n.id} n={n} onBaixar={onBaixar} onWhatsapp={onWhatsapp} />)}</div>
+            </div>
+          )}
+          {pendentes.length > 0 && (
+            <div>
+              <div style={SUBTITULO_NOTAS}>A emitir</div>
+              <div style={{ fontSize: 11.5, color: 'var(--text3)', marginBottom: 8 }}>
+                Complete o que falta (normalmente o CPF do paciente). Quando a nota fica pronta, o escritório emite e ela passa para "Emitidas", com o botão para enviar pelo WhatsApp.
+              </div>
+              <div style={LISTA}>{pendentes.map((n) => <LinhaNfsePendente key={n.id} n={n} onSalvar={onCompletar} />)}</div>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+const SUBTITULO_NOTAS = { fontSize: 10, color: 'var(--text3)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.03em', marginBottom: 6 };
 
 function LinhaNfseEmitida({ n, onBaixar, onWhatsapp }) {
   const emitida = n.emitidaEm ? fmtData(String(n.emitidaEm).slice(0, 10)) : null;

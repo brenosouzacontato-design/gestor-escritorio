@@ -22,6 +22,9 @@ export default function ClienteFormModal({ onClose, cliente = null }) {
     observacoes: cliente?.observacoes || '',
   })
   const [loading, setLoading] = useState(false)
+  // "AAAA-MM" do campo mês; grava o 1º dia do mês. Vazio em cliente antigo = sem limite.
+  const inicioOriginal = cliente?.inicio_escritorio ? String(cliente.inicio_escritorio).slice(0, 7) : ''
+  const [inicioMes, setInicioMes] = useState(inicioOriginal)
 
   const clientes = useStore(s => s.clientes)
   const carteirasExistentes = [...new Set(clientes.map(c => c.carteira).filter(Boolean))].sort()
@@ -46,9 +49,14 @@ export default function ClienteFormModal({ onClose, cliente = null }) {
   const submit = async () => {
     if (!form.nome.trim()) { show('Informe o nome do cliente'); return }
     setLoading(true)
+    // Só manda o campo quando mudou: assim o formulário segue funcionando no banco
+    // sem supabase-schema-clientes-inicio.sql (cliente novo pega o default do banco).
+    const dados = inicioMes !== inicioOriginal
+      ? { ...form, inicio_escritorio: inicioMes ? `${inicioMes}-01` : null }
+      : form
     const { error } = isEdit
-      ? await updateCliente(cliente.id, form)
-      : await addCliente(form)
+      ? await updateCliente(cliente.id, dados)
+      : await addCliente(dados)
     setLoading(false)
     if (error) { show('Erro ao salvar cliente'); return }
     show(isEdit ? 'Cliente atualizado' : 'Cliente cadastrado')
@@ -142,6 +150,15 @@ export default function ClienteFormModal({ onClose, cliente = null }) {
           <datalist id="carteiras-list">
             {carteirasExistentes.map(c => <option key={c} value={c} />)}
           </datalist>
+        </div>
+        <div className="form-field">
+          <label className="form-label">Início no escritório</label>
+          <input
+            type="month"
+            value={inicioMes}
+            onChange={e => setInicioMes(e.target.value)}
+            title="O painel do cliente só mostra competências a partir deste mês, e as obrigações automáticas não são geradas antes dele"
+          />
         </div>
       </div>
 

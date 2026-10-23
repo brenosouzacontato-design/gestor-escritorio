@@ -293,6 +293,17 @@ export async function gerarObrigacoesRecorrentesCompetencia(competencia, cliente
   const excluidoSet = new Set((excluidos || []).map((e) => `${e.cliente_id}|${e.tipo_obrigacao_id}`));
 
   const alvo = competenciaParaOrdinal(competencia);
+
+  // Cliente que entrou no escritório depois dessa competência não ganha obrigação dela
+  // (clientes.inicio_escritorio; sem a coluna no banco, não filtra).
+  const { data: inicios, error: errInicio } = await supabase
+    .from('clientes').select('id, inicio_escritorio').in('id', clienteIds);
+  const antesDoInicio = new Set((errInicio ? [] : inicios || [])
+    .filter((c) => c.inicio_escritorio
+      && competenciaParaOrdinal(`${c.inicio_escritorio.slice(5, 7)}/${c.inicio_escritorio.slice(0, 4)}`) > alvo)
+    .map((c) => c.id));
+  clienteIds = clienteIds.filter((id) => !antesDoInicio.has(id));
+  if (clienteIds.length === 0) return 0;
   const dataInicio = primeiroDiaCompetencia(competencia);
   let criadas = 0;
 
