@@ -11,7 +11,10 @@
 //   { acao: 'competencia', nota_ids, competencia }
 //   { acao: 'excluir', nota_id }  |  { acao: 'copiar', nota_id }
 //   { acao: 'previa', nota_id }
-//   { acao: 'emitir', nota_id, ambiente }       ← ambiente confirmado na tela; se divergir, nada é enviado
+//   { acao: 'emitir', nota_id, ambiente, confirmar_repetida? } ← ambiente confirmado na tela; se divergir, nada é enviado.
+//        Nota igual a outra já emitida (CPF+data+valor) é bloqueada; parecida (CPF+valor no mesmo mês)
+//        só vai com confirmar_repetida: true.
+//   { acao: 'marcar_cancelada', nota_id, motivo }  ← registra o cancelamento feito no portal nacional
 //   { acao: 'tomador_salvar', cliente_id, tomador }  |  { acao: 'tomador_excluir', cliente_id, id }
 //   { acao: 'tomadores_importar', cliente_id, planilha_base64, gravar? }  ← sem gravar: só a prévia
 //
@@ -245,8 +248,27 @@ const acoes = {
     const { nota, empresa } = await empresaDaNota(repo, p.nota_id)
     exigir(p.ambiente === empresa.ambiente && p.ambiente === nota.ambiente,
       `Ambiente confirmado (${p.ambiente}) difere do configurado (${empresa.ambiente}). Nada foi enviado.`, 409)
-    const resultado = await (await emissorDa(db, repo, empresa, usuario)).emitir(nota.id)
+    const resultado = await (await emissorDa(db, repo, empresa, usuario)).emitir(nota.id, { confirmarRepetida: p.confirmar_repetida === true })
     return { resultado, nota: await repo.obterNota(nota.id) }
+  },
+
+  // A NFS-e foi cancelada no portal nacional: tira do painel do cliente, dos totais e da trava de
+  // duplicidade (assim a nota certa pode ser emitida de novo, se for o caso).
+  async marcar_cancelada({ repo, usuario }, p) {
+    const { nota } = await empresaDaNota(repo, p.nota_id)
+    exigir(nota.estado === 'autorizada', 'Só nota autorizada pode ser marcada como cancelada', 409)
+    const motivo = String(p.motivo || '').split(/\s+/).filter(Boolean).join(' ').slice(0, 300)
+    exigir(motivo, 'Informe o motivo do cancelamento')
+    try {
+      await repo.mudarEstado(nota.id, 'autorizada', 'cancelada', `Cancelada no portal nacional: ${motivo}`,
+        { mensagem_sefin: `Cancelada no portal nacional: ${motivo}` }, usuario.email)
+    } catch (e) {
+      if (/check constraint|estado_check/i.test(e.message)) {
+        throw new ErroHttp(409, 'O banco ainda não aceita notas canceladas: aplique supabase-schema-nfse-cancelamento.sql no Supabase.')
+      }
+      throw e
+    }
+    return { nota: await repo.obterNota(nota.id) }
   },
 
   // ---------------------------------------------------------------- cadastro de clientes (tomadores)

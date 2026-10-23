@@ -7,6 +7,7 @@
 const { validar, chaveDuplicidade, hojeBrasilia, PRONTO } = require('./validador')
 const { parseData, parseValor, soDigitos } = require('./importador')
 const { EDITAVEIS, EM_EMISSAO_OU_EMITIDA } = require('./repositorio')
+const { conferirDuplicidade, mensagemParecida, PREFIXO_PARECIDA } = require('./duplicidade')
 
 class NotaNaoEditavel extends Error {}
 
@@ -45,7 +46,7 @@ async function revalidarLote(repo, loteId, empresa, hoje = hojeBrasilia(), usuar
   for (const n of notas) {
     if (!EDITAVEIS.includes(n.estado)) continue
     const v = validar({ ...n, camposObrigatorios: empresa.campos_obrigatorios, hoje })
-    const avisos = (n.avisos || []).filter((a) => !a.startsWith(AVISO_OUTRO_LOTE))
+    const avisos = (n.avisos || []).filter((a) => !a.startsWith(AVISO_OUTRO_LOTE) && !a.startsWith(PREFIXO_PARECIDA))
     const chave = chaveDuplicidade(n.cpf, n.data, n.valor)
     if (chave) {
       if (emitidas.has(chave)) {
@@ -57,6 +58,10 @@ async function revalidarLote(repo, loteId, empresa, hoje = hojeBrasilia(), usuar
         if (emOutrosLotes.has(chave)) avisos.push(`${AVISO_OUTRO_LOTE} outro lote ainda não emitido`)
       }
       if (v.erros.length) v.status = 'invalido'
+      else {
+        const { parecidas } = conferirDuplicidade(n, [...outras, ...notas], { regraCompetencia: empresa.regra_competencia, hoje })
+        if (parecidas.length) avisos.push(`${mensagemParecida(n, parecidas)} Confira antes de emitir.`)
+      }
     }
     const estado = v.status === PRONTO ? 'validada' : 'importada'
     const mudou = JSON.stringify([n.status_validacao, n.pendencias, n.erros, n.avisos, n.estado])
@@ -159,7 +164,7 @@ function totais(notas) {
   let emitido = 0n
   const cent = (v) => BigInt(Math.round(Number(v) * 100))
   for (const n of notas) {
-    if (n.copiada_para || n.valor === null || n.valor === undefined) continue
+    if (n.copiada_para || n.estado === 'cancelada' || n.valor === null || n.valor === undefined) continue
     servico += cent(n.valor)
     if (n.estado === 'autorizada') emitido += cent(n.valor)
   }

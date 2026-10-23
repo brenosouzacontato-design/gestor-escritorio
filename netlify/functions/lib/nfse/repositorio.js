@@ -9,6 +9,7 @@
 // simultâneos de enviarem a mesma nota duas vezes. A reserva de número é uma função SQL atômica.
 
 // importada → validada → numero_reservado → enviada → autorizada | rejeitada | indeterminada
+// autorizada → cancelada: registro do cancelamento feito no portal nacional (não envia nada)
 const TRANSICOES = {
   importada: ['validada'],
   validada: ['importada', 'numero_reservado'],
@@ -16,12 +17,15 @@ const TRANSICOES = {
   enviada: ['autorizada', 'rejeitada', 'indeterminada'],
   indeterminada: ['autorizada', 'rejeitada', 'enviada'],
   rejeitada: [],
-  autorizada: [],
+  autorizada: ['cancelada'],
+  cancelada: [],
 }
 const EDITAVEIS = ['importada', 'validada'] // depois de reservar número, a nota não muda mais
 const EM_EMISSAO_OU_EMITIDA = ['numero_reservado', 'enviada', 'autorizada', 'indeterminada']
 
 class TransicaoInvalida extends Error {}
+
+const CAMPOS_DUPLICIDADE = 'id, lote_id, estado, nome, cpf, data, valor, competencia, numero_nfse, atualizado_em'
 
 function conferirTransicao(de, para) {
   if (!(TRANSICOES[de] || []).includes(para)) throw new TransicaoInvalida(`${de} → ${para}`)
@@ -58,8 +62,14 @@ class RepositorioSupabase {
 
   // Notas da mesma empresa e ambiente em outros lotes (para checar duplicidade)
   listarOutrasNotas(clienteId, ambiente, loteId) {
-    return this._q(this.db.from('nfse_notas').select('id, lote_id, estado, cpf, data, valor')
+    return this._q(this.db.from('nfse_notas').select(CAMPOS_DUPLICIDADE)
       .eq('cliente_id', clienteId).eq('ambiente', ambiente).neq('lote_id', loteId))
+  }
+
+  // Todas as notas do prestador para um CPF (trava de duplicidade na hora de emitir)
+  listarNotasDoTomador(clienteId, ambiente, cpf) {
+    return this._q(this.db.from('nfse_notas').select(CAMPOS_DUPLICIDADE)
+      .eq('cliente_id', clienteId).eq('ambiente', ambiente).eq('cpf', cpf))
   }
 
   async inserirLote(lote) {
@@ -144,6 +154,10 @@ class RepositorioMemoria {
   async listarNotasLote(loteId) { return this.notas.filter((n) => n.lote_id === loteId).map((n) => this._copia(n)) }
   async listarOutrasNotas(clienteId, ambiente, loteId) {
     return this.notas.filter((n) => n.cliente_id === clienteId && n.ambiente === ambiente && n.lote_id !== loteId).map((n) => this._copia(n))
+  }
+
+  async listarNotasDoTomador(clienteId, ambiente, cpf) {
+    return this.notas.filter((n) => n.cliente_id === clienteId && n.ambiente === ambiente && n.cpf === cpf).map((n) => this._copia(n))
   }
 
   async inserirLote(lote) {

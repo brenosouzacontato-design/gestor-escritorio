@@ -28,6 +28,9 @@ const EXPLICACOES = {
 
 class EmissaoBloqueada extends Error {}
 
+const { conferirDuplicidade, mensagemIgual, mensagemParecida } = require('./duplicidade')
+const { hojeBrasilia } = require('./validador')
+
 // Normaliza os formatos de erro da Sefin: 'erro' (objeto) ou 'erros' (lista), chaves em qualquer caixa.
 function errosDaResposta(r) {
   const item = (d) => {
@@ -119,7 +122,17 @@ function criarEmissor({ repo, empresa, certificado, cliente, usuario = null }) {
     return { estado: 'indeterminada', mensagem: msg }
   }
 
-  async function emitir(notaId) {
+  // Antes de gastar número: a mesma nota já emitida (igual) bloqueia; parecida pede confirmação
+  async function travarDuplicidade(nota, confirmarRepetida) {
+    if (!nota.cpf) return
+    const outras = await repo.listarNotasDoTomador(empresa.cliente_id, empresa.ambiente, nota.cpf)
+    const { iguais, parecidas } = conferirDuplicidade(nota, outras, { regraCompetencia: empresa.regra_competencia, hoje: hojeBrasilia() })
+    if (iguais.length) throw new EmissaoBloqueada(mensagemIgual(nota, iguais))
+    if (parecidas.length && !confirmarRepetida) throw new EmissaoBloqueada(mensagemParecida(nota, parecidas))
+  }
+
+  // opcoes.confirmarRepetida: o usuário viu o aviso de nota parecida e confirmou
+  async function emitir(notaId, opcoes = {}) {
     let nota = await repo.obterNota(notaId)
     if (!nota) throw new Error('Nota não encontrada')
     if (nota.cliente_id !== empresa.cliente_id || nota.ambiente !== empresa.ambiente) {
@@ -129,7 +142,10 @@ function criarEmissor({ repo, empresa, certificado, cliente, usuario = null }) {
     if (nota.estado === 'rejeitada') throw new EmissaoBloqueada("Nota rejeitada: o número não pode ser reutilizado. Use 'copiar para corrigir'.")
     if (nota.estado === 'importada') throw new EmissaoBloqueada('Nota não está pronta para emissão')
 
+    if (nota.estado === 'cancelada') throw new EmissaoBloqueada('Nota cancelada no portal: não pode ser reenviada')
+
     if (nota.estado === 'validada' || nota.estado === 'numero_reservado') {
+      if (nota.estado === 'validada') await travarDuplicidade(nota, opcoes.confirmarRepetida === true)
       nota = await preparar(nota)
       await repo.mudarEstado(notaId, 'numero_reservado', 'enviada', 'primeiro envio', {}, usuario)
     } else { // enviada (function caiu no meio) ou indeterminada: consulta antes de qualquer reenvio
