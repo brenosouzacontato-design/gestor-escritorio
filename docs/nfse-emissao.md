@@ -87,6 +87,21 @@ do indDest; se a Sefin recusar regApIBSCBSSN/cAtvSN em produção, adiar o grupo
 produção restrita é de 27/07/2026); a ordem dos campos segue a aba "LEIAUTE DPS_NFS-e - RT" do Anexo VI.
 O DANFSe lê `finNFSe`/`indDest`/`dest` da posição nova e da antiga.
 
+## Cadastro de clientes do prestador (tomadores) — 23/10/2026
+
+- Tabela `nfse_tomadores` (`supabase-schema-nfse-tomadores.sql`, aplicado): nome, CPF, apelidos, endereço,
+  contato, descrição e valor padrão, por empresa. Mesma regra de RLS (logado só lê; escrita pela function).
+- Tela "Emitir NFS-e" → **Clientes do prestador**: busca, cadastro/edição, e **importação de planilha de
+  controle** (nome | CPF | meses...): descobre as colunas sozinha, lê apelido entre parênteses
+  ("Maria Helena Costa (José Ricardo)"), completa CPF sem o zero à esquerda, avisa DV errado e CPF repetido
+  (repetido fica de fora para conferência). Sempre com prévia antes de gravar.
+- Ao importar atendimentos, o que faltar vem do cadastro: CPF **só quando o nome bate sem dúvida** (todas as
+  palavras do nome menor, no mínimo duas, uma pessoa só) ou por apelido; nome parecido vira aviso com o
+  candidato. Pelo nome, fica o nome da mensagem (mais completo); pelo apelido, a nota sai no nome do cadastro.
+- **Lista datada** (agenda: linha com a data, depois "Nome valor" por linha) é reconhecida no texto colado.
+- `nfse_empresas.descricao_padrao`: descrição do serviço quando nem a mensagem nem o cadastro trazem.
+- Testes: `tomadores.test.cjs` (dados fictícios no formato da planilha real).
+
 ## Regras herdadas do app local (não mudar)
 
 - nDPS reservado e gravado **antes** de qualquer chamada HTTP; número nunca reutilizado.

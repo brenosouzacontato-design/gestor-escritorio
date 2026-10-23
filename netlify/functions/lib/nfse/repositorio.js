@@ -99,6 +99,22 @@ class RepositorioSupabase {
       .eq('cliente_id', clienteId).eq('ambiente', ambiente).eq('serie', serie).maybeSingle())
     return (r ? Number(r.ultimo_numero) : 0) + 1
   }
+
+  // Cadastro de clientes do prestador (nfse_tomadores)
+  listarTomadores(clienteId) {
+    return this._q(this.db.from('nfse_tomadores').select('*').eq('cliente_id', clienteId).order('nome'))
+  }
+
+  async salvarTomador(t) {
+    const { id, ...campos } = t
+    const dados = { ...campos, atualizado_em: agora() }
+    if (id) return this._q(this.db.from('nfse_tomadores').update(dados).eq('id', id).eq('cliente_id', t.cliente_id).select('*').single())
+    return this._q(this.db.from('nfse_tomadores').insert(dados).select('*').single())
+  }
+
+  excluirTomador(id, clienteId) {
+    return this._q(this.db.from('nfse_tomadores').delete().eq('id', id).eq('cliente_id', clienteId))
+  }
 }
 
 // Mesma interface, em memória (testes)
@@ -175,6 +191,32 @@ class RepositorioMemoria {
   }
 
   async proximoNumero(clienteId, ambiente, serie) { return (this.sequencias[`${clienteId}|${ambiente}|${serie}`] || 0) + 1 }
+
+  async listarTomadores(clienteId) {
+    return (this.tomadores || []).filter((t) => t.cliente_id === clienteId).map((t) => this._copia(t))
+      .sort((a, b) => a.nome.localeCompare(b.nome))
+  }
+
+  async salvarTomador(t) {
+    this.tomadores = this.tomadores || []
+    if (t.cpf && this.tomadores.some((x) => x.cliente_id === t.cliente_id && x.cpf === t.cpf && x.id !== t.id)) {
+      throw new Error('Banco: duplicate key value violates unique constraint "nfse_tomadores_cpf_idx"')
+    }
+    if (t.id) {
+      const atual = this.tomadores.find((x) => x.id === t.id && x.cliente_id === t.cliente_id)
+      if (!atual) throw new Error('Cliente não encontrado')
+      Object.assign(atual, t, { atualizado_em: agora() })
+      return this._copia(atual)
+    }
+    const novo = { id: this._novoId(), apelidos: [], endereco: '', cep: '', email: '', telefone: '', descricao_padrao: '',
+      valor_padrao: null, observacao: '', ativo: true, ...t, criado_em: agora(), atualizado_em: agora() }
+    this.tomadores.push(novo)
+    return this._copia(novo)
+  }
+
+  async excluirTomador(id, clienteId) {
+    this.tomadores = (this.tomadores || []).filter((t) => !(t.id === id && t.cliente_id === clienteId))
+  }
 }
 
 module.exports = { RepositorioSupabase, RepositorioMemoria, TransicaoInvalida, TRANSICOES, EDITAVEIS, EM_EMISSAO_OU_EMITIDA }

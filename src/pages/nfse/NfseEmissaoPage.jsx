@@ -5,6 +5,7 @@ import EmpresaCombobox from '../../components/EmpresaCombobox'
 import { Modal, useToast } from '../../components/shared'
 import { chamarNfse, listarLotes, listarNotas, baixarXml, arquivoParaBase64, totais } from './nfseApi'
 import { baixarNfse } from '../painel/nfsePainelApi'
+import TomadoresPanel from './TomadoresPanel'
 
 // Emissão de NFS-e pela API da Sefin Nacional, por empresa. Ver docs/nfse-emissao.md.
 // Tudo que grava passa pela function nfse (login conferido no servidor); a tela só lê do Supabase.
@@ -53,7 +54,7 @@ function Configuracao({ clienteId, status, onAtualizado }) {
   const { show } = useToast()
   const emp = status.empresa
   const [aberto, setAberto] = useState(!status.configurada)
-  const [form, setForm] = useState({ serie_dps: emp?.serie_dps || '900', regra_competencia: emp?.regra_competencia || 'mes_do_atendimento', ambiente: emp?.ambiente || 'homologacao', whatsapp_origem: emp?.whatsapp_origem || '' })
+  const [form, setForm] = useState({ serie_dps: emp?.serie_dps || '900', regra_competencia: emp?.regra_competencia || 'mes_do_atendimento', ambiente: emp?.ambiente || 'homologacao', whatsapp_origem: emp?.whatsapp_origem || '', descricao_padrao: emp?.descricao_padrao || '' })
   // Simples Nacional no leiaute da NT 009 (obrigatórios para ME/EPP ou opção pendente)
   const sp0 = emp?.servico_padrao || {}
   const [simples, setSimples] = useState({
@@ -194,6 +195,12 @@ function Configuracao({ clienteId, status, onAtualizado }) {
                 <option value="mes_do_atendimento">Data do atendimento</option>
                 <option value="mes_da_emissao">Data da emissão</option>
               </select>
+            </div>
+            <div className="form-field">
+              <label className="form-label">Descrição padrão do serviço</label>
+              <input value={form.descricao_padrao} placeholder="ex.: Sessão de psicoterapia"
+                onChange={(e) => setForm({ ...form, descricao_padrao: e.target.value })} />
+              <div style={suave}>Usada quando nem a mensagem nem o cadastro do cliente trazem a descrição.</div>
             </div>
             <button className="btn btn-accent" disabled={salvando} onClick={salvarEmpresa}>Salvar configuração</button>
           </div>
@@ -373,6 +380,7 @@ export default function NfseEmissaoPage() {
 
       {!clienteId && <div style={{ ...card, ...suave }}>Escolha a empresa para configurar ou emitir.</div>}
       {clienteId && status && <Configuracao clienteId={clienteId} status={status} onAtualizado={setStatus} />}
+      {clienteId && <TomadoresPanel clienteId={clienteId} />}
 
       {status?.configurada && (
         <div style={card}>
