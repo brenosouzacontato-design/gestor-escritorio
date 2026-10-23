@@ -365,14 +365,24 @@ function PainelCompartilhado({ clienteId, competencia: competenciaInicial, admin
     const trocar = (novo) => setDados((d) => ({
       ...d, anexos: Object.fromEntries(Object.entries(d.anexos).map(([k, a]) => [k, a.id === anexo.id ? novo : a])),
     }));
+    // marcar como paga na mão = baixa manual: pede a justificativa (fica no
+    // histórico da tela Pagamentos)
+    let justificativa = null;
+    if (paga) {
+      justificativa = window.prompt('Baixa manual — informe a justificativa (ex: cliente confirmou o pagamento, conferido no e-CAC):');
+      if (justificativa === null) return;
+      if (!justificativa.trim()) { setErroEdicao('A baixa manual precisa de justificativa.'); return; }
+    }
     try {
-      const patch = await marcarGuiaPaga(anexo.id, paga);
+      const patch = await marcarGuiaPaga(anexo.id, paga, justificativa);
       trocar({ ...anexo, ...patch });
       setErroEdicao(null);
     } catch (e) {
-      setErroEdicao(/pago_em|valor_pago|comprovante/.test(e.message || '')
-        ? 'Não foi possível marcar: faltam as colunas de pagamento — rode supabase-schema-guia-pagamento.sql no SQL Editor do Supabase.'
-        : `Não foi possível salvar: ${e.message}`);
+      setErroEdicao(/baixa_manual|baixa_justificativa|baixa_por|baixa_registrada_em/.test(e.message || '')
+        ? 'Não foi possível marcar: faltam as colunas de baixa — rode supabase-schema-comprovantes-pagamento.sql no SQL Editor do Supabase.'
+        : /pago_em|valor_pago|comprovante/.test(e.message || '')
+          ? 'Não foi possível marcar: faltam as colunas de pagamento — rode supabase-schema-guia-pagamento.sql no SQL Editor do Supabase.'
+          : `Não foi possível salvar: ${e.message}`);
     }
   };
   const salvarValorGuia = async (anexo, valor) => {

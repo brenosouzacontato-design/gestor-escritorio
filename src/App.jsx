@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { LayoutDashboardIcon, CheckSquareIcon, UsersIcon, RefreshCwIcon, SettingsIcon, PlusIcon, TargetIcon, BuildingIcon, AppWindowIcon, CalculatorIcon, ChevronsLeftIcon, ChevronsRightIcon, SunIcon, MoonIcon, PaperclipIcon, BellIcon, BanknoteIcon, MonitorIcon, ReceiptIcon, LogOutIcon, FileSignatureIcon } from 'lucide-react'
+import { LayoutDashboardIcon, CheckSquareIcon, UsersIcon, RefreshCwIcon, SettingsIcon, PlusIcon, TargetIcon, BuildingIcon, AppWindowIcon, CalculatorIcon, ChevronsLeftIcon, ChevronsRightIcon, SunIcon, MoonIcon, PaperclipIcon, BellIcon, BanknoteIcon, CircleDollarSignIcon, MonitorIcon, ReceiptIcon, LogOutIcon, FileSignatureIcon } from 'lucide-react'
 import { useStore } from './store'
 import { ToastContainer } from './components/shared'
 import { sair } from './components/ComLogin'
@@ -15,6 +15,8 @@ import Empresas from './pages/Empresas'
 import Central from './pages/Central'
 import ContabilPage from './pages/contabil/ContabilPage'
 import DocumentosPage from './pages/documentos/DocumentosPage'
+import PagamentosPage from './pages/pagamentos/PagamentosPage'
+import { contarComprovantesPendentes } from './pages/pagamentos/pagamentosApi'
 import NotificacoesPage from './pages/Notificacoes'
 import HonorariosPage from './pages/honorarios/HonorariosPage'
 import PaineisPage from './pages/painel/PaineisPage'
@@ -26,6 +28,7 @@ const NAV = [
   { id: 'empresas',   label: 'Empresas',    Icon: BuildingIcon },
   { id: 'paineis',    label: 'Painéis',     Icon: MonitorIcon },
   { id: 'documentos', label: 'Documentos',  Icon: PaperclipIcon },
+  { id: 'pagamentos', label: 'Pagamentos',  Icon: CircleDollarSignIcon },
   { id: 'notificacoes', label: 'Notificações', Icon: BellIcon },
   { id: 'honorarios', label: 'Honorários',  Icon: BanknoteIcon },
   { id: 'tarefas',    label: 'Tarefas',     Icon: CheckSquareIcon },
@@ -63,6 +66,16 @@ export default function App() {
   const obrigacoes = useStore(s => s.obrigacoes || [])
 
   useEffect(() => { init() }, [])
+
+  // comprovantes do grupo "Pagamentos" esperando conferência (badge do menu);
+  // falha silenciosa enquanto a tabela comprovantes_pagamento não existe
+  const [comprovantesPendentes, setComprovantesPendentes] = useState(0)
+  useEffect(() => {
+    const atualizar = () => contarComprovantesPendentes().then(setComprovantesPendentes).catch(() => {})
+    atualizar()
+    const timer = setInterval(atualizar, 2 * 60 * 1000)
+    return () => clearInterval(timer)
+  }, [page])
 
   const pendingCount   = tarefas.filter(t => !t.concluida).length
   const obrigVencidas  = obrigacoes.filter(o => o.status === 'vencido').length
@@ -111,6 +124,9 @@ export default function App() {
             {id === 'tarefas' && pendingCount > 0 && (
               <span className="badge badge-warn" style={{ marginLeft:'auto', fontSize:10 }}>{pendingCount}</span>
             )}
+            {id === 'pagamentos' && comprovantesPendentes > 0 && (
+              <span className="badge badge-warn" style={{ marginLeft:'auto', fontSize:10 }}>{comprovantesPendentes}</span>
+            )}
             {id === 'empresas' && (obrigVencidas > 0 || obrigPendentes > 0) && (
               <span className={`badge ${obrigVencidas > 0 ? 'badge-err' : 'badge-warn'}`} style={{ marginLeft:'auto', fontSize:10 }}>
                 {obrigVencidas > 0 ? obrigVencidas : obrigPendentes}
@@ -135,6 +151,7 @@ export default function App() {
               clienteInicialId={clienteAbrirEmpresas} onClienteInicialConsumido={() => setClienteAbrirEmpresas(null)} />}
             {page === 'paineis'    && <PaineisPage />}
             {page === 'documentos' && <DocumentosPage />}
+            {page === 'pagamentos' && <PagamentosPage />}
             {page === 'notificacoes' && <NotificacoesPage />}
             {page === 'honorarios' && <HonorariosPage />}
             {page === 'tarefas'    && <Tarefas onAddTarefa={openNewTask} highlightTaskId={highlightTaskId} onHighlightConsumed={() => setHighlightTaskId(null)}

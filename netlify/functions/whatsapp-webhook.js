@@ -4,7 +4,7 @@ const { uploadArquivo } = require('./lib/googleDrive')
 const { enviarMensagem } = require('./lib/whatsapp')
 const { identificarDocumento } = require('./lib/identificarDocumento')
 const { listarCandidatosDocumento } = require('./lib/candidatosDocumento')
-const { darBaixaPorComprovante } = require('./lib/comprovantePagamento')
+const { analisarComprovante, registrarComprovante } = require('./lib/comprovantePagamento')
 
 const supabase = createClient(
   process.env.SUPABASE_URL,
@@ -13,6 +13,7 @@ const supabase = createClient(
 
 const GRUPO_ID = process.env.WHATSAPP_GROUP_ID
 const DOCS_GRUPO_ID = process.env.WHATSAPP_DOCS_GROUP_ID // grupo "Documentos" — todo arquivo enviado aqui vai pro Drive
+const PAGAMENTOS_GRUPO_ID = process.env.WHATSAPP_PAGAMENTOS_GROUP_ID // grupo "Pagamentos" — comprovantes pra baixa das guias
 const DRIVE_FOLDER_ID = process.env.GOOGLE_DRIVE_FOLDER_ID
 const EVOLUTION_URL = process.env.EVOLUTION_API_URL
 const EVOLUTION_KEY = process.env.EVOLUTION_API_KEY
@@ -112,31 +113,81 @@ function tarefaFallback(textoTarefa) {
   }
 }
 
-// Documento/imagem enviado no grupo "Documentos" — busca o conteúdo (já
-// vem em base64 no payload se a opção "Webhook Base64" estiver ligada no
-// Evolution API; senão busca via getBase64FromMediaMessage) e sobe pro
-// Drive. `midia` é o bloco documentMessage/imageMessage do payload.
+// Conteúdo do arquivo da mensagem: já vem em base64 no payload se a opção
+// "Webhook Base64" estiver ligada no Evolution API; senão busca via
+// getBase64FromMediaMessage. `midia` é o bloco documentMessage/imageMessage.
+async function obterArquivoDaMensagem(body, midia) {
+  const mimeType = midia.mimetype || 'application/octet-stream'
+  const nomeArquivo = midia.fileName || `whatsapp-${Date.now()}.${EXTENSAO_POR_MIME[mimeType] || 'bin'}`
+
+  // com "Webhook Base64" ligado, a Evolution API v1 manda o arquivo em
+  // data.message.base64 (ao lado do bloco da mídia, não dentro dele)
+  let base64 = midia.base64 || body?.data?.message?.base64 || null
+  if (!base64) {
+    const messageId = body?.data?.key?.id
+    if (!messageId) throw new Error('Não achei o id da mensagem pra buscar o arquivo.')
+    const resp = await fetch(`${EVOLUTION_URL}/chat/getBase64FromMediaMessage/${EVOLUTION_INSTANCE}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', apikey: EVOLUTION_KEY },
+      body: JSON.stringify({ message: { key: { id: messageId } } }),
+    })
+    if (!resp.ok) throw new Error(`Falha ao buscar o arquivo no WhatsApp (${resp.status}): ${await resp.text()}`)
+    const dados = await resp.json()
+    base64 = dados.base64
+    if (!base64) throw new Error('A API do WhatsApp não devolveu o conteúdo do arquivo.')
+  }
+  return { base64, mimeType, nomeArquivo }
+}
+
+const fmtBRL = (v) => Number(v).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
+const fmtDataBR = (iso) => iso.split('-').reverse().join('/')
+
+// Resposta no grupo depois de registrar um comprovante
+// (lib/comprovantePagamento.js → registrarComprovante).
+function mensagemComprovante(res) {
+  const a = res.analise
+  const valor = a.valorPago != null ? `\n💰 ${fmtBRL(a.valorPago)}` : ''
+  const data = a.dataPagamento ? ` em ${fmtDataBR(a.dataPagamento)}` : ''
+  if (res.baixaAutomatica) {
+    return `✅ *Comprovante identificado — guia marcada como paga!*\n👤 ${res.guia.clienteNome}\n📄 ${res.guia.titulo}${res.guia.competencia ? ` ${res.guia.competencia}` : ''}${valor}\n📅 Pago${data}\nO comprovante já está disponível no painel do cliente.`
+  }
+  const empresa = res.cliente ? `\n👤 ${res.cliente.nome}` : `\n👤 Empresa não identificada${a.pagadorNome ? ` (pagador: ${a.pagadorNome})` : ''}`
+  const aviso = a.ehComprovante ? '' : '\n⚠️ Não parece um comprovante de pagamento — confira.'
+  return `📥 *Comprovante recebido — falta conferir a baixa.*${empresa}${a.descricao ? `\n📄 ${a.descricao}` : ''}${valor}${data ? `\n📅 Pago${data}` : ''}${aviso}\nConfira e dê a baixa em Gestor → Pagamentos.`
+}
+
+// Arquivo enviado no grupo "Pagamentos" — é sempre tratado como comprovante:
+// entra na fila de baixa (ou já baixa a guia, quando a IA tem certeza). Não
+// vai pro Drive nem pra fila de documentos.
+async function processarComprovante(body, midia, remoteJid) {
+  try {
+    const { base64, mimeType, nomeArquivo } = await obterArquivoDaMensagem(body, midia)
+    const remetente = body?.data?.pushName || body?.data?.key?.participant || null
+    let res
+    try {
+      res = await registrarComprovante(supabase, { arquivoBase64: base64, filename: nomeArquivo, mimeType, apiKey: ANTHROPIC_KEY, remetente })
+    } catch (eIA) {
+      // IA fora do ar/timeout: o comprovante ainda entra na fila, sem a leitura
+      console.error('Erro ao analisar comprovante (registrando sem leitura):', eIA.message)
+      const analise = { ehComprovante: true, pagadorNome: null, pagadorDocumento: null, valorPago: null, dataPagamento: null, descricao: null, banco: null, guia: null, confianca: 'baixa', observacao: `Leitura automática falhou: ${eIA.message.slice(0, 200)}` }
+      res = await registrarComprovante(supabase, { arquivoBase64: base64, filename: nomeArquivo, mimeType, apiKey: ANTHROPIC_KEY, remetente, analise })
+    }
+    await enviarMensagem(remoteJid, mensagemComprovante(res))
+    return { statusCode: 200, body: JSON.stringify({ success: true, comprovanteId: res.comprovanteId, baixaAutomatica: res.baixaAutomatica }) }
+  } catch (e) {
+    console.error('Erro ao processar comprovante:', e.message)
+    await enviarMensagem(remoteJid, `❌ Erro ao registrar o comprovante: ${e.message}`)
+    // 200 de propósito: ver nota em processarDocumento
+    return { statusCode: 200, body: JSON.stringify({ success: false, error: e.message }) }
+  }
+}
+
+// Documento/imagem enviado no grupo "Documentos" — sobe pro Drive e entra
+// na fila de documentos (ou, se for comprovante de pagamento, na fila de
+// baixa de pagamentos).
 async function processarDocumento(body, midia, remoteJid) {
   try {
-    const mimeType = midia.mimetype || 'application/octet-stream'
-    const nomeArquivo = midia.fileName || `whatsapp-${Date.now()}.${EXTENSAO_POR_MIME[mimeType] || 'bin'}`
-
-    // com "Webhook Base64" ligado, a Evolution API v1 manda o arquivo em
-    // data.message.base64 (ao lado do bloco da mídia, não dentro dele)
-    let base64 = midia.base64 || body?.data?.message?.base64 || null
-    if (!base64) {
-      const messageId = body?.data?.key?.id
-      if (!messageId) throw new Error('Não achei o id da mensagem pra buscar o arquivo.')
-      const resp = await fetch(`${EVOLUTION_URL}/chat/getBase64FromMediaMessage/${EVOLUTION_INSTANCE}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', apikey: EVOLUTION_KEY },
-        body: JSON.stringify({ message: { key: { id: messageId } } }),
-      })
-      if (!resp.ok) throw new Error(`Falha ao buscar o arquivo no WhatsApp (${resp.status}): ${await resp.text()}`)
-      const dados = await resp.json()
-      base64 = dados.base64
-      if (!base64) throw new Error('A API do WhatsApp não devolveu o conteúdo do arquivo.')
-    }
+    const { base64, mimeType, nomeArquivo } = await obterArquivoDaMensagem(body, midia)
 
     // O backup no Drive é um extra: se falhar (ex: refresh token do Google
     // vencido), o documento ainda precisa entrar no sistema — identificação,
@@ -163,20 +214,21 @@ async function processarDocumento(body, midia, remoteJid) {
     }
     const avisoDrive = erroDrive ? `\n\n⚠️ Não consegui salvar a cópia no Drive: ${erroDrive.slice(0, 160)}` : ''
 
-    // Comprovante de pagamento de uma guia em aberto: marca a guia como paga
-    // e deixa o comprovante disponível no painel do cliente
-    // (lib/comprovantePagamento.js) — só quando a IA bate cliente, tributo e
-    // valor com segurança. Qualquer falha/dúvida segue o fluxo normal abaixo.
+    // Comprovante de pagamento: vai pra fila de baixa de pagamentos (tela
+    // Pagamentos), e a guia já é baixada quando a IA bate cliente, tributo e
+    // valor com segurança (lib/comprovantePagamento.js). Se gravar na fila
+    // falhar (ex: tabela comprovantes_pagamento ainda não criada), cai na
+    // fila de documentos abaixo, como antes.
     let pareceComprovante = false
     try {
-      const baixa = await darBaixaPorComprovante(supabase, { arquivoBase64: base64, filename: nomeArquivo, mimeType, apiKey: ANTHROPIC_KEY })
-      if (baixa.guia) {
-        const valor = baixa.valorPago != null ? `\n💰 ${baixa.valorPago.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}` : ''
-        const data = baixa.dataPagamento ? ` em ${baixa.dataPagamento.split('-').reverse().join('/')}` : ''
-        await enviarMensagem(remoteJid, `✅ *Comprovante identificado — guia marcada como paga!*\n👤 ${baixa.guia.clienteNome}\n📄 ${baixa.guia.titulo}${baixa.guia.competencia ? ` ${baixa.guia.competencia}` : ''}${valor}\n📅 Pago${data}\nO comprovante já está disponível no painel do cliente.${avisoDrive}`)
-        return { statusCode: 200, body: JSON.stringify({ success: true, driveFileId: arquivo?.id || null, guiaPaga: baixa.guia.id }) }
+      const analise = await analisarComprovante(supabase, { arquivoBase64: base64, filename: nomeArquivo, mimeType, apiKey: ANTHROPIC_KEY })
+      if (analise.ehComprovante) {
+        pareceComprovante = true
+        const remetente = body?.data?.pushName || body?.data?.key?.participant || null
+        const res = await registrarComprovante(supabase, { arquivoBase64: base64, filename: nomeArquivo, mimeType, apiKey: ANTHROPIC_KEY, remetente, analise })
+        await enviarMensagem(remoteJid, `${mensagemComprovante(res)}${avisoDrive}`)
+        return { statusCode: 200, body: JSON.stringify({ success: true, driveFileId: arquivo?.id || null, comprovanteId: res.comprovanteId, baixaAutomatica: res.baixaAutomatica }) }
       }
-      pareceComprovante = baixa.ehComprovante
     } catch (eComp) {
       console.error('Erro ao verificar comprovante de pagamento:', eComp.message)
     }
@@ -220,7 +272,7 @@ async function processarDocumento(body, midia, remoteJid) {
 
       mensagemIdentificacao = `\n\n🔎 ${sugestao.tipoDocumento}` + (
         pareceComprovante
-          ? '\n⚠️ Não identifiquei com segurança de qual guia é esse pagamento. Marque a guia como paga no painel do cliente (Editar painel).'
+          ? '\n⚠️ Não consegui registrar na fila de pagamentos — dê a baixa em Gestor → Pagamentos → Baixa manual.'
           : candidato
           ? `\n👤 ${candidato.clienteNome} — ${candidato.rotulo}\nRevise e confirme em Documentos → A revisar.`
           : sugestao.clienteId
@@ -281,6 +333,15 @@ exports.handler = async (event) => {
   // Grupo "Documentos" — qualquer arquivo enviado aqui vai pro Drive, sem
   // depender de prefixo. Mensagem de texto nesse grupo (sem arquivo) é
   // ignorada, não cai no fluxo de tarefa abaixo.
+  // Grupo "Pagamentos" — todo arquivo é comprovante de pagamento: vai pra
+  // fila de baixa (tela Pagamentos do gestor). Texto sem arquivo é ignorado.
+  if (PAGAMENTOS_GRUPO_ID && remoteJid === PAGAMENTOS_GRUPO_ID) {
+    if (!midia) {
+      return { statusCode: 200, body: 'No file in payments group message' }
+    }
+    return await processarComprovante(body, midia, remoteJid)
+  }
+
   if (DOCS_GRUPO_ID && remoteJid === DOCS_GRUPO_ID) {
     if (!midia) {
       return { statusCode: 200, body: 'No file in docs group message' }

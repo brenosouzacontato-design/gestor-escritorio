@@ -265,13 +265,27 @@ export async function atualizarValorGuia(documentoId, valor) {
 }
 
 // Marca/desmarca na mão uma guia como paga (modo de edição do painel) — o
-// caminho automático é o comprovante encaminhado no grupo "Documentos" do
-// WhatsApp (netlify/functions/lib/comprovantePagamento.js). Desmarcar apaga
-// também o vínculo com o comprovante. Devolve os campos alterados.
-export async function marcarGuiaPaga(documentoId, paga) {
-  const patch = paga
-    ? { pago_em: new Date().toISOString() }
-    : { pago_em: null, valor_pago: null, comprovante_path: null, comprovante_nome: null };
+// caminho normal é o comprovante no grupo "Pagamentos" do WhatsApp, conferido
+// na tela Pagamentos (src/pages/pagamentos). Marcar na mão é baixa manual:
+// exige justificativa, registrada junto (mesmas colunas da tela Pagamentos —
+// supabase-schema-comprovantes-pagamento.sql). Desmarcar apaga também o
+// vínculo com o comprovante. Devolve os campos alterados.
+export async function marcarGuiaPaga(documentoId, paga, justificativa = null) {
+  let patch;
+  if (paga) {
+    if (!justificativa?.trim()) throw new Error('Informe a justificativa da baixa manual.');
+    const { data: u } = await supabase.auth.getUser();
+    const agora = new Date().toISOString();
+    patch = {
+      pago_em: agora, baixa_manual: true, baixa_justificativa: justificativa.trim(),
+      baixa_por: u?.user?.email || 'escritório', baixa_registrada_em: agora,
+    };
+  } else {
+    patch = {
+      pago_em: null, valor_pago: null, comprovante_path: null, comprovante_nome: null,
+      baixa_manual: false, baixa_justificativa: null, baixa_por: null, baixa_registrada_em: null,
+    };
+  }
   const { error } = await supabase.from('documentos').update(patch).eq('id', documentoId);
   if (error) throw error;
   return patch;

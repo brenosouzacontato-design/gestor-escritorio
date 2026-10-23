@@ -115,6 +115,7 @@ Todas as tabelas abaixo ganham a policy `escritorio_total` (tudo para
 |---|---|---|---|
 | `documentos` | E (documentos, Empresas), P (painel, `?doc=`), F (extrair-valor-guia, comprovantePagamento, webhook) | E (inclusive modo de edição do painel), F (webhook insere, extrair-valor-guia atualiza) | + anônimo com token lê os do próprio cliente. Link `?doc=<id>` usa a RPC `documento_publico(id)`. |
 | `documentos_whatsapp` | E (documentos) | F (webhook) | Só escritório. |
+| `comprovantes_pagamento` | E (Pagamentos) | F (webhook, grupo "Pagamentos"), E (baixa/descarte) | Só escritório — já nasce com RLS ligado (`supabase-schema-comprovantes-pagamento.sql`). |
 | `documentos_fiscais_erp` | E (contábil), P (painel, notas fiscais compartilhadas), F (oneflowFiscal grava) | F | + anônimo com token lê as do próprio cliente. |
 | `dados_gerenciais_simples` | E, P (painel, comprovante de faturamento) | E (upload da declaração, modo de edição) | + anônimo com token lê os do próprio cliente. |
 | `situacao_fiscal_rfb` | E, P (painel) | E | + anônimo com token lê os do próprio cliente. |

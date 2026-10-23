@@ -1,18 +1,20 @@
 // netlify/functions/lib/comprovantePagamento.js
 //
-// Baixa de guia por comprovante de pagamento: o cliente manda o comprovante,
-// o escritório encaminha pro grupo "Documentos" do WhatsApp
-// (whatsapp-webhook.js) e aqui a IA diz se o arquivo é um comprovante e de
-// qual guia em aberto ele é. Quando bate com segurança, a guia é marcada
-// como paga (documentos.pago_em — supabase-schema-guia-pagamento.sql) e o
-// comprovante fica disponível pra download no painel do cliente
-// (PainelCompartilhadoPage.jsx).
-//
-// Diferente do resto do pipeline de documentos (que só SUGERE e espera um
-// humano confirmar), aqui a baixa é automática — por isso só acontece com
-// confiança "alta" E valor pago compatível com o da guia; qualquer dúvida
-// cai no fluxo normal de revisão, e dá pra marcar/desmarcar na mão no modo
-// de edição do painel.
+// Baixa de guia por comprovante de pagamento. O comprovante chega pelo
+// WhatsApp (grupo "Pagamentos" — e, como antes, comprovantes que caem no
+// grupo "Documentos"; ver whatsapp-webhook.js) e aqui:
+//   1. a IA lê o comprovante (pagador, CNPJ/CPF, valor, data, descrição,
+//      banco) e tenta casar com uma guia de imposto anexada ainda sem
+//      pagamento;
+//   2. a empresa é identificada pela guia escolhida ou, sem guia, pelo
+//      CNPJ/CPF do pagador comparado com o cadastro de clientes;
+//   3. com confiança "alta" E valor compatível com o da guia, a baixa é
+//      automática (documentos.pago_em + comprovante disponível no painel do
+//      cliente); senão o comprovante fica na fila (comprovantes_pagamento,
+//      status 'pendente') pra o escritório conferir na tela Pagamentos
+//      (src/pages/pagamentos/PagamentosPage.jsx).
+// Todo comprovante recebido fica registrado em comprovantes_pagamento,
+// inclusive os baixados automaticamente (auditoria e "desfazer").
 
 const crypto = require('crypto');
 
@@ -24,18 +26,24 @@ const EXTENSAO_POR_MIME = { 'application/pdf': 'pdf', 'image/jpeg': 'jpg', 'imag
 // anexo de obrigação que não é imposto (ex: holerites) não é guia a pagar.
 const TITULO_IMPOSTO = /\b(pg)?das\b|pgmei|inss|fgts|darf|dctfweb|irrf|irpj|csll|pis|cofins|icms|iss|difal|parcelamento|guia/i;
 
-const SYSTEM_PROMPT = `Você é um assistente de escritório contábil brasileiro. Recebe um arquivo e uma lista de guias de imposto em aberto de vários clientes. Precisa dizer: 1) se o arquivo é um COMPROVANTE DE PAGAMENTO já efetuado (recibo do banco, comprovante de PIX, comprovante de pagamento de boleto/arrecadação); 2) de qual guia da lista é esse pagamento.
+const SYSTEM_PROMPT = `Você é um assistente de escritório contábil brasileiro. Recebe um arquivo e uma lista de guias de imposto em aberto de vários clientes. Precisa: 1) dizer se o arquivo é um COMPROVANTE DE PAGAMENTO já efetuado (recibo do banco, comprovante de PIX, comprovante de pagamento de boleto/arrecadação); 2) ler as informações básicas dele; 3) dizer de qual guia da lista é esse pagamento.
 
 Devolva APENAS um JSON, sem texto antes ou depois, sem markdown e sem crases, no formato exato:
-{"ehComprovante":true|false,"guiaId":"id da lista ou null","valorPago":number ou null,"dataPagamento":"YYYY-MM-DD ou null","confianca":"alta"|"media"|"baixa","observacao":"string curta"}
+{"ehComprovante":true|false,"pagadorNome":"string ou null","pagadorDocumento":"CNPJ/CPF ou null","valorPago":number ou null,"dataPagamento":"YYYY-MM-DD ou null","descricao":"string ou null","banco":"string ou null","guiaId":"id da lista ou null","confianca":"alta"|"media"|"baixa","observacao":"string curta"}
 
 Regras:
 - "ehComprovante": true só se o documento confirma um pagamento JÁ REALIZADO. A guia/boleto em si (documento de arrecadação ainda a pagar) NÃO é comprovante. Comprovante de AGENDAMENTO também não é pagamento realizado: false.
-- "guiaId": só preencha se o pagador/contribuinte (nome ou CNPJ/CPF) bater com o cliente da guia E o tributo e o valor forem compatíveis com ela (valor pago igual ao valor da guia, ou um pouco maior quando pago depois do vencimento, com multa e juros). Se houver mais de uma guia possível e não der pra distinguir, null. Nunca invente.
+- "pagadorNome"/"pagadorDocumento": o contribuinte/empresa a que o pagamento se refere (em DARF/DAS/GPS é o contribuinte da guia; em PIX/boleto, o pagador). Documento só com os dígitos que aparecem, sem inventar.
 - "valorPago": valor total pago, número com ponto decimal, sem "R$".
 - "dataPagamento": data em que o pagamento foi efetuado.
+- "descricao": o que foi pago, curto (ex: "DAS Simples Nacional 09/2026", "DARF 1099 INSS 09/2026", "PIX para Fulano"). Inclua o período de apuração se aparecer.
+- "banco": instituição que emitiu o comprovante, se aparecer.
+- "guiaId": só preencha se o pagador/contribuinte (nome ou CNPJ/CPF) bater com o cliente da guia E o tributo e o valor forem compatíveis com ela (valor pago igual ao valor da guia, ou um pouco maior quando pago depois do vencimento, com multa e juros). Se houver mais de uma guia possível e não der pra distinguir, null. Nunca invente.
 - "confianca": "alta" só quando cliente, tributo e valor batem com a guia escolhida; "media" quando algum deles ficou incerto; "baixa" quando pouca coisa foi identificada.
-- "observacao": uma frase curta explicando a escolha (ou por que ficou null).`;
+- "observacao": uma frase curta explicando a escolha (ou por que ficou null).
+- Mesmo quando não for comprovante, preencha o que conseguir ler.`;
+
+const soDigitos = (s) => String(s || '').replace(/\D/g, '');
 
 // Guias anexadas (documento confirmado ligado a uma obrigação de imposto)
 // que ainda não têm pagamento marcado, das mais recentes pras mais antigas.
@@ -63,7 +71,21 @@ async function listarGuiasEmAberto(supabase) {
     }));
 }
 
-async function perguntarIA({ arquivoBase64, filename, mimeType, guias, apiKey, timeoutMs }) {
+// Tipo real do arquivo pelo começo do conteúdo — o mimetype que vem do
+// WhatsApp/cadastro às vezes não bate (foto marcada como PDF), e a API
+// recusa o arquivo inteiro nesse caso.
+function tipoReal(arquivoBase64, mimeType) {
+  const inicio = arquivoBase64.slice(0, 8);
+  if (inicio.startsWith('JVBER')) return 'application/pdf';
+  if (inicio.startsWith('/9j/')) return 'image/jpeg';
+  if (inicio.startsWith('iVBOR')) return 'image/png';
+  if (inicio.startsWith('UklGR')) return 'image/webp';
+  if (inicio.startsWith('R0lGO')) return 'image/gif';
+  return mimeType;
+}
+
+async function perguntarIA({ arquivoBase64, filename, mimeType: mimeInformado, guias, apiKey, timeoutMs }) {
+  const mimeType = tipoReal(arquivoBase64, mimeInformado);
   const lista = guias
     .map((g) => `- id: ${g.id} | cliente: ${g.clienteNome}${g.cnpj ? ` (CNPJ ${g.cnpj})` : ''} | guia: ${g.titulo}${g.competencia ? ` ${g.competencia}` : ''} | valor: ${g.valor != null ? g.valor.toFixed(2) : 'não informado'} | vencimento: ${g.vencimento || 'não informado'}`)
     .join('\n');
@@ -80,11 +102,11 @@ async function perguntarIA({ arquivoBase64, filename, mimeType, guias, apiKey, t
       headers: { 'content-type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
       body: JSON.stringify({
         model: MODELO,
-        max_tokens: 500,
+        max_tokens: 700,
         system: SYSTEM_PROMPT,
         messages: [{
           role: 'user',
-          content: [conteudoArquivo, { type: 'text', text: `Arquivo: "${filename || 'documento'}".\n\nGuias em aberto:\n${lista}` }],
+          content: [conteudoArquivo, { type: 'text', text: `Arquivo: "${filename || 'documento'}".\n\nGuias em aberto:\n${lista || '(nenhuma guia em aberto no momento)'}` }],
         }],
       }),
       signal: controller.signal,
@@ -106,47 +128,111 @@ function valorCompativel(valorPago, valorGuia) {
   return valorPago >= valorGuia - 0.05 && valorPago <= valorGuia * 1.3;
 }
 
-// Devolve:
-//   { ehComprovante: false }                         — não é comprovante
-//   { ehComprovante: true, guia: null, observacao }  — é, mas sem guia segura
-//   { ehComprovante: true, guia, valorPago, dataPagamento } — guia marcada como paga
-// Lança erro em falha de infra (IA fora do ar/timeout, coluna pago_em ainda
-// não criada) — quem chama segue o fluxo normal de documentos.
-async function darBaixaPorComprovante(supabase, { arquivoBase64, filename, mimeType, apiKey, timeoutMs = 10000 }) {
-  if (!apiKey) throw new Error('ANTHROPIC_API_KEY não configurada.');
-  const guias = await listarGuiasEmAberto(supabase);
-  if (guias.length === 0) return { ehComprovante: false };
-
-  const r = await perguntarIA({ arquivoBase64, filename, mimeType, guias, apiKey, timeoutMs });
-  if (!r.ehComprovante) return { ehComprovante: false };
-
-  const guia = r.guiaId ? guias.find((g) => g.id === r.guiaId) : null;
-  const valorPago = r.valorPago != null && Number.isFinite(Number(r.valorPago)) ? Number(r.valorPago) : null;
-  if (!guia || r.confianca !== 'alta' || !valorCompativel(valorPago, guia.valor)) {
-    return { ehComprovante: true, guia: null, observacao: r.observacao || '' };
+// Empresa pelo CNPJ/CPF do pagador. Compara só dígitos; CNPJ também casa pela
+// raiz (8 primeiros) quando o comprovante é de uma filial.
+async function clientePorDocumento(supabase, documento) {
+  const dig = soDigitos(documento);
+  if (dig.length !== 11 && dig.length !== 14) return null;
+  const { data, error } = await supabase.from('clientes').select('id, nome, cnpj').eq('ativo', true);
+  if (error) throw error;
+  const exato = (data || []).find((c) => soDigitos(c.cnpj) === dig);
+  if (exato) return exato;
+  if (dig.length === 14) {
+    const mesmaRaiz = (data || []).filter((c) => soDigitos(c.cnpj).length === 14 && soDigitos(c.cnpj).slice(0, 8) === dig.slice(0, 8));
+    if (mesmaRaiz.length === 1) return mesmaRaiz[0];
   }
-
-  const comprovantePath = `${crypto.randomUUID()}.${EXTENSAO_POR_MIME[mimeType] || 'bin'}`;
-  const { error: errStorage } = await supabase.storage
-    .from('documentos')
-    .upload(comprovantePath, Buffer.from(arquivoBase64, 'base64'), { contentType: mimeType });
-  if (errStorage) throw errStorage;
-
-  const dataPagamento = /^\d{4}-\d{2}-\d{2}$/.test(r.dataPagamento || '') ? r.dataPagamento : null;
-  const { error: errUpdate } = await supabase
-    .from('documentos')
-    .update({
-      // meio-dia UTC pra data não "voltar um dia" quando exibida no fuso do Brasil
-      pago_em: dataPagamento ? `${dataPagamento}T12:00:00Z` : new Date().toISOString(),
-      valor_pago: valorPago,
-      comprovante_path: comprovantePath,
-      comprovante_nome: filename || 'comprovante',
-    })
-    .eq('id', guia.id)
-    .is('pago_em', null); // não sobrescreve se alguém marcou nesse meio tempo
-  if (errUpdate) throw errUpdate;
-
-  return { ehComprovante: true, guia, valorPago, dataPagamento };
+  return null;
 }
 
-module.exports = { darBaixaPorComprovante, listarGuiasEmAberto, valorCompativel };
+// Só a leitura (IA), sem gravar nada — o webhook usa no grupo "Documentos"
+// pra decidir se o arquivo segue pro fluxo de comprovante ou de documento.
+async function analisarComprovante(supabase, { arquivoBase64, filename, mimeType, apiKey, timeoutMs = 12000 }) {
+  if (!apiKey) throw new Error('ANTHROPIC_API_KEY não configurada.');
+  const guias = await listarGuiasEmAberto(supabase);
+  const r = await perguntarIA({ arquivoBase64, filename, mimeType, guias, apiKey, timeoutMs });
+  const num = (v) => (v != null && Number.isFinite(Number(v)) ? Math.round(Number(v) * 100) / 100 : null);
+  return {
+    ehComprovante: !!r.ehComprovante,
+    pagadorNome: r.pagadorNome || null,
+    pagadorDocumento: r.pagadorDocumento || null,
+    valorPago: num(r.valorPago),
+    dataPagamento: /^\d{4}-\d{2}-\d{2}$/.test(r.dataPagamento || '') ? r.dataPagamento : null,
+    descricao: r.descricao || null,
+    banco: r.banco || null,
+    guia: r.guiaId ? guias.find((g) => g.id === r.guiaId) || null : null,
+    confianca: ['alta', 'media', 'baixa'].includes(r.confianca) ? r.confianca : 'baixa',
+    observacao: r.observacao || '',
+  };
+}
+
+// Grava o comprovante (Storage + comprovantes_pagamento) e, quando é seguro,
+// já dá a baixa na guia. `analise` pode vir pronta (analisarComprovante) pra
+// não repetir a chamada de IA. Devolve { comprovanteId, baixaAutomatica,
+// guia, cliente, analise }.
+async function registrarComprovante(supabase, { arquivoBase64, filename, mimeType, apiKey, remetente = null, origem = 'whatsapp', analise = null }) {
+  const a = analise || await analisarComprovante(supabase, { arquivoBase64, filename, mimeType, apiKey });
+
+  const cliente = a.guia
+    ? { id: a.guia.clienteId, nome: a.guia.clienteNome }
+    : await clientePorDocumento(supabase, a.pagadorDocumento).catch(() => null);
+  const automatica = !!a.guia && a.ehComprovante && a.confianca === 'alta' && valorCompativel(a.valorPago, a.guia.valor);
+
+  const mime = tipoReal(arquivoBase64, mimeType);
+  const storagePath = `${crypto.randomUUID()}.${EXTENSAO_POR_MIME[mime] || 'bin'}`;
+  const { error: errStorage } = await supabase.storage
+    .from('documentos')
+    .upload(storagePath, Buffer.from(arquivoBase64, 'base64'), { contentType: mime });
+  if (errStorage) throw errStorage;
+
+  const agora = new Date().toISOString();
+  if (automatica) {
+    const { data: atualizada, error: errUpdate } = await supabase
+      .from('documentos')
+      .update({
+        // meio-dia UTC pra data não "voltar um dia" quando exibida no fuso do Brasil
+        pago_em: a.dataPagamento ? `${a.dataPagamento}T12:00:00Z` : agora,
+        valor_pago: a.valorPago,
+        comprovante_path: storagePath,
+        comprovante_nome: filename || 'comprovante',
+        baixa_manual: false,
+        baixa_por: 'automática (IA)',
+        baixa_registrada_em: agora,
+      })
+      .eq('id', a.guia.id)
+      .is('pago_em', null) // não sobrescreve se alguém marcou nesse meio tempo
+      .select('id');
+    if (errUpdate) throw errUpdate;
+    if (!atualizada?.length) return registrarNaFila(false);
+  }
+  return registrarNaFila(automatica);
+
+  async function registrarNaFila(baixou) {
+    const { data, error } = await supabase.from('comprovantes_pagamento').insert({
+      origem,
+      remetente,
+      nome_arquivo: filename || 'comprovante',
+      storage_path: storagePath,
+      tipo_mime: mime,
+      eh_comprovante: a.ehComprovante,
+      pagador_nome: a.pagadorNome,
+      pagador_documento: a.pagadorDocumento,
+      valor_pago: a.valorPago,
+      data_pagamento: a.dataPagamento,
+      descricao: a.descricao,
+      banco: a.banco,
+      observacao_ia: a.observacao,
+      confianca: a.confianca,
+      cliente_id: cliente?.id || null,
+      guia_sugerida_id: a.guia?.id || null,
+      status: baixou ? 'baixado' : 'pendente',
+      guia_id: baixou ? a.guia.id : null,
+      baixa_automatica: baixou,
+      resolvido_por: baixou ? 'automática (IA)' : null,
+      resolvido_em: baixou ? agora : null,
+    }).select('id').single();
+    if (error) throw error;
+    return { comprovanteId: data.id, baixaAutomatica: baixou, guia: baixou ? a.guia : null, cliente, analise: a };
+  }
+}
+
+module.exports = { analisarComprovante, registrarComprovante, listarGuiasEmAberto, valorCompativel };
