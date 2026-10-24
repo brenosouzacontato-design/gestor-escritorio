@@ -74,9 +74,11 @@ services:
       AUTHENTICATION_API_KEY: \${EVOLUTION_API_KEY}
       DEL_INSTANCE: "false"
       CONFIG_SESSION_PHONE_CLIENT: Gestor Escritorio
+    # Pastas do próprio servidor (e não volumes nomeados): a imagem já vem com uma instância de
+    # teste do fabricante em /evolution/store, e um volume vazio copiaria esses dados para cá.
     volumes:
-      - evolution_instances:/evolution/instances
-      - evolution_store:/evolution/store
+      - ./dados/instances:/evolution/instances
+      - ./dados/store:/evolution/store
   caddy:
     image: caddy:2.8
     restart: always
@@ -91,11 +93,10 @@ services:
     depends_on:
       - evolution
 volumes:
-  evolution_instances:
-  evolution_store:
   caddy_data:
 EOF
 
+mkdir -p dados/instances dados/store
 echo ">> Subindo os containers..."
 docker compose --env-file "$ENV" up -d
 
