@@ -73,6 +73,7 @@ services:
       SERVER_URL: https://\${DOMINIO}
       AUTHENTICATION_API_KEY: \${EVOLUTION_API_KEY}
       DEL_INSTANCE: "false"
+      GROUPS_IGNORE: "false"   # o gestor lê os grupos de tarefas, documentos e pagamentos
       CONFIG_SESSION_PHONE_CLIENT: Gestor Escritorio
     # Pastas do próprio servidor (e não volumes nomeados): a imagem já vem com uma instância de
     # teste do fabricante em /evolution/store, e um volume vazio copiaria esses dados para cá.
@@ -109,7 +110,13 @@ for _ in $(seq 1 60); do
 done
 curl -fsS "$API" >/dev/null || { echo "A API não respondeu. Veja: docker compose logs"; exit 1; }
 
-chamar() { curl -sS -X POST "$API$1" -H "Content-Type: application/json" -H "apikey: $EVOLUTION_API_KEY" -d "$2"; echo; }
+# Para na hora se a Evolution recusar a configuração (ela responde 400 com o motivo).
+chamar() {
+  local resp
+  resp=$(curl -sS -X POST "$API$1" -H "Content-Type: application/json" -H "apikey: $EVOLUTION_API_KEY" -d "$2")
+  case "$resp" in *'"status":4'*|*'"status":5'*) echo "Erro em $1: $resp"; exit 1;; esac
+  echo "$resp"
+}
 
 if ! curl -fsS "$API/instance/connectionState/$EVOLUTION_INSTANCE" -H "apikey: $EVOLUTION_API_KEY" >/dev/null 2>&1; then
   echo ">> Criando a instância $EVOLUTION_INSTANCE..."
@@ -118,7 +125,7 @@ fi
 
 echo ">> Configurando o webhook e os grupos..."
 chamar "/webhook/set/$EVOLUTION_INSTANCE" "{\"url\":\"$WEBHOOK_BASE?segredo=$WHATSAPP_WEBHOOK_SEGREDO\",\"enabled\":true,\"webhook_by_events\":false,\"webhook_base64\":true,\"events\":[\"MESSAGES_UPSERT\"]}" >/dev/null
-chamar "/settings/set/$EVOLUTION_INSTANCE" '{"groups_ignore":false,"always_online":false,"read_messages":false,"read_status":false,"reject_call":false,"sync_full_history":false}' >/dev/null
+chamar "/settings/set/$EVOLUTION_INSTANCE" '{"groups_ignore":false,"always_online":false,"read_messages":false,"read_status":false,"reject_call":false,"sync_full_history":false,"wavoipToken":""}' >/dev/null
 
 # ── 4. Resumo ──────────────────────────────────────────────────────────
 cat <<EOF
