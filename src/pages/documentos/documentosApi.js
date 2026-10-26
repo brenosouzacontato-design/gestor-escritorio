@@ -211,7 +211,7 @@ export async function listarDocumentosConfirmados() {
 
 // Mesmo critério de "é imposto" do painel (PainelCompartilhadoPage.jsx) e
 // do webhook (netlify/functions/lib/comprovantePagamento.js).
-const TITULO_IMPOSTO = /\b(pg)?das\b|pgmei|inss|fgts|darf|dctfweb|irrf|irpj|csll|pis|cofins|icms|iss|difal|parcelamento|guia/i;
+const TITULO_IMPOSTO = /\b(pg)?das\b|pgmei|inss|fgts|darf|dctfweb|irrf|irpj|csll|pis|cofins|icms|iss|difal|parcelamento|guia|maed|multa/i;
 
 // Guias de imposto anexadas que ainda não têm pagamento marcado — opções do
 // "Dar baixa em" da aba "A revisar" quando o documento é um comprovante que
@@ -219,14 +219,14 @@ const TITULO_IMPOSTO = /\b(pg)?das\b|pgmei|inss|fgts|darf|dctfweb|irrf|irpj|csll
 export async function listarGuiasEmAberto() {
   const { data, error } = await supabase
     .from('documentos')
-    .select('id, valor_guia, obrigacoes!inner(titulo, tipo, competencia, cliente_id)')
+    .select('id, valor_guia, nome_arquivo, tipo_documento_sugerido, obrigacoes!inner(titulo, tipo, competencia, cliente_id)')
     .eq('status', 'confirmado')
     .not('obrigacao_id', 'is', null)
     .is('pago_em', null)
     .order('created_at', { ascending: false });
   if (error) throw error;
   return (data || [])
-    .filter((d) => TITULO_IMPOSTO.test(`${d.obrigacoes.titulo || ''} ${d.obrigacoes.tipo || ''}`))
+    .filter((d) => TITULO_IMPOSTO.test(`${d.obrigacoes.titulo || ''} ${d.obrigacoes.tipo || ''} ${d.tipo_documento_sugerido || ''} ${d.nome_arquivo || ''}`))
     .map((d) => ({
       id: d.id,
       clienteId: d.obrigacoes.cliente_id,
