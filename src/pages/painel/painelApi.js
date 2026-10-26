@@ -450,8 +450,20 @@ export async function uploadSituacaoFiscal(arquivo, competencia, { clienteId = n
   const extraido = await resp.json();
 
   const clienteFinal = clienteId || extraido.clienteId;
-  if (!clienteFinal) {
-    throw new Error('Não consegui identificar a empresa no documento — abra a empresa certa em Empresas e envie por lá.');
+  if (!clienteFinal || extraido.tipoDocumento === 'outro') {
+    await supabase.storage.from(BUCKET).remove([path]).catch(() => {});
+    throw new Error(extraido.tipoDocumento === 'outro'
+      ? `"${arquivo.name}" não parece Relatório de Situação Fiscal nem CND.`
+      : 'Não consegui identificar a empresa no documento — abra a empresa certa em Empresas e envie por lá.');
+  }
+
+  // Certidão (CND): marca a esfera como regular/pendente e guarda o PDF pro
+  // cliente baixar no painel (cnd_manual, mesma linha da marcação manual)
+  if (extraido.tipoDocumento?.startsWith('cnd_')) {
+    const salvo = await salvarCndArquivo(clienteFinal, competencia, extraido.tipoDocumento.slice(4), {
+      situacao: extraido.situacaoGeral, path, nome: arquivo.name, validade: extraido.validade,
+    });
+    return { ...salvo, tipoDocumento: extraido.tipoDocumento, situacao: extraido.situacaoGeral, validade: extraido.validade, clienteDetectado: !clienteId };
   }
 
   const { data, error } = await supabase
@@ -470,7 +482,50 @@ export async function uploadSituacaoFiscal(arquivo, competencia, { clienteId = n
     .select()
     .single();
   if (error) throw error;
-  return { ...data, clienteDetectado: !clienteId };
+  return { ...data, tipoDocumento: 'relatorio', clienteDetectado: !clienteId };
+}
+
+// Grava a CND de uma esfera (federal/estadual/municipal). Coluna nova ainda
+// não criada (supabase-schema-cnd-federal.sql): estadual/municipal tentam de
+// novo sem a validade; a federal precisa do script.
+const faltaColuna = (e) => ['42703', 'PGRST204'].includes(e?.code) || /column/i.test(e?.message || '');
+async function salvarCndArquivo(clienteId, competencia, esfera, { situacao, path, nome, validade }) {
+  const base = {
+    cliente_id: clienteId, competencia, atualizado_em: new Date().toISOString(),
+    [`situacao_${esfera}`]: situacao || null, [`anexo_${esfera}_path`]: path, [`anexo_${esfera}_nome`]: nome,
+  };
+  const gravar = (payload) => supabase.from('cnd_manual').upsert(payload, { onConflict: 'cliente_id,competencia' }).select().single();
+  let { data, error } = await gravar({ ...base, [`validade_${esfera}`]: validade || null });
+  if (error && faltaColuna(error) && esfera !== 'federal') ({ data, error } = await gravar(base));
+  if (error) {
+    await supabase.storage.from(BUCKET).remove([path]).catch(() => {});
+    if (faltaColuna(error)) throw new Error('Para guardar a CND federal, rode supabase-schema-cnd-federal.sql no SQL Editor do Supabase.');
+    throw error;
+  }
+  return data;
+}
+
+// CND mais recente de cada esfera até a competência (certidão vale meses, não
+// só o mês em que foi enviada) — formato da linha de cnd_manual, já mesclado,
+// mais `vencida_<esfera>` quando a validade passou.
+export async function obterCndVigente(clienteId, competencia) {
+  const { data, error } = await supabase.from('cnd_manual').select('*').eq('cliente_id', clienteId);
+  if (error) throw error;
+  const ordAtual = competenciaOrdinal(competencia);
+  const linhas = (data || [])
+    .filter((d) => d.competencia && competenciaOrdinal(d.competencia) <= ordAtual)
+    .sort((a, b) => competenciaOrdinal(b.competencia) - competenciaOrdinal(a.competencia));
+  if (linhas.length === 0) return null;
+  const hoje = new Date().toISOString().slice(0, 10);
+  const saida = { competencia };
+  for (const esfera of ['federal', 'estadual', 'municipal']) {
+    const linha = linhas.find((l) => l[`situacao_${esfera}`] || l[`anexo_${esfera}_path`]);
+    if (!linha) continue;
+    for (const campo of [`situacao_${esfera}`, `anexo_${esfera}_path`, `anexo_${esfera}_nome`, `validade_${esfera}`]) saida[campo] = linha[campo] ?? null;
+    saida[`competencia_${esfera}`] = linha.competencia;
+    saida[`vencida_${esfera}`] = !!(linha[`validade_${esfera}`] && linha[`validade_${esfera}`] < hoje);
+  }
+  return saida;
 }
 
 export async function obterSituacaoFiscal(clienteId, competencia) {

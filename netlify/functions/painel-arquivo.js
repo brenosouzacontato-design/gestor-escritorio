@@ -31,7 +31,7 @@ const ORIGENS = [
   ['documentos', ['storage_path', 'comprovante_path']],
   ['dados_gerenciais_simples', ['storage_path']],
   ['situacao_fiscal_rfb', ['storage_path']],
-  ['cnd_manual', ['anexo_estadual_path', 'anexo_municipal_path']],
+  ['cnd_manual', ['anexo_federal_path', 'anexo_estadual_path', 'anexo_municipal_path']],
 ]
 
 exports.handler = async (event) => {

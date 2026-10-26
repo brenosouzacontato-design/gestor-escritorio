@@ -11,6 +11,11 @@
 // nome/CNPJ, "null" se não tiver certeza, nunca inventa). Usado pelo
 // upload "detectar empresa" da topbar de Empresas.jsx.
 //
+// Também aceita certidões (CND) federal, estadual ou municipal: devolve
+// `tipoDocumento` ('relatorio' | 'cnd_federal' | 'cnd_estadual' |
+// 'cnd_municipal' | 'outro') e `validade` — painelApi.js guarda a CND na
+// esfera certa de cnd_manual e o PDF fica pro cliente baixar no painel.
+//
 // Variável de ambiente necessária no Netlify: ANTHROPIC_API_KEY
 //
 // Contrato de retorno (o que painelApi.js espera):
@@ -26,13 +31,16 @@ const ANTHROPIC_API_URL = 'https://api.anthropic.com/v1/messages';
 const MODELO = 'claude-haiku-4-5-20251001';
 
 function montarSystemPrompt(temClientes) {
-  return `Você é um assistente contábil brasileiro. Recebe um Relatório de Situação Fiscal emitido pela Receita Federal (RFB) e extrai as informações principais dele.${temClientes ? ' Também recebe uma lista de clientes cadastrados e precisa identificar de qual cliente da lista é o documento.' : ''}
+  return `Você é um assistente contábil brasileiro. Recebe um documento fiscal — um Relatório de Situação Fiscal emitido pela Receita Federal (RFB) OU uma certidão de débitos (CND) federal, estadual ou municipal — e extrai as informações principais dele.${temClientes ? ' Também recebe uma lista de clientes cadastrados e precisa identificar de qual cliente da lista é o documento.' : ''}
 
 Devolva APENAS um JSON, sem texto antes ou depois, sem markdown e sem crases, no formato exato:
-{"dataEmissao":"YYYY-MM-DD ou null","situacaoGeral":"regular"|"pendente"|null,"debitos":[{"tributo":"string","competencia":"MM/YYYY ou null","vencimento":"YYYY-MM-DD ou null","valorOriginal":number,"valor":number,"situacao":"string"}],"parcelamentos":[{"modalidade":"string","valor":number,"parcelas":"string"}],"dividasAtivas":[{"inscricao":"string","tributo":"string","competencia":"MM/YYYY ou null","valor":number,"situacao":"string"}]${temClientes ? ',"clienteId":"id da lista ou null"' : ''},"observacao":"string curta"}
+{"tipoDocumento":"relatorio"|"cnd_federal"|"cnd_estadual"|"cnd_municipal"|"outro","validade":"YYYY-MM-DD ou null","dataEmissao":"YYYY-MM-DD ou null","situacaoGeral":"regular"|"pendente"|null,"debitos":[{"tributo":"string","competencia":"MM/YYYY ou null","vencimento":"YYYY-MM-DD ou null","valorOriginal":number,"valor":number,"situacao":"string"}],"parcelamentos":[{"modalidade":"string","valor":number,"parcelas":"string"}],"dividasAtivas":[{"inscricao":"string","tributo":"string","competencia":"MM/YYYY ou null","valor":number,"situacao":"string"}]${temClientes ? ',"clienteId":"id da lista ou null"' : ''},"observacao":"string curta"}
 
 Regras:
-- "dataEmissao": data em que o relatório foi gerado/emitido.
+- "tipoDocumento": "relatorio" para o Relatório de Situação Fiscal (Relatório de Situação Fiscal do Contribuinte / Informações de Apoio para Emissão de Certidão, da RFB). "cnd_federal" para a Certidão de Débitos Relativos a Créditos Tributários Federais e à Dívida Ativa da União (RFB/PGFN). "cnd_estadual" para certidão emitida pela Secretaria da Fazenda/Receita do Estado (ex: SEF-MG, SEFAZ). "cnd_municipal" para certidão emitida pela Prefeitura/Secretaria Municipal de Fazenda. "outro" se não for nenhum desses.
+- "validade": só para certidão — data até quando ela é válida ("Válida até"); null se não houver ou se for relatório.
+- Para certidão: "situacaoGeral" é "regular" quando ela é NEGATIVA ou POSITIVA COM EFEITOS DE NEGATIVA; "pendente" quando é POSITIVA (sem efeito de negativa). As listas de débitos/parcelamentos/dívidas ficam vazias [].
+- "dataEmissao": data em que o relatório ou a certidão foi gerado/emitido.
 - "situacaoGeral": "regular" se o relatório indicar que não há pendências fiscais impeditivas, "pendente" se houver qualquer pendência/débito/irregularidade.
 - "debitos": lista de débitos/pendências em aberto na Receita Federal (não inclui os já inscritos em Dívida Ativa), UM ITEM POR LINHA de débito do relatório (cada período de apuração separado, nunca somado). "tributo" é o código/nome da receita (ex: "1099-01 - CP-SEGUR."), "competencia" é o período de apuração (PA) no formato "MM/YYYY" (se o PA for anual ou trimestral, use o último mês do período), "vencimento" é a data de vencimento (Dt. Vcto), "valorOriginal" é o valor original (Vl. Original), "valor" é o saldo devedor ATUALIZADO/consolidado (coluna "Sdo. Dev. Cons." — com multa e juros; se não houver essa coluna, use o saldo devedor), "situacao" é o status descrito no relatório (ex: "DEVEDOR", "em cobrança", "exigibilidade suspensa"). Valores numéricos sem "R$", ponto como separador decimal.
 - "parcelamentos": lista de parcelamentos ativos junto à RFB. "modalidade" é o tipo/nome do parcelamento, "parcelas" é o texto descrevendo parcelas pagas/total (ex: "12/60") se disponível.
@@ -40,7 +48,7 @@ Regras:
 - Se não houver nenhum item numa das três listas, devolva array vazio [], não null.${temClientes ? '\n- "clienteId": só preencha se o nome ou CNPJ do documento bater com um item da lista de clientes. Se não tiver certeza, null — não invente.' : ''}
 - Se não conseguir identificar um campo com confiança, use null pra ele (ou [] pras listas) — não invente números ou textos.
 - "observacao": uma frase curta com qualquer ressalva relevante.
-- Se o PDF não parecer um Relatório de Situação Fiscal da RFB, devolva situacaoGeral null, listas vazias, e explique em "observacao".`;
+- Se o PDF não parecer um Relatório de Situação Fiscal nem uma certidão, devolva tipoDocumento "outro", situacaoGeral null, listas vazias, e explique em "observacao".`;
 }
 
 const { exigirEscritorio } = require('./lib/autenticacao');
@@ -132,7 +140,10 @@ exports.handler = async (event) => {
       });
     }
 
+    const TIPOS = ['relatorio', 'cnd_federal', 'cnd_estadual', 'cnd_municipal', 'outro'];
     return resposta(200, {
+      tipoDocumento: TIPOS.includes(extraido.tipoDocumento) ? extraido.tipoDocumento : 'relatorio',
+      validade: extraido.validade || null,
       dataEmissao: extraido.dataEmissao || null,
       situacaoGeral: extraido.situacaoGeral || null,
       debitos: Array.isArray(extraido.debitos) ? extraido.debitos : [],
