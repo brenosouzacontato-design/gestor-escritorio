@@ -570,8 +570,19 @@ export default function Empresas({ onOpenTarefas, onOpenCadastro, clienteInicial
   }
 
   // Drawer: leitura direta do store (sem useMemo) para refletir mudanças imediatas
+  // Competência vista no modal da empresa — começa na da tela, mas dá pra
+  // olhar as outras (as que a empresa tem obrigação) sem mudar a tela toda.
+  const [compDrawer, setCompDrawer] = useState(compSel)
+  useEffect(() => { setCompDrawer(compSel) }, [drawer?.c?.id, compSel])
+  const opcoesCompDrawer = !drawer ? [] : (() => {
+    const ord = (c) => { const [m, a] = String(c).split('/'); return Number(a) * 12 + Number(m) }
+    const set = new Set([compSel, compDrawer])
+    obrigacoes.forEach(o => { if (o.cliente_id === drawer.c.id && /^\d{2}\/\d{4}$/.test(o.competencia || '')) set.add(o.competencia) })
+    return [...set].sort((a, b) => ord(b) - ord(a))
+  })()
+
   const drawerObs = !drawer ? [] : obrigacoes.filter(o => {
-    if (o.cliente_id !== drawer.c.id || o.competencia !== compSel) return false
+    if (o.cliente_id !== drawer.c.id || o.competencia !== compDrawer) return false
     if (!drawer.dept) return true
     const tiposLegado = LEGACY_DEPT_TIPOS[drawer.dept.nome] || []
     return o.departamento_id === drawer.dept.id || tiposLegado.includes(o.tipo)
@@ -649,7 +660,7 @@ export default function Empresas({ onOpenTarefas, onOpenCadastro, clienteInicial
     if (!arquivo) return
     setEnviandoDeclaracao(true)
     try {
-      const salvo = await uploadDeclaracaoSimples(arquivo, compSel, { clienteId: cliente.id })
+      const salvo = await uploadDeclaracaoSimples(arquivo, compDrawer, { clienteId: cliente.id })
       show?.(`Declaração processada — competência ${salvo.competencia}${salvo.faturamento_periodo ? `, faturamento R$ ${Number(salvo.faturamento_periodo).toLocaleString('pt-BR')}` : ''}${salvo.historicoPreenchido > 0 ? ` · +${salvo.historicoPreenchido} mês${salvo.historicoPreenchido !== 1 ? 'es' : ''} anterior${salvo.historicoPreenchido !== 1 ? 'es' : ''} preenchido${salvo.historicoPreenchido !== 1 ? 's' : ''}` : ''}`)
     } catch (e) {
       show?.('Erro ao processar declaração: ' + e.message)
@@ -671,7 +682,7 @@ export default function Empresas({ onOpenTarefas, onOpenCadastro, clienteInicial
     const resumos = []
     for (const arquivo of lista) {
       try {
-        resumos.push(resumoFiscal(await uploadSituacaoFiscal(arquivo, compSel, { clienteId: cliente.id })))
+        resumos.push(resumoFiscal(await uploadSituacaoFiscal(arquivo, compDrawer, { clienteId: cliente.id })))
       } catch (e) {
         resumos.push(`${arquivo.name}: erro — ${e.message}`)
       }
@@ -771,6 +782,25 @@ export default function Empresas({ onOpenTarefas, onOpenCadastro, clienteInicial
     setUpdatingId(obsId)
     await supabase.from('obrigacoes').update({ status: novoStatus, updated_at: new Date().toISOString() }).eq('id', obsId)
     await fetchObrigacoes()
+    setUpdatingId(null)
+  }
+
+  // Excluir obrigação do card da empresa. Documentos ligados a ela ficam,
+  // só soltam o vínculo (a FK de documentos não tem cascade).
+  const handleDeleteObs = async (o) => {
+    const nome = o.titulo || o.tipo
+    if (!window.confirm(`Excluir a obrigação "${nome}" (${o.competencia}) de ${drawer?.c?.nome || 'esta empresa'}?\n\nSe ela for recorrente, "Gerar" cria de novo — pra não gerar mais, marque "não aplica" ou tire no cadastro da empresa.`)) return
+    setUpdatingId(o.id)
+    try {
+      const { error: errDoc } = await supabase.from('documentos').update({ obrigacao_id: null, etapa_obrigacao_id: null }).eq('obrigacao_id', o.id)
+      if (errDoc) throw errDoc
+      const { error } = await supabase.from('obrigacoes').delete().eq('id', o.id)
+      if (error) throw error
+      await fetchObrigacoes()
+      show?.(`Obrigação "${nome}" excluída`)
+    } catch (e) {
+      show?.('Erro ao excluir obrigação: ' + (e.message || e))
+    }
     setUpdatingId(null)
   }
 
@@ -1589,7 +1619,22 @@ export default function Empresas({ onOpenTarefas, onOpenCadastro, clienteInicial
                   <div style={{ fontSize:13, fontWeight:500, color:'#fff', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>
                     {drawer.c.nome}
                   </div>
-                  <div style={{ fontSize:10, color:'var(--navy-text)', marginTop:2 }}>{drawer.dept?.nome||'Todos os módulos'} · {compSel}</div>
+                  <div style={{ fontSize:10, color:'var(--navy-text)', marginTop:2, display:'flex', alignItems:'center', gap:4 }}>
+                    {drawer.dept?.nome||'Todos os módulos'} ·
+                    <select value={compDrawer} onChange={e => setCompDrawer(e.target.value)} title="Ver outra competência desta empresa"
+                      style={{ background:'rgba(255,255,255,.1)', border:'1px solid rgba(255,255,255,.2)', borderRadius:4, color:'#fff',
+                        fontSize:10, padding:'1px 4px', cursor:'pointer', outline:'none' }}>
+                      {opcoesCompDrawer.map(c => (
+                        <option key={c} value={c} style={{ background:'var(--surface)', color:'var(--text1)' }}>{c}{c === compSel ? ' (tela)' : ''}</option>
+                      ))}
+                    </select>
+                    {compDrawer !== compSel && (
+                      <button onClick={() => setCompDrawer(compSel)} title={`Voltar para ${compSel}`}
+                        style={{ background:'none', border:'none', color:'var(--navy-text)', cursor:'pointer', fontSize:10, textDecoration:'underline', padding:0 }}>
+                        voltar
+                      </button>
+                    )}
+                  </div>
                   <div style={{ display:'flex', gap:6, flexWrap:'wrap', marginTop:6 }}>
                     {drawer.c.cnpj && (
                       <span style={{ fontSize:10, color:'var(--navy-text)', background:'rgba(255,255,255,.08)', border:'1px solid rgba(255,255,255,.15)', borderRadius:99, padding:'2px 8px' }}>
@@ -1673,6 +1718,12 @@ export default function Empresas({ onOpenTarefas, onOpenCadastro, clienteInicial
                             style={{ background:'none', border:'none', cursor:'pointer', padding:2, flexShrink:0,
                               color: o.responsavel ? 'var(--accent)' : 'var(--text3)' }}>
                             <UserIcon size={13} />
+                          </button>
+                          <button onClick={() => handleDeleteObs(o)} disabled={busy} title="Excluir obrigação"
+                            style={{ background:'none', border:'none', cursor:'pointer', padding:2, flexShrink:0, color:'var(--text3)' }}
+                            onMouseEnter={e => { e.currentTarget.style.color = 'var(--danger)' }}
+                            onMouseLeave={e => { e.currentTarget.style.color = 'var(--text3)' }}>
+                            <Trash2Icon size={13} />
                           </button>
                           <select
                             value={o.status || 'pendente'}
@@ -1879,7 +1930,7 @@ export default function Empresas({ onOpenTarefas, onOpenCadastro, clienteInicial
           cliente={drawer.c}
           dept={drawer.dept}
           departamentos={departamentos}
-          competencia={compSel}
+          competencia={compDrawer}
           onClose={() => setShowNovaObs(false)}
           onSaved={async () => { setShowNovaObs(false); await fetchObrigacoes() }}
         />
@@ -1971,7 +2022,7 @@ export default function Empresas({ onOpenTarefas, onOpenCadastro, clienteInicial
       {showCndManual && drawer && (
         <ModalCndManual
           cliente={drawer.c}
-          competencia={compSel}
+          competencia={compDrawer}
           onClose={() => setShowCndManual(false)}
           onSaved={() => { setShowCndManual(false); show?.('CND estadual/municipal atualizada') }}
         />
