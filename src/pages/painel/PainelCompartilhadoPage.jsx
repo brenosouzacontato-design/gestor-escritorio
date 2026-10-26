@@ -14,7 +14,7 @@ import { GraficoFaturamento, ComparativoDas, NotasEntrada, TarefasDoCliente } fr
 import { calcularAliquotaNominal } from '../../lib/simplesNacional';
 import {
   obterResumoObrigacoes, obterResumoTarefas, obterDadosGerenciais, obterDocumentosPorObrigacao,
-  obterDocumentosPorTarefa, obterSituacaoFiscalMaisRecente, obterCndManual, obterHistoricoFaturamento,
+  obterDocumentosPorTarefa, obterSituacaoFiscalMaisRecente, obterCndVigente, obterHistoricoFaturamento,
   obterUltimaVisualizacaoPainel, extrairValorGuia, obterHonorariosPainel, obterDocumentosFiscais,
   definirSecoesOcultasPainel, atualizarDadosGerenciais, atualizarValorGuia, obterTarefasDoCliente,
   avisarEventoPainel, obterEventosPainel, obterRecadosPainel, salvarRecadoPainel, marcarGuiaPaga, salvarCodigosGuia,
@@ -286,7 +286,8 @@ function PainelCompartilhado({ clienteId, competencia: competenciaInicial, admin
           obterDadosGerenciais(clienteId, competencia).catch(() => null),
           obterHistoricoFaturamento(clienteId).catch(() => []),
           obterSituacaoFiscalMaisRecente(clienteId, competencia).catch(() => null),
-          obterCndManual(clienteId, competencia).catch(() => null),
+          // CND mais recente de cada esfera (não só a do mês)
+          obterCndVigente(clienteId, competencia).catch(() => null),
           obterHonorariosPainel(clienteId, competencia).catch(() => []),
           obterConfigPix().catch(() => ({ chavePix: '', favorecido: '' })),
           obterDocumentosFiscais(clienteId, competencia, 'entrada').catch(() => []),
@@ -714,6 +715,19 @@ function PainelCompartilhado({ clienteId, competencia: competenciaInicial, admin
                 </Ocultavel>
               )}
 
+              {/* ── Certidões (CND) enviadas pelo escritório, pra baixar ── */}
+              {CERTIDOES.some(([esfera]) => dados.cndManual?.[`anexo_${esfera}_path`]) && (
+                <Ocultavel chave="certidoes" {...propsOc}>
+                <Secao titulo="Certidões negativas (CND)" icone={<FileTextIcon size={14} />}>
+                  <div style={LISTA}>
+                    {CERTIDOES.filter(([esfera]) => dados.cndManual[`anexo_${esfera}_path`]).map(([esfera, titulo]) => (
+                      <LinhaCertidao key={esfera} cnd={dados.cndManual} esfera={esfera} titulo={titulo} onBaixar={baixar} />
+                    ))}
+                  </div>
+                </Secao>
+                </Ocultavel>
+              )}
+
               {/* ── 4. Pendências (Relatório de Situação Fiscal) ── */}
               <Ocultavel chave="pendencias" {...propsOc}>
               <Secao titulo="Pendências — Relatório de Situação Fiscal" icone={<AlertTriangleIcon size={14} />}
@@ -894,8 +908,15 @@ function ChipCabecalho({ children }) {
 // Situação Fiscal (IA), estadual/municipal da marcação manual (cnd_manual).
 // `soAVencer`: o relatório só lista débito ainda no prazo — a IA marca a
 // situação geral como "pendente" mesmo assim, mas não há nada em atraso.
+// Federal: CND federal válida enviada na mesma competência do relatório ou
+// depois vale mais que o relatório. Certidão vencida não conta.
 function ChipSituacao({ situacaoFiscal, cndManual, soAVencer }) {
-  const esferas = [soAVencer && situacaoFiscal?.situacao_geral === 'pendente' ? 'regular' : situacaoFiscal?.situacao_geral, cndManual?.situacao_estadual, cndManual?.situacao_municipal].filter(Boolean);
+  const cnd = (esfera) => (cndManual && !cndManual[`vencida_${esfera}`] ? cndManual[`situacao_${esfera}`] : null);
+  const relatorio = soAVencer && situacaoFiscal?.situacao_geral === 'pendente' ? 'regular' : situacaoFiscal?.situacao_geral;
+  const cndFederalMaisNova = cnd('federal') && (!situacaoFiscal
+    || competenciaOrdinal(cndManual.competencia_federal) >= competenciaOrdinal(situacaoFiscal.competencia));
+  const federal = cndFederalMaisNova ? cnd('federal') : relatorio;
+  const esferas = [federal, cnd('estadual'), cnd('municipal')].filter(Boolean);
   if (esferas.length === 0) return null;
   const pendente = esferas.includes('pendente');
   return (
@@ -1506,6 +1527,32 @@ function LinhaPendencia({ p }) {
             <div style={{ fontSize: 10, color: 'var(--text3)', whiteSpace: 'nowrap' }}>original {fmt(p.valorOriginal)}</div>
           )}
         </div>
+      )} />
+  );
+}
+
+const CERTIDOES = [['federal', 'CND Federal (Receita e PGFN)'], ['estadual', 'CND Estadual'], ['municipal', 'CND Municipal']];
+
+function LinhaCertidao({ cnd, esfera, titulo, onBaixar }) {
+  const situacao = cnd[`situacao_${esfera}`];
+  const validade = cnd[`validade_${esfera}`];
+  const vencida = cnd[`vencida_${esfera}`];
+  const [rotulo, cor, dim] = vencida ? ['Vencida', 'var(--warn)', 'var(--warn-dim)']
+    : situacao === 'pendente' ? ['Com pendência', 'var(--danger)', 'var(--danger-dim)']
+    : ['Sem pendência', 'var(--ok)', 'var(--ok-dim)'];
+  return (
+    <Linha chave={`cnd-${esfera}`} corBorda={cor} titulo={titulo}
+      detalhes={validade && (
+        <span style={{ color: vencida ? 'var(--warn)' : 'var(--text3)', display: 'flex', alignItems: 'center', gap: 3 }}>
+          <CalendarIcon size={10} /> {vencida ? 'venceu em' : 'válida até'} {fmtData(validade)}
+        </span>
+      )}
+      direita={(
+        <>
+          <BotaoGuia anexo={{ storage_path: cnd[`anexo_${esfera}_path`], nome_arquivo: cnd[`anexo_${esfera}_nome`] || titulo }}
+            onBaixar={onBaixar} label="Baixar" descricao={titulo} />
+          <span style={{ fontSize: 10, fontWeight: 700, color: cor, background: dim, borderRadius: 99, padding: '3px 9px', whiteSpace: 'nowrap' }}>{rotulo}</span>
+        </>
       )} />
   );
 }

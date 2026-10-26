@@ -195,6 +195,16 @@ function VazioColuna({ texto }) {
   return <div style={{ textAlign:'center', color:'var(--text3)', fontSize:11, padding:'16px 0' }}>{texto}</div>
 }
 
+// Mensagem curta do que foi lido no envio de Situação Fiscal / CND.
+function resumoFiscal(salvo) {
+  if (salvo.tipoDocumento?.startsWith('cnd_')) {
+    const esfera = { cnd_federal: 'federal', cnd_estadual: 'estadual', cnd_municipal: 'municipal' }[salvo.tipoDocumento]
+    const validade = salvo.validade ? ` · válida até ${salvo.validade.split('-').reverse().join('/')}` : ''
+    return `CND ${esfera}: ${salvo.situacao === 'pendente' ? 'com pendência' : salvo.situacao === 'regular' ? 'sem pendência' : 'situação não identificada'}${validade}`
+  }
+  return `Situação fiscal — ${salvo.situacao_geral === 'regular' ? 'sem pendências' : salvo.situacao_geral === 'pendente' ? 'com pendências' : 'situação não identificada'}`
+}
+
 // Engrenagem que leva ao cadastro e à configuração da empresa (tela da
 // empresa em Clientes). Não abre o modal do card nem começa arrasto.
 function BotaoCadastro({ cliente, onOpenCadastro, size = 12, style }) {
@@ -650,16 +660,23 @@ export default function Empresas({ onOpenTarefas, onOpenCadastro, clienteInicial
   // Upload do Relatório de Situação Fiscal (RFB) — sobe pro Storage, IA
   // extrai situação geral, débitos, parcelamentos e dívidas ativas (PGFN)
   // e grava em situacao_fiscal_rfb pra aparecer no painel compartilhável.
+  // O mesmo campo aceita as certidões (CND): a IA diz se é federal, estadual
+  // ou municipal, a esfera fica regular/pendente e o PDF vai pro painel.
+  // Aceita vários arquivos de uma vez (relatório + CNDs).
   const [enviandoSituacaoFiscal, setEnviandoSituacaoFiscal] = useState(false)
-  const handleUploadSituacaoFiscal = async (cliente, arquivo) => {
-    if (!arquivo) return
+  const handleUploadSituacaoFiscal = async (cliente, arquivos) => {
+    const lista = Array.from(arquivos || [])
+    if (lista.length === 0) return
     setEnviandoSituacaoFiscal(true)
-    try {
-      const salvo = await uploadSituacaoFiscal(arquivo, compSel, { clienteId: cliente.id })
-      show?.(`Situação fiscal processada — ${salvo.situacao_geral === 'regular' ? 'sem pendências' : salvo.situacao_geral === 'pendente' ? 'com pendências' : 'situação não identificada'}`)
-    } catch (e) {
-      show?.('Erro ao processar relatório: ' + e.message)
+    const resumos = []
+    for (const arquivo of lista) {
+      try {
+        resumos.push(resumoFiscal(await uploadSituacaoFiscal(arquivo, compSel, { clienteId: cliente.id })))
+      } catch (e) {
+        resumos.push(`${arquivo.name}: erro — ${e.message}`)
+      }
     }
+    show?.(resumos.join(' · '))
     setEnviandoSituacaoFiscal(false)
   }
 
@@ -712,16 +729,22 @@ export default function Empresas({ onOpenTarefas, onOpenCadastro, clienteInicial
   }
 
   const [enviandoSituacaoFiscalAuto, setEnviandoSituacaoFiscalAuto] = useState(false)
-  const handleUploadSituacaoFiscalAuto = async (arquivo) => {
-    if (!arquivo) return
+  const handleUploadSituacaoFiscalAuto = async (arquivos) => {
+    const lista = Array.from(arquivos || [])
+    if (lista.length === 0) return
     setEnviandoSituacaoFiscalAuto(true)
-    try {
-      const salvo = await uploadSituacaoFiscal(arquivo, compSel, { clientes: clientesParaDetectar })
-      const cliente = aoDetectarEmpresa(salvo)
-      show?.(cliente ? `Empresa identificada: ${cliente.nome} — relatório processado` : 'Relatório processado')
-    } catch (e) {
-      show?.('Erro: ' + e.message)
+    const resumos = []
+    for (const arquivo of lista) {
+      try {
+        const salvo = await uploadSituacaoFiscal(arquivo, compSel, { clientes: clientesParaDetectar })
+        // abre a empresa (e o painel) só uma vez, no primeiro arquivo
+        const cliente = resumos.length === 0 ? aoDetectarEmpresa(salvo) : clientes.find(c => c.id === salvo.cliente_id)
+        resumos.push(`${cliente ? `${cliente.nome}: ` : ''}${resumoFiscal(salvo)}`)
+      } catch (e) {
+        resumos.push(`${arquivo.name}: erro — ${e.message}`)
+      }
     }
+    show?.(resumos.join(' · '))
     setEnviandoSituacaoFiscalAuto(false)
   }
 
@@ -862,9 +885,9 @@ export default function Empresas({ onOpenTarefas, onOpenCadastro, clienteInicial
           </label>
           <label title="Sobe o PDF e identifica a empresa sozinho, sem precisar abrir ela antes"
             style={{ display:'flex', alignItems:'center', gap:5, background:'var(--surface2)', border:'1px solid var(--border)', borderRadius:8, padding:'5px 10px', fontSize:11, color:'var(--text2)', cursor:enviandoSituacaoFiscalAuto?'default':'pointer', fontWeight:500, opacity:enviandoSituacaoFiscalAuto?.6:1 }}>
-            <FileTextIcon size={12} /> {enviandoSituacaoFiscalAuto ? 'Processando...' : 'Situação Fiscal (detectar empresa)'}
-            <input type="file" accept=".pdf,application/pdf" style={{ display:'none' }} disabled={enviandoSituacaoFiscalAuto}
-              onChange={(e) => { handleUploadSituacaoFiscalAuto(e.target.files?.[0]); e.target.value = '' }} />
+            <FileTextIcon size={12} /> {enviandoSituacaoFiscalAuto ? 'Processando...' : 'Situação Fiscal / CND (detectar empresa)'}
+            <input type="file" accept=".pdf,application/pdf" multiple style={{ display:'none' }} disabled={enviandoSituacaoFiscalAuto}
+              onChange={(e) => { handleUploadSituacaoFiscalAuto(e.target.files); e.target.value = '' }} />
           </label>
           <span style={{ background:'var(--surface2)', border:'1px solid var(--border)', borderRadius:8, padding:'5px 8px', fontSize:11, color:'var(--text2)' }}
             title="Competência escolhida no Painel">
@@ -1802,14 +1825,15 @@ export default function Empresas({ onOpenTarefas, onOpenCadastro, clienteInicial
                       onChange={(e) => { handleUploadDeclaracao(drawer.c, e.target.files?.[0]); e.target.value = '' }} />
                   </label>
                   <label style={{ flex:1, background:'var(--surface2)', border:'1px solid var(--border)', borderRadius:8, padding:'7px', fontSize:11, color:'var(--text2)', fontWeight:500, cursor:enviandoSituacaoFiscal?'default':'pointer', display:'flex', alignItems:'center', justifyContent:'center', gap:4, opacity:enviandoSituacaoFiscal?.6:1 }}>
-                    <FileTextIcon size={12} /> {enviandoSituacaoFiscal ? 'Processando...' : 'Situação Fiscal RFB'}
-                    <input type="file" accept=".pdf,application/pdf" style={{ display:'none' }} disabled={enviandoSituacaoFiscal}
-                      onChange={(e) => { handleUploadSituacaoFiscal(drawer.c, e.target.files?.[0]); e.target.value = '' }} />
+                    <FileTextIcon size={12} /> {enviandoSituacaoFiscal ? 'Processando...' : 'Situação Fiscal / CND'}
+                    <input type="file" accept=".pdf,application/pdf" multiple style={{ display:'none' }} disabled={enviandoSituacaoFiscal}
+                      title="Relatório de Situação Fiscal e/ou certidões (federal, estadual, municipal) — pode escolher vários"
+                      onChange={(e) => { handleUploadSituacaoFiscal(drawer.c, e.target.files); e.target.value = '' }} />
                   </label>
                 </div>
                 <button onClick={() => setShowCndManual(true)}
                   style={{ width:'100%', background:'var(--surface2)', border:'1px solid var(--border)', borderRadius:8, padding:'7px', fontSize:11, color:'var(--text2)', fontWeight:500, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', gap:4 }}>
-                  🛡️ CND Estadual/Municipal
+                  🛡️ CND — marcar à mão
                 </button>
                 <div style={{ display:'flex', gap:7 }}>
                   <button onClick={() => handleVisualizarPainel(drawer.c)}
