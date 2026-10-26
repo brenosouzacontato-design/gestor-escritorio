@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, Fragment } from 'react'
 import { LayoutDashboardIcon, CheckSquareIcon, UsersIcon, RefreshCwIcon, SettingsIcon, PlusIcon, TargetIcon, BuildingIcon, AppWindowIcon, CalculatorIcon, ChevronsLeftIcon, ChevronsRightIcon, SunIcon, MoonIcon, PaperclipIcon, BellIcon, BanknoteIcon, CircleDollarSignIcon, MonitorIcon, ReceiptIcon, LogOutIcon, FileSignatureIcon } from 'lucide-react'
 import { useStore } from './store'
 import { ToastContainer } from './components/shared'
@@ -67,6 +67,21 @@ export default function App() {
 
   useEffect(() => { init() }, [])
 
+  // Botão "Atualizar" do topo: busca de novo empresas, tarefas, obrigações e
+  // fechamentos e remonta a tela aberta (key), que recarrega os próprios dados
+  // (Pagamentos, Documentos, painéis...) — sem recarregar a página inteira.
+  const [versaoPagina, setVersaoPagina] = useState(0)
+  const [atualizando, setAtualizando] = useState(false)
+  const atualizarDados = async () => {
+    if (atualizando) return
+    setAtualizando(true)
+    const s = useStore.getState()
+    await Promise.all([s.fetchClientes(), s.fetchTarefas(), s.fetchObrigacoes(), s.fetchFechamentos(),
+      contarComprovantesPendentes().then(setComprovantesPendentes).catch(() => {})]).catch(() => {})
+    setVersaoPagina(v => v + 1)
+    setAtualizando(false)
+  }
+
   // comprovantes do grupo "Pagamentos" esperando conferência (badge do menu);
   // falha silenciosa enquanto a tabela comprovantes_pagamento não existe
   const [comprovantesPendentes, setComprovantesPendentes] = useState(0)
@@ -103,6 +118,10 @@ export default function App() {
         <span className="topbar-title topbar-title--brand"><span style={{ fontSize:20 }}>⬡</span> Gestor</span>
         <span className="topbar-title topbar-title--page">{pageTitle}</span>
         <div style={{ display:'flex', gap:6, alignItems:'center' }}>
+          <button className="btn btn-icon btn-ghost" onClick={atualizarDados} disabled={atualizando}
+            title={atualizando ? 'Atualizando...' : 'Atualizar dados desta tela (sem recarregar a página)'}>
+            <RefreshCwIcon size={18} style={atualizando ? { animation:'spin 0.8s linear infinite' } : undefined} />
+          </button>
           <button className="btn btn-icon btn-ghost" onClick={toggleTheme} title={theme === 'dark' ? 'Tema claro' : 'Tema escuro'}>
             {theme === 'dark' ? <SunIcon size={18} /> : <MoonIcon size={18} />}
           </button>
@@ -145,7 +164,7 @@ export default function App() {
         {loading && page === 'overview' ? (
           <div className="center"><div className="spinner" /></div>
         ) : (
-          <>
+          <Fragment key={versaoPagina}>
             {page === 'overview'   && <Overview onAddTarefa={openNewTask} onOpenCliente={(id) => { setSelectedCliente(id); navigate('clientes') }} onOpenEmpresa={(id) => { setClienteAbrirEmpresas(id); navigate('empresas') }} onOpenObrigacoes={() => navigate('empresas')} onOpenTarefas={() => navigate('tarefas')} onOpenContabil={() => navigate('contabil')} />}
             {page === 'empresas'   && <Empresas onOpenTarefas={(clienteId) => { setFiltroClienteTarefas(clienteId ?? null); navigate('tarefas') }}
               onOpenCadastro={(id) => { setSelectedCliente(id); navigate('clientes') }}
@@ -164,7 +183,7 @@ export default function App() {
             {page === 'notasfiscais' && <NotasFiscaisPage />}
             {page === 'nfse' && <NfseEmissaoPage />}
             {page === 'central'    && <Central />}
-          </>
+          </Fragment>
         )}
       </main>
       </div>
