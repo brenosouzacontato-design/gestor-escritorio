@@ -38,13 +38,29 @@ export async function obterResumoObrigacoes(clienteId, competencia) {
   return { itens: data, total: data.length, ok, vencido, pendente };
 }
 
+// Tarefas da competência. Quase toda tarefa é criada sem competência (modal
+// da empresa, grupo do WhatsApp) — essas entram quando ainda estão pendentes
+// ou quando foram concluídas entre o início do mês da competência e o fim do
+// mês seguinte (quando o trabalho daquela competência é feito).
+function tarefaDaCompetencia(t, competencia) {
+  if (t.competencia) return t.competencia === competencia;
+  if (!t.concluida) return true;
+  const m = /^(\d{2})\/(\d{4})$/.exec(competencia || '');
+  if (!m) return false;
+  const inicio = new Date(Number(m[2]), Number(m[1]) - 1, 1);
+  const fim = new Date(Number(m[2]), Number(m[1]) + 1, 1);
+  const quando = new Date(t.concluida_em || t.created_at || 0);
+  return quando >= inicio && quando < fim;
+}
+
 export async function obterResumoTarefas(clienteId, competencia) {
-  const { data, error } = await supabase
+  const { data: todas, error } = await supabase
     .from('tarefas')
-    .select('id, titulo, prioridade, vencimento, concluida, departamento')
+    .select('id, titulo, prioridade, vencimento, concluida, concluida_em, created_at, departamento, competencia, observacao')
     .eq('cliente_id', clienteId)
-    .eq('competencia', competencia);
+    .or(`competencia.eq."${competencia}",competencia.is.null`);
   if (error) throw error;
+  const data = (todas || []).filter((t) => tarefaDaCompetencia(t, competencia));
 
   const concluidas = data.filter((t) => t.concluida).length;
   return { itens: data, total: data.length, concluidas, pendentes: data.length - concluidas };

@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from 'react'
+import { useState, useMemo, useEffect, useRef } from 'react'
 import { PlusIcon, XIcon, CheckCircleIcon, ClockIcon, AlertCircleIcon, MinusCircleIcon, ChevronRightIcon, CalendarIcon, CheckIcon, ZapIcon, RefreshCwIcon, Trash2Icon, ListIcon, LayoutGridIcon, Rows3Icon, ClipboardListIcon, BarChart3Icon, Share2Icon, EyeIcon, CheckSquareIcon, FileIcon, DownloadIcon, PencilIcon, FileTextIcon, GripVerticalIcon, BellIcon, BellRingIcon, UserIcon, UploadCloudIcon, Loader2Icon, SparklesIcon, Building2Icon, AlertTriangleIcon, HourglassIcon, PackageCheckIcon, InboxIcon, CircleDashedIcon, BriefcaseIcon, MessageSquareIcon, SettingsIcon } from 'lucide-react'
 import { useStore } from '../store'
 import { DeptChip, PriDot, fmtDate, isOverdue, useToast } from '../components/shared'
@@ -248,6 +248,11 @@ export default function Empresas({ onOpenTarefas, onOpenCadastro, clienteInicial
   // algo do cliente (coluna aguardando_cliente da mesma tabela, ver
   // supabase-schema-cliente-entrega-aguardando.sql).
   const [aguardando, setAguardando] = useState(new Set())
+  // Quando cada empresa teve o status geral mudado pela última vez nesta
+  // competência (atualizado_em da linha) e qual competência já foi lida —
+  // usados pela entrega automática abaixo.
+  const [entregaEm, setEntregaEm] = useState(new Map())
+  const [entregaLida, setEntregaLida] = useState(null)
   const [filtroLista, setFiltroLista] = useState('todas') // chip de status ativo na visualização Lista
   const [departamentos,setDepartamentos] = useState([])
   const [showAddDept, setShowAddDept] = useState(false)
@@ -282,6 +287,8 @@ export default function Empresas({ onOpenTarefas, onOpenCadastro, clienteInicial
       .then(({ data }) => {
         setEntregues(new Set((data || []).filter(r => r.entregue).map(r => r.cliente_id)))
         setAguardando(new Set((data || []).filter(r => r.aguardando_cliente && !r.entregue).map(r => r.cliente_id)))
+        setEntregaEm(new Map((data || []).map(r => [r.cliente_id, r.atualizado_em])))
+        setEntregaLida(compSel)
       })
   }, [compSel])
 
@@ -305,6 +312,7 @@ export default function Empresas({ onOpenTarefas, onOpenCadastro, clienteInicial
       setAguardando(ajustar('aguardando_cliente'))
     }
     aplicar(status)
+    setEntregaEm(prev => new Map(prev).set(clienteId, new Date().toISOString()))
     // aguardando_cliente só vai no payload quando entra ou sai desse status —
     // quem só usa entregue/a entregar continua funcionando sem a coluna nova
     const mexeAguardando = status === 'aguardando_cliente' || anterior === 'aguardando_cliente'
@@ -322,6 +330,42 @@ export default function Empresas({ onOpenTarefas, onOpenCadastro, clienteInicial
     }
   }
   const handleMudarEntrega = (clienteId, entregue) => handleMudarStatusGeral(clienteId, entregue ? 'entregue' : 'a_entregar')
+
+  // Entrega automática: empresa com tudo concluído na competência (obrigações
+  // da competência + tarefas pendentes) vai pra "Entregue"; se aparecer
+  // obrigação/tarefa nova, volta pra "A entregar" (em andamento) e, quando
+  // tudo for concluído de novo, volta pra "Entregue".
+  // Arrastar o card na mão continua valendo: na carga da tela só muda quem
+  // teve item concluído (ou criado) depois da última mudança de status; com
+  // a tela aberta, muda quando a empresa passa de incompleta pra completa
+  // ou o contrário.
+  const completoAntes = useRef(new Map())
+  useEffect(() => {
+    // espera obrigações e tarefas carregarem, senão a empresa "parece" completa
+    if (entregaLida !== compSel || obrigacoes.length === 0) return
+    const ts = (v) => (v ? Date.parse(v) || 0 : 0)
+    const okObs = (o) => o.status === 'concluido' || o.status === 'nao_aplica'
+    const anteriores = completoAntes.current
+    if (anteriores.comp !== compSel) { anteriores.clear(); anteriores.comp = compSel }
+    for (const c of clientes) {
+      const obs = obrigacoes.filter(o => o.cliente_id === c.id && o.competencia === compSel)
+      const doCliente = tarefas.filter(t => t.cliente_id === c.id)
+      const tarefasPend = doCliente.filter(t => !t.concluida)
+      if (obs.length === 0 && tarefasPend.length === 0 && !anteriores.has(c.id)) continue
+      const completo = tarefasPend.length === 0 && obs.every(okObs) && obs.length + doCliente.length > 0
+      const antes = anteriores.get(c.id)
+      anteriores.set(c.id, completo)
+      const st = statusGeral(c.id)
+      const mudouEm = ts(entregaEm.get(c.id))
+      if (completo && st !== 'entregue') {
+        const ultimaConclusao = Math.max(0, ...obs.map(o => ts(o.updated_at)), ...doCliente.map(t => ts(t.concluida_em || t.updated_at)))
+        if (antes === false || ultimaConclusao > mudouEm) handleMudarStatusGeral(c.id, 'entregue')
+      } else if (!completo && st === 'entregue') {
+        const pendentes = [...obs.filter(o => !okObs(o)), ...tarefasPend]
+        if (antes === true || pendentes.some(i => ts(i.created_at) > mudouEm)) handleMudarStatusGeral(c.id, 'a_entregar')
+      }
+    }
+  }, [entregaLida, compSel, clientes, obrigacoes, tarefas, entregues, aguardando, entregaEm])
 
   const carteiras = useMemo(() => {
     const s = new Set(clientes.map(c => c.carteira).filter(Boolean))
