@@ -52,7 +52,7 @@ const NOMES_IMPOSTO = new Set([
   'PARCELAMENTO SIMPLIFICADO RFB', 'RECALCULO INSS', 'RECALCULO PGDAS',
   'INSS MENSAL',
 ]);
-const TITULO_IMPOSTO = /\b(pg)?das\b|pgmei|inss|fgts|darf|dctfweb|irrf|irpj|csll|pis|cofins|icms|iss|difal|parcelamento|guia/i;
+const TITULO_IMPOSTO = /\b(pg)?das\b|pgmei|inss|fgts|darf|dctfweb|irrf|irpj|csll|pis|cofins|icms|iss|difal|parcelamento|guia|maed|multa/i;
 function ehImposto(o) {
   return o.tipos_obrigacao?.eh_imposto || NOMES_IMPOSTO.has((o.tipo || '').toUpperCase())
     || TITULO_IMPOSTO.test(`${o.titulo || ''} ${o.tipo || ''}`);

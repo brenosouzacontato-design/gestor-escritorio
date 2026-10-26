@@ -10,7 +10,7 @@ const BUCKET = 'documentos';
 
 // Mesmo critério de "é imposto" do painel e do webhook — anexo de obrigação
 // que não é imposto (ex: holerites) não é guia a pagar.
-const TITULO_IMPOSTO = /\b(pg)?das\b|pgmei|inss|fgts|darf|dctfweb|irrf|irpj|csll|pis|cofins|icms|iss|difal|parcelamento|guia/i;
+const TITULO_IMPOSTO = /\b(pg)?das\b|pgmei|inss|fgts|darf|dctfweb|irrf|irpj|csll|pis|cofins|icms|iss|difal|parcelamento|guia|maed|multa/i;
 
 // Tolerância de valor igual à da baixa automática (lib/comprovantePagamento.js):
 // igual (centavos) ou até 30% maior (multa e juros de quem pagou atrasado).
@@ -58,7 +58,7 @@ export async function listarGuiasPendentes(clienteId) {
   if (!clienteId) return [];
   const { data, error } = await supabase
     .from('documentos')
-    .select('id, nome_arquivo, storage_path, valor_guia, vencimento_guia, created_at, obrigacoes!inner(titulo, tipo, competencia, vencimento, cliente_id)')
+    .select('id, nome_arquivo, storage_path, valor_guia, vencimento_guia, created_at, tipo_documento_sugerido, obrigacoes!inner(titulo, tipo, competencia, vencimento, cliente_id)')
     .eq('status', 'confirmado')
     .eq('obrigacoes.cliente_id', clienteId)
     .not('obrigacao_id', 'is', null)
@@ -66,7 +66,7 @@ export async function listarGuiasPendentes(clienteId) {
     .order('created_at', { ascending: false });
   if (error) throw error;
   return (data || [])
-    .filter((d) => TITULO_IMPOSTO.test(`${d.obrigacoes.titulo || ''} ${d.obrigacoes.tipo || ''}`))
+    .filter((d) => TITULO_IMPOSTO.test(`${d.obrigacoes.titulo || ''} ${d.obrigacoes.tipo || ''} ${d.tipo_documento_sugerido || ''} ${d.nome_arquivo || ''}`))
     .map((d) => ({
       id: d.id,
       titulo: d.obrigacoes.titulo || d.obrigacoes.tipo,

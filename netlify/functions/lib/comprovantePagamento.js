@@ -24,7 +24,7 @@ const MIME_IMAGEM = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
 const EXTENSAO_POR_MIME = { 'application/pdf': 'pdf', 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp' };
 // Mesmo critério de "é imposto" do painel (PainelCompartilhadoPage.jsx) —
 // anexo de obrigação que não é imposto (ex: holerites) não é guia a pagar.
-const TITULO_IMPOSTO = /\b(pg)?das\b|pgmei|inss|fgts|darf|dctfweb|irrf|irpj|csll|pis|cofins|icms|iss|difal|parcelamento|guia/i;
+const TITULO_IMPOSTO = /\b(pg)?das\b|pgmei|inss|fgts|darf|dctfweb|irrf|irpj|csll|pis|cofins|icms|iss|difal|parcelamento|guia|maed|multa/i;
 
 const SYSTEM_PROMPT = `Você é um assistente de escritório contábil brasileiro. Recebe um arquivo e uma lista de guias de imposto em aberto de vários clientes. Precisa: 1) dizer se o arquivo é um COMPROVANTE DE PAGAMENTO já efetuado (recibo do banco, comprovante de PIX, comprovante de pagamento de boleto/arrecadação); 2) ler as informações básicas dele; 3) dizer de qual guia da lista é esse pagamento.
 
@@ -50,7 +50,7 @@ const soDigitos = (s) => String(s || '').replace(/\D/g, '');
 async function listarGuiasEmAberto(supabase) {
   const { data, error } = await supabase
     .from('documentos')
-    .select('id, valor_guia, vencimento_guia, obrigacoes!inner(titulo, tipo, competencia, vencimento, cliente_id, clientes(nome, cnpj))')
+    .select('id, valor_guia, nome_arquivo, tipo_documento_sugerido, vencimento_guia, obrigacoes!inner(titulo, tipo, competencia, vencimento, cliente_id, clientes(nome, cnpj))')
     .eq('status', 'confirmado')
     .not('obrigacao_id', 'is', null)
     .is('pago_em', null)
@@ -58,7 +58,7 @@ async function listarGuiasEmAberto(supabase) {
     .limit(300);
   if (error) throw error;
   return (data || [])
-    .filter((d) => TITULO_IMPOSTO.test(`${d.obrigacoes.titulo || ''} ${d.obrigacoes.tipo || ''}`))
+    .filter((d) => TITULO_IMPOSTO.test(`${d.obrigacoes.titulo || ''} ${d.obrigacoes.tipo || ''} ${d.tipo_documento_sugerido || ''} ${d.nome_arquivo || ''}`))
     .map((d) => ({
       id: d.id,
       clienteId: d.obrigacoes.cliente_id,
