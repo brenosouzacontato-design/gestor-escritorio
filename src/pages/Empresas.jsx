@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect } from 'react'
-import { PlusIcon, XIcon, CheckCircleIcon, ClockIcon, AlertCircleIcon, MinusCircleIcon, ChevronRightIcon, CalendarIcon, CheckIcon, ZapIcon, RefreshCwIcon, Trash2Icon, ListIcon, LayoutGridIcon, Rows3Icon, ClipboardListIcon, BarChart3Icon, Share2Icon, EyeIcon, CheckSquareIcon, FileIcon, DownloadIcon, PencilIcon, FileTextIcon, GripVerticalIcon, BellIcon, BellRingIcon, UserIcon, UploadCloudIcon, Loader2Icon, SparklesIcon, Building2Icon, AlertTriangleIcon, HourglassIcon, PackageCheckIcon, InboxIcon, CircleDashedIcon, BriefcaseIcon, MessageSquareIcon } from 'lucide-react'
+import { PlusIcon, XIcon, CheckCircleIcon, ClockIcon, AlertCircleIcon, MinusCircleIcon, ChevronRightIcon, CalendarIcon, CheckIcon, ZapIcon, RefreshCwIcon, Trash2Icon, ListIcon, LayoutGridIcon, Rows3Icon, ClipboardListIcon, BarChart3Icon, Share2Icon, EyeIcon, CheckSquareIcon, FileIcon, DownloadIcon, PencilIcon, FileTextIcon, GripVerticalIcon, BellIcon, BellRingIcon, UserIcon, UploadCloudIcon, Loader2Icon, SparklesIcon, Building2Icon, AlertTriangleIcon, HourglassIcon, PackageCheckIcon, InboxIcon, CircleDashedIcon, BriefcaseIcon, MessageSquareIcon, SettingsIcon } from 'lucide-react'
 import { useStore } from '../store'
 import { DeptChip, PriDot, fmtDate, isOverdue, useToast } from '../components/shared'
 import { supabase } from '../lib/supabase'
@@ -194,7 +194,22 @@ function VazioColuna({ texto }) {
   return <div style={{ textAlign:'center', color:'var(--text3)', fontSize:11, padding:'16px 0' }}>{texto}</div>
 }
 
-export default function Empresas({ onOpenTarefas, clienteInicialId, onClienteInicialConsumido }) {
+// Engrenagem que leva ao cadastro e à configuração da empresa (tela da
+// empresa em Clientes). Não abre o modal do card nem começa arrasto.
+function BotaoCadastro({ cliente, onOpenCadastro, size = 12, style }) {
+  if (!onOpenCadastro) return null
+  return (
+    <button type="button" title="Cadastro e configuração da empresa"
+      onClick={(e) => { e.stopPropagation(); onOpenCadastro(cliente.id) }}
+      onMouseDown={(e) => e.stopPropagation()} draggable={false}
+      style={{ background:'none', border:'none', padding:2, borderRadius:4, cursor:'pointer', color:'var(--text3)',
+        display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0, ...style }}>
+      <SettingsIcon size={size} />
+    </button>
+  )
+}
+
+export default function Empresas({ onOpenTarefas, onOpenCadastro, clienteInicialId, onClienteInicialConsumido }) {
   const clientes        = useStore(s => s.clientes)
   const obrigacoes      = useStore(s => s.obrigacoes || [])
   const tarefas         = useStore(s => s.tarefas)
@@ -896,7 +911,10 @@ export default function Empresas({ onOpenTarefas, clienteInicialId, onClienteIni
                           {initials}
                         </div>
                         <div style={{ minWidth:0 }}>
-                          <div style={{ fontSize:13, fontWeight:600, color:'var(--text1)', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{c.nome}</div>
+                          <div style={{ display:'flex', alignItems:'center', gap:4, minWidth:0 }}>
+                            <div style={{ fontSize:13, fontWeight:600, color:'var(--text1)', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{c.nome}</div>
+                            <BotaoCadastro cliente={c} onOpenCadastro={onOpenCadastro} size={13} />
+                          </div>
                           <div style={{ fontSize:11, color:'var(--text3)', display:'flex', gap:4, alignItems:'center', marginTop:2 }}>
                             {c.regime||'SN'}
                             {c.carteira && <span style={{ background:'rgba(59,102,246,.12)', color:'var(--accent)', borderRadius:99, padding:'0 6px', fontSize:10, fontWeight:600 }}>{c.carteira}</span>}
@@ -1009,6 +1027,7 @@ export default function Empresas({ onOpenTarefas, clienteInicialId, onClienteIni
                         overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }} title={c.nome}>
                         {c.nome}
                       </div>
+                      <BotaoCadastro cliente={c} onOpenCadastro={onOpenCadastro} size={11} style={{ padding:1 }} />
                       {S_ICON[resS] && (() => { const Icon = S_ICON[resS]; return <Icon size={11} color={S_COLOR[resS]} /> })()}
                       <GripVerticalIcon size={10} color="var(--text3)" style={{ flexShrink:0, cursor:'grab' }} title="Arrastar pra reordenar" />
                     </div>
@@ -1275,6 +1294,7 @@ export default function Empresas({ onOpenTarefas, clienteInicialId, onClienteIni
                                   color:regime.cor, background:`color-mix(in srgb, ${regime.cor}, transparent 86%)` }}>
                                   {regime.label}
                                 </span>
+                                <BotaoCadastro cliente={c} onOpenCadastro={onOpenCadastro} />
                               </span>
                               <span style={{ display:'flex', alignItems:'center', gap:5, flexWrap:'wrap' }}>
                                 {resVenc > 0 && !entregue && (
@@ -1490,6 +1510,13 @@ export default function Empresas({ onOpenTarefas, clienteInicialId, onClienteIni
                     )}
                   </div>
                 </div>
+                {onOpenCadastro && (
+                  <button onClick={() => onOpenCadastro(drawer.c.id)} title="Cadastro e configuração da empresa"
+                    style={{ background:'rgba(255,255,255,.1)', border:'1px solid rgba(255,255,255,.15)', borderRadius:6, height:24, padding:'0 8px', gap:4,
+                      display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer', color:'var(--navy-text)', flexShrink:0, fontSize:11 }}>
+                    <SettingsIcon size={13} /> Cadastro
+                  </button>
+                )}
                 <button onClick={() => handleDeleteCliente(drawer.c)} title="Excluir empresa"
                   style={{ background:'rgba(255,255,255,.1)', border:'1px solid rgba(255,255,255,.15)', borderRadius:6, width:24, height:24,
                     display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer', color:'#f87171', flexShrink:0 }}>

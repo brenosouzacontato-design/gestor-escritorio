@@ -148,6 +148,7 @@ export default function App() {
           <>
             {page === 'overview'   && <Overview onAddTarefa={openNewTask} onOpenCliente={(id) => { setSelectedCliente(id); navigate('clientes') }} onOpenEmpresa={(id) => { setClienteAbrirEmpresas(id); navigate('empresas') }} onOpenObrigacoes={() => navigate('empresas')} onOpenTarefas={() => navigate('tarefas')} onOpenContabil={() => navigate('contabil')} />}
             {page === 'empresas'   && <Empresas onOpenTarefas={(clienteId) => { setFiltroClienteTarefas(clienteId ?? null); navigate('tarefas') }}
+              onOpenCadastro={(id) => { setSelectedCliente(id); navigate('clientes') }}
               clienteInicialId={clienteAbrirEmpresas} onClienteInicialConsumido={() => setClienteAbrirEmpresas(null)} />}
             {page === 'paineis'    && <PaineisPage />}
             {page === 'documentos' && <DocumentosPage />}
