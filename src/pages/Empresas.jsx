@@ -299,8 +299,12 @@ export default function Empresas({ onOpenTarefas, onOpenCadastro, clienteInicial
   // na coluna de destino) muda a sinalização de entrega — não mexe em
   // nenhuma obrigação/tarefa, é só uma marcação manual do escritório.
   // `status`: 'a_entregar' | 'aguardando_cliente' | 'entregue' (mesmos ids das colunas).
-  const handleMudarStatusGeral = async (clienteId, status) => {
+  const handleMudarStatusGeral = async (clienteId, alvo) => {
     const anterior = statusGeral(clienteId)
+    // colunas A fazer / Em andamento / Concluído → status gravado; soltar em
+    // "Em andamento" mantém quem está aguardando o cliente
+    if (alvo === 'em_andamento' && anterior === 'aguardando_cliente') return
+    const status = { a_fazer:'a_entregar', em_andamento:'a_entregar', concluido:'entregue' }[alvo] || alvo
     if (anterior === status) return
     const aplicar = (st) => {
       const ajustar = (alvo) => (prev) => {
@@ -330,6 +334,22 @@ export default function Empresas({ onOpenTarefas, onOpenCadastro, clienteInicial
     }
   }
   const handleMudarEntrega = (clienteId, entregue) => handleMudarStatusGeral(clienteId, entregue ? 'entregue' : 'a_entregar')
+
+  // Coluna do kanban: Concluído = entregue; Em andamento = já tem obrigação da
+  // competência concluída, tarefa concluída desde o início do mês da
+  // competência, ou está aguardando o cliente; A fazer = nada começado.
+  const inicioCompetencia = useMemo(() => {
+    const m = /^(\d{2})\/(\d{4})$/.exec(compSel || '')
+    return m ? new Date(Number(m[2]), Number(m[1]) - 1, 1).getTime() : 0
+  }, [compSel])
+  const faseEmpresa = (clienteId) => {
+    const st = statusGeral(clienteId)
+    if (st === 'entregue') return 'concluido'
+    if (st === 'aguardando_cliente') return 'em_andamento'
+    const comecou = obrigacoes.some(o => o.cliente_id === clienteId && o.competencia === compSel && (o.status === 'concluido' || o.status === 'nao_aplica'))
+      || tarefas.some(t => t.cliente_id === clienteId && t.concluida && (Date.parse(t.concluida_em || t.updated_at || '') || 0) >= inicioCompetencia)
+    return comecou ? 'em_andamento' : 'a_fazer'
+  }
 
   // Entrega automática: empresa com tudo concluído na competência (obrigações
   // da competência + tarefas pendentes) vai pra "Entregue"; se aparecer
@@ -1005,9 +1025,9 @@ export default function Empresas({ onOpenTarefas, onOpenCadastro, clienteInicial
 
         {visualizacao === 'cards' && (() => {
           const colunas = [
-            { id:'a_entregar',         label:'A entregar',         cor:'var(--warn)', itens: rowsCards.filter(r => statusGeral(r.c.id) === 'a_entregar') },
-            { id:'aguardando_cliente', label:'Aguardando cliente', cor:'var(--info)', itens: rowsCards.filter(r => statusGeral(r.c.id) === 'aguardando_cliente') },
-            { id:'entregue',           label:'Entregue',           cor:'var(--ok)',   itens: rowsCards.filter(r => statusGeral(r.c.id) === 'entregue') },
+            { id:'a_fazer',      label:'A fazer',      cor:'var(--text3)', itens: rowsCards.filter(r => faseEmpresa(r.c.id) === 'a_fazer') },
+            { id:'em_andamento', label:'Em andamento', cor:'var(--warn)',  itens: rowsCards.filter(r => faseEmpresa(r.c.id) === 'em_andamento') },
+            { id:'concluido',    label:'Concluído',    cor:'var(--ok)',    itens: rowsCards.filter(r => faseEmpresa(r.c.id) === 'concluido') },
           ]
           return (
           <div style={{ flex:1, overflow:'auto', padding:'16px' }}>
@@ -1037,10 +1057,12 @@ export default function Empresas({ onOpenTarefas, onOpenCadastro, clienteInicial
                 const resVenc = obsTotal.filter(o => o.status==='vencido').length
                 const resVencendo = obsTotal.some(isVencendo)
                 const resPct  = obsTotal.length > 0 ? Math.round((resOk/obsTotal.length)*100) : 0
-                const resS    = resVenc > 0 ? 'danger' : resVencendo ? 'venc_breve' : resPct===100 ? 'ok' : obsTotal.filter(o=>o.status==='pendente').length > 0 ? 'warn' : 'empty'
-                const completo = resS === 'ok' && obsTotal.length > 0
                 const tasksCliente = tarefas.filter(t => t.cliente_id === c.id)
                 const tasksPend = tasksCliente.filter(t => !t.concluida).length
+                // "Tudo em dia" só com obrigações da competência E tarefas concluídas
+                const resS    = resVenc > 0 ? 'danger' : resVencendo ? 'venc_breve' : resPct===100 && tasksPend === 0 ? 'ok'
+                  : obsTotal.filter(o=>o.status==='pendente').length > 0 || tasksPend > 0 ? 'warn' : 'empty'
+                const completo = resS === 'ok' && obsTotal.length > 0
                 // Progresso combinado (obrigações + tarefas) só pra guiar o
                 // gradiente de fundo do card — os números exibidos (% e
                 // "Tudo em dia") continuam olhando só pra obrigações.
@@ -1073,6 +1095,7 @@ export default function Empresas({ onOpenTarefas, onOpenCadastro, clienteInicial
                         {c.nome}
                       </div>
                       <BotaoCadastro cliente={c} onOpenCadastro={onOpenCadastro} size={11} style={{ padding:1 }} />
+                      {statusGeral(c.id) === 'aguardando_cliente' && <UserIcon size={11} color="var(--info)" title="Aguardando o cliente" />}
                       {S_ICON[resS] && (() => { const Icon = S_ICON[resS]; return <Icon size={11} color={S_COLOR[resS]} /> })()}
                       <GripVerticalIcon size={10} color="var(--text3)" style={{ flexShrink:0, cursor:'grab' }} title="Arrastar pra reordenar" />
                     </div>
@@ -1091,6 +1114,10 @@ export default function Empresas({ onOpenTarefas, onOpenCadastro, clienteInicial
                         ) : resVencendo ? (
                           <span style={{ display:'flex', alignItems:'center', gap:3, color:COR_VENCENDO, fontSize:9.5, fontWeight:700, flexShrink:0 }}>
                             <ClockIcon size={10} /> em breve
+                          </span>
+                        ) : resPct === 100 && tasksPend > 0 ? (
+                          <span title="Obrigações concluídas, falta tarefa" style={{ display:'flex', alignItems:'center', gap:3, color:'var(--warn)', fontSize:9.5, fontWeight:700, flexShrink:0 }}>
+                            <CheckSquareIcon size={10} /> {tasksPend} tarefa{tasksPend !== 1 ? 's' : ''}
                           </span>
                         ) : (
                           <span style={{ fontSize:9.5, fontWeight:600, color:'var(--text3)', flexShrink:0 }}>
@@ -1167,11 +1194,12 @@ export default function Empresas({ onOpenTarefas, onOpenCadastro, clienteInicial
             const resPend = obsTotal.filter(o => o.status==='pendente').length
             const resVencendo = obsTotal.filter(isVencendo).length
             const resPct  = obsTotal.length > 0 ? Math.round((resOk/obsTotal.length)*100) : 0
-            const resS    = resVenc > 0 ? 'danger' : resVencendo > 0 ? 'venc_breve' : obsTotal.length > 0 && resPct===100 ? 'ok' : resPend > 0 ? 'warn' : 'empty'
             const tasksPend = tarefas.filter(t => t.cliente_id === c.id && !t.concluida)
+            const resS    = resVenc > 0 ? 'danger' : resVencendo > 0 ? 'venc_breve' : obsTotal.length > 0 && resPct===100 && tasksPend.length === 0 ? 'ok'
+              : resPend > 0 || tasksPend.length > 0 ? 'warn' : 'empty'
             const tasksAtrasadas = tasksPend.filter(t => t.vencimento && new Date(t.vencimento + 'T00:00:00') < hoje).length
             const proxVenc = obsTotal.filter(o => o.status==='pendente' && o.vencimento).map(o => o.vencimento).sort()[0] || null
-            return { c, deptData, obsTotal, resOk, resVenc, resPend, resVencendo, resPct, resS, tasksPend: tasksPend.length, tasksAtrasadas, proxVenc, entregue: entregues.has(c.id), status: statusGeral(c.id) }
+            return { c, deptData, obsTotal, resOk, resVenc, resPend, resVencendo, resPct, resS, tasksPend: tasksPend.length, tasksAtrasadas, proxVenc, entregue: entregues.has(c.id), status: statusGeral(c.id), fase: faseEmpresa(c.id) }
           })
           const FILTROS = [
             { id:'todas',      label:'Todas',          Icon:Building2Icon,     cor:'var(--text2)',  bg:'var(--surface2)', teste: () => true },
@@ -1184,9 +1212,9 @@ export default function Empresas({ onOpenTarefas, onOpenCadastro, clienteInicial
           const filtroAtivo = FILTROS.find(f => f.id === filtroLista) || FILTROS[0]
           const visiveis = itensLista.filter(filtroAtivo.teste)
           const secoes = [
-            { id:'a_entregar',         label:'A entregar',         Icon:HourglassIcon,    cor:'var(--warn)', bg:'var(--warn-dim)', itens: visiveis.filter(r => r.status === 'a_entregar') },
-            { id:'aguardando_cliente', label:'Aguardando cliente', Icon:UserIcon,         cor:'var(--info)', bg:'var(--info-dim)', itens: visiveis.filter(r => r.status === 'aguardando_cliente') },
-            { id:'entregue',           label:'Entregue',           Icon:PackageCheckIcon, cor:'var(--ok)',   bg:'var(--ok-dim)',   itens: visiveis.filter(r => r.status === 'entregue') },
+            { id:'a_fazer',      label:'A fazer',      Icon:CircleDashedIcon, cor:'var(--text3)', bg:'var(--surface2)', itens: visiveis.filter(r => r.fase === 'a_fazer') },
+            { id:'em_andamento', label:'Em andamento', Icon:HourglassIcon,    cor:'var(--warn)',  bg:'var(--warn-dim)', itens: visiveis.filter(r => r.fase === 'em_andamento') },
+            { id:'concluido',    label:'Concluído',    Icon:PackageCheckIcon, cor:'var(--ok)',    bg:'var(--ok-dim)',   itens: visiveis.filter(r => r.fase === 'concluido') },
           ]
           const totalEntregues = itensLista.filter(r => r.entregue).length
           const pctEntregue = itensLista.length > 0 ? Math.round((totalEntregues / itensLista.length) * 100) : 0
@@ -1251,7 +1279,7 @@ export default function Empresas({ onOpenTarefas, onOpenCadastro, clienteInicial
                     </span>
                     <span style={{ fontSize:13, fontWeight:700, color:'var(--text1)' }}>{secao.label}</span>
                     <span style={{ fontSize:10.5, fontWeight:800, color:secao.cor, background:secao.bg, borderRadius:99, padding:'1px 8px' }}>{secao.itens.length}</span>
-                    {secao.id === 'a_entregar' && secao.itens.some(r => r.resVenc > 0) && (
+                    {secao.id !== 'concluido' && secao.itens.some(r => r.resVenc > 0) && (
                       <span style={{ display:'flex', alignItems:'center', gap:3, fontSize:10.5, fontWeight:700, color:'var(--danger)' }}>
                         <AlertTriangleIcon size={11} /> {secao.itens.filter(r => r.resVenc > 0).length} com vencidas
                       </span>
@@ -1297,7 +1325,7 @@ export default function Empresas({ onOpenTarefas, onOpenCadastro, clienteInicial
                             borderBottom: ultima ? 'none' : '1px solid var(--border)', borderLeft:`3px solid ${corStatus}`,
                             padding:'8px 10px', opacity:arrastando?.4:entregue?.72:1, transition:'opacity .1s, background .1s' }}>
                           <button onClick={e => { e.stopPropagation(); handleMudarEntrega(c.id, !entregue) }}
-                            title={entregue ? 'Marcar como não entregue' : 'Marcar como entregue'}
+                            title={entregue ? 'Voltar para em andamento' : 'Marcar como concluído'}
                             style={{ width:18, height:18, borderRadius:5, flexShrink:0, cursor:'pointer',
                               border:`1.5px solid ${entregue?'var(--ok)':'var(--border2)'}`, background:entregue?'var(--ok)':'transparent',
                               display:'flex', alignItems:'center', justifyContent:'center', marginLeft: (COL_CHECK-18)/2, marginRight: (COL_CHECK-18)/2 }}>
@@ -1307,7 +1335,7 @@ export default function Empresas({ onOpenTarefas, onOpenCadastro, clienteInicial
                           <span style={{ width:COL_AGUARDANDO, flexShrink:0, display:'flex', justifyContent:'center' }}>
                             {!entregue && (
                               <button onClick={e => { e.stopPropagation(); handleMudarStatusGeral(c.id, r.status === 'aguardando_cliente' ? 'a_entregar' : 'aguardando_cliente') }}
-                                title={r.status === 'aguardando_cliente' ? 'Voltar pra "A entregar"' : 'Marcar como aguardando cliente'}
+                                title={r.status === 'aguardando_cliente' ? 'Não está mais aguardando o cliente' : 'Marcar como aguardando cliente'}
                                 style={{ background:'none', border:'none', cursor:'pointer', padding:0, display:'flex',
                                   color: r.status === 'aguardando_cliente' ? 'var(--info)' : 'var(--text3)' }}>
                                 <UserIcon size={13} />
@@ -1362,7 +1390,7 @@ export default function Empresas({ onOpenTarefas, onOpenCadastro, clienteInicial
                                 {c.carteira && (
                                   <Selo Icon={BriefcaseIcon} cor="var(--text3)" bg="var(--surface2)">{c.carteira}</Selo>
                                 )}
-                                {entregue && <Selo Icon={PackageCheckIcon} cor="var(--ok)" bg="var(--ok-dim)">entregue</Selo>}
+                                {entregue && <Selo Icon={PackageCheckIcon} cor="var(--ok)" bg="var(--ok-dim)">concluído</Selo>}
                                 {r.status === 'aguardando_cliente' && <Selo Icon={UserIcon} cor="var(--info)" bg="var(--info-dim)">aguardando cliente</Selo>}
                               </span>
                             </span>
