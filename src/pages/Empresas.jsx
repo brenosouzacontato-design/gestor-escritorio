@@ -15,6 +15,7 @@ import {
   anexarDocumentoAoItem,
 } from './documentos/documentosApi'
 import { BotaoAnexos, AnexosItemModal } from '../components/AnexosItem'
+import OpcoesCandidatos from '../components/OpcoesCandidatos'
 import { criarLembrete, listarLembretesPorItens, excluirLembrete } from './andamento/lembretesApi'
 
 // Casamento histórico tipo-texto → departamento, só pra competências
@@ -2104,7 +2105,7 @@ function AbaAnexosEmpresa({ clienteId }) {
                 onChange={e => setFila(prev => prev.map(x => x.id === it.id ? { ...x, candidatoId: e.target.value } : x))}
                 style={{ width:'100%', fontSize:11, padding:'4px 6px' }}>
                 <option value="">Nenhuma correspondência</option>
-                {candidatos.map(c => <option key={c.id} value={c.id}>{c.rotulo}</option>)}
+                <OpcoesCandidatos candidatos={candidatos} />
               </select>
             </div>
           </div>
@@ -2173,7 +2174,7 @@ function AbaAnexosEmpresa({ clienteId }) {
               onChange={e => setNovoVinculoId(e.target.value)}
               style={{ flex:1, minWidth:0, fontSize:11, padding:'5px 7px' }}>
               <option value="">Nenhuma correspondência (só arquivar)</option>
-              {candidatos.map(c => <option key={c.id} value={c.id}>{c.rotulo}</option>)}
+              <OpcoesCandidatos candidatos={candidatos} />
             </select>
             <button onClick={() => trocarVinculo(doc, novoVinculoId)} disabled={processando}
               style={{ fontSize:10.5, padding:'5px 10px', borderRadius:6, border:'none', background:'var(--accent)', color:'#fff', cursor:'pointer', flexShrink:0 }}>

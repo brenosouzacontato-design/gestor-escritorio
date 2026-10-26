@@ -68,7 +68,7 @@ export async function listarCandidatos() {
   const [{ data: etapas, error: errEtapas }, { data: tarefas, error: errTarefas }] = await Promise.all([
     supabase
       .from('etapas_obrigacao')
-      .select('id, nome, obrigacao_id, obrigacoes!inner(cliente_id, titulo, clientes(nome))')
+      .select('id, nome, obrigacao_id, obrigacoes!inner(cliente_id, titulo, competencia, clientes(nome))')
       .eq('status', 'em_andamento'),
     supabase
       .from('tarefas')
@@ -86,7 +86,8 @@ export async function listarCandidatos() {
       obrigacaoId: e.obrigacao_id,
       clienteId: e.obrigacoes.cliente_id,
       clienteNome: e.obrigacoes.clientes?.nome || '—',
-      rotulo: `${e.obrigacoes.titulo} — etapa "${e.nome}"`,
+      competencia: e.obrigacoes.competencia || null,
+      rotulo: `${e.obrigacoes.titulo}${e.obrigacoes.competencia ? ` ${e.obrigacoes.competencia}` : ''} — etapa "${e.nome}"`,
     }));
 
   const candidatosTarefas = (tarefas || [])
