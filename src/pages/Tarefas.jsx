@@ -3,7 +3,8 @@ import { Trash2Icon, CheckIcon, XIcon, SaveIcon, MessageSquareIcon, PlusIcon, Gr
 import { useStore } from '../store'
 import { DeptChip, PriDot, fmtDate, isOverdue } from '../components/shared'
 import { supabase } from '../lib/supabase'
-import { uploadArquivo, criarLinkAssinado } from './documentos/documentosApi'
+import { uploadArquivo, criarLinkAssinado, anexarDocumentoAoItem, abrirLinkAssinado } from './documentos/documentosApi'
+import { BotaoAnexos, AnexosItemModal } from '../components/AnexosItem'
 
 const DEPTS = [
   { id: 'todos', label: 'Todos' },
@@ -41,6 +42,22 @@ export default function Tarefas({ onAddTarefa, highlightTaskId, onHighlightConsu
   const [tarefaAberta,  setTarefaAberta]  = useState(null)
   const [dragging,      setDragging]      = useState(null) // { id, fromCol }
   const [dragOver,      setDragOver]      = useState(null) // colId
+  // Documentos anexados às tarefas (📎 do card) — mesmo modal de anexos do
+  // card da empresa em Empresas.jsx. Inclui os que deram baixa na tarefa
+  // pela tela Documentos (inclusive os que chegam pelos grupos do WhatsApp).
+  const [anexos,        setAnexos]        = useState([])
+  const [anexoAlvo,     setAnexoAlvo]     = useState(null) // tarefa com o modal de anexos aberto
+  const carregarAnexos = () => supabase.from('documentos')
+    .select('id, tarefa_id, nome_arquivo, storage_path, tamanho_bytes, created_at')
+    .not('tarefa_id', 'is', null).eq('status', 'confirmado')
+    .order('created_at', { ascending: false })
+    .then(({ data }) => setAnexos(data || []))
+  useEffect(() => { carregarAnexos() }, [])
+  const anexosDaTarefa = (id) => anexos.filter(a => a.tarefa_id === id)
+  const enviarAnexo = async (arquivo, { darBaixa }) => {
+    await anexarDocumentoAoItem({ clienteId: anexoAlvo.cliente_id || null, alvo: { tipo: 'tarefa', id: anexoAlvo.id }, arquivo, darBaixa })
+    await Promise.all([carregarAnexos(), darBaixa ? fetchTarefas() : null])
+  }
 
   // Veio do card de uma empresa (Empresas.jsx, clique em "Tarefas") —
   // pré-seleciona o filtro de empresa direto no Kanban.
@@ -199,12 +216,26 @@ export default function Tarefas({ onAddTarefa, highlightTaskId, onHighlightConsu
                   onToggleEntrega={() => handleToggleEntrega(t)}
                   onDragStart={e => handleDragStart(e, t)}
                   isDragging={dragging?.id === t.id}
+                  qtdAnexos={anexosDaTarefa(t.id).length}
+                  onAnexos={() => setAnexoAlvo(t)}
                 />
               ))}
             </div>
           )
         })}
       </div>
+
+      {anexoAlvo && (
+        <AnexosItemModal
+          titulo={anexoAlvo.titulo}
+          subtitulo={`Tarefa${anexoAlvo.clientes?.nome ? ` · ${anexoAlvo.clientes.nome}` : ''}`}
+          anexos={anexosDaTarefa(anexoAlvo.id)}
+          concluido={!!anexoAlvo.concluida}
+          onEnviar={enviarAnexo}
+          onAbrir={(doc) => abrirLinkAssinado(doc.storage_path).catch(e => alert('Erro: ' + e.message))}
+          onClose={() => setAnexoAlvo(null)}
+        />
+      )}
 
       {/* Modal de detalhes */}
       {tarefaAberta && (
@@ -219,7 +250,7 @@ export default function Tarefas({ onAddTarefa, highlightTaskId, onHighlightConsu
   )
 }
 
-function KanbanCard({ tarefa, colunas, colAtual, onOpen, onDelete, onMove, onToggleEntrega, onDragStart, isDragging }) {
+function KanbanCard({ tarefa, colunas, colAtual, onOpen, onDelete, onMove, onToggleEntrega, onDragStart, isDragging, qtdAnexos = 0, onAnexos }) {
   const overdue = isOverdue(tarefa.vencimento) && colAtual !== 'concluido'
   const [showMove, setShowMove] = useState(false)
 
@@ -296,6 +327,7 @@ function KanbanCard({ tarefa, colunas, colAtual, onOpen, onDelete, onMove, onTog
           <span style={{ fontSize:9, background:'var(--info-dim)', color:'var(--info)', borderRadius:99, padding:'1px 6px', fontWeight:700 }}>WA</span>
         )}
         {tarefa.observacao && <MessageSquareIcon size={10} style={{ color:'var(--text3)' }} />}
+        {onAnexos && <BotaoAnexos qtd={qtdAnexos} onClick={onAnexos} tamanho={11} />}
         <button onClick={e => { e.stopPropagation(); onToggleEntrega() }}
           title={tarefa.entregue ? 'Entregue — clique pra marcar como a entregar' : 'A entregar — clique pra marcar como entregue'}
           style={{ marginLeft:'auto', display:'flex', alignItems:'center', gap:3, fontSize:9, fontWeight:700, border:'none', cursor:'pointer', borderRadius:99, padding:'2px 7px',

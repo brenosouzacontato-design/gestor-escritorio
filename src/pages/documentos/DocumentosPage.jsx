@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from 'react'
 import { PaperclipIcon, UploadCloudIcon, CheckCircle2Icon, Loader2Icon, FileIcon, Share2Icon, DownloadIcon, MessageCircleIcon, ExternalLinkIcon, SearchCheckIcon, Trash2Icon, ArchiveIcon } from 'lucide-react'
 import { useStore } from '../../store'
 import { useToast } from '../../components/shared'
+import OpcoesCandidatos from '../../components/OpcoesCandidatos'
 import {
   uploadArquivo, listarCandidatos, identificarDocumento, criarDocumento, confirmarDocumento,
   listarDocumentosConfirmados, listarDocumentosPendentes, excluirDocumento,
@@ -202,9 +203,7 @@ export default function DocumentosPage() {
                     <select value={it.candidatoId} onChange={(e) => atualizarItem(it.id, 'candidatoId', e.target.value)} disabled={!it.clienteId}
                       style={{ width: '100%', fontSize: 12, padding: '6px 8px', opacity: it.clienteId ? 1 : .6 }}>
                       <option value="">Nenhuma correspondência</option>
-                      {candidatos.filter((c) => c.clienteId === it.clienteId).map((c) => (
-                        <option key={c.id} value={c.id}>{c.rotulo}</option>
-                      ))}
+                      <OpcoesCandidatos candidatos={candidatos.filter((c) => c.clienteId === it.clienteId)} />
                     </select>
                   </div>
                 </div>
@@ -373,14 +372,7 @@ function AbaRevisar() {
                 <select value={sel.candidatoId} onChange={(e) => atualizarSelecao(doc.id, 'candidatoId', e.target.value)} disabled={!sel.clienteId}
                   style={{ width: '100%', fontSize: 12, padding: '6px 8px', opacity: sel.clienteId ? 1 : .6 }}>
                   <option value="">Nenhuma correspondência</option>
-                  {candidatos.filter((c) => c.clienteId === sel.clienteId).map((c) => (
-                    <option key={c.id} value={c.id}>{c.rotulo}</option>
-                  ))}
-                  {guiasCliente.length > 0 && (
-                    <optgroup label="É comprovante de pagamento da guia">
-                      {guiasCliente.map((g) => <option key={g.id} value={`guia:${g.id}`}>{g.rotulo}</option>)}
-                    </optgroup>
-                  )}
+                  <OpcoesCandidatos candidatos={candidatos.filter((c) => c.clienteId === sel.clienteId)} guias={guiasCliente} />
                 </select>
               </div>
             </div>

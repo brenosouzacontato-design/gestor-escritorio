@@ -1,7 +1,7 @@
 import { createContext, useContext, useEffect, useRef, useState } from 'react';
 import {
   CalendarIcon, ChevronDownIcon, DownloadIcon, CheckCircleIcon, AlertTriangleIcon, ClockIcon, TrendingUpIcon,
-  ClipboardListIcon, EyeIcon, EyeOffIcon, WalletIcon, CopyIcon, FileTextIcon, SettingsIcon, UserIcon, MessageSquareIcon, PartyPopperIcon, BellIcon, SendIcon, BarcodeIcon, QrCodeIcon,
+  ClipboardListIcon, EyeIcon, EyeOffIcon, WalletIcon, CopyIcon, FileTextIcon, SettingsIcon, UserIcon, MessageSquareIcon, PartyPopperIcon, BellIcon, SendIcon, BarcodeIcon, QrCodeIcon, CheckSquareIcon, CheckIcon,
 } from 'lucide-react';
 import { chavePainelPorId, urlPublica } from '../../lib/linksPublicos';
 import { supabase } from '../../lib/supabase';
@@ -72,11 +72,11 @@ function areaObrigacao(o) {
   if (/fiscal/.test(nome)) return 'Fiscal';
   return null;
 }
+// Tarefas entram de qualquer departamento (diferente das obrigações): é o
+// que o escritório fez ou está fazendo pela empresa no mês.
+const AREAS_TAREFA = { folha: 'Folha', pessoal: 'Folha', fiscal: 'Fiscal', contabil: 'Contábil', societario: 'Societário', geral: 'Geral' };
 function areaTarefa(t) {
-  const d = (t.departamento || '').toLowerCase();
-  if (d === 'folha' || d === 'pessoal') return 'Folha';
-  if (d === 'fiscal') return 'Fiscal';
-  return null;
+  return AREAS_TAREFA[(t.departamento || '').toLowerCase()] || 'Escritório';
 }
 
 // O relatório da RFB traz o código da receita ("1099-01 - CP-SEGUR.") —
@@ -844,8 +844,10 @@ function montarObrigacoesTarefas({ outrasObrigacoes, tarefasArea, anexos, anexos
   const tarefas = tarefasArea
     .filter((t) => !t.concluida || anexosTarefa[t.id])
     .map((t) => ({
-      id: t.id, titulo: t.titulo, area: areaTarefa(t), competencia,
-      status: t.concluida ? 'concluido' : 'pendente', vencimento: t.vencimento, anexo: anexosTarefa[t.id] || null,
+      id: t.id, titulo: t.titulo, area: areaTarefa(t), competencia, tipo: 'tarefa', detalhe: t.observacao || null,
+      status: t.concluida ? 'concluido' : t.vencimento && diasParaVencer(t.vencimento) < 0 ? 'vencido' : 'pendente',
+      vencimento: t.vencimento ? String(t.vencimento).slice(0, 10) : null, concluidaEm: t.concluida_em || null,
+      anexo: anexosTarefa[t.id] || null,
     }));
   const ordemStatus = { vencido: 0, pendente: 1, concluido: 2, nao_aplica: 3 };
   return [...obrigacoes, ...tarefas].sort((a, b) => (ordemStatus[a.status] ?? 9) - (ordemStatus[b.status] ?? 9)
@@ -1516,11 +1518,24 @@ function LinhaObrigacao({ it, onBaixar }) {
     <Linha chave={it.id} corBorda={cor} titulo={it.titulo} competencia={it.competencia}
       detalhes={(
         <>
+          {it.tipo === 'tarefa' && (
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, fontWeight: 700, color: 'var(--info)', background: 'var(--info-dim)', borderRadius: 99, padding: '1px 7px' }}>
+              <CheckSquareIcon size={10} /> Tarefa
+            </span>
+          )}
           {it.area && <span style={{ color: 'var(--text3)' }}>{it.area}</span>}
           {it.vencimento && (
             <span style={{ color: aberta && dias < 0 ? 'var(--danger)' : 'var(--text3)', fontWeight: aberta ? 600 : 400, display: 'flex', alignItems: 'center', gap: 3 }}>
               <CalendarIcon size={10} /> {fmtData(it.vencimento)}{aberta ? ` · ${fmtDias(dias)}` : ''}
             </span>
+          )}
+          {it.concluidaEm && it.status === 'concluido' && (
+            <span style={{ color: 'var(--ok)', display: 'flex', alignItems: 'center', gap: 3 }}>
+              <CheckIcon size={10} /> concluída em {fmtData(String(it.concluidaEm).slice(0, 10))}
+            </span>
+          )}
+          {it.detalhe && aberta && (
+            <span style={{ flexBasis: '100%', color: 'var(--text2)', whiteSpace: 'pre-wrap' }}>{it.detalhe}</span>
           )}
         </>
       )}
