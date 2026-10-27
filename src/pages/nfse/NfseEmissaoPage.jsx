@@ -27,8 +27,24 @@ const COR_STATUS = {
   enviada: ['var(--warn-dim)', 'var(--warn)'],
   numero_reservado: ['var(--surface3)', 'var(--text2)'],
   cancelada: ['var(--surface3)', 'var(--text3)'],
+  ja_emitida: ['var(--surface3)', 'var(--ok)'],
+  complementar: ['var(--info-dim)', 'var(--info)'],
 }
 const EDITAVEL = (n) => n.estado === 'importada' || n.estado === 'validada'
+
+// Situação mostrada na tela. "Já emitida" e "Complementar?" vêm da validação no servidor (inclusive
+// contra as notas do Ambiente Nacional emitidas fora do gestor) e travam a emissão.
+const JA_EMITIDA = 'Já emitida:'
+const COMPLEMENTAR = 'Complementar?'
+function situacao(n) {
+  if (!EDITAVEL(n)) return n.estado
+  if (n.erros.some((e) => e.startsWith(JA_EMITIDA))) return 'ja_emitida'
+  if (n.erros.some((e) => e.startsWith(COMPLEMENTAR))) return 'complementar'
+  return n.status_validacao
+}
+const ROTULO = { pronto: 'emitir', pendente: 'falta dado', invalido: 'inválido', ja_emitida: 'já emitida', complementar: 'complementar?', autorizada: 'emitida' }
+// Campo da tabela → nome usado nas pendências da validação
+const PENDENCIA = { nome: 'Nome', cpf: 'CPF', data: 'Data', valor: 'Valor', descricao: 'Descrição', endereco: 'Endereço' }
 
 function Pill({ tipo, children }) {
   const [bg, cor] = COR_STATUS[tipo] || ['var(--surface2)', 'var(--text3)']
@@ -362,7 +378,7 @@ export default function NfseEmissaoPage() {
   }
 
   const t = totais(notas)
-  const visiveis = notas.filter((n) => !filtro || (filtro.startsWith('estado:') ? n.estado === filtro.slice(7) : EDITAVEL(n) && n.status_validacao === filtro))
+  const visiveis = notas.filter((n) => !filtro || (filtro.startsWith('estado:') ? n.estado === filtro.slice(7) : EDITAVEL(n) && situacao(n) === filtro))
   const prontas = notas.filter((n) => n.estado === 'validada')
   const editaveis = notas.filter(EDITAVEL)
   const marcadas = notas.filter((n) => selecionadas.has(n.id)) // para competência em massa
@@ -375,12 +391,18 @@ export default function NfseEmissaoPage() {
     return m
   }, {})).map(([c, q]) => `${c} (${q})`).join(', ')
 
-  const inp = (n, campo, valor, largura, extra = {}) => (
-    <input key={`${n.id}-${campo}-${valor}`} defaultValue={valor} disabled={!EDITAVEL(n) || ocupado}
-      onBlur={(e) => editar(n, campo, e.target.value.trim())} onKeyDown={(e) => e.key === 'Enter' && e.target.blur()}
-      style={{ minWidth: largura, padding: '4px 6px', fontSize: 12, background: 'transparent', border: '1px solid transparent' }}
-      onFocus={(e) => { e.target.style.borderColor = 'var(--accent)' }} {...extra} />
-  )
+  // Campo que falta fica com borda tracejada e "preencher", para completar ali mesmo
+  const inp = (n, campo, valor, largura, extra = {}) => {
+    const falta = EDITAVEL(n) && n.pendencias.includes(PENDENCIA[campo])
+    return (
+      <input key={`${n.id}-${campo}-${valor}`} defaultValue={valor} disabled={!EDITAVEL(n) || ocupado}
+        onBlur={(e) => editar(n, campo, e.target.value.trim())} onKeyDown={(e) => e.key === 'Enter' && e.target.blur()}
+        placeholder={falta ? 'preencher' : undefined} title={falta ? `Falta ${PENDENCIA[campo]}` : undefined}
+        onFocus={(e) => { e.target.style.borderColor = 'var(--accent)' }} {...extra}
+        style={{ minWidth: largura, padding: '4px 6px', fontSize: 12, background: falta ? 'var(--surface)' : 'transparent',
+          border: falta ? '1px dashed var(--warn)' : '1px solid transparent', ...(extra.style || {}) }} />
+    )
+  }
 
   return (
     <div className="page">
@@ -438,9 +460,11 @@ export default function NfseEmissaoPage() {
             </select>
             <button className="btn btn-icon btn-ghost" title="Atualizar" onClick={() => carregarNotas()}><RefreshCwIcon size={16} /></button>
             <span style={suave}>
-              {notas.length} registros: {conta((n) => EDITAVEL(n) && n.status_validacao === 'pronto')} prontos,{' '}
-              {conta((n) => EDITAVEL(n) && n.status_validacao === 'pendente')} pendentes, {conta((n) => EDITAVEL(n) && n.status_validacao === 'invalido')} inválidos,{' '}
-              {conta((n) => n.estado === 'autorizada')} autorizadas{conta((n) => n.estado === 'rejeitada') ? `, ${conta((n) => n.estado === 'rejeitada')} rejeitadas` : ''}
+              {notas.length} registros: {conta((n) => situacao(n) === 'pronto')} para emitir,{' '}
+              {conta((n) => situacao(n) === 'pendente')} com dado faltando, {conta((n) => situacao(n) === 'invalido')} inválidos,{' '}
+              {conta((n) => situacao(n) === 'ja_emitida')} já emitidas antes,{' '}
+              {conta((n) => situacao(n) === 'complementar') > 0 && <b style={{ color: 'var(--info)' }}>{conta((n) => situacao(n) === 'complementar')} possíveis complementares, </b>}
+              {conta((n) => n.estado === 'autorizada')} emitidas neste lote{conta((n) => n.estado === 'rejeitada') ? `, ${conta((n) => n.estado === 'rejeitada')} rejeitadas` : ''}
             </span>
           </div>
 
@@ -464,8 +488,9 @@ export default function NfseEmissaoPage() {
               só as prontas
             </label>
             <select value={filtro} onChange={(e) => setFiltro(e.target.value)} style={{ width: 'auto' }}>
-              <option value="">todos</option><option value="pronto">prontos</option><option value="pendente">pendentes</option>
-              <option value="invalido">inválidos</option><option value="estado:autorizada">autorizadas</option>
+              <option value="">todos</option><option value="pronto">para emitir</option><option value="pendente">falta dado</option>
+              <option value="complementar">complementares?</option><option value="ja_emitida">já emitidas antes</option>
+              <option value="invalido">inválidos</option><option value="estado:autorizada">emitidas neste lote</option>
               <option value="estado:rejeitada">rejeitadas</option><option value="estado:indeterminada">indeterminadas</option>
             </select>
             <span style={suave}>Competência das selecionadas:</span>
@@ -490,14 +515,14 @@ export default function NfseEmissaoPage() {
               </thead>
               <tbody>
                 {visiveis.map((n) => {
-                  const tipo = EDITAVEL(n) ? n.status_validacao : n.estado
-                  const fundo = { pronto: 'var(--ok-dim)', pendente: 'var(--warn-dim)', invalido: 'var(--danger-dim)', rejeitada: 'var(--danger-dim)', indeterminada: 'var(--warn-dim)' }[tipo]
+                  const tipo = situacao(n)
+                  const fundo = { pronto: 'var(--ok-dim)', pendente: 'var(--warn-dim)', invalido: 'var(--danger-dim)', rejeitada: 'var(--danger-dim)', indeterminada: 'var(--warn-dim)', complementar: 'var(--info-dim)', ja_emitida: 'var(--surface2)' }[tipo]
                   const padraoComp = status.empresa.regra_competencia === 'mes_da_emissao' ? 'data da emissão' : dataBR(n.data)
                   return (
                     <tr key={n.id} style={{ background: fundo, borderBottom: '1px solid var(--border)', verticalAlign: 'top' }}>
                       <td style={{ padding: 6 }}><input type="checkbox" style={{ width: 'auto' }} disabled={!EDITAVEL(n)} checked={selecionadas.has(n.id)}
                         onChange={(e) => setSelecionadas((s) => { const x = new Set(s); e.target.checked ? x.add(n.id) : x.delete(n.id); return x })} /></td>
-                      <td style={{ padding: 6 }}><Pill tipo={tipo}>{tipo.replace('_', ' ')}</Pill></td>
+                      <td style={{ padding: 6 }}><Pill tipo={tipo}>{ROTULO[tipo] || tipo.replace('_', ' ')}</Pill></td>
                       <td style={{ padding: 2 }}>{inp(n, 'nome', n.nome, 180)}</td>
                       <td style={{ padding: 2 }}>{inp(n, 'cpf', cpfFmt(n.cpf), 120)}</td>
                       <td style={{ padding: 2 }}>{inp(n, 'data', dataBR(n.data), 90)}</td>
@@ -533,7 +558,10 @@ export default function NfseEmissaoPage() {
                         </>}
                         {n.estado === 'numero_reservado' && <div style={suave}>DPS nº {n.n_dps} reservada, ainda não enviada.</div>}
                         {EDITAVEL(n) && <>
-                          {n.erros.map((e) => <div key={e} style={{ color: 'var(--danger)' }}>✖ {e}</div>)}
+                          {n.erros.map((e) => (
+                            e.startsWith(JA_EMITIDA) ? <div key={e} style={{ color: 'var(--ok)' }}>✔ {e}</div>
+                              : e.startsWith(COMPLEMENTAR) ? <div key={e} style={{ color: 'var(--info)', fontWeight: 600 }}>⚠ {e}</div>
+                                : <div key={e} style={{ color: 'var(--danger)' }}>✖ {e}</div>))}
                           {n.pendencias.length > 0 && <div style={{ color: 'var(--warn)' }}>Falta: {n.pendencias.join(', ')}</div>}
                           {n.avisos.map((a) => <div key={a} style={suave}>• {a}</div>)}
                         </>}

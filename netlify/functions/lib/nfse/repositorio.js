@@ -25,7 +25,7 @@ const EM_EMISSAO_OU_EMITIDA = ['numero_reservado', 'enviada', 'autorizada', 'ind
 
 class TransicaoInvalida extends Error {}
 
-const CAMPOS_DUPLICIDADE = 'id, lote_id, estado, nome, cpf, data, valor, competencia, numero_nfse, atualizado_em'
+const CAMPOS_DUPLICIDADE = 'id, lote_id, estado, nome, cpf, data, valor, competencia, numero_nfse, chave_acesso, atualizado_em'
 
 function conferirTransicao(de, para) {
   if (!(TRANSICOES[de] || []).includes(para)) throw new TransicaoInvalida(`${de} → ${para}`)
@@ -70,6 +70,16 @@ class RepositorioSupabase {
   listarNotasDoTomador(clienteId, ambiente, cpf) {
     return this._q(this.db.from('nfse_notas').select(CAMPOS_DUPLICIDADE)
       .eq('cliente_id', clienteId).eq('ambiente', ambiente).eq('cpf', cpf))
+  }
+
+  // NFS-e autorizadas da empresa no Ambiente Nacional (nfse_adn_notas, inclusive as emitidas fora
+  // do gestor). Sem a tabela (SQL ainda não aplicado), volta vazio: a validação segue como antes.
+  async listarNotasNacionais(clienteId) {
+    const { data, error } = await this.db.from('nfse_adn_notas')
+      .select('chave_acesso, numero_nfse, tomador_doc, valor, emitida_em, competencia')
+      .eq('cliente_id', clienteId).eq('ambiente', 'producao').eq('situacao', 'autorizada')
+    if (error) { console.warn('nfse: notas do Ambiente Nacional indisponíveis:', error.message); return [] }
+    return data || []
   }
 
   async inserirLote(lote) {
@@ -158,6 +168,10 @@ class RepositorioMemoria {
 
   async listarNotasDoTomador(clienteId, ambiente, cpf) {
     return this.notas.filter((n) => n.cliente_id === clienteId && n.ambiente === ambiente && n.cpf === cpf).map((n) => this._copia(n))
+  }
+
+  async listarNotasNacionais(clienteId) {
+    return (this.nacionais || []).filter((n) => n.cliente_id === clienteId).map((n) => this._copia(n))
   }
 
   async inserirLote(lote) {
