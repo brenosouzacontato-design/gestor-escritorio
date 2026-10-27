@@ -175,12 +175,12 @@ test('duplicidade: no lote, com emitida e em outro lote ainda não emitido', asy
   const { repo, emissor, a } = await ambiente()
   await emissor.emitir(a)
   const reg = { nome: 'Maria Silva', cpf: '52998224725', endereco: 'Rua X 1', data: '2026-04-16', valor: '650.00', descricao: 'Limpeza', avisos: [] }
-  const l2 = await criarLote(repo, { empresa: EMPRESA, origem: 'colado', hoje: HOJE, registros: [reg, { ...reg, valor: '700.00' }, { ...reg, valor: '700.00' }] })
+  const l2 = await criarLote(repo, { empresa: EMPRESA, origem: 'colado', hoje: HOJE, registros: [reg, { ...reg, data: '2026-04-20', valor: '700.00' }, { ...reg, data: '2026-04-20', valor: '700.00' }] })
   const [d1, d2, d3] = await repo.listarNotasLote(l2)
-  assert.match(d1.erros[0], /já emitida/)
+  assert.match(d1.erros[0], /^Já emitida: NFS-e nº 13/)
   assert.equal(d2.status_validacao, 'pronto')
   assert.match(d3.erros[0], /deste lote/)
-  const l3 = await criarLote(repo, { empresa: EMPRESA, origem: 'colado', hoje: HOJE, registros: [{ ...reg, valor: '700.00' }] })
+  const l3 = await criarLote(repo, { empresa: EMPRESA, origem: 'colado', hoje: HOJE, registros: [{ ...reg, data: '2026-04-20', valor: '700.00' }] })
   const [e1] = await repo.listarNotasLote(l3)
   assert.equal(e1.status_validacao, 'pronto')
   assert.ok(e1.avisos.some((x) => x.startsWith('Também está no lote')))
@@ -241,4 +241,47 @@ test('revalidação avisa nota parecida antes da emissão; cancelada sai dos tot
   assert.equal((await repo.obterNota(a)).estado, 'validada') // aviso, não erro
   await repo.mudarEstado(antiga, 'autorizada', 'cancelada', 'teste')
   assert.equal(totais(await repo.listarNotasLote('lote-antigo')).servico, '0.00')
+})
+
+// --- já emitida / complementar (inclusive notas emitidas fora do gestor, do Ambiente Nacional) ---
+
+test('mesmo CPF e data com outro valor: "Complementar?" trava até virar a nota da diferença', async () => {
+  const { repo, emissor, a } = await ambiente()
+  await emissor.emitir(a) // Maria Silva, 16/04/2026, R$ 650,00
+  const reg = { nome: 'Maria Silva', cpf: '52998224725', endereco: 'Rua X 1', data: '2026-04-16', valor: '900.00', descricao: 'Limpeza', avisos: [] }
+  const lote = await criarLote(repo, { empresa: EMPRESA, origem: 'colado', hoje: HOJE, registros: [reg] })
+  const [n] = await repo.listarNotasLote(lote)
+  assert.equal(n.status_validacao, 'invalido')
+  assert.match(n.erros[0], /^Complementar\? Maria Silva já tem NFS-e nº 13 de R\$\s?650,00 \(atendimento 16\/04\/2026\)/)
+  assert.match(n.erros[0], /mude o valor para R\$\s?250,00/)
+  await atualizarNota(repo, EMPRESA, n.id, { valor: '250,00', descricao: 'Complementar - Limpeza' }, HOJE)
+  assert.equal((await repo.obterNota(n.id)).status_validacao, 'pronto')
+})
+
+test('notas do Ambiente Nacional emitidas fora do gestor: já emitida, complementar e as que não contam', async () => {
+  const PROD = { ...EMPRESA, ambiente: 'producao' }
+  const repo = new RepositorioMemoria({ empresas: [PROD] })
+  repo.nacionais = [
+    { cliente_id: 'cli-1', chave_acesso: 'K1', numero_nfse: '12', tomador_doc: '52998224725', valor: '2500.00', emitida_em: '2026-05-30T10:00:00-03:00' },
+    { cliente_id: 'cli-1', chave_acesso: 'K2', numero_nfse: '7', tomador_doc: '11144477735', valor: '300.00', emitida_em: '2026-02-01T10:00:00-03:00' },
+    { cliente_id: 'cli-1', chave_acesso: 'K3', numero_nfse: '8', tomador_doc: '39053344705', valor: '100.00', emitida_em: '2026-01-10T10:00:00-03:00' },
+    { cliente_id: 'outra', chave_acesso: 'K4', numero_nfse: '1', tomador_doc: '52998224725', valor: '3500.00', emitida_em: '2026-06-01T10:00:00-03:00' },
+  ]
+  const base = { endereco: 'Rua X 1', descricao: 'Implante', avisos: [] }
+  const lote = await criarLote(repo, { empresa: PROD, origem: 'colado', hoje: HOJE, registros: [
+    { ...base, nome: 'Cibele', cpf: '52998224725', data: '2026-04-01', valor: '3500.00' }, // 2.500 emitida depois: complementar
+    { ...base, nome: 'Joana', cpf: '11144477735', data: '2026-01-20', valor: '300.00' },   // mesmo valor, emitida depois: já emitida
+    { ...base, nome: 'Rita', cpf: '39053344705', data: '2026-03-05', valor: '100.00' },    // emitida ANTES do atendimento: outra sessão
+  ] })
+  const [c, j, r] = await repo.listarNotasLote(lote)
+  assert.match(c.erros[0], /^Complementar\? Cibele já tem NFS-e nº 12 de R\$\s?2\.500,00 \(emitida em 30\/05\/2026 fora do gestor\)/)
+  assert.match(c.erros[0], /R\$\s?1\.000,00/)
+  assert.match(j.erros[0], /^Já emitida: NFS-e nº 7/)
+  assert.equal(r.status_validacao, 'pronto')
+
+  // homologação não olha o Ambiente Nacional
+  const repoH = new RepositorioMemoria({ empresas: [EMPRESA] })
+  repoH.nacionais = repo.nacionais
+  const loteH = await criarLote(repoH, { empresa: EMPRESA, origem: 'colado', hoje: HOJE, registros: [{ ...base, nome: 'Joana', cpf: '11144477735', data: '2026-01-20', valor: '300.00' }] })
+  assert.equal((await repoH.listarNotasLote(loteH))[0].status_validacao, 'pronto')
 })

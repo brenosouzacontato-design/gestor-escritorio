@@ -7,6 +7,8 @@
 //   { acao: 'salvar_empresa', cliente_id, gabarito_xml, ambiente?, serie_dps?, regra_competencia?, campos_obrigatorios?, whatsapp_origem? }
 //   { acao: 'salvar_certificado', cliente_id, pfx_base64, senha }
 //   { acao: 'importar', cliente_id, texto }  |  { acao: 'importar', cliente_id, planilha_base64, nome_arquivo }
+//        Em produção, lê antes as notas novas do Ambiente Nacional: a validação marca "Já emitida" e
+//        "Complementar?" também contra as notas emitidas fora do gestor.
 //   { acao: 'editar', nota_id, campos }
 //   { acao: 'competencia', nota_ids, competencia }
 //   { acao: 'excluir', nota_id }  |  { acao: 'copiar', nota_id }
@@ -35,13 +37,28 @@ const { criarEmissor, EmissaoBloqueada } = require('./lib/nfse/emissor')
 const { importarTexto, importarLinhas, parseValor, soDigitos } = require('./lib/nfse/importador')
 const { completarComCadastro, lerPlanilhaTomadores, planejarImportacao } = require('./lib/nfse/tomadores')
 const { cpfValido } = require('./lib/nfse/validador')
+const { criarClienteAdn, sincronizar } = require('./lib/nfse/adn')
 
 // Timeout da Sefin abaixo do limite da function: se estourar, a nota fica "indeterminada" e a
 // próxima tentativa reconsulta antes de reenviar (nunca há envio em dobro).
 const TIMEOUT_SEFIN_MS = 8000
 
 // Dependências externas (substituídas nos testes)
-const deps = { supabase: () => supabaseServico(), criarCliente }
+const deps = {
+  supabase: () => supabaseServico(),
+  criarCliente,
+  // Antes de importar, busca as notas novas no Ambiente Nacional (as emitidas fora do gestor entram
+  // na conferência de "já emitida"/"complementar"). Falha aqui não impede a importação.
+  atualizarAdn: async (db, empresa) => {
+    if (empresa.ambiente !== 'producao') return
+    try {
+      const cert = await carregarCertificado(db, empresa)
+      await sincronizar({ db, clienteId: empresa.cliente_id, cnpj: empresa.cnpj, cliente: criarClienteAdn({ tls: cert.tls }), prazoMs: 4000 })
+    } catch (e) {
+      console.warn('nfse: leitura do Ambiente Nacional antes de importar:', e.message)
+    }
+  },
+}
 
 const exigir = (cond, msg, status = 400) => { if (!cond) throw new ErroHttp(status, msg) }
 const uuid = (v, nome) => { exigir(/^[0-9a-f-]{36}$/i.test(String(v || '')), `${nome} inválido`); return v }
@@ -188,9 +205,10 @@ const acoes = {
     return acoes.status({ db, repo }, { cliente_id: clienteId })
   },
 
-  async importar({ repo }, p) {
+  async importar({ db, repo }, p) {
     const empresa = await repo.obterEmpresa(uuid(p.cliente_id, 'cliente_id'))
     exigir(empresa, 'Empresa sem configuração de NFS-e', 409)
+    await deps.atualizarAdn(db, empresa)
     let registros
     let origem
     let descricao = ''

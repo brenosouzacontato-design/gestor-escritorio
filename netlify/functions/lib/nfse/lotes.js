@@ -7,7 +7,7 @@
 const { validar, chaveDuplicidade, hojeBrasilia, PRONTO } = require('./validador')
 const { parseData, parseValor, soDigitos } = require('./importador')
 const { EDITAVEIS, EM_EMISSAO_OU_EMITIDA } = require('./repositorio')
-const { conferirDuplicidade, mensagemParecida, PREFIXO_PARECIDA } = require('./duplicidade')
+const { conferirDuplicidade, mensagemParecida, PREFIXO_PARECIDA, conferirJaEmitida, PREFIXO_JA_EMITIDA } = require('./duplicidade')
 
 class NotaNaoEditavel extends Error {}
 
@@ -42,6 +42,12 @@ async function revalidarLote(repo, loteId, empresa, hoje = hojeBrasilia(), usuar
     if (chave && EM_EMISSAO_OU_EMITIDA.includes(n.estado) && !emitidas.has(chave)) emitidas.set(chave, n)
   }
 
+  // Notas do Ambiente Nacional que não saíram do gestor (as do gestor já estão em outras/notas)
+  const chavesGestor = new Set([...outras, ...notas].map((o) => o.chave_acesso).filter(Boolean))
+  const nacionais = empresa.ambiente === 'producao' && repo.listarNotasNacionais
+    ? (await repo.listarNotasNacionais(empresa.cliente_id)).filter((x) => !chavesGestor.has(x.chave_acesso))
+    : []
+
   const vistas = new Map()
   for (const n of notas) {
     if (!EDITAVEIS.includes(n.estado)) continue
@@ -50,12 +56,17 @@ async function revalidarLote(repo, loteId, empresa, hoje = hojeBrasilia(), usuar
     const chave = chaveDuplicidade(n.cpf, n.data, n.valor)
     if (chave) {
       if (emitidas.has(chave)) {
-        v.erros.push(`Duplicada: já emitida/em emissão (nota de ${emitidas.get(chave).data || ''} em outro lote ou neste)`)
+        const e = emitidas.get(chave)
+        v.erros.push(`${PREFIXO_JA_EMITIDA} ${e.numero_nfse ? `NFS-e nº ${e.numero_nfse}` : 'nota em emissão'} do mesmo CPF, data e valor. Remova do lote.`)
       } else if (vistas.has(chave)) {
         v.erros.push(`Duplicada: mesmo CPF, data e valor de outra nota deste lote (${vistas.get(chave)})`)
       } else {
         vistas.set(chave, n.nome || n.cpf)
         if (emOutrosLotes.has(chave)) avisos.push(`${AVISO_OUTRO_LOTE} outro lote ainda não emitido`)
+      }
+      if (!v.erros.length) {
+        const anterior = conferirJaEmitida(n, [...outras, ...notas], nacionais)
+        if (anterior) v.erros.push(anterior)
       }
       if (v.erros.length) v.status = 'invalido'
       else {
