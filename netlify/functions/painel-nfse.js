@@ -6,8 +6,10 @@
 //   POST { acao: 'pdf', nota_id, cliente_id? }   → o DANFSe em PDF (lib/nfse/danfse, NT 008/2026)
 //   POST { acao: 'xml', nota_id, cliente_id? }   → o XML da NFS-e autorizada (o documento com validade)
 //   POST { acao: 'pendentes', cliente_id? }       → notas ainda não emitidas, com o que falta preencher
-//   POST { acao: 'completar', nota_id, cpf?, nome?, descricao? } → o cliente completa a nota; o CPF
-//        também vai para o cadastro de clientes do prestador (nfse_tomadores)
+//   POST { acao: 'completar', nota_id, cpf?, nome?, descricao?, data?, endereco?, cep? } → o cliente
+//        completa a nota; o CPF também vai para o cadastro de clientes do prestador (nfse_tomadores)
+//   POST { acao: 'completar', nota_id, complementar: true } → o cliente confirma que falta só a
+//        diferença de uma nota já emitida: a nota vira a complementar (valor da diferença)
 //   POST { acao: 'link', nota_id }                → link público assinado do PDF (para mandar ao
 //        paciente pelo WhatsApp), válido por LINK_DIAS dias
 //   GET  ?nota=…&exp=…&sig=…                      → o PDF, sem login, se a assinatura e o prazo baterem
@@ -28,6 +30,7 @@ const { gerarDanfse } = require('./lib/nfse/danfse/danfse')
 const { RepositorioSupabase, EDITAVEIS } = require('./lib/nfse/repositorio')
 const lotes = require('./lib/nfse/lotes')
 const { cpfValido } = require('./lib/nfse/validador')
+const { PREFIXO_JA_EMITIDA, PREFIXO_COMPLEMENTAR } = require('./lib/nfse/duplicidade')
 
 // Dependências externas (substituídas nos testes, ver lib/nfse/__tests__/painelNfse.test.cjs)
 const deps = {
@@ -151,7 +154,7 @@ async function notaDoCliente(acesso, notaId) {
 // homologação são teste do escritório.
 async function pendentes(acesso) {
   const { data, error } = await db().from('nfse_notas')
-    .select('id, nome, cpf, data, valor, descricao, status_validacao, pendencias, erros, avisos, criado_em')
+    .select('id, nome, cpf, data, valor, descricao, endereco, status_validacao, pendencias, erros, avisos, criado_em')
     .eq('cliente_id', acesso.clienteId)
     .eq('ambiente', 'producao')
     .in('estado', EDITAVEIS)
@@ -161,9 +164,19 @@ async function pendentes(acesso) {
   return (data || []).map(resumoPendente)
 }
 
+// situacao: pronta | falta (dado a preencher) | complementar (confirmar a diferença) | ja_emitida | invalida
+function situacaoPendente(n) {
+  const erros = n.erros || []
+  if (erros.some((e) => e.startsWith(PREFIXO_JA_EMITIDA))) return 'ja_emitida'
+  if (erros.some((e) => e.startsWith(PREFIXO_COMPLEMENTAR))) return 'complementar'
+  if (n.status_validacao === 'pronto') return 'pronta'
+  return erros.length ? 'invalida' : 'falta'
+}
+
 const resumoPendente = (n) => ({
-  id: n.id, nome: n.nome, cpf: n.cpf, data: n.data, valor: n.valor, descricao: n.descricao,
-  pronta: n.status_validacao === 'pronto', pendencias: n.pendencias || [], erros: n.erros || [], avisos: n.avisos || [],
+  id: n.id, nome: n.nome, cpf: n.cpf, data: n.data, valor: n.valor, descricao: n.descricao, endereco: n.endereco,
+  pronta: n.status_validacao === 'pronto', situacao: situacaoPendente(n),
+  pendencias: n.pendencias || [], erros: n.erros || [], avisos: n.avisos || [],
 })
 
 // O cliente completa CPF / nome / descrição. Valida de novo o lote (fica "pronta" se não faltar
@@ -176,8 +189,18 @@ async function completar(acesso, corpo) {
   const empresa = await repo.obterEmpresa(acesso.clienteId)
   if (!empresa) return null
 
+  if (corpo.complementar === true) {
+    try {
+      return resumoPendente(await lotes.confirmarComplementar(repo, empresa, nota.id))
+    } catch (e) {
+      if (e instanceof lotes.NotaNaoEditavel) throw new ErroCliente(e.message)
+      throw e
+    }
+  }
+
   const campos = {}
-  for (const k of ['cpf', 'nome', 'descricao']) if (typeof corpo[k] === 'string') campos[k] = corpo[k].slice(0, 500)
+  for (const k of ['cpf', 'nome', 'descricao', 'data', 'endereco', 'cep']) if (typeof corpo[k] === 'string') campos[k] = corpo[k].slice(0, 500)
+  if (typeof campos.data === 'string' && !campos.data.trim()) delete campos.data // não apaga a data por engano
   if ('cpf' in campos) {
     const cpf = campos.cpf.replace(/\D/g, '')
     if (cpf && !cpfValido(cpf)) throw new ErroCliente('CPF inválido — confira os números.')

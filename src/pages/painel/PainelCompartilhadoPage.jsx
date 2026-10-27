@@ -7,6 +7,7 @@ import { chavePainelPorId, urlPublica } from '../../lib/linksPublicos';
 import { supabase } from '../../lib/supabase';
 import AcessoPainel, { obterClientePagina } from './AcessoPainel';
 import { listarNfseEmitidas, baixarNfse, listarNfsePendentes, completarNfse, linkPdfNfse, numeroWhatsapp } from './nfsePainelApi';
+import LinhaNfsePendente from './NfsePendenteLinha';
 import { descreverAparelho } from './aparelho';
 import { abrirLinkAssinado, criarLinkAssinado } from '../documentos/documentosApi';
 import { lerCodigosDaGuia } from './codigosGuia';
@@ -1380,68 +1381,6 @@ function LinhaNfseEmitida({ n, onBaixar, onWhatsapp }) {
         </span>
       </form>
     )}
-    </div>
-  );
-}
-
-// Nota ainda não emitida: o cliente preenche o que falta (CPF, nome, descrição)
-function LinhaNfsePendente({ n, onSalvar }) {
-  const falta = (rotulo) => n.pendencias.includes(rotulo);
-  const [cpf, setCpf] = useState(n.cpf || '');
-  const [nome, setNome] = useState(n.nome || '');
-  const [descricao, setDescricao] = useState(n.descricao || '');
-  const [salvando, setSalvando] = useState(false);
-  const [erro, setErro] = useState(null);
-  const pedeCpf = falta('CPF') || n.erros.some((e) => /CPF/.test(e));
-  const pedeNome = falta('Nome');
-  const pedeDescricao = falta('Descrição');
-  const temCampos = pedeCpf || pedeNome || pedeDescricao;
-  const corBorda = n.pronta ? 'var(--ok)' : n.erros.length ? 'var(--danger)' : 'var(--warn)';
-
-  const salvar = async (e) => {
-    e.preventDefault();
-    const campos = {};
-    if (pedeCpf) campos.cpf = cpf;
-    if (pedeNome) campos.nome = nome;
-    if (pedeDescricao) campos.descricao = descricao;
-    setSalvando(true); setErro(null);
-    try { await onSalvar(n, campos); } catch (err) { setErro(err.message); } finally { setSalvando(false); }
-  };
-
-  const campo = { fontSize: 13, padding: '7px 10px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--surface, var(--bg))', color: 'var(--text1)' };
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 6, padding: '10px 12px', background: 'var(--bg)', border: '1px solid var(--border)',
-      borderLeft: `3px solid ${corBorda}`, borderRadius: 'var(--r-md)' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-        <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text1)', flex: '1 1 180px' }}>{n.nome || 'Paciente sem nome'}</span>
-        {n.data && <span style={{ fontSize: 11, color: 'var(--text3)', display: 'flex', alignItems: 'center', gap: 3 }}><CalendarIcon size={10} /> {fmtData(n.data)}</span>}
-        <span style={{ fontSize: 14, fontWeight: 800, color: 'var(--text1)' }}>{n.valor != null ? fmt(n.valor) : '—'}</span>
-      </div>
-      {n.pronta ? (
-        <span style={{ fontSize: 11.5, color: 'var(--ok)', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 4 }}>
-          <CheckCircleIcon size={12} /> Pronta — o escritório vai emitir
-        </span>
-      ) : (
-        <>
-          <span style={{ fontSize: 11, color: n.erros.length ? 'var(--danger)' : 'var(--warn)', fontWeight: 600 }}>
-            {[...n.erros, ...(n.pendencias.length ? [`Falta: ${n.pendencias.join(', ')}`] : [])].join(' · ')}
-          </span>
-          {n.avisos.length > 0 && <span style={{ fontSize: 10.5, color: 'var(--text3)' }}>{n.avisos.join(' · ')}</span>}
-          {temCampos && (
-            <form onSubmit={salvar} style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
-              {pedeNome && <input placeholder="Nome completo do paciente" value={nome} onChange={(e) => setNome(e.target.value)} style={{ ...campo, flex: '2 1 200px' }} />}
-              {pedeCpf && <input placeholder="CPF do paciente" inputMode="numeric" value={cpf} onChange={(e) => setCpf(e.target.value)} style={{ ...campo, flex: '1 1 150px' }} />}
-              {pedeDescricao && <input placeholder="Descrição do serviço" value={descricao} onChange={(e) => setDescricao(e.target.value)} style={{ ...campo, flex: '2 1 200px' }} />}
-              <button type="submit" disabled={salvando}
-                style={{ fontSize: 12, fontWeight: 700, color: '#fff', background: 'var(--accent)', border: 'none', borderRadius: 8, padding: '7px 14px', cursor: 'pointer' }}>
-                {salvando ? 'Salvando…' : 'Salvar'}
-              </button>
-            </form>
-          )}
-          {!temCampos && <span style={{ fontSize: 11, color: 'var(--text3)' }}>O escritório vai conferir esta nota.</span>}
-          {erro && <span style={{ fontSize: 11, color: 'var(--danger)' }}>{erro}</span>}
-        </>
-      )}
     </div>
   );
 }
