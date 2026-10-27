@@ -7,7 +7,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { CalendarIcon, FileTextIcon, SearchIcon, SendIcon, RefreshCwIcon, AlertTriangleIcon } from 'lucide-react';
 import AcessoPainel from './AcessoPainel';
 import { numeroWhatsapp, listarNfsePendentes, completarNfse } from './nfsePainelApi';
-import LinhaNfsePendente from './NfsePendenteLinha';
+import LinhaNfsePendente, { valorAEmitir } from './NfsePendenteLinha';
 import { listarTodasNfse, baixarNfseEmitida, linkPdfNfseEmitida } from './nfseEmitidasApi';
 
 const fmt = (v) => Number(v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
@@ -178,7 +178,7 @@ const situacaoDe = (n) => n.situacao || (n.pronta ? 'pronta' : n.erros.length ? 
 function NotasAEmitir({ pendentes, onSalvar }) {
   const conta = (...s) => pendentes.filter((n) => s.includes(situacaoDe(n))).length;
   const lista = [...pendentes].sort((a, b) => ORDEM[situacaoDe(a)] - ORDEM[situacaoDe(b)] || String(a.data || '').localeCompare(String(b.data || '')));
-  const aEmitir = pendentes.filter((n) => situacaoDe(n) !== 'ja_emitida').reduce((t, n) => t + Number(n.valor || 0), 0);
+  const aEmitir = pendentes.reduce((t, n) => t + valorAEmitir(n), 0);
   const resumo = [
     [conta('falta', 'invalida'), 'precisam de informação', 'var(--warn)'],
     [conta('complementar'), 'possíveis complementares', 'var(--info)'],

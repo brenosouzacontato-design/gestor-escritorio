@@ -11,6 +11,17 @@ const fmtData = (iso) => (iso ? String(iso).slice(0, 10).split('-').reverse().jo
 const situacaoDa = (n) => n.situacao || (n.pronta ? 'pronta' : n.erros.length ? 'invalida' : 'falta');
 const COR = { pronta: 'var(--ok)', ja_emitida: 'var(--text3)', complementar: 'var(--info)', invalida: 'var(--danger)', falta: 'var(--warn)' };
 
+// Valor que de fato falta emitir: na complementar, só a diferença sugerida
+export function valorAEmitir(n) {
+  const s = situacaoDa(n);
+  if (s === 'ja_emitida') return 0;
+  if (s === 'complementar') {
+    const m = (n.erros.find((e) => e.startsWith('Complementar?')) || '').match(/mude o valor para R\$\s?([\d.]+,\d{2})/);
+    return m ? Number(m[1].replace(/\./g, '').replace(',', '.')) : 0;
+  }
+  return Number(n.valor || 0);
+}
+
 export default function NfsePendenteLinha({ n, onSalvar }) {
   const situacao = situacaoDa(n);
   const falta = (rotulo) => n.pendencias.includes(rotulo);
@@ -60,7 +71,7 @@ export default function NfsePendenteLinha({ n, onSalvar }) {
 
       {situacao === 'ja_emitida' && (
         <span style={{ fontSize: 11.5, color: 'var(--text2)', fontWeight: 600 }}>
-          Já emitida — {mensagem('Já emitida:').replace(/^Já emitida:\s*/, '').replace(/\s*Remova do lote.*$/, '')}. Não será emitida de novo.
+          Já emitida — {mensagem('Já emitida:').replace(/^Já emitida:\s*/, '').replace(/\.?\s*Remova do lote.*$/, '')}. Não será emitida de novo.
         </span>
       )}
 
