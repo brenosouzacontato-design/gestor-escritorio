@@ -73,7 +73,8 @@ function descreverAnterior(o) {
 }
 
 // nota: editável do lote; doGestor: notas do gestor (outros lotes e este); nacionais: nfse_adn_notas
-// já sem as que saíram do gestor. Devolve a mensagem de erro ou null.
+// já sem as que saíram do gestor. Devolve null ou { tipo: 'emitida' | 'complementar', mensagem,
+// falta } (falta: diferença em centavos, só para complementar).
 function conferirJaEmitida(nota, doGestor, nacionais) {
   if (!nota.cpf || centavos(nota.valor) === null || ehComplementar(nota.descricao)) return null
   const candidatas = [
@@ -84,12 +85,13 @@ function conferirJaEmitida(nota, doGestor, nacionais) {
   ]
   if (!candidatas.length) return null
   const igual = candidatas.find((o) => centavos(o.valor) === centavos(nota.valor))
-  if (igual) return `${PREFIXO_JA_EMITIDA} ${descreverAnterior(igual)}. Remova do lote se for o mesmo atendimento.`
+  if (igual) return { tipo: 'emitida', mensagem: `${PREFIXO_JA_EMITIDA} ${descreverAnterior(igual)}. Remova do lote se for o mesmo atendimento.` }
   const emitido = candidatas.reduce((s, o) => s + centavos(o.valor), 0)
   const falta = centavos(nota.valor) - emitido
   const ja = `${PREFIXO_COMPLEMENTAR} ${nota.nome || 'Este CPF'} já tem ${candidatas.map(descreverAnterior).join(', ')}.`
-  if (falta <= 0) return `${ja} O valor já emitido cobre este. Confira com a empresa antes de emitir.`
-  return `${ja} Se faltar só a diferença, mude o valor para ${reais(falta / 100)} e comece a descrição com "Complementar".`
+  if (falta <= 0) return { tipo: 'complementar', falta, mensagem: `${ja} O valor já emitido cobre este. Confira com a empresa antes de emitir.` }
+  return { tipo: 'complementar', falta,
+    mensagem: `${ja} Se faltar só a diferença, mude o valor para ${reais(falta / 100)} e comece a descrição com "Complementar".` }
 }
 
 module.exports = { conferirDuplicidade, mensagemIgual, mensagemParecida, PREFIXO_PARECIDA,

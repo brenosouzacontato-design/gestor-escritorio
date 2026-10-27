@@ -42,11 +42,7 @@ async function revalidarLote(repo, loteId, empresa, hoje = hojeBrasilia(), usuar
     if (chave && EM_EMISSAO_OU_EMITIDA.includes(n.estado) && !emitidas.has(chave)) emitidas.set(chave, n)
   }
 
-  // Notas do Ambiente Nacional que não saíram do gestor (as do gestor já estão em outras/notas)
-  const chavesGestor = new Set([...outras, ...notas].map((o) => o.chave_acesso).filter(Boolean))
-  const nacionais = empresa.ambiente === 'producao' && repo.listarNotasNacionais
-    ? (await repo.listarNotasNacionais(empresa.cliente_id)).filter((x) => !chavesGestor.has(x.chave_acesso))
-    : []
+  const nacionais = await nacionaisForaDoGestor(repo, empresa, [...outras, ...notas])
 
   const vistas = new Map()
   for (const n of notas) {
@@ -66,7 +62,7 @@ async function revalidarLote(repo, loteId, empresa, hoje = hojeBrasilia(), usuar
       }
       if (!v.erros.length) {
         const anterior = conferirJaEmitida(n, [...outras, ...notas], nacionais)
-        if (anterior) v.erros.push(anterior)
+        if (anterior) v.erros.push(anterior.mensagem)
       }
       if (v.erros.length) v.status = 'invalido'
       else {
@@ -85,6 +81,30 @@ async function revalidarLote(repo, loteId, empresa, hoje = hojeBrasilia(), usuar
       await repo.atualizarNota(n.id, { status_validacao: v.status, pendencias: v.pendencias, erros: v.erros, avisos })
     }
   }
+}
+
+// Notas do Ambiente Nacional (só produção) que não saíram do gestor: as do gestor já estão em `doGestor`
+async function nacionaisForaDoGestor(repo, empresa, doGestor) {
+  if (empresa.ambiente !== 'producao' || !repo.listarNotasNacionais) return []
+  const chaves = new Set(doGestor.map((o) => o.chave_acesso).filter(Boolean))
+  return (await repo.listarNotasNacionais(empresa.cliente_id)).filter((x) => !chaves.has(x.chave_acesso))
+}
+
+// Nota já emitida antes / complementar, para uma nota do lote (ver duplicidade.conferirJaEmitida)
+async function notaAnterior(repo, empresa, nota) {
+  const doGestor = [...await repo.listarOutrasNotas(empresa.cliente_id, empresa.ambiente, nota.lote_id), ...await repo.listarNotasLote(nota.lote_id)]
+  return conferirJaEmitida({ ...nota, descricao: '' }, doGestor, await nacionaisForaDoGestor(repo, empresa, doGestor))
+}
+
+// O cliente confirmou que falta só a diferença: a nota vira a complementar (valor da diferença e
+// descrição "Complementar - …"), e a validação a libera.
+async function confirmarComplementar(repo, empresa, id, hoje = hojeBrasilia()) {
+  const nota = await notaEditavel(repo, id)
+  const anterior = await notaAnterior(repo, empresa, nota)
+  if (!anterior || anterior.tipo !== 'complementar' || anterior.falta <= 0) throw new NotaNaoEditavel('Esta nota não tem diferença a emitir.')
+  const valor = (anterior.falta / 100).toFixed(2).replace('.', ',')
+  const descricao = /^\s*complement/i.test(nota.descricao || '') ? nota.descricao : `Complementar - ${nota.descricao || ''}`.trim()
+  return atualizarNota(repo, empresa, id, { valor, descricao }, hoje)
 }
 
 // Competência escolhida pelo usuário: dd/mm/aaaa, mm/aaaa (vira dia 1) ou ISO. Vazio = regra da empresa.
@@ -176,6 +196,7 @@ function totais(notas) {
   const cent = (v) => BigInt(Math.round(Number(v) * 100))
   for (const n of notas) {
     if (n.copiada_para || n.estado === 'cancelada' || n.valor === null || n.valor === undefined) continue
+    if ((n.erros || []).some((e) => e.startsWith(PREFIXO_JA_EMITIDA))) continue // emitida antes, em outra nota
     servico += cent(n.valor)
     if (n.estado === 'autorizada') emitido += cent(n.valor)
   }
@@ -185,5 +206,5 @@ function totais(notas) {
 
 module.exports = {
   NotaNaoEditavel, criarLote, revalidarLote, atualizarNota, definirCompetencia, excluirNota, copiarNota,
-  parseCompetencia, totais,
+  parseCompetencia, totais, confirmarComplementar,
 }

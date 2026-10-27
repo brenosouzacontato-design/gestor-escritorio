@@ -68,7 +68,8 @@ export function totais(notas) {
   let servico = 0
   let emitido = 0
   for (const n of notas) {
-    if (n.copiada_para || n.valor === null) continue
+    if (n.copiada_para || n.valor === null || n.estado === 'cancelada') continue
+    if ((n.erros || []).some((e) => e.startsWith('Já emitida:'))) continue // emitida antes, em outra nota
     const c = Math.round(Number(n.valor) * 100)
     servico += c
     if (n.estado === 'autorizada') emitido += c

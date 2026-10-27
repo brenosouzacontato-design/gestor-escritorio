@@ -171,3 +171,30 @@ test('link assinado abre o PDF sem login; adulterado ou vencido, não', async ()
   const alheia = await chamar({ acao: 'link', nota_id: 'bbbbbbbb-0000-4000-8000-000000000001' }, { 'x-painel-token': 'tokA' })
   assert.equal(alheia.status, 404)
 })
+
+test('cliente completa data e endereço; nota complementar é confirmada pela diferença', async () => {
+  const { chamar, supa } = await montarComPendentes()
+  const r = await chamar({ acao: 'completar', nota_id: 'cccccccc-0000-4000-8000-000000000001', cpf: CPF_FICTICIO, data: '05/09/2026', endereco: 'Rua das Flores 10' }, { 'x-painel-token': 'tokA' })
+  assert.equal(r.status, 200)
+  assert.equal(r.corpo.nota.data, '2026-09-05')
+  assert.equal(r.corpo.nota.endereco, 'Rua das Flores 10')
+  assert.equal(r.corpo.nota.situacao, 'pronta')
+  const ruim = await chamar({ acao: 'completar', nota_id: 'cccccccc-0000-4000-8000-000000000001', data: '31/02/2026' }, { 'x-painel-token': 'tokA' })
+  assert.equal(ruim.status, 400)
+
+  // NFS-e de R$ 2.500 emitida fora do gestor; a lista pede R$ 3.500 para o mesmo paciente
+  await supa.from('nfse_adn_notas').insert([{ cliente_id: A, chave_acesso: 'K1', numero_nfse: '12', tomador_doc: '11144477735', valor: 2500,
+    emitida_em: '2026-05-30T10:00:00-03:00', ambiente: 'producao', situacao: 'autorizada' }])
+  await supa.from('nfse_notas').insert([{ id: 'cccccccc-0000-4000-8000-000000000009', cliente_id: A, lote_id: 'lote-1', ambiente: 'producao', estado: 'importada',
+    nome: 'Paciente Implante', cpf: '11144477735', data: '2026-04-01', valor: '3500.00', descricao: 'Implante', endereco: '',
+    status_validacao: 'pendente', pendencias: [], erros: [], avisos: [], criado_em: '2026-09-11T12:00:00Z' }])
+  const antes = await chamar({ acao: 'completar', nota_id: 'cccccccc-0000-4000-8000-000000000009', descricao: 'Implante' }, { 'x-painel-token': 'tokA' })
+  assert.equal(antes.corpo.nota.situacao, 'complementar')
+  const conf = await chamar({ acao: 'completar', nota_id: 'cccccccc-0000-4000-8000-000000000009', complementar: true }, { 'x-painel-token': 'tokA' })
+  assert.equal(conf.status, 200)
+  assert.equal(Number(conf.corpo.nota.valor), 1000)
+  assert.equal(conf.corpo.nota.descricao, 'Complementar - Implante')
+  assert.equal(conf.corpo.nota.situacao, 'pronta')
+  const deNovo = await chamar({ acao: 'completar', nota_id: 'cccccccc-0000-4000-8000-000000000009', complementar: true }, { 'x-painel-token': 'tokA' })
+  assert.equal(deNovo.status, 400) // já é a complementar: nada a confirmar
+})

@@ -1,11 +1,13 @@
 // Link "todas as notas" do cliente: ?notas=<token do painel>
-// Lista todas as NFS-e emitidas pela empresa (inclusive fora do gestor), lidas do Ambiente
-// Nacional, com busca e filtro por ano/mês, PDF (DANFSe com QR Code de validação), XML e envio
-// do PDF pelo WhatsApp. Ver netlify/functions/nfse-emitidas.js.
+// No topo, as notas que o escritório ainda vai emitir (painel-nfse.js 'pendentes'): o cliente
+// completa o que falta e confirma as complementares. Abaixo, todas as NFS-e emitidas pela empresa
+// (inclusive fora do gestor), lidas do Ambiente Nacional, com busca e filtro por ano/mês, PDF (DANFSe
+// com QR Code de validação), XML e envio do PDF pelo WhatsApp. Ver netlify/functions/nfse-emitidas.js.
 import { useEffect, useMemo, useState } from 'react';
 import { CalendarIcon, FileTextIcon, SearchIcon, SendIcon, RefreshCwIcon, AlertTriangleIcon } from 'lucide-react';
 import AcessoPainel from './AcessoPainel';
-import { numeroWhatsapp } from './nfsePainelApi';
+import { numeroWhatsapp, listarNfsePendentes, completarNfse } from './nfsePainelApi';
+import LinhaNfsePendente from './NfsePendenteLinha';
 import { listarTodasNfse, baixarNfseEmitida, linkPdfNfseEmitida } from './nfseEmitidasApi';
 
 const fmt = (v) => Number(v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
@@ -32,12 +34,19 @@ function NotasEmitidas({ clienteId, nomeSessao }) {
   const [ano, setAno] = useState('todos');
   const [mes, setMes] = useState('todos');
   const [verCanceladas, setVerCanceladas] = useState(false);
+  const [pendentes, setPendentes] = useState([]);
 
   useEffect(() => {
     let ativo = true;
     listarTodasNfse(clienteId).then((d) => ativo && setDados(d)).catch((e) => ativo && setErro(e.message));
+    listarNfsePendentes(clienteId).then((p) => ativo && setPendentes(p)).catch(() => ativo && setPendentes([]));
     return () => { ativo = false; };
   }, [clienteId]);
+
+  const completar = async (nota, campos) => {
+    const salva = await completarNfse(clienteId, nota.id, campos);
+    setPendentes((lista) => lista.map((n) => (n.id === salva.id ? salva : n)));
+  };
 
   const notas = dados?.notas || [];
   const anos = useMemo(() => [...new Set(notas.map((n) => n.competencia?.slice(3)).filter(Boolean))].sort().reverse(), [notas]);
@@ -98,8 +107,11 @@ function NotasEmitidas({ clienteId, nomeSessao }) {
         {dados?.erro && <Aviso>{dados.erro}</Aviso>}
         {!dados && !erro && <div style={{ marginTop: 32, fontSize: 13, color: 'var(--text3)', display: 'flex', alignItems: 'center', gap: 6 }}><RefreshCwIcon size={14} /> Buscando as notas…</div>}
 
+        {pendentes.length > 0 && <NotasAEmitir pendentes={pendentes} onSalvar={completar} />}
+
         {dados && (
           <>
+            {pendentes.length > 0 && <h2 style={{ fontSize: 15, fontWeight: 800, margin: '28px 0 0' }}>Notas emitidas</h2>}
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', margin: '18px 0 10px' }}>
               <label style={{ ...campo, flex: '1 1 240px', display: 'flex', alignItems: 'center', gap: 6, padding: '0 10px' }}>
                 <SearchIcon size={14} style={{ color: 'var(--text3)' }} />
@@ -155,6 +167,40 @@ function NotasEmitidas({ clienteId, nomeSessao }) {
         )}
       </div>
     </div>
+  );
+}
+
+// Ordem: o que depende do cliente primeiro, depois o que o escritório vai emitir, por fim as que já
+// tinham sido emitidas
+const ORDEM = { falta: 0, invalida: 0, complementar: 1, pronta: 2, ja_emitida: 3 };
+const situacaoDe = (n) => n.situacao || (n.pronta ? 'pronta' : n.erros.length ? 'invalida' : 'falta');
+
+function NotasAEmitir({ pendentes, onSalvar }) {
+  const conta = (...s) => pendentes.filter((n) => s.includes(situacaoDe(n))).length;
+  const lista = [...pendentes].sort((a, b) => ORDEM[situacaoDe(a)] - ORDEM[situacaoDe(b)] || String(a.data || '').localeCompare(String(b.data || '')));
+  const aEmitir = pendentes.filter((n) => situacaoDe(n) !== 'ja_emitida').reduce((t, n) => t + Number(n.valor || 0), 0);
+  const resumo = [
+    [conta('falta', 'invalida'), 'precisam de informação', 'var(--warn)'],
+    [conta('complementar'), 'possíveis complementares', 'var(--info)'],
+    [conta('pronta'), 'prontas para emitir', 'var(--ok)'],
+    [conta('ja_emitida'), 'já emitidas antes', 'var(--text3)'],
+  ].filter(([q]) => q > 0);
+  return (
+    <section style={{ marginTop: 20 }}>
+      <h2 style={{ fontSize: 15, fontWeight: 800, margin: '0 0 4px' }}>Notas a emitir</h2>
+      <div style={{ fontSize: 12, color: 'var(--text3)', marginBottom: 10 }}>
+        Atendimentos enviados ao escritório que ainda não viraram nota{aEmitir > 0 ? ` · ${fmt(aEmitir)} a emitir` : ''}.
+        Complete o que falta aqui mesmo; o escritório emite assim que estiver tudo certo.
+      </div>
+      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 10 }}>
+        {resumo.map(([q, rotulo, cor]) => (
+          <span key={rotulo} style={{ fontSize: 11, fontWeight: 700, color: cor, border: `1px solid ${cor}`, borderRadius: 99, padding: '3px 10px' }}>{q} {rotulo}</span>
+        ))}
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        {lista.map((n) => <LinhaNfsePendente key={n.id} n={n} onSalvar={onSalvar} />)}
+      </div>
+    </section>
   );
 }
 
