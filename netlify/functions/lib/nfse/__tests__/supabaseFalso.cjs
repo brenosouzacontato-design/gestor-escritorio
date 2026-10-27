@@ -52,8 +52,9 @@ function criarSupabaseFalso({ usuarios = {}, tabelas = {} } = {}) {
         const k = (opcoes.onConflict || 'id').split(',')
         const existente = linhas.find((r) => k.every((c) => r[c] === dados[c]))
         if (existente) Object.assign(existente, dados)
-        else linhas.push({ ...dados })
-        out = [existente || dados]
+        const novo = existente ? null : { id: uid(), criado_em: new Date().toISOString(), ...dados }
+        if (novo) linhas.push(novo)
+        out = [existente || novo]
       } else if (op === 'delete') {
         out = linhas.filter(casa)
         db[tabela] = linhas.filter((r) => !casa(r))

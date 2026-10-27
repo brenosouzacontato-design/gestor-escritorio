@@ -6,6 +6,7 @@ import { Modal, useToast } from '../../components/shared'
 import { chamarNfse, listarLotes, listarNotas, baixarXml, arquivoParaBase64, totais } from './nfseApi'
 import { baixarNfse } from '../painel/nfsePainelApi'
 import TomadoresPanel from './TomadoresPanel'
+import { chavePainelPorId, urlPublica } from '../../lib/linksPublicos'
 
 // Emissão de NFS-e pela API da Sefin Nacional, por empresa. Ver docs/nfse-emissao.md.
 // Tudo que grava passa pela function nfse (login conferido no servidor); a tela só lê do Supabase.
@@ -395,6 +396,18 @@ export default function NfseEmissaoPage() {
       <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginBottom: 14, flexWrap: 'wrap' }}>
         <EmpresaCombobox empresas={empresas} value={clienteId} onChange={setClienteId} placeholder="Escolher empresa..." style={{ flex: 1, minWidth: 260 }} />
         {ambiente && <AmbienteBadge ambiente={ambiente} />}
+        {status?.configurada && (
+          <button className="btn" title="Link para o cliente ver e baixar todas as notas emitidas (Sistema Nacional), com PDF, XML e WhatsApp"
+            onClick={async () => {
+              try {
+                const url = urlPublica({ notas: await chavePainelPorId(clienteId) })
+                await navigator.clipboard.writeText(url)
+                show('Link de todas as notas copiado')
+              } catch (e) { show(`Não foi possível copiar o link: ${e.message}`) }
+            }}>
+            <CopyIcon size={14} /> Link: todas as notas
+          </button>
+        )}
       </div>
 
       {!clienteId && <div style={{ ...card, ...suave }}>Escolha a empresa para configurar ou emitir.</div>}

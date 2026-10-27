@@ -1,0 +1,220 @@
+// Link "todas as notas" do cliente: ?notas=<token do painel>
+// Lista todas as NFS-e emitidas pela empresa (inclusive fora do gestor), lidas do Ambiente
+// Nacional, com busca e filtro por ano/mês, PDF (DANFSe com QR Code de validação), XML e envio
+// do PDF pelo WhatsApp. Ver netlify/functions/nfse-emitidas.js.
+import { useEffect, useMemo, useState } from 'react';
+import { CalendarIcon, FileTextIcon, SearchIcon, SendIcon, RefreshCwIcon, AlertTriangleIcon } from 'lucide-react';
+import AcessoPainel from './AcessoPainel';
+import { numeroWhatsapp } from './nfsePainelApi';
+import { listarTodasNfse, baixarNfseEmitida, linkPdfNfseEmitida } from './nfseEmitidasApi';
+
+const fmt = (v) => Number(v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+const fmtData = (iso) => (iso ? String(iso).slice(0, 10).split('-').reverse().join('/') : '');
+const MESES = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
+const SITUACAO = {
+  cancelada: { rotulo: 'Cancelada', cor: 'var(--danger)' },
+  substituida: { rotulo: 'Substituída', cor: 'var(--warn)' },
+};
+const semAcento = (s) => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+
+export default function NotasEmitidasPage({ token }) {
+  return (
+    <AcessoPainel valor={token}>
+      {(sessao) => <NotasEmitidas clienteId={sessao.id} nomeSessao={sessao.nome} />}
+    </AcessoPainel>
+  );
+}
+
+function NotasEmitidas({ clienteId, nomeSessao }) {
+  const [dados, setDados] = useState(null);
+  const [erro, setErro] = useState(null);
+  const [busca, setBusca] = useState('');
+  const [ano, setAno] = useState('todos');
+  const [mes, setMes] = useState('todos');
+  const [verCanceladas, setVerCanceladas] = useState(false);
+
+  useEffect(() => {
+    let ativo = true;
+    listarTodasNfse(clienteId).then((d) => ativo && setDados(d)).catch((e) => ativo && setErro(e.message));
+    return () => { ativo = false; };
+  }, [clienteId]);
+
+  const notas = dados?.notas || [];
+  const anos = useMemo(() => [...new Set(notas.map((n) => n.competencia?.slice(3)).filter(Boolean))].sort().reverse(), [notas]);
+  const filtradas = useMemo(() => {
+    const termo = semAcento(busca.trim());
+    return notas.filter((n) => {
+      if (!verCanceladas && n.situacao !== 'autorizada') return false;
+      if (ano !== 'todos' && n.competencia?.slice(3) !== ano) return false;
+      if (mes !== 'todos' && n.competencia?.slice(0, 2) !== mes) return false;
+      if (!termo) return true;
+      return [n.numero, n.tomador, n.descricao, fmt(n.valor)].some((c) => semAcento(c).includes(termo));
+    });
+  }, [notas, busca, ano, mes, verCanceladas]);
+  const canceladas = notas.filter((n) => n.situacao !== 'autorizada').length;
+  const total = filtradas.filter((n) => n.situacao === 'autorizada').reduce((t, n) => t + Number(n.valor || 0), 0);
+
+  // agrupa por competência (mais recente primeiro)
+  const grupos = useMemo(() => {
+    const mapa = new Map();
+    for (const n of filtradas) {
+      const k = n.competencia || 'sem';
+      if (!mapa.has(k)) mapa.set(k, []);
+      mapa.get(k).push(n);
+    }
+    const chave = (k) => (k === 'sem' ? '0' : `${k.slice(3)}${k.slice(0, 2)}`);
+    return [...mapa.entries()].sort((a, b) => chave(b[0]).localeCompare(chave(a[0])));
+  }, [filtradas]);
+
+  const baixar = async (n, formato) => {
+    try { await baixarNfseEmitida(clienteId, n, formato); } catch (e) { window.alert(e.message); }
+  };
+  const enviarWhatsapp = async (n, numero) => {
+    const aba = window.open('', '_blank'); // abre já no clique, antes do await (bloqueio de pop-up)
+    try {
+      const { url } = await linkPdfNfseEmitida(clienteId, n.id);
+      const texto = `Olá${n.tomador ? `, ${n.tomador.split(' ')[0]}` : ''}! Segue a nota fiscal de serviço nº ${n.numero || ''}`
+        + `${n.valor != null ? ` (${fmt(n.valor)})` : ''}: ${url}`;
+      const destino = `https://wa.me/${numero}?text=${encodeURIComponent(texto)}`;
+      if (aba) aba.location.href = destino; else window.location.href = destino;
+    } catch (e) {
+      if (aba) aba.close();
+      window.alert(e.message);
+    }
+  };
+
+  const campo = { fontSize: 13, padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--surface, var(--bg))', color: 'var(--text1)', fontFamily: 'inherit' };
+
+  return (
+    <div style={{ minHeight: '100vh', background: 'var(--bg)', color: 'var(--text1)' }}>
+      <div style={{ maxWidth: 760, margin: '0 auto', padding: '20px 16px 48px' }}>
+        <div style={{ fontSize: 11, color: 'var(--text3)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.04em' }}>Notas fiscais de serviço emitidas</div>
+        <h1 style={{ fontSize: 22, fontWeight: 800, margin: '4px 0 2px' }}>{dados?.empresa || nomeSessao || 'Empresa'}</h1>
+        <div style={{ fontSize: 12, color: 'var(--text3)' }}>
+          Todas as notas registradas no Sistema Nacional da NFS-e{dados?.sincronizadoEm ? ` · atualizado em ${new Date(dados.sincronizadoEm).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })}` : ''}
+        </div>
+
+        {erro && <Aviso>{erro}</Aviso>}
+        {dados?.erro && <Aviso>{dados.erro}</Aviso>}
+        {!dados && !erro && <div style={{ marginTop: 32, fontSize: 13, color: 'var(--text3)', display: 'flex', alignItems: 'center', gap: 6 }}><RefreshCwIcon size={14} /> Buscando as notas…</div>}
+
+        {dados && (
+          <>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', margin: '18px 0 10px' }}>
+              <label style={{ ...campo, flex: '1 1 240px', display: 'flex', alignItems: 'center', gap: 6, padding: '0 10px' }}>
+                <SearchIcon size={14} style={{ color: 'var(--text3)' }} />
+                <input value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Buscar por paciente, número ou descrição"
+                  aria-label="Buscar notas" style={{ border: 'none', outline: 'none', background: 'transparent', color: 'inherit', fontSize: 13, padding: '8px 0', flex: 1, minWidth: 0, fontFamily: 'inherit' }} />
+              </label>
+              <select value={ano} onChange={(e) => setAno(e.target.value)} aria-label="Ano" style={campo}>
+                <option value="todos">Todos os anos</option>
+                {anos.map((a) => <option key={a} value={a}>{a}</option>)}
+              </select>
+              <select value={mes} onChange={(e) => setMes(e.target.value)} aria-label="Mês" style={campo}>
+                <option value="todos">Todos os meses</option>
+                {MESES.map((m, i) => <option key={m} value={String(i + 1).padStart(2, '0')}>{m}</option>)}
+              </select>
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', padding: '12px 14px', background: 'var(--surface, var(--bg))',
+              border: '1px solid var(--border)', borderRadius: 'var(--r-md, 10px)' }}>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 10, color: 'var(--text3)', fontWeight: 600, textTransform: 'uppercase' }}>
+                  {filtradas.length} nota{filtradas.length !== 1 ? 's' : ''}{filtradas.length !== notas.length ? ` de ${notas.length}` : ''}
+                </div>
+                <div style={{ fontSize: 20, fontWeight: 800 }}>{fmt(total)}</div>
+              </div>
+              {canceladas > 0 && (
+                <label style={{ fontSize: 12, color: 'var(--text2)', display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
+                  <input type="checkbox" checked={verCanceladas} onChange={(e) => setVerCanceladas(e.target.checked)} />
+                  Mostrar canceladas/substituídas ({canceladas})
+                </label>
+              )}
+            </div>
+
+            {notas.length === 0 && <div style={{ marginTop: 24, fontSize: 13, color: 'var(--text3)' }}>Nenhuma nota emitida encontrada no Sistema Nacional.</div>}
+            {notas.length > 0 && filtradas.length === 0 && <div style={{ marginTop: 24, fontSize: 13, color: 'var(--text3)' }}>Nenhuma nota com esses filtros.</div>}
+
+            {grupos.map(([competencia, lista]) => (
+              <section key={competencia} style={{ marginTop: 20 }}>
+                <h2 style={{ fontSize: 12, fontWeight: 700, color: 'var(--text2)', margin: '0 0 8px', display: 'flex', justifyContent: 'space-between' }}>
+                  <span>{competencia === 'sem' ? 'Sem competência' : `${MESES[Number(competencia.slice(0, 2)) - 1]} de ${competencia.slice(3)}`}</span>
+                  <span style={{ color: 'var(--text3)', fontWeight: 600 }}>{lista.length} · {fmt(lista.filter((n) => n.situacao === 'autorizada').reduce((t, n) => t + Number(n.valor || 0), 0))}</span>
+                </h2>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  {lista.map((n) => <LinhaNota key={n.id} n={n} onBaixar={baixar} onWhatsapp={enviarWhatsapp} />)}
+                </div>
+              </section>
+            ))}
+
+            <p style={{ fontSize: 11, color: 'var(--text3)', marginTop: 28, lineHeight: 1.5 }}>
+              O PDF é o DANFSe (documento auxiliar). A validade pode ser conferida pelo QR Code do PDF ou pela chave de acesso no portal nacional
+              (nfse.gov.br). O XML é o documento fiscal com validade jurídica.
+            </p>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function Aviso({ children }) {
+  return (
+    <div style={{ marginTop: 14, fontSize: 12, color: 'var(--warn)', display: 'flex', gap: 6, alignItems: 'flex-start' }}>
+      <AlertTriangleIcon size={14} style={{ flexShrink: 0, marginTop: 1 }} /> <span>{children}</span>
+    </div>
+  );
+}
+
+function LinhaNota({ n, onBaixar, onWhatsapp }) {
+  const [enviando, setEnviando] = useState(false);
+  const [numero, setNumero] = useState('');
+  const destino = numeroWhatsapp(numero);
+  const especial = SITUACAO[n.situacao];
+  const botao = { display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11, fontWeight: 700, borderRadius: 99, padding: '5px 10px', cursor: 'pointer', whiteSpace: 'nowrap', fontFamily: 'inherit' };
+  const enviar = () => { if (destino) { onWhatsapp(n, destino); setEnviando(false); setNumero(''); } };
+  return (
+    <div style={{ padding: '10px 12px', background: 'var(--surface, var(--bg))', border: '1px solid var(--border)', borderLeft: `3px solid ${especial ? especial.cor : 'var(--ok)'}`,
+      borderRadius: 'var(--r-md, 10px)', opacity: especial ? 0.75 : 1 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+        <div style={{ flex: '1 1 220px', minWidth: 0 }}>
+          <div style={{ fontSize: 13, fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            NFS-e nº {n.numero || '—'}{n.tomador ? ` — ${n.tomador}` : ''}
+          </div>
+          <div style={{ fontSize: 11, color: 'var(--text3)', display: 'flex', gap: 10, flexWrap: 'wrap', marginTop: 2 }}>
+            {n.emitidaEm && <span style={{ display: 'flex', alignItems: 'center', gap: 3 }}><CalendarIcon size={10} /> Emitida em {fmtData(n.emitidaEm)}</span>}
+            {n.descricao && <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 260 }}>{n.descricao}</span>}
+            {especial && <span style={{ color: especial.cor, fontWeight: 700 }}>{especial.rotulo}</span>}
+          </div>
+        </div>
+        <span style={{ fontSize: 14, fontWeight: 800, whiteSpace: 'nowrap', textDecoration: especial ? 'line-through' : 'none' }}>{n.valor != null ? fmt(n.valor) : '—'}</span>
+        <div style={{ display: 'flex', gap: 6 }}>
+          <button type="button" onClick={() => onBaixar(n, 'pdf')} style={{ ...botao, color: 'var(--accent)', background: 'var(--accent-dim)', border: 'none' }}>
+            <FileTextIcon size={11} /> PDF
+          </button>
+          <button type="button" onClick={() => onBaixar(n, 'xml')} style={{ ...botao, color: 'var(--accent)', background: 'var(--accent-dim)', border: 'none' }}>XML</button>
+          {!especial && (
+            <button type="button" onClick={() => setEnviando((v) => !v)} title="Enviar o PDF pelo WhatsApp"
+              style={{ ...botao, color: '#fff', background: '#25D366', border: 'none' }}>
+              <SendIcon size={11} /> WhatsApp
+            </button>
+          )}
+        </div>
+      </div>
+      {enviando && (
+        <form onSubmit={(e) => { e.preventDefault(); enviar(); }} style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap', marginTop: 8 }}>
+          <input autoFocus type="tel" inputMode="tel" placeholder="WhatsApp do paciente, ex: (31) 99999-9999" value={numero}
+            onChange={(e) => setNumero(e.target.value)} aria-label="Número do WhatsApp"
+            style={{ flex: '1 1 220px', fontSize: 13, padding: '7px 10px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--text1)' }} />
+          <button type="submit" disabled={!destino}
+            style={{ fontSize: 12, fontWeight: 700, color: '#fff', background: destino ? '#25D366' : 'var(--text3)', border: 'none', borderRadius: 8, padding: '7px 12px', cursor: destino ? 'pointer' : 'default' }}>
+            Abrir no WhatsApp
+          </button>
+          <span style={{ fontSize: 10.5, color: 'var(--text3)', flexBasis: '100%' }}>
+            Vai uma mensagem com o link do PDF (vale por 30 dias). Você confere e envia no WhatsApp.
+          </span>
+        </form>
+      )}
+    </div>
+  );
+}
