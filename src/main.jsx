@@ -11,6 +11,7 @@ import PainelCompartilhadoPage from './pages/painel/PainelCompartilhadoPage.jsx'
 import ComprovanteFaturamentoPage from './pages/painel/ComprovanteFaturamentoPage.jsx'
 import PainelGrupoPage from './pages/painel/PainelGrupoPage.jsx'
 import PainelCarteiraPage from './pages/painel/PainelCarteiraPage.jsx'
+import NotasEmitidasPage from './pages/painel/NotasEmitidasPage.jsx'
 import { registrarVisualizacaoPainel, avisarEventoPainel } from './pages/painel/painelApi.js'
 import './styles.css'
 
@@ -24,6 +25,7 @@ const identificar = params.get('identificar')
 const doc = params.get('doc')
 const painel = params.get('painel')
 const carteira = params.get('carteira')
+const notas = params.get('notas')
 
 // O gestor exige login; os links públicos abaixo, não.
 let raiz = <ComLogin><App /></ComLogin>
@@ -52,6 +54,9 @@ if (share === 'dre' || share === 'balancete') {
   />
 } else if (doc) {
   raiz = <DocumentoCompartilhadoPage documentoId={doc} />
+} else if (notas) {
+  // todas as NFS-e emitidas pela empresa (?notas=<token do painel>), lidas do Ambiente Nacional
+  raiz = <NotasEmitidasPage token={notas} />
 } else if (carteira) {
   // link da carteira (pessoa responsável pela carteira, sem login): lista as
   // empresas dela e abre o painel de cada uma — não conta como visita do cliente

@@ -102,6 +102,25 @@ O DANFSe lê `finNFSe`/`indDest`/`dest` da posição nova e da antiga.
 - `nfse_empresas.descricao_padrao`: descrição do serviço quando nem a mensagem nem o cadastro trazem.
 - Testes: `tomadores.test.cjs` (dados fictícios no formato da planilha real).
 
+## Link "todas as notas emitidas" do cliente (27/10/2026)
+
+- **Link:** `?notas=<token do painel>`. Na tela "Emitir NFS-e", o botão **Link: todas as notas** copia o link
+  (`NotasEmitidasPage.jsx`). É separado do painel mensal: lista **todas** as NFS-e emitidas pela empresa,
+  inclusive as que não saíram do gestor (Emissor Nacional, notas antigas). Tem busca (paciente, número,
+  descrição), filtro por ano e mês, total, e por nota **PDF** (DANFSe com QR Code da consulta pública),
+  **XML** e **WhatsApp** (link assinado do PDF, 30 dias). Canceladas e substituídas ficam escondidas, com
+  opção de mostrar; o PDF delas sai com marca d'água.
+- **De onde vêm:** distribuição do Ambiente de Dados Nacional, `GET adn.nfse.gov.br/contribuintes/DFe/{NSU}`
+  com o A1 da empresa (`lib/nfse/adn.js`). Até 50 documentos por chamada, em ordem de NSU. Guardamos só as
+  notas em que a empresa é **emitente** (`nfse_adn_notas`) e o último NSU lido (`nfse_adn_controle`);
+  eventos de cancelamento (101101, 105104, 305101) e substituição (105102) marcam a nota.
+  Conferido em 27/10/2026 com a Simple Care: 135 documentos desde 02/2023 (28 emitidas, 107 recebidas),
+  leitura completa em menos de 1 s, DANFSe gerado para as 28.
+- **Quando atualiza:** ao abrir o link, se a última leitura tiver mais de 15 min (function `nfse-emitidas`).
+  Falha do ADN não derruba a página: mostra as notas já salvas, com aviso.
+- **Banco:** `supabase-schema-nfse-adn.sql` (rodar no SQL Editor; mesma regra de RLS das outras `nfse_*`).
+- Testes: `nfseEmitidas.test.cjs`.
+
 ## Regras herdadas do app local (não mudar)
 
 - nDPS reservado e gravado **antes** de qualquer chamada HTTP; número nunca reutilizado.
