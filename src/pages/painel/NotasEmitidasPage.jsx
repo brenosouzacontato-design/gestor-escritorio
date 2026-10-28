@@ -7,7 +7,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { CalendarIcon, FileTextIcon, SearchIcon, SendIcon, RefreshCwIcon, AlertTriangleIcon } from 'lucide-react';
 import AcessoPainel from './AcessoPainel';
 import { numeroWhatsapp, listarNfsePendentes, completarNfse } from './nfsePainelApi';
-import LinhaNfsePendente from './NfsePendenteLinha';
+import LinhaNfsePendente, { valorAEmitir } from './NfsePendenteLinha';
 import { listarTodasNfse, baixarNfseEmitida, linkPdfNfseEmitida } from './nfseEmitidasApi';
 
 const fmt = (v) => Number(v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
@@ -49,7 +49,17 @@ function NotasEmitidas({ clienteId, nomeSessao }) {
   };
 
   const notas = dados?.notas || [];
-  const anos = useMemo(() => [...new Set(notas.map((n) => n.competencia?.slice(3)).filter(Boolean))].sort().reverse(), [notas]);
+  const anos = useMemo(() => [...new Set([...notas.map((n) => n.competencia?.slice(3)), ...pendentes.map((n) => n.data?.slice(0, 4))].filter(Boolean))].sort().reverse(), [notas, pendentes]);
+  // Os mesmos filtros valem para as notas a emitir (pela data do atendimento)
+  const pendentesFiltradas = useMemo(() => {
+    const termo = semAcento(busca.trim());
+    return pendentes.filter((n) => {
+      if (ano !== 'todos' && n.data?.slice(0, 4) !== ano) return false;
+      if (mes !== 'todos' && n.data?.slice(5, 7) !== mes) return false;
+      if (!termo) return true;
+      return [n.nome, n.descricao, fmt(n.valor)].some((c) => semAcento(c).includes(termo));
+    });
+  }, [pendentes, busca, ano, mes]);
   const filtradas = useMemo(() => {
     const termo = semAcento(busca.trim());
     return notas.filter((n) => {
@@ -96,7 +106,7 @@ function NotasEmitidas({ clienteId, nomeSessao }) {
 
   return (
     <div style={{ minHeight: '100vh', background: 'var(--bg)', color: 'var(--text1)' }}>
-      <div style={{ maxWidth: 760, margin: '0 auto', padding: '20px 16px 48px' }}>
+      <div style={{ maxWidth: 1240, margin: '0 auto', padding: '20px 16px 48px' }}>
         <div style={{ fontSize: 11, color: 'var(--text3)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.04em' }}>Notas fiscais de serviço emitidas</div>
         <h1 style={{ fontSize: 22, fontWeight: 800, margin: '4px 0 2px' }}>{dados?.empresa || nomeSessao || 'Empresa'}</h1>
         <div style={{ fontSize: 12, color: 'var(--text3)' }}>
@@ -107,26 +117,30 @@ function NotasEmitidas({ clienteId, nomeSessao }) {
         {dados?.erro && <Aviso>{dados.erro}</Aviso>}
         {!dados && !erro && <div style={{ marginTop: 32, fontSize: 13, color: 'var(--text3)', display: 'flex', alignItems: 'center', gap: 6 }}><RefreshCwIcon size={14} /> Buscando as notas…</div>}
 
-        {pendentes.length > 0 && <NotasAEmitir pendentes={pendentes} onSalvar={completar} />}
+        {(dados || pendentes.length > 0) && (
+          <div style={{ position: 'sticky', top: 0, zIndex: 2, background: 'var(--bg)', padding: '12px 0 10px', margin: '6px 0 0',
+            display: 'flex', gap: 8, flexWrap: 'wrap', borderBottom: '1px solid var(--border)' }}>
+            <label style={{ ...campo, flex: '1 1 260px', display: 'flex', alignItems: 'center', gap: 6, padding: '0 10px' }}>
+              <SearchIcon size={14} style={{ color: 'var(--text3)' }} />
+              <input value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Buscar por paciente, valor, serviço ou número"
+                aria-label="Buscar notas" style={{ border: 'none', outline: 'none', background: 'transparent', color: 'inherit', fontSize: 13, padding: '8px 0', flex: 1, minWidth: 0, fontFamily: 'inherit' }} />
+            </label>
+            <select value={ano} onChange={(e) => setAno(e.target.value)} aria-label="Ano" style={{ ...campo, flex: '0 1 150px' }}>
+              <option value="todos">Todos os anos</option>
+              {anos.map((a) => <option key={a} value={a}>{a}</option>)}
+            </select>
+            <select value={mes} onChange={(e) => setMes(e.target.value)} aria-label="Mês" style={{ ...campo, flex: '0 1 160px' }}>
+              <option value="todos">Todos os meses</option>
+              {MESES.map((m, i) => <option key={m} value={String(i + 1).padStart(2, '0')}>{m}</option>)}
+            </select>
+          </div>
+        )}
+
+        {pendentes.length > 0 && <NotasAEmitir pendentes={pendentesFiltradas} total={pendentes.length} onSalvar={completar} />}
 
         {dados && (
           <>
-            {pendentes.length > 0 && <h2 style={{ fontSize: 15, fontWeight: 800, margin: '28px 0 0' }}>Notas emitidas</h2>}
-            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', margin: '18px 0 10px' }}>
-              <label style={{ ...campo, flex: '1 1 240px', display: 'flex', alignItems: 'center', gap: 6, padding: '0 10px' }}>
-                <SearchIcon size={14} style={{ color: 'var(--text3)' }} />
-                <input value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Buscar por paciente, número ou descrição"
-                  aria-label="Buscar notas" style={{ border: 'none', outline: 'none', background: 'transparent', color: 'inherit', fontSize: 13, padding: '8px 0', flex: 1, minWidth: 0, fontFamily: 'inherit' }} />
-              </label>
-              <select value={ano} onChange={(e) => setAno(e.target.value)} aria-label="Ano" style={campo}>
-                <option value="todos">Todos os anos</option>
-                {anos.map((a) => <option key={a} value={a}>{a}</option>)}
-              </select>
-              <select value={mes} onChange={(e) => setMes(e.target.value)} aria-label="Mês" style={campo}>
-                <option value="todos">Todos os meses</option>
-                {MESES.map((m, i) => <option key={m} value={String(i + 1).padStart(2, '0')}>{m}</option>)}
-              </select>
-            </div>
+            <h2 style={{ fontSize: 15, fontWeight: 800, margin: '28px 0 10px' }}>Notas emitidas</h2>
 
             <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', padding: '12px 14px', background: 'var(--surface, var(--bg))',
               border: '1px solid var(--border)', borderRadius: 'var(--r-md, 10px)' }}>
@@ -153,7 +167,7 @@ function NotasEmitidas({ clienteId, nomeSessao }) {
                   <span>{competencia === 'sem' ? 'Sem competência' : `${MESES[Number(competencia.slice(0, 2)) - 1]} de ${competencia.slice(3)}`}</span>
                   <span style={{ color: 'var(--text3)', fontWeight: 600 }}>{lista.length} · {fmt(lista.filter((n) => n.situacao === 'autorizada').reduce((t, n) => t + Number(n.valor || 0), 0))}</span>
                 </h2>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <div style={GRADE}>
                   {lista.map((n) => <LinhaNota key={n.id} n={n} onBaixar={baixar} onWhatsapp={enviarWhatsapp} />)}
                 </div>
               </section>
@@ -175,15 +189,18 @@ function NotasEmitidas({ clienteId, nomeSessao }) {
 const ORDEM = { falta: 0, invalida: 0, complementar: 1, pronta: 2, ja_emitida: 3 };
 const situacaoDe = (n) => n.situacao || (n.pronta ? 'pronta' : n.erros.length ? 'invalida' : 'falta');
 
-function NotasAEmitir({ pendentes, onSalvar }) {
+// Uma coluna no celular; no computador, quantas couberem (cartões de no mínimo 480px)
+const GRADE = { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 480px), 1fr))', gap: 8, alignItems: 'start' };
+
+function NotasAEmitir({ pendentes, total, onSalvar }) {
   const conta = (...s) => pendentes.filter((n) => s.includes(situacaoDe(n))).length;
   const lista = [...pendentes].sort((a, b) => ORDEM[situacaoDe(a)] - ORDEM[situacaoDe(b)] || String(a.data || '').localeCompare(String(b.data || '')));
-  const aEmitir = pendentes.filter((n) => situacaoDe(n) !== 'ja_emitida').reduce((t, n) => t + Number(n.valor || 0), 0);
+  const aEmitir = pendentes.reduce((t, n) => t + valorAEmitir(n), 0);
   const resumo = [
-    [conta('falta', 'invalida'), 'precisam de informação', 'var(--warn)'],
-    [conta('complementar'), 'possíveis complementares', 'var(--info)'],
-    [conta('pronta'), 'prontas para emitir', 'var(--ok)'],
-    [conta('ja_emitida'), 'já emitidas antes', 'var(--text3)'],
+    [conta('falta', 'invalida'), ['precisa de informação', 'precisam de informação'], 'var(--warn)'],
+    [conta('complementar'), ['possível complementar', 'possíveis complementares'], 'var(--info)'],
+    [conta('pronta'), ['pronta para emitir', 'prontas para emitir'], 'var(--ok)'],
+    [conta('ja_emitida'), ['já emitida antes', 'já emitidas antes'], 'var(--text3)'],
   ].filter(([q]) => q > 0);
   return (
     <section style={{ marginTop: 20 }}>
@@ -193,11 +210,12 @@ function NotasAEmitir({ pendentes, onSalvar }) {
         Complete o que falta aqui mesmo; o escritório emite assim que estiver tudo certo.
       </div>
       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 10 }}>
-        {resumo.map(([q, rotulo, cor]) => (
-          <span key={rotulo} style={{ fontSize: 11, fontWeight: 700, color: cor, border: `1px solid ${cor}`, borderRadius: 99, padding: '3px 10px' }}>{q} {rotulo}</span>
+        {resumo.map(([q, [um, varios], cor]) => (
+          <span key={um} style={{ fontSize: 11, fontWeight: 700, color: cor, border: `1px solid ${cor}`, borderRadius: 99, padding: '3px 10px' }}>{q} {q === 1 ? um : varios}</span>
         ))}
       </div>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+      {pendentes.length === 0 && <div style={{ fontSize: 13, color: 'var(--text3)' }}>Nenhuma das {total} notas a emitir com esses filtros.</div>}
+      <div style={GRADE}>
         {lista.map((n) => <LinhaNfsePendente key={n.id} n={n} onSalvar={onSalvar} />)}
       </div>
     </section>
