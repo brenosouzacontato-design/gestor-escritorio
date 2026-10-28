@@ -17,7 +17,7 @@ export async function chamarNfse(acao, dados = {}) {
 
 // Leitura: direto do Supabase (RLS libera só leitura para o usuário logado).
 const CAMPOS_NOTA = 'id,lote_id,estado,status_validacao,pendencias,erros,avisos,nome,cpf,endereco,cep,data,competencia,valor,' +
-  'descricao,autor,data_mensagem,texto_original,serie,n_dps,chave_acesso,numero_nfse,mensagem_sefin,copiada_para,criado_em'
+  'descricao,autor,data_mensagem,texto_original,observacao_cliente,serie,n_dps,chave_acesso,numero_nfse,mensagem_sefin,copiada_para,criado_em'
 
 export async function listarLotes(clienteId, ambiente) {
   const { data, error } = await supabase.from('nfse_lotes').select('*')

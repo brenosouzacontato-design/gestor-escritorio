@@ -565,6 +565,7 @@ export default function NfseEmissaoPage() {
                           {n.pendencias.length > 0 && <div style={{ color: 'var(--warn)' }}>Falta: {n.pendencias.join(', ')}</div>}
                           {n.avisos.map((a) => <div key={a} style={suave}>• {a}</div>)}
                         </>}
+                        {n.observacao_cliente && <div style={{ color: 'var(--info)', whiteSpace: 'pre-wrap', maxWidth: 320 }}>💬 Cliente: {n.observacao_cliente}</div>}
                         {n.n_dps && <div style={suave}>DPS série {n.serie} nº {n.n_dps}</div>}
                         {n.texto_original && <details><summary style={{ ...suave, cursor: 'pointer' }}>mensagem {n.autor ? `de ${n.autor}` : ''}</summary>
                           <pre style={{ whiteSpace: 'pre-wrap', fontSize: 11, margin: '4px 0 0', maxWidth: 320 }}>{n.texto_original}</pre></details>}

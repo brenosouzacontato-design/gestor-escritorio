@@ -89,7 +89,7 @@ function NotasEmitidas({ clienteId, nomeSessao }) {
       if (ano !== 'todos' && n.data?.slice(0, 4) !== ano) return false;
       if (mes !== 'todos' && n.data?.slice(5, 7) !== mes) return false;
       if (!termo) return true;
-      return [n.nome, n.descricao, fmt(n.valor)].some((c) => semAcento(c).includes(termo));
+      return [n.nome, n.descricao, n.observacao, fmt(n.valor)].some((c) => semAcento(c).includes(termo));
     });
   }, [pendentes, busca, ano, mes]);
   const filtradas = useMemo(() => {

@@ -6,7 +6,7 @@
 //   POST { acao: 'pdf', nota_id, cliente_id? }   → o DANFSe em PDF (lib/nfse/danfse, NT 008/2026)
 //   POST { acao: 'xml', nota_id, cliente_id? }   → o XML da NFS-e autorizada (o documento com validade)
 //   POST { acao: 'pendentes', cliente_id? }       → notas ainda não emitidas, com o que falta preencher
-//   POST { acao: 'completar', nota_id, cpf?, nome?, descricao?, data?, endereco?, cep? } → o cliente
+//   POST { acao: 'completar', nota_id, cpf?, nome?, descricao?, data?, endereco?, cep?, observacao? } → o cliente
 //        completa a nota; o CPF também vai para o cadastro de clientes do prestador (nfse_tomadores)
 //   POST { acao: 'completar', nota_id, complementar: true } → o cliente confirma que falta só a
 //        diferença de uma nota já emitida: a nota vira a complementar (valor da diferença)
@@ -154,7 +154,7 @@ async function notaDoCliente(acesso, notaId) {
 // homologação são teste do escritório.
 async function pendentes(acesso) {
   const { data, error } = await db().from('nfse_notas')
-    .select('id, nome, cpf, data, valor, descricao, endereco, status_validacao, pendencias, erros, avisos, criado_em')
+    .select('id, nome, cpf, data, valor, descricao, endereco, observacao_cliente, status_validacao, pendencias, erros, avisos, criado_em')
     .eq('cliente_id', acesso.clienteId)
     .eq('ambiente', 'producao')
     .in('estado', EDITAVEIS)
@@ -175,6 +175,7 @@ function situacaoPendente(n) {
 
 const resumoPendente = (n) => ({
   id: n.id, nome: n.nome, cpf: n.cpf, data: n.data, valor: n.valor, descricao: n.descricao, endereco: n.endereco,
+  observacao: n.observacao_cliente || '',
   pronta: n.status_validacao === 'pronto', situacao: situacaoPendente(n),
   pendencias: n.pendencias || [], erros: n.erros || [], avisos: n.avisos || [],
 })
@@ -200,6 +201,7 @@ async function completar(acesso, corpo) {
 
   const campos = {}
   for (const k of ['cpf', 'nome', 'descricao', 'data', 'endereco', 'cep']) if (typeof corpo[k] === 'string') campos[k] = corpo[k].slice(0, 500)
+  if (typeof corpo.observacao === 'string') campos.observacao_cliente = corpo.observacao.slice(0, 1000)
   if (typeof campos.data === 'string' && !campos.data.trim()) delete campos.data // não apaga a data por engano
   if ('cpf' in campos) {
     const cpf = campos.cpf.replace(/\D/g, '')

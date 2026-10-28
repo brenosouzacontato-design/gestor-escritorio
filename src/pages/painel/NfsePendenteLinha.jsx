@@ -2,7 +2,7 @@
 // falta (nome, CPF, data, descrição, endereço) ou confirmar a nota complementar (a diferença de uma
 // nota já emitida). Usada no painel mensal e no link "todas as notas". Ver painel-nfse.js.
 import { useState } from 'react';
-import { CalendarIcon, CheckCircleIcon } from 'lucide-react';
+import { CalendarIcon, CheckCircleIcon, MessageSquareIcon } from 'lucide-react';
 
 const fmt = (v) => Number(v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 const fmtData = (iso) => (iso ? String(iso).slice(0, 10).split('-').reverse().join('/') : '');
@@ -47,6 +47,8 @@ export default function NfsePendenteLinha({ n, onSalvar, largo = false, emTabela
   const situacao = situacaoDa(n);
   const falta = (rotulo) => n.pendencias.includes(rotulo);
   const [valores, setValores] = useState({ cpf: n.cpf || '', nome: n.nome || '', data: '', descricao: n.descricao || '', endereco: n.endereco || '' });
+  const [obs, setObs] = useState(n.observacao || '');
+  const obsMudou = obs.trim() !== (n.observacao || '').trim();
   const [salvando, setSalvando] = useState(false);
   const [erro, setErro] = useState(null);
   const pede = {
@@ -66,6 +68,7 @@ export default function NfsePendenteLinha({ n, onSalvar, largo = false, emTabela
     e.preventDefault();
     const campos = {};
     for (const [k, pedido] of Object.entries(pede)) if (pedido) campos[k] = valores[k];
+    if (obsMudou) campos.observacao = obs; // não perde a observação digitada junto
     enviar(campos);
   };
   const mudar = (k) => (e) => setValores((v) => ({ ...v, [k]: e.target.value }));
@@ -156,6 +159,18 @@ export default function NfsePendenteLinha({ n, onSalvar, largo = false, emTabela
           {!temCampos && <span style={{ fontSize: 11, color: 'var(--text3)' }}>O escritório vai conferir esta nota.</span>}
         </>
       )}
+      {/* Recado livre do cliente para o escritório (não vai na nota fiscal) */}
+      <form onSubmit={(e) => { e.preventDefault(); if (obsMudou) enviar({ observacao: obs }); }}
+        style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+        <label style={{ ...campo, flex: '1 1 260px', display: 'flex', alignItems: 'center', gap: 6, padding: '0 10px' }}>
+          <MessageSquareIcon size={13} style={{ color: 'var(--text3)', flexShrink: 0 }} />
+          <input value={obs} onChange={(e) => setObs(e.target.value)} maxLength={1000} aria-label="Observação para o escritório"
+            placeholder="Informação ou observação para o escritório (opcional)"
+            style={{ border: 'none', outline: 'none', background: 'transparent', color: 'inherit', fontSize: 13, padding: '7px 0', flex: 1, minWidth: 0, fontFamily: 'inherit' }} />
+        </label>
+        {obsMudou && <button type="submit" disabled={salvando} style={botao('var(--text2)')}>{salvando ? 'Salvando…' : 'Enviar observação'}</button>}
+        {!obsMudou && n.observacao && <span style={{ fontSize: 11, color: 'var(--ok)', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 3 }}><CheckCircleIcon size={11} /> Observação enviada</span>}
+      </form>
       {erro && <span style={{ fontSize: 11, color: 'var(--danger)' }}>{erro}</span>}
     </div>
   );
