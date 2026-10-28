@@ -149,6 +149,8 @@ async function atualizarNota(repo, empresa, id, campos, hoje = hojeBrasilia()) {
     sets.valor = v
   }
   if ('competencia' in campos) sets.competencia = parseCompetencia(campos.competencia)
+  // recado do cliente para o escritório; não entra na nota fiscal
+  if ('observacao_cliente' in campos) sets.observacao_cliente = String(campos.observacao_cliente ?? '').trim().slice(0, 1000)
   if (Object.keys(sets).length) await repo.atualizarNota(id, sets)
   await revalidarLote(repo, nota.lote_id, empresa, hoje)
   return repo.obterNota(id)

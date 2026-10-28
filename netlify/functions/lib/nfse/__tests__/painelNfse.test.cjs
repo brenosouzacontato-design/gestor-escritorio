@@ -182,6 +182,14 @@ test('cliente completa data e endereço; nota complementar é confirmada pela di
   const ruim = await chamar({ acao: 'completar', nota_id: 'cccccccc-0000-4000-8000-000000000001', data: '31/02/2026' }, { 'x-painel-token': 'tokA' })
   assert.equal(ruim.status, 400)
 
+  // observação livre do cliente: salva sozinha, sem mexer nos outros campos
+  const obs = await chamar({ acao: 'completar', nota_id: 'cccccccc-0000-4000-8000-000000000001', observacao: '  Paciente pediu nota em nome da mãe  ' }, { 'x-painel-token': 'tokA' })
+  assert.equal(obs.status, 200)
+  assert.equal(obs.corpo.nota.observacao, 'Paciente pediu nota em nome da mãe')
+  assert.equal(obs.corpo.nota.endereco, 'Rua das Flores 10')
+  const lista = await chamar({ acao: 'pendentes' }, { 'x-painel-token': 'tokA' })
+  assert.equal(lista.corpo.notas.find((n) => n.id === 'cccccccc-0000-4000-8000-000000000001').observacao, 'Paciente pediu nota em nome da mãe')
+
   // NFS-e de R$ 2.500 emitida fora do gestor; a lista pede R$ 3.500 para o mesmo paciente
   await supa.from('nfse_adn_notas').insert([{ cliente_id: A, chave_acesso: 'K1', numero_nfse: '12', tomador_doc: '11144477735', valor: 2500,
     emitida_em: '2026-05-30T10:00:00-03:00', ambiente: 'producao', situacao: 'autorizada' }])
