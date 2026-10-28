@@ -242,7 +242,8 @@ function PainelCompartilhado({ clienteId, competencia: competenciaInicial, admin
 
   const completarPendente = async (nota, campos) => {
     const salva = await completarNfse(clienteId, nota.id, campos);
-    setNfsePendentes((lista) => lista.map((n) => (n.id === salva.id ? salva : n)));
+    // nota com ciência do cliente (já tinha sido emitida) sai da lista
+    setNfsePendentes((lista) => (salva.ciente ? lista.filter((n) => n.id !== salva.id) : lista.map((n) => (n.id === salva.id ? salva : n))));
     return salva;
   };
 

@@ -16,6 +16,9 @@
 //   { acao: 'emitir', nota_id, ambiente, confirmar_repetida? } ← ambiente confirmado na tela; se divergir, nada é enviado.
 //        Nota igual a outra já emitida (CPF+data+valor) é bloqueada; parecida (CPF+valor no mesmo mês)
 //        só vai com confirmar_repetida: true.
+//   { acao: 'complementar', nota_id }  ← "Complementar?": emite só a diferença (valor e descrição ajustados)
+//   { acao: 'liberar_duplicidade', nota_id, liberar? }  ← "Complementar?"/"Já emitida" conferida: é outro
+//        serviço, emite pelo valor cheio (liberar: false desfaz)
 //   { acao: 'marcar_cancelada', nota_id, motivo }  ← registra o cancelamento feito no portal nacional
 //   { acao: 'tomador_salvar', cliente_id, tomador }  |  { acao: 'tomador_excluir', cliente_id, id }
 //   { acao: 'tomadores_importar', cliente_id, planilha_base64, gravar? }  ← sem gravar: só a prévia
@@ -248,6 +251,18 @@ const acoes = {
   async excluir({ repo }, p) {
     const { nota, empresa } = await empresaDaNota(repo, p.nota_id)
     await lotes.excluirNota(repo, empresa, nota.id)
+    return { lote_id: nota.lote_id }
+  },
+
+  async complementar({ repo }, p) {
+    const { nota, empresa } = await empresaDaNota(repo, p.nota_id)
+    await lotes.confirmarComplementar(repo, empresa, nota.id)
+    return { lote_id: nota.lote_id }
+  },
+
+  async liberar_duplicidade({ repo }, p) {
+    const { nota, empresa } = await empresaDaNota(repo, p.nota_id)
+    await lotes.liberarDuplicidade(repo, empresa, nota.id, p.liberar !== false)
     return { lote_id: nota.lote_id }
   },
 

@@ -206,3 +206,35 @@ test('cliente completa data e endereço; nota complementar é confirmada pela di
   const deNovo = await chamar({ acao: 'completar', nota_id: 'cccccccc-0000-4000-8000-000000000009', complementar: true }, { 'x-painel-token': 'tokA' })
   assert.equal(deNovo.status, 400) // já é a complementar: nada a confirmar
 })
+
+test('não é complementar: sai pelo valor cheio; já emitida: cliente fica ciente e ela sai do painel', async () => {
+  const { chamar, supa } = await montarComPendentes()
+  const tok = { 'x-painel-token': 'tokA' }
+  await supa.from('nfse_adn_notas').insert([{ cliente_id: A, chave_acesso: 'K1', numero_nfse: '12', tomador_doc: '11144477735', valor: 2500,
+    emitida_em: '2026-05-30T10:00:00-03:00', ambiente: 'producao', situacao: 'autorizada' }])
+  const nota = (id, valor) => ({ id, cliente_id: A, lote_id: 'lote-1', ambiente: 'producao', estado: 'importada',
+    nome: 'Paciente Implante', cpf: '11144477735', data: '2026-04-01', valor, descricao: 'Implante', endereco: 'Rua A 1',
+    status_validacao: 'pendente', pendencias: [], erros: [], avisos: [], criado_em: '2026-09-11T12:00:00Z' })
+  const COMP = 'cccccccc-0000-4000-8000-000000000009'
+  const IGUAL = 'cccccccc-0000-4000-8000-000000000010'
+  await supa.from('nfse_notas').insert([nota(COMP, '3500.00')])
+  assert.equal((await chamar({ acao: 'completar', nota_id: COMP, descricao: 'Implante' }, tok)).corpo.nota.situacao, 'complementar')
+
+  // ciência só vale para nota travada como já emitida/complementar
+  assert.equal((await chamar({ acao: 'completar', nota_id: 'cccccccc-0000-4000-8000-000000000001', ciente: true }, tok)).status, 400)
+
+  const cheio = await chamar({ acao: 'completar', nota_id: COMP, valor_cheio: true }, tok)
+  assert.equal(cheio.status, 200)
+  assert.equal(Number(cheio.corpo.nota.valor), 3500)
+  assert.equal(cheio.corpo.nota.liberada, true)
+  assert.notEqual(cheio.corpo.nota.situacao, 'complementar')
+
+  await supa.from('nfse_notas').insert([nota(IGUAL, '2500.00')])
+  assert.equal((await chamar({ acao: 'completar', nota_id: IGUAL, descricao: 'Implante' }, tok)).corpo.nota.situacao, 'ja_emitida')
+  const ciente = await chamar({ acao: 'completar', nota_id: IGUAL, ciente: true }, tok)
+  assert.equal(ciente.status, 200)
+  assert.equal(ciente.corpo.nota.ciente, true)
+  const lista = await chamar({ acao: 'pendentes' }, tok)
+  assert.equal(lista.corpo.notas.some((n) => n.id === IGUAL), false)
+  assert.equal(lista.corpo.notas.some((n) => n.id === COMP), true)
+})

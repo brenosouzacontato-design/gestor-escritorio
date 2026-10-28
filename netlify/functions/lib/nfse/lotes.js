@@ -93,7 +93,43 @@ async function nacionaisForaDoGestor(repo, empresa, doGestor) {
 // Nota já emitida antes / complementar, para uma nota do lote (ver duplicidade.conferirJaEmitida)
 async function notaAnterior(repo, empresa, nota) {
   const doGestor = [...await repo.listarOutrasNotas(empresa.cliente_id, empresa.ambiente, nota.lote_id), ...await repo.listarNotasLote(nota.lote_id)]
-  return conferirJaEmitida({ ...nota, descricao: '' }, doGestor, await nacionaisForaDoGestor(repo, empresa, doGestor))
+  return conferirJaEmitida({ ...nota, descricao: '', duplicidade_liberada: false }, doGestor, await nacionaisForaDoGestor(repo, empresa, doGestor))
+}
+
+// Situação da trava "Já emitida" / "Complementar?" de uma nota editável, sem a liberação manual:
+// null | { tipo: 'emitida' | 'complementar', falta }
+async function travaAnterior(repo, empresa, id) {
+  return notaAnterior(repo, empresa, await notaEditavel(repo, id))
+}
+
+// Colunas de supabase-schema-nfse-conferencia.sql: sem o script, avisa em vez de falhar calado
+async function gravarConferencia(repo, id, campos) {
+  try {
+    await repo.atualizarNota(id, campos)
+  } catch (e) {
+    if (/duplicidade_liberada|ciente_em|column|schema cache/i.test(e.message)) {
+      throw new NotaNaoEditavel('Falta rodar supabase-schema-nfse-conferencia.sql no SQL Editor do Supabase.')
+    }
+    throw e
+  }
+}
+
+// Conferido que NÃO é a mesma nota nem complementar (outro serviço para o mesmo paciente): a trava
+// "Já emitida"/"Complementar?" deixa de valer para esta nota e ela sai pelo valor cheio.
+// liberar=false desfaz.
+async function liberarDuplicidade(repo, empresa, id, liberar = true, hoje = hojeBrasilia()) {
+  const nota = await notaEditavel(repo, id)
+  await gravarConferencia(repo, id, { duplicidade_liberada: !!liberar })
+  await revalidarLote(repo, nota.lote_id, empresa, hoje)
+  return repo.obterNota(id)
+}
+
+// O cliente tomou ciência de que a nota já tinha sido emitida: ela sai do painel dele (continua no
+// lote do escritório, marcada). ciente=false desfaz.
+async function marcarCiente(repo, id, ciente = true) {
+  await notaEditavel(repo, id)
+  await gravarConferencia(repo, id, { ciente_em: ciente ? new Date().toISOString() : null })
+  return repo.obterNota(id)
 }
 
 // O cliente confirmou que falta só a diferença: a nota vira a complementar (valor da diferença e
@@ -208,5 +244,5 @@ function totais(notas) {
 
 module.exports = {
   NotaNaoEditavel, criarLote, revalidarLote, atualizarNota, definirCompetencia, excluirNota, copiarNota,
-  parseCompetencia, totais, confirmarComplementar,
+  parseCompetencia, totais, confirmarComplementar, liberarDuplicidade, marcarCiente, travaAnterior,
 }
