@@ -11,6 +11,17 @@ const fmtData = (iso) => (iso ? String(iso).slice(0, 10).split('-').reverse().jo
 const situacaoDa = (n) => n.situacao || (n.pronta ? 'pronta' : n.erros.length ? 'invalida' : 'falta');
 const COR = { pronta: 'var(--ok)', ja_emitida: 'var(--text3)', complementar: 'var(--info)', invalida: 'var(--danger)', falta: 'var(--warn)' };
 
+// Colunas do modo "linha inteira" (computador), iguais às das notas emitidas para alinhar:
+// paciente e CPF · datas · serviço · valor · situação/ações
+export const COLUNAS_LINHA = 'minmax(210px, 1.3fr) 150px minmax(240px, 2.4fr) 130px 250px';
+export const fmtDoc = (d) => {
+  const s = String(d || '').replace(/\D/g, '');
+  if (s.length === 11) return `${s.slice(0, 3)}.${s.slice(3, 6)}.${s.slice(6, 9)}-${s.slice(9)}`;
+  if (s.length === 14) return `${s.slice(0, 2)}.${s.slice(2, 5)}.${s.slice(5, 8)}/${s.slice(8, 12)}-${s.slice(12)}`;
+  return s;
+};
+const ROTULO = { pronta: 'Pronta para emitir', ja_emitida: 'Já emitida antes', complementar: 'Possível complementar', invalida: 'Precisa de correção', falta: 'Falta informação' };
+
 // Valor que de fato falta emitir: na complementar, só a diferença sugerida
 export function valorAEmitir(n) {
   const s = situacaoDa(n);
@@ -22,7 +33,8 @@ export function valorAEmitir(n) {
   return Number(n.valor || 0);
 }
 
-export default function NfsePendenteLinha({ n, onSalvar }) {
+// largo: uma linha inteira por paciente, em colunas (computador); sem ele, cartão empilhado (celular)
+export default function NfsePendenteLinha({ n, onSalvar, largo = false }) {
   const situacao = situacaoDa(n);
   const falta = (rotulo) => n.pendencias.includes(rotulo);
   const [valores, setValores] = useState({ cpf: n.cpf || '', nome: n.nome || '', data: '', descricao: n.descricao || '', endereco: n.endereco || '' });
@@ -56,12 +68,33 @@ export default function NfsePendenteLinha({ n, onSalvar }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 6, padding: '10px 12px', background: 'var(--bg)', border: '1px solid var(--border)',
       borderLeft: `3px solid ${COR[situacao]}`, borderRadius: 'var(--r-md, 10px)', opacity: situacao === 'ja_emitida' ? 0.75 : 1 }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-        <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text1)', flex: '1 1 180px' }}>{n.nome || 'Paciente sem nome'}</span>
-        {n.data && <span style={{ fontSize: 11, color: 'var(--text3)', display: 'flex', alignItems: 'center', gap: 3 }}><CalendarIcon size={10} /> {fmtData(n.data)}</span>}
-        <span style={{ fontSize: 14, fontWeight: 800, color: 'var(--text1)' }}>{n.valor != null ? fmt(n.valor) : '—'}</span>
-      </div>
-      {n.descricao && <span style={{ fontSize: 11, color: 'var(--text3)' }}>{n.descricao}</span>}
+      {largo ? (
+        <div style={{ display: 'grid', gridTemplateColumns: COLUNAS_LINHA, gap: 12, alignItems: 'start' }}>
+          <div style={{ minWidth: 0 }}>
+            <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text1)' }}>{n.nome || 'Paciente sem nome'}</div>
+            <div style={{ fontSize: 11, color: n.cpf ? 'var(--text3)' : 'var(--warn)' }}>{n.cpf ? `CPF ${fmtDoc(n.cpf)}` : 'Sem CPF'}</div>
+          </div>
+          <div style={{ fontSize: 11.5, color: 'var(--text2)' }}>
+            {n.data ? fmtData(n.data) : <span style={{ color: 'var(--warn)' }}>sem data</span>}
+          </div>
+          <div style={{ fontSize: 12, color: 'var(--text2)', minWidth: 0 }}>
+            <div>{n.descricao || <span style={{ color: 'var(--warn)' }}>sem descrição</span>}</div>
+            <div style={{ fontSize: 11, color: n.endereco ? 'var(--text3)' : 'var(--warn)' }}>{n.endereco || 'sem endereço'}</div>
+          </div>
+          <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--text1)', textAlign: 'right' }}>{n.valor != null ? fmt(n.valor) : '—'}</div>
+          <div style={{ fontSize: 11.5, fontWeight: 700, color: COR[situacao] }}>{ROTULO[situacao]}</div>
+        </div>
+      ) : (
+        <>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+            <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text1)', flex: '1 1 180px' }}>{n.nome || 'Paciente sem nome'}</span>
+            {n.data && <span style={{ fontSize: 11, color: 'var(--text3)', display: 'flex', alignItems: 'center', gap: 3 }}><CalendarIcon size={10} /> {fmtData(n.data)}</span>}
+            <span style={{ fontSize: 14, fontWeight: 800, color: 'var(--text1)' }}>{n.valor != null ? fmt(n.valor) : '—'}</span>
+          </div>
+          {(n.cpf || n.endereco) && <span style={{ fontSize: 11, color: 'var(--text3)' }}>{[n.cpf && `CPF ${fmtDoc(n.cpf)}`, n.endereco].filter(Boolean).join(' · ')}</span>}
+          {n.descricao && <span style={{ fontSize: 11, color: 'var(--text3)' }}>{n.descricao}</span>}
+        </>
+      )}
 
       {situacao === 'pronta' && (
         <span style={{ fontSize: 11.5, color: 'var(--ok)', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 4 }}>

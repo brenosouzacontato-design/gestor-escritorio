@@ -7,7 +7,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { CalendarIcon, FileTextIcon, SearchIcon, SendIcon, RefreshCwIcon, AlertTriangleIcon } from 'lucide-react';
 import AcessoPainel from './AcessoPainel';
 import { numeroWhatsapp, listarNfsePendentes, completarNfse } from './nfsePainelApi';
-import LinhaNfsePendente, { valorAEmitir } from './NfsePendenteLinha';
+import LinhaNfsePendente, { valorAEmitir, COLUNAS_LINHA, fmtDoc } from './NfsePendenteLinha';
 import { listarTodasNfse, baixarNfseEmitida, linkPdfNfseEmitida } from './nfseEmitidasApi';
 
 const fmt = (v) => Number(v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
@@ -18,6 +18,28 @@ const SITUACAO = {
   substituida: { rotulo: 'Substituída', cor: 'var(--warn)' },
 };
 const semAcento = (s) => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+
+// Computador (≥ 900px): uma linha inteira por paciente, em colunas; celular: cartão empilhado
+function useLargo() {
+  const consulta = '(min-width: 900px)';
+  const [largo, setLargo] = useState(() => typeof window !== 'undefined' && window.matchMedia(consulta).matches);
+  useEffect(() => {
+    const mq = window.matchMedia(consulta);
+    const mudou = () => setLargo(mq.matches);
+    mq.addEventListener('change', mudou);
+    return () => mq.removeEventListener('change', mudou);
+  }, []);
+  return largo;
+}
+
+function Cabecalho({ colunas }) {
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: COLUNAS_LINHA, gap: 12, padding: '0 14px 4px', fontSize: 10, fontWeight: 700,
+      color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.04em' }}>
+      {colunas.map((c, i) => <span key={c} style={{ textAlign: i === 3 ? 'right' : 'left' }}>{c}</span>)}
+    </div>
+  );
+}
 
 export default function NotasEmitidasPage({ token }) {
   return (
@@ -35,6 +57,7 @@ function NotasEmitidas({ clienteId, nomeSessao }) {
   const [mes, setMes] = useState('todos');
   const [verCanceladas, setVerCanceladas] = useState(false);
   const [pendentes, setPendentes] = useState([]);
+  const largo = useLargo();
 
   useEffect(() => {
     let ativo = true;
@@ -136,7 +159,7 @@ function NotasEmitidas({ clienteId, nomeSessao }) {
           </div>
         )}
 
-        {pendentes.length > 0 && <NotasAEmitir pendentes={pendentesFiltradas} total={pendentes.length} onSalvar={completar} />}
+        {pendentes.length > 0 && <NotasAEmitir pendentes={pendentesFiltradas} total={pendentes.length} onSalvar={completar} largo={largo} />}
 
         {dados && (
           <>
@@ -167,8 +190,9 @@ function NotasEmitidas({ clienteId, nomeSessao }) {
                   <span>{competencia === 'sem' ? 'Sem competência' : `${MESES[Number(competencia.slice(0, 2)) - 1]} de ${competencia.slice(3)}`}</span>
                   <span style={{ color: 'var(--text3)', fontWeight: 600 }}>{lista.length} · {fmt(lista.filter((n) => n.situacao === 'autorizada').reduce((t, n) => t + Number(n.valor || 0), 0))}</span>
                 </h2>
-                <div style={GRADE}>
-                  {lista.map((n) => <LinhaNota key={n.id} n={n} onBaixar={baixar} onWhatsapp={enviarWhatsapp} />)}
+                {largo && <Cabecalho colunas={['Nota e paciente', 'Datas', 'Serviço', 'Valor', 'Arquivos']} />}
+                <div style={LISTA}>
+                  {lista.map((n) => <LinhaNota key={n.id} n={n} onBaixar={baixar} onWhatsapp={enviarWhatsapp} largo={largo} />)}
                 </div>
               </section>
             ))}
@@ -189,10 +213,10 @@ function NotasEmitidas({ clienteId, nomeSessao }) {
 const ORDEM = { falta: 0, invalida: 0, complementar: 1, pronta: 2, ja_emitida: 3 };
 const situacaoDe = (n) => n.situacao || (n.pronta ? 'pronta' : n.erros.length ? 'invalida' : 'falta');
 
-// Uma coluna no celular; no computador, quantas couberem (cartões de no mínimo 480px)
-const GRADE = { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 480px), 1fr))', gap: 8, alignItems: 'start' };
+// Um paciente por linha, ocupando a largura toda
+const LISTA = { display: 'flex', flexDirection: 'column', gap: 6 };
 
-function NotasAEmitir({ pendentes, total, onSalvar }) {
+function NotasAEmitir({ pendentes, total, onSalvar, largo }) {
   const conta = (...s) => pendentes.filter((n) => s.includes(situacaoDe(n))).length;
   const lista = [...pendentes].sort((a, b) => ORDEM[situacaoDe(a)] - ORDEM[situacaoDe(b)] || String(a.data || '').localeCompare(String(b.data || '')));
   const aEmitir = pendentes.reduce((t, n) => t + valorAEmitir(n), 0);
@@ -215,8 +239,9 @@ function NotasAEmitir({ pendentes, total, onSalvar }) {
         ))}
       </div>
       {pendentes.length === 0 && <div style={{ fontSize: 13, color: 'var(--text3)' }}>Nenhuma das {total} notas a emitir com esses filtros.</div>}
-      <div style={GRADE}>
-        {lista.map((n) => <LinhaNfsePendente key={n.id} n={n} onSalvar={onSalvar} />)}
+      {largo && pendentes.length > 0 && <Cabecalho colunas={['Paciente', 'Data', 'Serviço e endereço', 'Valor', 'Situação']} />}
+      <div style={LISTA}>
+        {lista.map((n) => <LinhaNfsePendente key={n.id} n={n} onSalvar={onSalvar} largo={largo} />)}
       </div>
     </section>
   );
@@ -230,7 +255,7 @@ function Aviso({ children }) {
   );
 }
 
-function LinhaNota({ n, onBaixar, onWhatsapp }) {
+function LinhaNota({ n, onBaixar, onWhatsapp, largo }) {
   const [enviando, setEnviando] = useState(false);
   const [numero, setNumero] = useState('');
   const destino = numeroWhatsapp(numero);
@@ -240,16 +265,49 @@ function LinhaNota({ n, onBaixar, onWhatsapp }) {
   return (
     <div style={{ padding: '10px 12px', background: 'var(--surface, var(--bg))', border: '1px solid var(--border)', borderLeft: `3px solid ${especial ? especial.cor : 'var(--ok)'}`,
       borderRadius: 'var(--r-md, 10px)', opacity: especial ? 0.75 : 1 }}>
+      {largo ? (
+        <div style={{ display: 'grid', gridTemplateColumns: COLUNAS_LINHA, gap: 12, alignItems: 'start' }}>
+          <div style={{ minWidth: 0 }}>
+            <div style={{ fontSize: 13, fontWeight: 700 }}>NFS-e nº {n.numero || '—'}</div>
+            <div style={{ fontSize: 12.5, color: 'var(--text1)' }}>{n.tomador || 'Tomador não informado'}</div>
+            {n.tomadorDoc && <div style={{ fontSize: 11, color: 'var(--text3)' }}>{String(n.tomadorDoc).replace(/\D/g, '').length === 14 ? 'CNPJ' : 'CPF'} {fmtDoc(n.tomadorDoc)}</div>}
+            {especial && <div style={{ fontSize: 11, color: especial.cor, fontWeight: 700 }}>{especial.rotulo}</div>}
+          </div>
+          <div style={{ fontSize: 11.5, color: 'var(--text2)', lineHeight: 1.5 }}>
+            {n.emitidaEm && <div>Emitida em {fmtData(n.emitidaEm)}</div>}
+            {n.competencia && <div style={{ color: 'var(--text3)' }}>Competência {n.competencia}</div>}
+          </div>
+          <div style={{ fontSize: 12, color: 'var(--text2)', minWidth: 0, overflowWrap: 'anywhere' }}>{n.descricao || '—'}</div>
+          <div style={{ textAlign: 'right' }}>
+            <div style={{ fontSize: 14, fontWeight: 800, textDecoration: especial ? 'line-through' : 'none' }}>{n.valor != null ? fmt(n.valor) : '—'}</div>
+            {n.valorLiquido != null && Number(n.valorLiquido) !== Number(n.valor) && <div style={{ fontSize: 10.5, color: 'var(--text3)' }}>líquido {fmt(n.valorLiquido)}</div>}
+          </div>
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+            <button type="button" onClick={() => onBaixar(n, 'pdf')} style={{ ...botao, color: 'var(--accent)', background: 'var(--accent-dim)', border: 'none' }}>
+              <FileTextIcon size={11} /> PDF
+            </button>
+            <button type="button" onClick={() => onBaixar(n, 'xml')} style={{ ...botao, color: 'var(--accent)', background: 'var(--accent-dim)', border: 'none' }}>XML</button>
+            {!especial && (
+              <button type="button" onClick={() => setEnviando((v) => !v)} title="Enviar o PDF pelo WhatsApp"
+                style={{ ...botao, color: '#fff', background: '#25D366', border: 'none' }}>
+                <SendIcon size={11} /> WhatsApp
+              </button>
+            )}
+          </div>
+        </div>
+      ) : (
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
         <div style={{ flex: '1 1 220px', minWidth: 0 }}>
-          <div style={{ fontSize: 13, fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          <div style={{ fontSize: 13, fontWeight: 700 }}>
             NFS-e nº {n.numero || '—'}{n.tomador ? ` — ${n.tomador}` : ''}
           </div>
           <div style={{ fontSize: 11, color: 'var(--text3)', display: 'flex', gap: 10, flexWrap: 'wrap', marginTop: 2 }}>
             {n.emitidaEm && <span style={{ display: 'flex', alignItems: 'center', gap: 3 }}><CalendarIcon size={10} /> Emitida em {fmtData(n.emitidaEm)}</span>}
-            {n.descricao && <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 260 }}>{n.descricao}</span>}
+            {n.competencia && <span>Competência {n.competencia}</span>}
+            {n.tomadorDoc && <span>{String(n.tomadorDoc).replace(/\D/g, '').length === 14 ? 'CNPJ' : 'CPF'} {fmtDoc(n.tomadorDoc)}</span>}
             {especial && <span style={{ color: especial.cor, fontWeight: 700 }}>{especial.rotulo}</span>}
           </div>
+          {n.descricao && <div style={{ fontSize: 11.5, color: 'var(--text2)', marginTop: 2, overflowWrap: 'anywhere' }}>{n.descricao}</div>}
         </div>
         <span style={{ fontSize: 14, fontWeight: 800, whiteSpace: 'nowrap', textDecoration: especial ? 'line-through' : 'none' }}>{n.valor != null ? fmt(n.valor) : '—'}</span>
         <div style={{ display: 'flex', gap: 6 }}>
@@ -265,6 +323,7 @@ function LinhaNota({ n, onBaixar, onWhatsapp }) {
           )}
         </div>
       </div>
+      )}
       {enviando && (
         <form onSubmit={(e) => { e.preventDefault(); enviar(); }} style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap', marginTop: 8 }}>
           <input autoFocus type="tel" inputMode="tel" placeholder="WhatsApp do paciente, ex: (31) 99999-9999" value={numero}
