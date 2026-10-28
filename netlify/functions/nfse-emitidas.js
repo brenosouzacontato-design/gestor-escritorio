@@ -2,7 +2,7 @@
 //
 // Todas as NFS-e emitidas por uma empresa (inclusive fora do gestor), lidas do Ambiente de Dados
 // Nacional (lib/nfse/adn.js), para o link "todas as notas" do cliente: ?notas=<token do painel>.
-//   POST { acao: 'listar', atualizar? }  → { empresa, notas, sincronizadoEm, erro }
+//   POST { acao: 'listar', atualizar? }  → { empresa, notas, sincronizadoEm, erro } (nota com tomadorDoc: CPF/CNPJ)
 //        Antes de listar, busca as notas novas no ADN se a última leitura tiver mais de
 //        ATUALIZAR_MIN minutos (ou se o escritório pedir `atualizar`).
 //   POST { acao: 'pdf', nota_id }  → DANFSe (lib/nfse/danfse) com QR Code da consulta pública;
@@ -102,7 +102,7 @@ async function listar(acesso, atualizar) {
   const erro = await atualizarSePreciso(acesso, atualizar && acesso.escritorio)
   const [{ data: notas, error }, { data: controle }, { data: cliente }] = await Promise.all([
     db().from('nfse_adn_notas')
-      .select('id, numero_nfse, chave_acesso, competencia, emitida_em, tomador_nome, valor, valor_liquido, descricao, situacao')
+      .select('id, numero_nfse, chave_acesso, competencia, emitida_em, tomador_nome, tomador_doc, valor, valor_liquido, descricao, situacao')
       .eq('cliente_id', acesso.clienteId).eq('ambiente', 'producao')
       .order('emitida_em', { ascending: false }).limit(5000),
     db().from('nfse_adn_controle').select('sincronizado_em').eq('cliente_id', acesso.clienteId).maybeSingle(),
@@ -120,6 +120,7 @@ async function listar(acesso, atualizar) {
       competencia: n.competencia ? `${n.competencia.slice(5, 7)}/${n.competencia.slice(0, 4)}` : null,
       emitidaEm: n.emitida_em,
       tomador: n.tomador_nome,
+      tomadorDoc: n.tomador_doc,
       valor: n.valor,
       valorLiquido: n.valor_liquido,
       descricao: n.descricao,
