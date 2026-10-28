@@ -7,9 +7,11 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "test:nfse": "node --test \"netlify/functions/lib/nfse/__tests__/*.test.cjs\""
+    "test:nfse": "node --test \"netlify/functions/lib/nfse/__tests__/*.test.cjs\"",
+    "test:assessor": "node --test \"src/lib/assessor/__tests__/*.test.mjs\" \"netlify/functions/lib/__tests__/*.test.cjs\""
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^1.3.0",
     "@cantoo/pdf-lib": "^2.7.4",
     "@supabase/supabase-js": "^2.45.0",
     "date-fns": "^3.6.0",
