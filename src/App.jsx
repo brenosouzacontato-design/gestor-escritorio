@@ -1,5 +1,5 @@
 import { useState, useEffect, Fragment } from 'react'
-import { LayoutDashboardIcon, CheckSquareIcon, UsersIcon, RefreshCwIcon, SettingsIcon, PlusIcon, TargetIcon, BuildingIcon, AppWindowIcon, CalculatorIcon, ChevronsLeftIcon, ChevronsRightIcon, SunIcon, MoonIcon, PaperclipIcon, BellIcon, BanknoteIcon, CircleDollarSignIcon, MonitorIcon, ReceiptIcon, LogOutIcon, FileSignatureIcon } from 'lucide-react'
+import { LayoutDashboardIcon, CheckSquareIcon, UsersIcon, RefreshCwIcon, SettingsIcon, PlusIcon, TargetIcon, BuildingIcon, AppWindowIcon, CalculatorIcon, ChevronsLeftIcon, ChevronsRightIcon, SunIcon, MoonIcon, PaperclipIcon, BellIcon, BanknoteIcon, CircleDollarSignIcon, MonitorIcon, ReceiptIcon, LogOutIcon, FileSignatureIcon, SparklesIcon } from 'lucide-react'
 import { useStore } from './store'
 import { ToastContainer } from './components/shared'
 import { sair } from './components/ComLogin'
@@ -22,9 +22,11 @@ import HonorariosPage from './pages/honorarios/HonorariosPage'
 import PaineisPage from './pages/painel/PaineisPage'
 import NotasFiscaisPage from './pages/notasfiscais/NotasFiscaisPage'
 import NfseEmissaoPage from './pages/nfse/NfseEmissaoPage'
+import AssessorPage from './pages/assessor/AssessorPage'
 
 const NAV = [
   { id: 'overview',   label: 'Painel',      Icon: LayoutDashboardIcon },
+  { id: 'assessor',   label: 'Assessor',    Icon: SparklesIcon },
   { id: 'empresas',   label: 'Empresas',    Icon: BuildingIcon },
   { id: 'paineis',    label: 'Painéis',     Icon: MonitorIcon },
   { id: 'documentos', label: 'Documentos',  Icon: PaperclipIcon },
@@ -182,6 +184,7 @@ export default function App() {
             {page === 'contabil'   && <ContabilPage />}
             {page === 'notasfiscais' && <NotasFiscaisPage />}
             {page === 'nfse' && <NfseEmissaoPage />}
+            {page === 'assessor'   && <AssessorPage onNavigate={navigate} />}
             {page === 'central'    && <Central />}
           </Fragment>
         )}
