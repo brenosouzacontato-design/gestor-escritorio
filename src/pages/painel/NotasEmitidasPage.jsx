@@ -7,7 +7,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { CalendarIcon, FileTextIcon, SearchIcon, SendIcon, RefreshCwIcon, AlertTriangleIcon } from 'lucide-react';
 import AcessoPainel from './AcessoPainel';
 import { numeroWhatsapp, listarNfsePendentes, completarNfse } from './nfsePainelApi';
-import LinhaNfsePendente, { valorAEmitir, COLUNAS_LINHA, fmtDoc } from './NfsePendenteLinha';
+import LinhaNfsePendente, { valorAEmitir, COLUNAS_LINHA, fmtDoc, Pilula } from './NfsePendenteLinha';
 import { listarTodasNfse, baixarNfseEmitida, linkPdfNfseEmitida } from './nfseEmitidasApi';
 
 const fmt = (v) => Number(v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
@@ -32,10 +32,19 @@ function useLargo() {
   return largo;
 }
 
+// Tabela no estilo do Microsoft Lists: um bloco com cabeçalho, linhas separadas por um fio e
+// destaque ao passar o mouse
+const ESTILO_TABELA = `
+.lista-tabela { border: 1px solid var(--border); border-radius: var(--r-md, 10px); overflow: hidden; background: var(--surface, var(--bg)); }
+.lista-tabela > * + * { border-top: 1px solid var(--border); }
+.lista-tabela .linha-lista { transition: background .12s; }
+.lista-tabela .linha-lista:hover { background: color-mix(in srgb, var(--text1) 4%, transparent); }
+`;
+
 function Cabecalho({ colunas }) {
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: COLUNAS_LINHA, gap: 12, padding: '0 14px 4px', fontSize: 10, fontWeight: 700,
-      color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.04em' }}>
+    <div style={{ display: 'grid', gridTemplateColumns: COLUNAS_LINHA, gap: 12, padding: '8px 14px', fontSize: 10, fontWeight: 700,
+      color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.04em', background: 'color-mix(in srgb, var(--text1) 3%, transparent)' }}>
       {colunas.map((c, i) => <span key={c} style={{ textAlign: i === 3 ? 'right' : 'left' }}>{c}</span>)}
     </div>
   );
@@ -94,7 +103,11 @@ function NotasEmitidas({ clienteId, nomeSessao }) {
     });
   }, [notas, busca, ano, mes, verCanceladas]);
   const canceladas = notas.filter((n) => n.situacao !== 'autorizada').length;
-  const total = filtradas.filter((n) => n.situacao === 'autorizada').reduce((t, n) => t + Number(n.valor || 0), 0);
+  const autorizadas = filtradas.filter((n) => n.situacao === 'autorizada');
+  const total = autorizadas.reduce((t, n) => t + Number(n.valor || 0), 0);
+  const aEmitir = pendentesFiltradas.filter((n) => valorAEmitir(n) > 0);
+  const totalAEmitir = aEmitir.reduce((t, n) => t + valorAEmitir(n), 0);
+  const faltaInfo = aEmitir.filter((n) => ['falta', 'invalida'].includes(situacaoDe(n))).length;
 
   // agrupa por competência (mais recente primeiro)
   const grupos = useMemo(() => {
@@ -129,6 +142,7 @@ function NotasEmitidas({ clienteId, nomeSessao }) {
 
   return (
     <div style={{ minHeight: '100vh', background: 'var(--bg)', color: 'var(--text1)' }}>
+      <style>{ESTILO_TABELA}</style>
       <div style={{ maxWidth: 1240, margin: '0 auto', padding: '20px 16px 48px' }}>
         <div style={{ fontSize: 11, color: 'var(--text3)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.04em' }}>Notas fiscais de serviço emitidas</div>
         <h1 style={{ fontSize: 22, fontWeight: 800, margin: '4px 0 2px' }}>{dados?.empresa || nomeSessao || 'Empresa'}</h1>
@@ -159,20 +173,25 @@ function NotasEmitidas({ clienteId, nomeSessao }) {
           </div>
         )}
 
+        {(dados || pendentes.length > 0) && (
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(230px, 1fr))', gap: 10, marginTop: 14 }}>
+            <CardValor titulo="Notas emitidas" valor={dados ? fmt(total) : '…'} cor="var(--ok)"
+              detalhe={dados ? `${autorizadas.length} nota${autorizadas.length !== 1 ? 's' : ''}` : 'Buscando…'} />
+            <CardValor titulo="Valor a emitir" valor={fmt(totalAEmitir)} cor="var(--warn)"
+              detalhe={`${aEmitir.length} nota${aEmitir.length !== 1 ? 's' : ''}${faltaInfo ? ` · ${faltaInfo} com informação faltando` : ''}`} />
+          </div>
+        )}
+
         {pendentes.length > 0 && <NotasAEmitir pendentes={pendentesFiltradas} total={pendentes.length} onSalvar={completar} largo={largo} />}
 
         {dados && (
           <>
-            <h2 style={{ fontSize: 15, fontWeight: 800, margin: '28px 0 10px' }}>Notas emitidas</h2>
-
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', padding: '12px 14px', background: 'var(--surface, var(--bg))',
-              border: '1px solid var(--border)', borderRadius: 'var(--r-md, 10px)' }}>
-              <div style={{ flex: 1 }}>
-                <div style={{ fontSize: 10, color: 'var(--text3)', fontWeight: 600, textTransform: 'uppercase' }}>
-                  {filtradas.length} nota{filtradas.length !== 1 ? 's' : ''}{filtradas.length !== notas.length ? ` de ${notas.length}` : ''}
-                </div>
-                <div style={{ fontSize: 20, fontWeight: 800 }}>{fmt(total)}</div>
-              </div>
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: 12, flexWrap: 'wrap', margin: '28px 0 10px' }}>
+              <h2 style={{ fontSize: 15, fontWeight: 800, margin: 0, flex: 1 }}>
+                Notas emitidas <span style={{ fontSize: 12, color: 'var(--text3)', fontWeight: 600 }}>
+                  {filtradas.length}{filtradas.length !== notas.length ? ` de ${notas.length}` : ''}
+                </span>
+              </h2>
               {canceladas > 0 && (
                 <label style={{ fontSize: 12, color: 'var(--text2)', display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
                   <input type="checkbox" checked={verCanceladas} onChange={(e) => setVerCanceladas(e.target.checked)} />
@@ -181,21 +200,22 @@ function NotasEmitidas({ clienteId, nomeSessao }) {
               )}
             </div>
 
-            {notas.length === 0 && <div style={{ marginTop: 24, fontSize: 13, color: 'var(--text3)' }}>Nenhuma nota emitida encontrada no Sistema Nacional.</div>}
-            {notas.length > 0 && filtradas.length === 0 && <div style={{ marginTop: 24, fontSize: 13, color: 'var(--text3)' }}>Nenhuma nota com esses filtros.</div>}
+            {notas.length === 0 && <div style={{ fontSize: 13, color: 'var(--text3)' }}>Nenhuma nota emitida encontrada no Sistema Nacional.</div>}
+            {notas.length > 0 && filtradas.length === 0 && <div style={{ fontSize: 13, color: 'var(--text3)' }}>Nenhuma nota com esses filtros.</div>}
 
-            {grupos.map(([competencia, lista]) => (
-              <section key={competencia} style={{ marginTop: 20 }}>
-                <h2 style={{ fontSize: 12, fontWeight: 700, color: 'var(--text2)', margin: '0 0 8px', display: 'flex', justifyContent: 'space-between' }}>
-                  <span>{competencia === 'sem' ? 'Sem competência' : `${MESES[Number(competencia.slice(0, 2)) - 1]} de ${competencia.slice(3)}`}</span>
-                  <span style={{ color: 'var(--text3)', fontWeight: 600 }}>{lista.length} · {fmt(lista.filter((n) => n.situacao === 'autorizada').reduce((t, n) => t + Number(n.valor || 0), 0))}</span>
-                </h2>
+            {filtradas.length > 0 && (
+              <div className="lista-tabela">
                 {largo && <Cabecalho colunas={['Nota e paciente', 'Datas', 'Serviço', 'Valor', 'Arquivos']} />}
-                <div style={LISTA}>
-                  {lista.map((n) => <LinhaNota key={n.id} n={n} onBaixar={baixar} onWhatsapp={enviarWhatsapp} largo={largo} />)}
-                </div>
-              </section>
-            ))}
+                {grupos.map(([competencia, lista]) => [
+                  <div key={`g-${competencia}`} style={{ display: 'flex', justifyContent: 'space-between', gap: 10, padding: '7px 14px', fontSize: 12, fontWeight: 700,
+                    color: 'var(--text2)', background: 'color-mix(in srgb, var(--accent) 6%, transparent)' }}>
+                    <span>{competencia === 'sem' ? 'Sem competência' : `${MESES[Number(competencia.slice(0, 2)) - 1]} de ${competencia.slice(3)}`}</span>
+                    <span style={{ color: 'var(--text3)', fontWeight: 600 }}>{lista.length} · {fmt(lista.filter((n) => n.situacao === 'autorizada').reduce((t, n) => t + Number(n.valor || 0), 0))}</span>
+                  </div>,
+                  ...lista.map((n) => <LinhaNota key={n.id} n={n} onBaixar={baixar} onWhatsapp={enviarWhatsapp} largo={largo} />),
+                ])}
+              </div>
+            )}
 
             <p style={{ fontSize: 11, color: 'var(--text3)', marginTop: 28, lineHeight: 1.5 }}>
               O PDF é o DANFSe (documento auxiliar). A validade pode ser conferida pelo QR Code do PDF ou pela chave de acesso no portal nacional
@@ -213,13 +233,20 @@ function NotasEmitidas({ clienteId, nomeSessao }) {
 const ORDEM = { falta: 0, invalida: 0, complementar: 1, pronta: 2, ja_emitida: 3 };
 const situacaoDe = (n) => n.situacao || (n.pronta ? 'pronta' : n.erros.length ? 'invalida' : 'falta');
 
-// Um paciente por linha, ocupando a largura toda
-const LISTA = { display: 'flex', flexDirection: 'column', gap: 6 };
+function CardValor({ titulo, valor, detalhe, cor }) {
+  return (
+    <div style={{ padding: '12px 16px', background: 'var(--surface, var(--bg))', border: '1px solid var(--border)', borderRadius: 'var(--r-md, 10px)',
+      borderTop: `3px solid ${cor}` }}>
+      <div style={{ fontSize: 11, color: 'var(--text3)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.04em' }}>{titulo}</div>
+      <div style={{ fontSize: 24, fontWeight: 800, margin: '2px 0', fontVariantNumeric: 'tabular-nums' }}>{valor}</div>
+      <div style={{ fontSize: 12, color: 'var(--text3)' }}>{detalhe}</div>
+    </div>
+  );
+}
 
 function NotasAEmitir({ pendentes, total, onSalvar, largo }) {
   const conta = (...s) => pendentes.filter((n) => s.includes(situacaoDe(n))).length;
   const lista = [...pendentes].sort((a, b) => ORDEM[situacaoDe(a)] - ORDEM[situacaoDe(b)] || String(a.data || '').localeCompare(String(b.data || '')));
-  const aEmitir = pendentes.reduce((t, n) => t + valorAEmitir(n), 0);
   const resumo = [
     [conta('falta', 'invalida'), ['precisa de informação', 'precisam de informação'], 'var(--warn)'],
     [conta('complementar'), ['possível complementar', 'possíveis complementares'], 'var(--info)'],
@@ -230,7 +257,7 @@ function NotasAEmitir({ pendentes, total, onSalvar, largo }) {
     <section style={{ marginTop: 20 }}>
       <h2 style={{ fontSize: 15, fontWeight: 800, margin: '0 0 4px' }}>Notas a emitir</h2>
       <div style={{ fontSize: 12, color: 'var(--text3)', marginBottom: 10 }}>
-        Atendimentos enviados ao escritório que ainda não viraram nota{aEmitir > 0 ? ` · ${fmt(aEmitir)} a emitir` : ''}.
+        Atendimentos enviados ao escritório que ainda não viraram nota.
         Complete o que falta aqui mesmo; o escritório emite assim que estiver tudo certo.
       </div>
       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 10 }}>
@@ -239,10 +266,12 @@ function NotasAEmitir({ pendentes, total, onSalvar, largo }) {
         ))}
       </div>
       {pendentes.length === 0 && <div style={{ fontSize: 13, color: 'var(--text3)' }}>Nenhuma das {total} notas a emitir com esses filtros.</div>}
-      {largo && pendentes.length > 0 && <Cabecalho colunas={['Paciente', 'Data', 'Serviço e endereço', 'Valor', 'Situação']} />}
-      <div style={LISTA}>
-        {lista.map((n) => <LinhaNfsePendente key={n.id} n={n} onSalvar={onSalvar} largo={largo} />)}
-      </div>
+      {pendentes.length > 0 && (
+        <div className="lista-tabela">
+          {largo && <Cabecalho colunas={['Paciente', 'Data', 'Serviço e endereço', 'Valor', 'Situação']} />}
+          {lista.map((n) => <LinhaNfsePendente key={n.id} n={n} onSalvar={onSalvar} largo={largo} emTabela />)}
+        </div>
+      )}
     </section>
   );
 }
@@ -263,15 +292,14 @@ function LinhaNota({ n, onBaixar, onWhatsapp, largo }) {
   const botao = { display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11, fontWeight: 700, borderRadius: 99, padding: '5px 10px', cursor: 'pointer', whiteSpace: 'nowrap', fontFamily: 'inherit' };
   const enviar = () => { if (destino) { onWhatsapp(n, destino); setEnviando(false); setNumero(''); } };
   return (
-    <div style={{ padding: '10px 12px', background: 'var(--surface, var(--bg))', border: '1px solid var(--border)', borderLeft: `3px solid ${especial ? especial.cor : 'var(--ok)'}`,
-      borderRadius: 'var(--r-md, 10px)', opacity: especial ? 0.75 : 1 }}>
+    <div className="linha-lista" style={{ padding: '10px 14px', opacity: especial ? 0.7 : 1 }}>
       {largo ? (
         <div style={{ display: 'grid', gridTemplateColumns: COLUNAS_LINHA, gap: 12, alignItems: 'start' }}>
           <div style={{ minWidth: 0 }}>
             <div style={{ fontSize: 13, fontWeight: 700 }}>NFS-e nº {n.numero || '—'}</div>
             <div style={{ fontSize: 12.5, color: 'var(--text1)' }}>{n.tomador || 'Tomador não informado'}</div>
             {n.tomadorDoc && <div style={{ fontSize: 11, color: 'var(--text3)' }}>{String(n.tomadorDoc).replace(/\D/g, '').length === 14 ? 'CNPJ' : 'CPF'} {fmtDoc(n.tomadorDoc)}</div>}
-            {especial && <div style={{ fontSize: 11, color: especial.cor, fontWeight: 700 }}>{especial.rotulo}</div>}
+            {especial && <div style={{ marginTop: 3 }}><Pilula cor={especial.cor}>{especial.rotulo}</Pilula></div>}
           </div>
           <div style={{ fontSize: 11.5, color: 'var(--text2)', lineHeight: 1.5 }}>
             {n.emitidaEm && <div>Emitida em {fmtData(n.emitidaEm)}</div>}
@@ -305,7 +333,7 @@ function LinhaNota({ n, onBaixar, onWhatsapp, largo }) {
             {n.emitidaEm && <span style={{ display: 'flex', alignItems: 'center', gap: 3 }}><CalendarIcon size={10} /> Emitida em {fmtData(n.emitidaEm)}</span>}
             {n.competencia && <span>Competência {n.competencia}</span>}
             {n.tomadorDoc && <span>{String(n.tomadorDoc).replace(/\D/g, '').length === 14 ? 'CNPJ' : 'CPF'} {fmtDoc(n.tomadorDoc)}</span>}
-            {especial && <span style={{ color: especial.cor, fontWeight: 700 }}>{especial.rotulo}</span>}
+            {especial && <Pilula cor={especial.cor}>{especial.rotulo}</Pilula>}
           </div>
           {n.descricao && <div style={{ fontSize: 11.5, color: 'var(--text2)', marginTop: 2, overflowWrap: 'anywhere' }}>{n.descricao}</div>}
         </div>

@@ -33,8 +33,17 @@ export function valorAEmitir(n) {
   return Number(n.valor || 0);
 }
 
-// largo: uma linha inteira por paciente, em colunas (computador); sem ele, cartão empilhado (celular)
-export default function NfsePendenteLinha({ n, onSalvar, largo = false }) {
+// Etiqueta colorida da situação (como as colunas de escolha do Microsoft Lists)
+export function Pilula({ cor, children }) {
+  return (
+    <span style={{ display: 'inline-block', fontSize: 11, fontWeight: 700, color: cor, padding: '2px 9px', borderRadius: 99, whiteSpace: 'nowrap',
+      background: `color-mix(in srgb, ${cor} 14%, transparent)` }}>{children}</span>
+  );
+}
+
+// largo: uma linha inteira por paciente, em colunas (computador); sem ele, cartão empilhado (celular).
+// emTabela: a linha fica dentro de uma tabela (link "todas as notas"), sem borda própria de cartão.
+export default function NfsePendenteLinha({ n, onSalvar, largo = false, emTabela = false }) {
   const situacao = situacaoDa(n);
   const falta = (rotulo) => n.pendencias.includes(rotulo);
   const [valores, setValores] = useState({ cpf: n.cpf || '', nome: n.nome || '', data: '', descricao: n.descricao || '', endereco: n.endereco || '' });
@@ -66,8 +75,10 @@ export default function NfsePendenteLinha({ n, onSalvar, largo = false }) {
   const mensagem = (prefixo) => n.erros.find((e) => e.startsWith(prefixo)) || '';
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 6, padding: '10px 12px', background: 'var(--bg)', border: '1px solid var(--border)',
-      borderLeft: `3px solid ${COR[situacao]}`, borderRadius: 'var(--r-md, 10px)', opacity: situacao === 'ja_emitida' ? 0.75 : 1 }}>
+    <div className={emTabela ? 'linha-lista' : undefined} style={emTabela
+      ? { display: 'flex', flexDirection: 'column', gap: 6, padding: '10px 14px', opacity: situacao === 'ja_emitida' ? 0.7 : 1 }
+      : { display: 'flex', flexDirection: 'column', gap: 6, padding: '10px 12px', background: 'var(--bg)', border: '1px solid var(--border)',
+        borderLeft: `3px solid ${COR[situacao]}`, borderRadius: 'var(--r-md, 10px)', opacity: situacao === 'ja_emitida' ? 0.75 : 1 }}>
       {largo ? (
         <div style={{ display: 'grid', gridTemplateColumns: COLUNAS_LINHA, gap: 12, alignItems: 'start' }}>
           <div style={{ minWidth: 0 }}>
@@ -82,12 +93,14 @@ export default function NfsePendenteLinha({ n, onSalvar, largo = false }) {
             <div style={{ fontSize: 11, color: n.endereco ? 'var(--text3)' : 'var(--warn)' }}>{n.endereco || 'sem endereço'}</div>
           </div>
           <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--text1)', textAlign: 'right' }}>{n.valor != null ? fmt(n.valor) : '—'}</div>
-          <div style={{ fontSize: 11.5, fontWeight: 700, color: COR[situacao] }}>{ROTULO[situacao]}</div>
+          <div>{emTabela ? <Pilula cor={COR[situacao]}>{ROTULO[situacao]}</Pilula>
+            : <span style={{ fontSize: 11.5, fontWeight: 700, color: COR[situacao] }}>{ROTULO[situacao]}</span>}</div>
         </div>
       ) : (
         <>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
             <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text1)', flex: '1 1 180px' }}>{n.nome || 'Paciente sem nome'}</span>
+            {emTabela && <Pilula cor={COR[situacao]}>{ROTULO[situacao]}</Pilula>}
             {n.data && <span style={{ fontSize: 11, color: 'var(--text3)', display: 'flex', alignItems: 'center', gap: 3 }}><CalendarIcon size={10} /> {fmtData(n.data)}</span>}
             <span style={{ fontSize: 14, fontWeight: 800, color: 'var(--text1)' }}>{n.valor != null ? fmt(n.valor) : '—'}</span>
           </div>
