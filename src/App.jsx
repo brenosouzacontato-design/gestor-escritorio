@@ -1,5 +1,5 @@
 import { useState, useEffect, Fragment } from 'react'
-import { LayoutDashboardIcon, CheckSquareIcon, UsersIcon, RefreshCwIcon, SettingsIcon, PlusIcon, TargetIcon, BuildingIcon, AppWindowIcon, CalculatorIcon, ChevronsLeftIcon, ChevronsRightIcon, SunIcon, MoonIcon, PaperclipIcon, BellIcon, BanknoteIcon, CircleDollarSignIcon, MonitorIcon, ReceiptIcon, LogOutIcon, FileSignatureIcon, SparklesIcon } from 'lucide-react'
+import { LayoutDashboardIcon, CheckSquareIcon, UsersIcon, RefreshCwIcon, SettingsIcon, PlusIcon, TargetIcon, BuildingIcon, AppWindowIcon, CalculatorIcon, ChevronsLeftIcon, ChevronsRightIcon, SunIcon, MoonIcon, PaperclipIcon, BellIcon, BanknoteIcon, CircleDollarSignIcon, MonitorIcon, ReceiptIcon, LogOutIcon, FileSignatureIcon, SparklesIcon, CalendarDaysIcon } from 'lucide-react'
 import { useStore } from './store'
 import { ToastContainer } from './components/shared'
 import { sair } from './components/ComLogin'
@@ -23,6 +23,7 @@ import PaineisPage from './pages/painel/PaineisPage'
 import NotasFiscaisPage from './pages/notasfiscais/NotasFiscaisPage'
 import NfseEmissaoPage from './pages/nfse/NfseEmissaoPage'
 import AssessorPage from './pages/assessor/AssessorPage'
+import AgendaPage from './pages/agenda/AgendaPage'
 
 const NAV = [
   { id: 'overview',   label: 'Painel',      Icon: LayoutDashboardIcon },
@@ -34,6 +35,7 @@ const NAV = [
   { id: 'notificacoes', label: 'Notificações', Icon: BellIcon },
   { id: 'honorarios', label: 'Honorários',  Icon: BanknoteIcon },
   { id: 'tarefas',    label: 'Tarefas',     Icon: CheckSquareIcon },
+  { id: 'agenda',     label: 'Agenda',      Icon: CalendarDaysIcon },
   { id: 'clientes',   label: 'Clientes',    Icon: UsersIcon },
   { id: 'prospectos', label: 'Prospectos',  Icon: TargetIcon },
   { id: 'erp',        label: 'ERP',         Icon: RefreshCwIcon },
@@ -185,6 +187,7 @@ export default function App() {
             {page === 'notasfiscais' && <NotasFiscaisPage />}
             {page === 'nfse' && <NfseEmissaoPage />}
             {page === 'assessor'   && <AssessorPage onNavigate={navigate} />}
+            {page === 'agenda'     && <AgendaPage />}
             {page === 'central'    && <Central />}
           </Fragment>
         )}

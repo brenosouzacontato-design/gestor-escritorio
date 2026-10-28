@@ -51,5 +51,32 @@ exports.handler = async () => {
     await supabase.from('lembretes').update({ enviado: true, enviado_em: new Date().toISOString() }).eq('id', l.id)
   }
 
-  return { statusCode: 200, body: JSON.stringify({ enviados: (lembretes || []).length }) }
+  const reunioes = await avisarReunioes()
+
+  return { statusCode: 200, body: JSON.stringify({ enviados: (lembretes || []).length, reunioes }) }
+}
+
+// Reuniões da Agenda (tabela agenda_eventos, supabase-schema-agenda.sql)
+// com lembrete_em vencido. Sem a tabela ainda criada, só registra e segue.
+async function avisarReunioes() {
+  const { data: eventos, error } = await supabase
+    .from('agenda_eventos')
+    .select('id, titulo, data, hora, local, clientes(nome)')
+    .eq('lembrete_enviado', false)
+    .eq('cancelado', false)
+    .lte('lembrete_em', new Date().toISOString())
+  if (error) {
+    console.error('Agenda indisponível:', error.message)
+    return 0
+  }
+  for (const ev of eventos || []) {
+    const [a, m, d] = ev.data.split('-')
+    const quando = ev.hora ? `${d}/${m}/${a} às ${ev.hora.slice(0, 5)}` : `${d}/${m}/${a}`
+    const texto = `📅 *Reunião*\n${ev.titulo}\n🕒 ${quando}` +
+      (ev.local ? `\n📍 ${ev.local}` : '') +
+      (ev.clientes?.nome ? `\n👤 ${ev.clientes.nome}` : '')
+    await enviarMensagem(GRUPO_ID, texto)
+    await supabase.from('agenda_eventos').update({ lembrete_enviado: true }).eq('id', ev.id)
+  }
+  return (eventos || []).length
 }

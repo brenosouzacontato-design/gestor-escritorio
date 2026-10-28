@@ -5,6 +5,10 @@ const { enviarMensagem } = require('./lib/whatsapp')
 const { identificarDocumento } = require('./lib/identificarDocumento')
 const { listarCandidatosDocumento } = require('./lib/candidatosDocumento')
 const { analisarComprovante, registrarComprovante } = require('./lib/comprovantePagamento')
+const {
+  ROTULO, detectarComando, hojeSP, somarDias, calcularVencimento, promptExtracao,
+  parseJSONResposta, normalizarExtracao, lembreteReuniao, pendencias, confirmacao,
+} = require('./lib/comandosWhatsapp')
 
 const supabase = createClient(
   process.env.SUPABASE_URL,
@@ -29,7 +33,7 @@ const EXTENSAO_POR_MIME = { 'application/pdf': 'pdf', 'image/jpeg': 'jpg', 'imag
 // O Netlify roda essa function síncrona atrás de um API Gateway que mata a
 // conexão com "Inactivity Timeout" (504) depois de ~29s sem resposta — um
 // teto fixo, não dá pra configurar/aumentar. Descoberto na prática: quando
-// a chamada à Anthropic (extrairTarefa) ou o envio da confirmação de volta
+// a chamada à Anthropic (extrairComIA) ou o envio da confirmação de volta
 // pro WhatsApp (enviarMensagem, em lib/whatsapp.js) demoravam mais que
 // isso, a function inteira era matada ANTES de gravar a tarefa no banco —
 // a tarefa se perdia de vez, sem erro nem confirmação no grupo, sem
@@ -48,9 +52,11 @@ async function fetchComTimeout(url, opcoes, timeoutMs) {
   }
 }
 
-async function extrairTarefa(mensagem, clientes) {
-  const listaNomes = clientes.map(c => `${c.nome} (id: ${c.id})`).join('\n')
-
+// Pede à IA os campos da categoria (ver promptExtracao em
+// lib/comandosWhatsapp.js). Falhou ou estourou o tempo → null, e
+// normalizarExtracao completa com o que dá para ler do texto: o item é
+// criado de qualquer forma, só sem a arrumação que a IA faria.
+async function extrairComIA(prompt) {
   const response = await fetchComTimeout('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: {
@@ -61,56 +67,13 @@ async function extrairTarefa(mensagem, clientes) {
     body: JSON.stringify({
       model: 'claude-haiku-4-5-20251001',
       max_tokens: 500,
-      messages: [{
-        role: 'user',
-        content: `Você é um assistente de escritório contábil brasileiro. Extraia informações de tarefas de mensagens de WhatsApp.
-
-Clientes cadastrados:
-${listaNomes}
-
-Mensagem: "${mensagem}"
-
-Responda APENAS com JSON válido sem markdown:
-{
-  "titulo": "título curto e claro da tarefa",
-  "cliente_id": "id exato do cliente da lista ou null se não identificado",
-  "prazo": "data YYYY-MM-DD ou null",
-  "departamento": "fiscal" ou "folha" ou "societario" ou "contabil",
-  "prioridade": "normal" ou "alta"
-}
-
-Regras:
-- titulo deve ser conciso mas descritivo
-- Se mencionar urgente/urgência, prioridade = alta
-- Se não identificar cliente, cliente_id = null (não invente)
-- departamento: PGDAS/DAS/NFSe/fiscal = fiscal, folha/holerite/eSocial = folha, contrato/abertura/alteração = societario, restante = contabil`
-      }]
+      messages: [{ role: 'user', content: prompt }]
     })
   }, 12000)
 
   if (!response.ok) throw new Error(`Anthropic respondeu ${response.status}: ${await response.text()}`)
   const data = await response.json()
-  const texto = data.content[0].text.trim()
-  try {
-    return JSON.parse(texto)
-  } catch {
-    return JSON.parse(texto.replace(/```json|```/g, '').trim())
-  }
-}
-
-// Fallback pra quando extrairTarefa falha ou estoura o timeout (Anthropic
-// fora do ar/lenta) -- garante que a tarefa é criada de qualquer forma,
-// só sem a formatação/classificação que a IA faria. Fica pendente de
-// revisão manual (cliente_id null, departamento genérico) em vez de
-// sumir sem deixar rastro.
-function tarefaFallback(textoTarefa) {
-  return {
-    titulo: textoTarefa.substring(0, 100),
-    cliente_id: null,
-    prazo: null,
-    departamento: 'contabil',
-    prioridade: 'normal',
-  }
+  return parseJSONResposta(data.content[0].text)
 }
 
 // Conteúdo do arquivo da mensagem: já vem em base64 no payload se a opção
@@ -295,6 +258,196 @@ async function processarDocumento(body, midia, remoteJid) {
   }
 }
 
+// ---------- categorias: tarefa / obrigação / reunião / lembrete ----------
+
+async function criarTarefa(item, mensagem, { prefixo = '' } = {}) {
+  const { data, error } = await supabase
+    .from('tarefas')
+    .insert({
+      titulo: `${prefixo}${item.titulo}`.slice(0, 200),
+      observacao: mensagem, // conteúdo completo da mensagem
+      cliente_id: item.cliente_id,
+      vencimento: item.prazo ?? item.vencimento ?? item.data ?? null,
+      departamento: item.departamento || 'contabil',
+      prioridade: item.prioridade || 'normal',
+      concluida: false,
+      origem: 'whatsapp',
+    })
+    .select()
+    .single()
+  if (error) {
+    console.error('Erro insert tarefa:', JSON.stringify(error))
+    throw new Error(error.message)
+  }
+  return data
+}
+
+// Lembrete = tarefa + linha em "lembretes" (a tabela exige o vínculo com
+// uma tarefa ou obrigação). O lembretes-cron manda o aviso no grupo.
+async function criarLembrete(item, mensagem) {
+  const tarefa = await criarTarefa({ ...item, prazo: item.data }, mensagem)
+  const { error } = await supabase.from('lembretes').insert({
+    tarefa_id: tarefa.id,
+    data_hora: item.dataHora,
+    mensagem: null,
+  })
+  if (error) throw new Error(`a tarefa foi criada, mas o lembrete falhou: ${error.message}`)
+  return tarefa
+}
+
+async function criarReuniao(item, mensagem) {
+  const { data, error } = await supabase
+    .from('agenda_eventos')
+    .insert({
+      titulo: item.titulo,
+      cliente_id: item.cliente_id,
+      data: item.data,
+      hora: item.hora,
+      duracao_min: item.duracao_min,
+      local: item.local,
+      descricao: mensagem,
+      origem: 'whatsapp',
+      lembrete_em: lembreteReuniao(item.data, item.hora),
+    })
+    .select()
+    .single()
+  if (error) {
+    // tabela ainda não criada (supabase-schema-agenda.sql) → quem chama cai na tarefa
+    if (error.code === '42P01' || error.code === 'PGRST205') return null
+    throw new Error(error.message)
+  }
+  return data
+}
+
+// Mesma lógica de criarObrigacaoComEtapas (src/pages/andamento/andamentoApi.js):
+// obrigação + cópia das etapas do tipo + histórico.
+async function criarObrigacao(item, tipo, etapasTemplate) {
+  const hoje = hojeSP()
+  const vencimento = item.vencimento ||
+    (tipo.dia_vencimento ? calcularVencimento(item.competencia, tipo.mes_vencimento || 'mesmo', tipo.dia_vencimento) : null)
+  const { data: obrigacao, error } = await supabase
+    .from('obrigacoes')
+    .insert({
+      cliente_id: item.cliente_id,
+      tipo: tipo.nome,
+      competencia: item.competencia,
+      tipo_obrigacao_id: tipo.id,
+      departamento_id: tipo.departamento_id || null,
+      titulo: tipo.nome,
+      responsavel: item.responsavel || null,
+      status: 'pendente',
+      data_inicio: hoje,
+      vencimento,
+    })
+    .select()
+    .single()
+  if (error) throw new Error(error.message)
+
+  const etapas = etapasTemplate.map((et, i) => ({
+    obrigacao_id: obrigacao.id,
+    etapas_template_id: et.id,
+    nome: et.nome,
+    ordem: et.ordem,
+    status: i === 0 ? 'em_andamento' : 'pendente',
+    data_prevista: (vencimento && etapasTemplate.length === 1) ? vencimento : somarDias(hoje, et.prazo_dias_relativo ?? 0),
+  }))
+  const { error: errEtapas } = await supabase.from('etapas_obrigacao').insert(etapas)
+  if (errEtapas) throw new Error(`a obrigação foi criada, mas as etapas falharam: ${errEtapas.message}`)
+
+  await supabase.from('historico_obrigacao').insert({
+    obrigacao_id: obrigacao.id,
+    descricao: `Obrigação "${tipo.nome}" criada pelo WhatsApp: ${item.titulo}`,
+    autor: item.responsavel || null,
+  })
+  return { ...obrigacao, vencimento }
+}
+
+async function processarComando({ categoria, texto }, mensagem, remoteJid) {
+  const hoje = hojeSP()
+  try {
+    const { data: clientesBrutos } = await supabase
+      .from('clientes')
+      .select('id, nome')
+      .eq('ativo', true)
+    const clientes = clientesBrutos || []
+
+    let tipos = []
+    if (categoria === 'obrigacao') {
+      const { data } = await supabase
+        .from('tipos_obrigacao')
+        .select('id, nome, departamento_id, mes_vencimento, dia_vencimento')
+        .eq('ativo', true)
+      tipos = data || []
+    }
+
+    let bruto = null
+    try {
+      bruto = await extrairComIA(promptExtracao(categoria, texto, { clientes, tipos, hoje }))
+      console.log(`${categoria} extraída:`, JSON.stringify(bruto))
+    } catch (eIA) {
+      // Anthropic fora do ar, lenta (timeout de 12s) ou resposta que não
+      // parseou: segue com o que dá para ler do texto
+      console.error('Falha ao extrair com IA, usando só o texto:', eIA.message)
+    }
+    const item = normalizarExtracao(categoria, bruto, { texto, clientes, tipos, hoje })
+    const falta = pendencias(item)
+    const nomeCliente = item.cliente_id ? clientes.find((c) => c.id === item.cliente_id)?.nome : null
+
+    // Obrigação: não duplica a mesma competência e o tipo precisa ter etapas
+    let tipo = null, etapasTemplate = []
+    if (categoria === 'obrigacao' && !falta.length) {
+      tipo = tipos.find((t) => t.id === item.tipo_obrigacao_id)
+      const { data: existente } = await supabase
+        .from('obrigacoes')
+        .select('id')
+        .eq('cliente_id', item.cliente_id)
+        .eq('tipo_obrigacao_id', tipo.id)
+        .eq('competencia', item.competencia)
+        .limit(1)
+      if (existente?.length) {
+        await enviarMensagem(remoteJid, `ℹ️ ${tipo.nome} — ${item.competencia} de ${nomeCliente} já existe no gestor. Não criei outra.`)
+        return { statusCode: 200, body: JSON.stringify({ success: true, existente: existente[0].id }) }
+      }
+      const { data: tpl } = await supabase
+        .from('etapas_template')
+        .select('id, nome, ordem, prazo_dias_relativo')
+        .eq('tipo_obrigacao_id', tipo.id)
+        .order('ordem')
+      etapasTemplate = tpl || []
+      if (!etapasTemplate.length) falta.push(`etapas cadastradas no tipo "${tipo.nome}"`)
+    }
+
+    let criado
+    if (categoria === 'reuniao' && !falta.length) {
+      criado = await criarReuniao(item, mensagem)
+      if (!criado) falta.push('a Agenda ativada no banco de dados')
+    }
+    if (criado) {
+      // reunião já gravada na Agenda
+    } else if (falta.length) {
+      // Faltou algo: vira tarefa (com a categoria no título) e o grupo é avisado
+      criado = await criarTarefa(item, mensagem, { prefixo: `${ROTULO[categoria]}: ` })
+    } else if (categoria === 'lembrete') {
+      criado = await criarLembrete(item, mensagem)
+    } else if (categoria === 'obrigacao') {
+      criado = await criarObrigacao(item, tipo, etapasTemplate)
+      item.vencimento = criado.vencimento
+    } else {
+      criado = await criarTarefa(item, mensagem)
+    }
+
+    await enviarMensagem(remoteJid, confirmacao(item, { nomeCliente, nomeTipo: tipo?.nome, falta }))
+    console.log(`${categoria} criada:`, criado.id)
+    return { statusCode: 200, body: JSON.stringify({ success: true, categoria, id: criado.id }) }
+  } catch (e) {
+    console.error('Erro:', e.message)
+    await enviarMensagem(remoteJid, `❌ Erro ao criar ${ROTULO[categoria].toLowerCase()}: ${e.message}`)
+    // 200 de propósito: com erro a Evolution reenvia o webhook e repetiria
+    // a mensagem de erro (ou criaria o item em dobro)
+    return { statusCode: 200, body: JSON.stringify({ success: false, error: e.message }) }
+  }
+}
+
 function segredoConfere(event) {
   if (!WEBHOOK_SEGREDO) return true
   const recebido = Buffer.from(String(event.queryStringParameters?.segredo || ''))
@@ -349,74 +502,11 @@ exports.handler = async (event) => {
     return await processarDocumento(body, midia, remoteJid)
   }
 
-  // Só processa mensagens com prefixo "tarefa:"
-  if (!mensagem.toLowerCase().trim().startsWith('tarefa:')) {
-    return { statusCode: 200, body: 'Not a task message' }
+  // Mensagens com categoria: "tarefa:", "obrigação:", "reunião:" ou
+  // "lembrete:" (ver lib/comandosWhatsapp.js). O resto é conversa.
+  const comando = detectarComando(mensagem)
+  if (!comando) {
+    return { statusCode: 200, body: 'Not a command message' }
   }
-
-  const textoTarefa = mensagem.substring(7).trim()
-
-  try {
-    const { data: clientes } = await supabase
-      .from('clientes')
-      .select('id, nome')
-      .eq('ativo', true)
-
-    let tarefa
-    try {
-      tarefa = await extrairTarefa(textoTarefa, clientes || [])
-      console.log('Tarefa extraída:', JSON.stringify(tarefa))
-    } catch (eIA) {
-      // Anthropic fora do ar, lenta (estourou o timeout de 12s) ou
-      // devolveu algo que não parseou -- cria a tarefa mesmo assim, com
-      // o texto cru, em vez de perder ela de vez (ver tarefaFallback)
-      console.error('Falha ao extrair tarefa com IA, usando fallback:', eIA.message)
-      tarefa = tarefaFallback(textoTarefa)
-    }
-
-    // Validar cliente_id — garantir que existe na lista
-    let clienteIdFinal = null
-    if (tarefa.cliente_id && clientes) {
-      const existe = clientes.find(c => c.id === tarefa.cliente_id)
-      if (existe) clienteIdFinal = tarefa.cliente_id
-    }
-
-    // Inserir tarefa — sempre cria, mesmo sem cliente
-    const { data: novaTarefa, error } = await supabase
-      .from('tarefas')
-      .insert({
-        titulo: tarefa.titulo || textoTarefa.substring(0, 100),
-        observacao: mensagem, // conteúdo completo da mensagem
-        cliente_id: clienteIdFinal,
-        vencimento: tarefa.prazo || null,
-        departamento: tarefa.departamento || 'contabil',
-        prioridade: tarefa.prioridade || 'normal',
-        concluida: false,
-        origem: 'whatsapp',
-      })
-      .select()
-      .single()
-
-    if (error) {
-      console.error('Erro insert:', JSON.stringify(error))
-      throw new Error(error.message)
-    }
-
-    // Confirmação no grupo
-    const nomeCliente = clienteIdFinal
-      ? clientes.find(c => c.id === clienteIdFinal)?.nome || 'cliente identificado'
-      : '⚠️ cliente não identificado'
-    const prazo = tarefa.prazo ? `\n📅 Prazo: ${tarefa.prazo}` : ''
-    const confirmacao = `✅ *Tarefa criada!*\n📋 ${tarefa.titulo}${prazo}\n👤 ${nomeCliente}`
-
-    await enviarMensagem(remoteJid, confirmacao)
-
-    console.log('Tarefa criada:', novaTarefa.id)
-    return { statusCode: 200, body: JSON.stringify({ success: true, id: novaTarefa.id }) }
-
-  } catch (e) {
-    console.error('Erro:', e.message)
-    await enviarMensagem(remoteJid, `❌ Erro ao criar tarefa: ${e.message}`)
-    return { statusCode: 500, body: e.message }
-  }
+  return await processarComando(comando, mensagem, remoteJid)
 }
