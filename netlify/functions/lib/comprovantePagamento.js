@@ -17,11 +17,10 @@
 // inclusive os baixados automaticamente (auditoria e "desfazer").
 
 const crypto = require('crypto');
+const { EXTENSAO_POR_MIME, tipoReal, leituraPossivel, blocoArquivo, limparBase64, textoLegenda } = require('./midiaWhatsapp');
 
 const ANTHROPIC_API_URL = 'https://api.anthropic.com/v1/messages';
 const MODELO = 'claude-haiku-4-5-20251001';
-const MIME_IMAGEM = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
-const EXTENSAO_POR_MIME = { 'application/pdf': 'pdf', 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp' };
 // Mesmo critério de "é imposto" do painel (PainelCompartilhadoPage.jsx) —
 // anexo de obrigação que não é imposto (ex: holerites) não é guia a pagar.
 const TITULO_IMPOSTO = /\b(pg)?das\b|pgmei|inss|fgts|darf|dctfweb|irrf|irpj|csll|pis|cofins|icms|iss|difal|parcelamento|guia|maed|multa/i;
@@ -41,6 +40,8 @@ Regras:
 - "guiaId": só preencha se o pagador/contribuinte (nome ou CNPJ/CPF) bater com o cliente da guia E o tributo e o valor forem compatíveis com ela (valor pago igual ao valor da guia, ou um pouco maior quando pago depois do vencimento, com multa e juros). Se houver mais de uma guia possível e não der pra distinguir, null. Nunca invente.
 - "confianca": "alta" só quando cliente, tributo e valor batem com a guia escolhida; "media" quando algum deles ficou incerto; "baixa" quando pouca coisa foi identificada.
 - "observacao": uma frase curta explicando a escolha (ou por que ficou null).
+- O arquivo pode ser PDF, foto ou print de tela (app do banco, comprovante de PIX, internet banking). Leia o que estiver visível; se a imagem estiver cortada ou ilegível, preencha só o que der e use confiança "baixa".
+- Se vier uma mensagem junto com o arquivo (ex: "DAS da Loja pago"), use como pista para achar a guia, mas só conte como certo o que o próprio comprovante mostrar.
 - Mesmo quando não for comprovante, preencha o que conseguir ler.`;
 
 const soDigitos = (s) => String(s || '').replace(/\D/g, '');
@@ -71,27 +72,14 @@ async function listarGuiasEmAberto(supabase) {
     }));
 }
 
-// Tipo real do arquivo pelo começo do conteúdo — o mimetype que vem do
-// WhatsApp/cadastro às vezes não bate (foto marcada como PDF), e a API
-// recusa o arquivo inteiro nesse caso.
-function tipoReal(arquivoBase64, mimeType) {
-  const inicio = arquivoBase64.slice(0, 8);
-  if (inicio.startsWith('JVBER')) return 'application/pdf';
-  if (inicio.startsWith('/9j/')) return 'image/jpeg';
-  if (inicio.startsWith('iVBOR')) return 'image/png';
-  if (inicio.startsWith('UklGR')) return 'image/webp';
-  if (inicio.startsWith('R0lGO')) return 'image/gif';
-  return mimeType;
-}
-
-async function perguntarIA({ arquivoBase64, filename, mimeType: mimeInformado, guias, apiKey, timeoutMs }) {
+async function perguntarIA({ arquivoBase64, filename, mimeType: mimeInformado, legenda, guias, apiKey, timeoutMs }) {
   const mimeType = tipoReal(arquivoBase64, mimeInformado);
+  const leitura = leituraPossivel(arquivoBase64, mimeType);
+  if (!leitura.ok) throw new Error(`Leitura automática indisponível: ${leitura.motivo}.`);
   const lista = guias
     .map((g) => `- id: ${g.id} | cliente: ${g.clienteNome}${g.cnpj ? ` (CNPJ ${g.cnpj})` : ''} | guia: ${g.titulo}${g.competencia ? ` ${g.competencia}` : ''} | valor: ${g.valor != null ? g.valor.toFixed(2) : 'não informado'} | vencimento: ${g.vencimento || 'não informado'}`)
     .join('\n');
-  const conteudoArquivo = MIME_IMAGEM.includes(mimeType)
-    ? { type: 'image', source: { type: 'base64', media_type: mimeType, data: arquivoBase64 } }
-    : { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: arquivoBase64 } };
+  const conteudoArquivo = blocoArquivo(arquivoBase64, mimeType);
 
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
@@ -106,7 +94,7 @@ async function perguntarIA({ arquivoBase64, filename, mimeType: mimeInformado, g
         system: SYSTEM_PROMPT,
         messages: [{
           role: 'user',
-          content: [conteudoArquivo, { type: 'text', text: `Arquivo: "${filename || 'documento'}".\n\nGuias em aberto:\n${lista || '(nenhuma guia em aberto no momento)'}` }],
+          content: [conteudoArquivo, { type: 'text', text: `Arquivo: "${filename || 'documento'}".${textoLegenda(legenda)}\n\nGuias em aberto:\n${lista || '(nenhuma guia em aberto no momento)'}` }],
         }],
       }),
       signal: controller.signal,
@@ -146,10 +134,10 @@ async function clientePorDocumento(supabase, documento) {
 
 // Só a leitura (IA), sem gravar nada — o webhook usa no grupo "Documentos"
 // pra decidir se o arquivo segue pro fluxo de comprovante ou de documento.
-async function analisarComprovante(supabase, { arquivoBase64, filename, mimeType, apiKey, timeoutMs = 12000 }) {
+async function analisarComprovante(supabase, { arquivoBase64, filename, mimeType, legenda = null, apiKey, timeoutMs = 12000 }) {
   if (!apiKey) throw new Error('ANTHROPIC_API_KEY não configurada.');
   const guias = await listarGuiasEmAberto(supabase);
-  const r = await perguntarIA({ arquivoBase64, filename, mimeType, guias, apiKey, timeoutMs });
+  const r = await perguntarIA({ arquivoBase64, filename, mimeType, legenda, guias, apiKey, timeoutMs });
   const num = (v) => (v != null && Number.isFinite(Number(v)) ? Math.round(Number(v) * 100) / 100 : null);
   return {
     ehComprovante: !!r.ehComprovante,
@@ -169,8 +157,8 @@ async function analisarComprovante(supabase, { arquivoBase64, filename, mimeType
 // já dá a baixa na guia. `analise` pode vir pronta (analisarComprovante) pra
 // não repetir a chamada de IA. Devolve { comprovanteId, baixaAutomatica,
 // guia, cliente, analise }.
-async function registrarComprovante(supabase, { arquivoBase64, filename, mimeType, apiKey, remetente = null, origem = 'whatsapp', analise = null }) {
-  const a = analise || await analisarComprovante(supabase, { arquivoBase64, filename, mimeType, apiKey });
+async function registrarComprovante(supabase, { arquivoBase64, filename, mimeType, legenda = null, apiKey, remetente = null, origem = 'whatsapp', analise = null }) {
+  const a = analise || await analisarComprovante(supabase, { arquivoBase64, filename, mimeType, legenda, apiKey });
 
   const cliente = a.guia
     ? { id: a.guia.clienteId, nome: a.guia.clienteNome }
@@ -181,7 +169,7 @@ async function registrarComprovante(supabase, { arquivoBase64, filename, mimeTyp
   const storagePath = `${crypto.randomUUID()}.${EXTENSAO_POR_MIME[mime] || 'bin'}`;
   const { error: errStorage } = await supabase.storage
     .from('documentos')
-    .upload(storagePath, Buffer.from(arquivoBase64, 'base64'), { contentType: mime });
+    .upload(storagePath, Buffer.from(limparBase64(arquivoBase64), 'base64'), { contentType: mime });
   if (errStorage) throw errStorage;
 
   const agora = new Date().toISOString();

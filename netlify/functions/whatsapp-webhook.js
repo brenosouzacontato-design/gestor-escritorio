@@ -9,6 +9,9 @@ const {
   ROTULO, detectarComando, hojeSP, somarDias, calcularVencimento, promptExtracao,
   parseJSONResposta, normalizarExtracao, lembreteReuniao, pendencias, confirmacao,
 } = require('./lib/comandosWhatsapp')
+const {
+  EXTENSAO_POR_MIME, extrairMidia, extrairTexto, limparBase64, tipoReal, leituraPossivel, nomeDoArquivo,
+} = require('./lib/midiaWhatsapp')
 
 const supabase = createClient(
   process.env.SUPABASE_URL,
@@ -28,7 +31,6 @@ const ANTHROPIC_KEY = process.env.ANTHROPIC_API_KEY
 // aceita qualquer chamada, como antes.
 const WEBHOOK_SEGREDO = process.env.WHATSAPP_WEBHOOK_SEGREDO
 
-const EXTENSAO_POR_MIME = { 'application/pdf': 'pdf', 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp' }
 
 // O Netlify roda essa function síncrona atrás de um API Gateway que mata a
 // conexão com "Inactivity Timeout" (504) depois de ~29s sem resposta — um
@@ -78,14 +80,13 @@ async function extrairComIA(prompt) {
 
 // Conteúdo do arquivo da mensagem: já vem em base64 no payload se a opção
 // "Webhook Base64" estiver ligada no Evolution API; senão busca via
-// getBase64FromMediaMessage. `midia` é o bloco documentMessage/imageMessage.
-async function obterArquivoDaMensagem(body, midia) {
-  const mimeType = midia.mimetype || 'application/octet-stream'
-  const nomeArquivo = midia.fileName || `whatsapp-${Date.now()}.${EXTENSAO_POR_MIME[mimeType] || 'bin'}`
-
-  // com "Webhook Base64" ligado, a Evolution API v1 manda o arquivo em
-  // data.message.base64 (ao lado do bloco da mídia, não dentro dele)
-  let base64 = midia.base64 || body?.data?.message?.base64 || null
+// getBase64FromMediaMessage. `anexo` vem de extrairMidia (lib/midiaWhatsapp.js):
+// foto, print ou documento, já sem os envelopes do WhatsApp. O tipo é o real
+// (pelo conteúdo), não o que o WhatsApp informa, e o nome sai com a
+// extensão certa.
+async function obterArquivoDaMensagem(body, anexo) {
+  const { midia, tipo } = anexo
+  let base64 = midia.base64 || null
   if (!base64) {
     const messageId = body?.data?.key?.id
     if (!messageId) throw new Error('Não achei o id da mensagem pra buscar o arquivo.')
@@ -99,8 +100,12 @@ async function obterArquivoDaMensagem(body, midia) {
     base64 = dados.base64
     if (!base64) throw new Error('A API do WhatsApp não devolveu o conteúdo do arquivo.')
   }
-  return { base64, mimeType, nomeArquivo }
+  base64 = limparBase64(base64)
+  const mimeType = tipoReal(base64, midia.mimetype || dadosMime(tipo))
+  return { base64, mimeType, nomeArquivo: nomeDoArquivo(midia, tipo, mimeType) }
 }
+
+const dadosMime = (tipo) => (tipo === 'imagem' ? 'image/jpeg' : 'application/octet-stream')
 
 const fmtBRL = (v) => Number(v).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 const fmtDataBR = (iso) => iso.split('-').reverse().join('/')
@@ -122,18 +127,19 @@ function mensagemComprovante(res) {
 // Arquivo enviado no grupo "Pagamentos" — é sempre tratado como comprovante:
 // entra na fila de baixa (ou já baixa a guia, quando a IA tem certeza). Não
 // vai pro Drive nem pra fila de documentos.
-async function processarComprovante(body, midia, remoteJid) {
+async function processarComprovante(body, anexo, remoteJid) {
   try {
-    const { base64, mimeType, nomeArquivo } = await obterArquivoDaMensagem(body, midia)
+    const { base64, mimeType, nomeArquivo } = await obterArquivoDaMensagem(body, anexo)
+    const legenda = anexo.legenda
     const remetente = body?.data?.pushName || body?.data?.key?.participant || null
     let res
     try {
-      res = await registrarComprovante(supabase, { arquivoBase64: base64, filename: nomeArquivo, mimeType, apiKey: ANTHROPIC_KEY, remetente })
+      res = await registrarComprovante(supabase, { arquivoBase64: base64, filename: nomeArquivo, mimeType, legenda, apiKey: ANTHROPIC_KEY, remetente })
     } catch (eIA) {
       // IA fora do ar/timeout: o comprovante ainda entra na fila, sem a leitura
       console.error('Erro ao analisar comprovante (registrando sem leitura):', eIA.message)
       const analise = { ehComprovante: true, pagadorNome: null, pagadorDocumento: null, valorPago: null, dataPagamento: null, descricao: null, banco: null, guia: null, confianca: 'baixa', observacao: `Leitura automática falhou: ${eIA.message.slice(0, 200)}` }
-      res = await registrarComprovante(supabase, { arquivoBase64: base64, filename: nomeArquivo, mimeType, apiKey: ANTHROPIC_KEY, remetente, analise })
+      res = await registrarComprovante(supabase, { arquivoBase64: base64, filename: nomeArquivo, mimeType, legenda, apiKey: ANTHROPIC_KEY, remetente, analise })
     }
     await enviarMensagem(remoteJid, mensagemComprovante(res))
     return { statusCode: 200, body: JSON.stringify({ success: true, comprovanteId: res.comprovanteId, baixaAutomatica: res.baixaAutomatica }) }
@@ -148,9 +154,13 @@ async function processarComprovante(body, midia, remoteJid) {
 // Documento/imagem enviado no grupo "Documentos" — sobe pro Drive e entra
 // na fila de documentos (ou, se for comprovante de pagamento, na fila de
 // baixa de pagamentos).
-async function processarDocumento(body, midia, remoteJid) {
+async function processarDocumento(body, anexo, remoteJid) {
   try {
-    const { base64, mimeType, nomeArquivo } = await obterArquivoDaMensagem(body, midia)
+    const { base64, mimeType, nomeArquivo } = await obterArquivoDaMensagem(body, anexo)
+    const legenda = anexo.legenda
+    // foto/print/PDF que a IA consegue ler; senão (HEIC, grande demais...)
+    // pula a leitura e o arquivo vai direto para a fila de revisão
+    const leitura = leituraPossivel(base64, mimeType)
 
     // O backup no Drive é um extra: se falhar (ex: refresh token do Google
     // vencido), o documento ainda precisa entrar no sistema — identificação,
@@ -184,11 +194,12 @@ async function processarDocumento(body, midia, remoteJid) {
     // fila de documentos abaixo, como antes.
     let pareceComprovante = false
     try {
-      const analise = await analisarComprovante(supabase, { arquivoBase64: base64, filename: nomeArquivo, mimeType, apiKey: ANTHROPIC_KEY })
+      if (!leitura.ok) throw new Error(leitura.motivo)
+      const analise = await analisarComprovante(supabase, { arquivoBase64: base64, filename: nomeArquivo, mimeType, legenda, apiKey: ANTHROPIC_KEY })
       if (analise.ehComprovante) {
         pareceComprovante = true
         const remetente = body?.data?.pushName || body?.data?.key?.participant || null
-        const res = await registrarComprovante(supabase, { arquivoBase64: base64, filename: nomeArquivo, mimeType, apiKey: ANTHROPIC_KEY, remetente, analise })
+        const res = await registrarComprovante(supabase, { arquivoBase64: base64, filename: nomeArquivo, mimeType, legenda, apiKey: ANTHROPIC_KEY, remetente, analise })
         await enviarMensagem(remoteJid, `${mensagemComprovante(res)}${avisoDrive}`)
         return { statusCode: 200, body: JSON.stringify({ success: true, driveFileId: arquivo?.id || null, comprovanteId: res.comprovanteId, baixaAutomatica: res.baixaAutomatica }) }
       }
@@ -209,7 +220,9 @@ async function processarDocumento(body, midia, remoteJid) {
       // function não comporta as duas), só entra na fila de revisão
       const sugestao = pareceComprovante
         ? { tipoDocumento: 'Comprovante de pagamento', clienteId: null, candidatoId: null, confianca: 'baixa', observacao: 'Comprovante de pagamento sem guia identificada com segurança.' }
-        : await identificarDocumento({ arquivoBase64: base64, filename: nomeArquivo, mimeType, candidatos, apiKey: ANTHROPIC_KEY })
+        : !leitura.ok
+          ? { tipoDocumento: 'Documento não identificado', clienteId: null, candidatoId: null, confianca: 'baixa', observacao: `Sem leitura automática: ${leitura.motivo}.` }
+          : await identificarDocumento({ arquivoBase64: base64, filename: nomeArquivo, mimeType, legenda, candidatos, apiKey: ANTHROPIC_KEY })
       const candidato = sugestao.candidatoId ? candidatos.find((c) => c.id === sugestao.candidatoId) : null
 
       const storagePath = `${crypto.randomUUID()}.${EXTENSAO_POR_MIME[mimeType] || 'bin'}`
@@ -226,14 +239,19 @@ async function processarDocumento(body, midia, remoteJid) {
         tamanho_bytes: Buffer.byteLength(base64, 'base64'),
         tipo_documento_sugerido: sugestao.tipoDocumento,
         confianca: sugestao.confianca,
-        observacao_ia: erroDrive ? `${sugestao.observacao || ''} [Sem cópia no Drive: ${erroDrive.slice(0, 200)}]`.trim() : sugestao.observacao,
+        observacao_ia: [
+          sugestao.observacao,
+          legenda ? `Mensagem no WhatsApp: "${legenda.slice(0, 300)}"` : null,
+          erroDrive ? `[Sem cópia no Drive: ${erroDrive.slice(0, 200)}]` : null,
+        ].filter(Boolean).join(' ') || null,
         candidato_sugerido_id: candidato?.id || null,
         candidato_sugerido_tipo: candidato?.tipo || null,
         status: sugestao.candidatoId ? 'identificado' : 'sem_match',
       })
       if (errDoc) throw errDoc
 
-      mensagemIdentificacao = `\n\n🔎 ${sugestao.tipoDocumento}` + (
+      const avisoLeitura = leitura.ok ? '' : `\n⚠️ Não li o arquivo automaticamente: ${leitura.motivo}.`
+      mensagemIdentificacao = `\n\n🔎 ${sugestao.tipoDocumento}${avisoLeitura}` + (
         pareceComprovante
           ? '\n⚠️ Não consegui registrar na fila de pagamentos — dê a baixa em Gestor → Pagamentos → Baixa manual.'
           : candidato
@@ -472,16 +490,15 @@ exports.handler = async (event) => {
   }
 
   const remoteJid = body?.data?.key?.remoteJid || body?.data?.remoteJid || ''
-  const mensagem = body?.data?.message?.conversation ||
-                   body?.data?.message?.extendedTextMessage?.text || ''
-  const midia = body?.data?.message?.documentMessage ||
-                body?.data?.message?.imageMessage ||
-                body?.data?.message?.documentWithCaptionMessage?.message?.documentMessage ||
-                null
+  // texto e anexo (foto, print ou documento), também dentro de mensagem
+  // temporária, de visualização única ou documento com legenda
+  const mensagem = extrairTexto(body?.data?.message)
+  const anexo = extrairMidia(body?.data?.message)
+  const midia = anexo?.midia || null
 
   console.log('remoteJid:', remoteJid)
   console.log('mensagem:', mensagem)
-  console.log('tem midia:', !!midia)
+  console.log('anexo:', anexo ? `${anexo.tipo} ${midia.mimetype || ''}` : 'nenhum')
 
   // Grupo "Documentos" — qualquer arquivo enviado aqui vai pro Drive, sem
   // depender de prefixo. Mensagem de texto nesse grupo (sem arquivo) é
@@ -492,14 +509,14 @@ exports.handler = async (event) => {
     if (!midia) {
       return { statusCode: 200, body: 'No file in payments group message' }
     }
-    return await processarComprovante(body, midia, remoteJid)
+    return await processarComprovante(body, anexo, remoteJid)
   }
 
   if (DOCS_GRUPO_ID && remoteJid === DOCS_GRUPO_ID) {
     if (!midia) {
       return { statusCode: 200, body: 'No file in docs group message' }
     }
-    return await processarDocumento(body, midia, remoteJid)
+    return await processarDocumento(body, anexo, remoteJid)
   }
 
   // Mensagens com categoria: "tarefa:", "obrigação:", "reunião:" ou
