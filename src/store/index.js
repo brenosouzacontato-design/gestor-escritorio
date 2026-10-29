@@ -166,13 +166,24 @@ export const useStore = create((set, get) => ({
   },
 
   // ── Obrigações ───────────────────────────────────────────────────────────────
+  // O Supabase devolve no máximo 1000 linhas por consulta; com várias
+  // competências acumuladas a lista ficava cortada (e parte da competência
+  // atual sumia do Fechamento). Busca em páginas até acabar.
   fetchObrigacoes: async () => {
-    const { data, error } = await supabase
-      .from('obrigacoes')
-      .select('*, clientes(nome), tipos_obrigacao(dias_lembrete)')
-      .order('competencia', { ascending: false })
-    if (error) console.error('fetchObrigacoes error:', error)
-    if (!error) set({ obrigacoes: data || [] })
+    const PAGINA = 1000
+    const todas = []
+    for (let de = 0; ; de += PAGINA) {
+      const { data, error } = await supabase
+        .from('obrigacoes')
+        .select('*, clientes(nome), tipos_obrigacao(dias_lembrete)')
+        .order('competencia', { ascending: false })
+        .order('id', { ascending: true })
+        .range(de, de + PAGINA - 1)
+      if (error) { console.error('fetchObrigacoes error:', error); return }
+      todas.push(...(data || []))
+      if (!data || data.length < PAGINA) break
+    }
+    set({ obrigacoes: todas })
   },
 
   upsertObrigacao: async (obrigacao) => {
