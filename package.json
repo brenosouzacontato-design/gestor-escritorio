@@ -8,7 +8,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "test:nfse": "node --test \"netlify/functions/lib/nfse/__tests__/*.test.cjs\"",
-    "test:assessor": "node --test \"src/lib/assessor/__tests__/*.test.mjs\" \"netlify/functions/lib/__tests__/*.test.cjs\"",
+    "test:assessor": "node --test \"src/lib/__tests__/*.test.mjs\" \"src/lib/assessor/__tests__/*.test.mjs\" \"netlify/functions/lib/__tests__/*.test.cjs\"",
     "test:whatsapp": "node --test \"netlify/functions/lib/__tests__/comandosWhatsapp.test.cjs\" \"netlify/functions/lib/__tests__/midiaWhatsapp.test.cjs\""
   },
   "dependencies": {

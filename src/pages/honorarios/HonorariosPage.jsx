@@ -234,7 +234,7 @@ export default function HonorariosPage() {
           )}
 
           {honorarios && filtrados.length > 0 && (
-            <div style={{ overflowX: 'auto', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)' }}>
+            <div className="tabela-rolagem" style={{ border: '1px solid var(--border)', borderRadius: 'var(--r-lg)' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
                 <thead>
                   <tr style={{ background: 'var(--surface2)' }}>
@@ -359,7 +359,7 @@ function AbaConfigClientes() {
   if (!clientes) return <p style={{ color: 'var(--text3)', fontSize: 13 }}>Carregando...</p>
 
   return (
-    <div style={{ overflowX: 'auto', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)' }}>
+    <div className="tabela-rolagem" style={{ border: '1px solid var(--border)', borderRadius: 'var(--r-lg)' }}>
       <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
         <thead>
           <tr style={{ background: 'var(--surface2)' }}>
@@ -980,7 +980,7 @@ function AbaPorCarteira({ carteiras }) {
                 Recebido por carteira e competência
                 <span style={{ fontSize: 11, color: 'var(--text3)', fontWeight: 400, marginLeft: 8 }}>recebido / faturado · clique no mês pra detalhar</span>
               </div>
-              <div style={{ overflowX: 'auto' }}>
+              <div className="tabela-rolagem">
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
                   <thead>
                     <tr style={{ background: 'var(--surface2)' }}>
@@ -1018,7 +1018,7 @@ function AbaPorCarteira({ carteiras }) {
           )}
 
           {/* Tabela */}
-          <div style={{ overflowX: 'auto', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)' }}>
+          <div className="tabela-rolagem" style={{ border: '1px solid var(--border)', borderRadius: 'var(--r-lg)' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
               <thead>
                 <tr style={{ background: 'var(--surface2)' }}>

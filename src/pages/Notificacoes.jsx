@@ -131,7 +131,7 @@ export default function Notificacoes() {
       )}
 
       {lembretes && filtrados.length > 0 && (
-        <div style={{ overflowX: 'auto', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)' }}>
+        <div className="tabela-rolagem" style={{ border: '1px solid var(--border)', borderRadius: 'var(--r-lg)' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
             <thead>
               <tr style={{ background: 'var(--surface2)' }}>

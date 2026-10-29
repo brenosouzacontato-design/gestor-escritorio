@@ -240,7 +240,7 @@ export default function NotasFiscaisPage() {
                 </div>
 
                 {aberto && (
-                  <div style={{ borderTop: '1px solid var(--border)', overflowX: 'auto' }}>
+                  <div className="tabela-rolagem" style={{ borderTop: '1px solid var(--border)' }}>
                     <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
                       <thead>
                         <tr style={{ background: 'var(--surface2)' }}>

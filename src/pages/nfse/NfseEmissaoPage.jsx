@@ -549,7 +549,7 @@ export default function NfseEmissaoPage() {
             </div>
           </details>
 
-          <div style={{ overflowX: 'auto' }}>
+          <div className="tabela-rolagem">
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
               <thead>
                 <tr style={{ color: 'var(--text3)', textAlign: 'left' }}>

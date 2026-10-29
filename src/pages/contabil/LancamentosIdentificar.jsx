@@ -68,7 +68,7 @@ export default function LancamentosIdentificar({ lancamentos, onSaved }) {
       )}
 
       {linhas.length > 0 && (
-        <div style={{ overflowX: 'auto', border: '1px solid var(--border)', borderRadius: 10 }}>
+        <div className="tabela-rolagem" style={{ border: '1px solid var(--border)', borderRadius: 10 }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
             <thead>
               <tr style={{ background: 'var(--surface2)' }}>
