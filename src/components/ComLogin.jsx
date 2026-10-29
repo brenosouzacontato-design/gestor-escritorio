@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
+import { aplicarTema, temaInicial } from '../lib/tema'
 
 // Portão de login do gestor (Supabase Auth, e-mail e senha). Só envolve o <App />: os links
 // públicos (painel do cliente, relatórios e documentos compartilhados) são resolvidos antes em
@@ -14,8 +15,7 @@ export default function ComLogin({ children }) {
 
   useEffect(() => {
     // tema salvo pelo App, para a tela de login não piscar no tema errado
-    const tema = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
-    document.documentElement.setAttribute('data-theme', tema)
+    aplicarTema(temaInicial())
 
     supabase.auth.getSession().then(({ data }) => setSessao(data.session))
     const { data } = supabase.auth.onAuthStateChange((_evento, s) => setSessao(s))

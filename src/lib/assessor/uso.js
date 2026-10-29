@@ -35,7 +35,7 @@ export function feedbackUso(dados, hoje) {
       titulo: `${plural(impostosSemGuia.length, 'imposto vence', 'impostos vencem')} em até 5 dias sem guia anexada`,
       texto: `O primeiro vence em ${dataBR(proximo)}. Enquanto a guia não é anexada, o painel do cliente mostra "aguardando guia", sem valor nem código de barras.`,
       clientes: clientesDe(impostosSemGuia.map((o) => o.cliente_id)),
-      acao: { pagina: 'empresas', rotulo: 'Abrir Empresas' },
+      acao: { pagina: 'empresas', rotulo: 'Abrir Fechamento' },
       mercado: 'Em sistemas como Domínio e Questor a guia sai junto da apuração. Aqui, anexar a guia na obrigação é o que libera valor, código de barras e PIX no painel do cliente.',
     })
   }

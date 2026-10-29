@@ -8,11 +8,13 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
     <script>
-      // aplica o tema salvo antes do React montar, pra não piscar claro→escuro
+      // aplica o tema salvo antes do React montar, pra não piscar (mesma regra de src/lib/tema.js)
+      var t = 'cinza';
       try {
-        var t = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
-        document.documentElement.setAttribute('data-theme', t);
+        var salvo = localStorage.getItem('tema');
+        if (salvo === 'light' || salvo === 'cinza' || salvo === 'dark') t = salvo;
       } catch (e) {}
+      document.documentElement.setAttribute('data-theme', t);
     </script>
   </head>
   <body>
