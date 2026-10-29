@@ -348,26 +348,30 @@ export default function Empresas({ onOpenTarefas, onOpenCadastro, clienteInicial
   }
   const handleMudarEntrega = (clienteId, entregue) => handleMudarStatusGeral(clienteId, entregue ? 'entregue' : 'a_entregar')
 
-  // Coluna do kanban: Concluído = entregue; Em andamento = já tem obrigação da
-  // competência concluída ou está aguardando o cliente; A fazer = nada começado.
+  // Coluna do kanban: Concluído = entregue ou com todas as obrigações da
+  // competência concluídas/não aplica; Em andamento = alguma já concluída ou
+  // aguardando o cliente; A fazer = nada começado.
   // Tarefas não mexem na coluna (são independentes do fechamento).
   const faseEmpresa = (clienteId) => {
     const st = statusGeral(clienteId)
     if (st === 'entregue') return 'concluido'
+    const obs = obrigacoes.filter(o => o.cliente_id === clienteId && o.competencia === compSel)
+    const feitas = obs.filter(o => o.status === 'concluido' || o.status === 'nao_aplica').length
+    if (obs.length > 0 && feitas === obs.length) return 'concluido'
     if (st === 'aguardando_cliente') return 'em_andamento'
-    const comecou = obrigacoes.some(o => o.cliente_id === clienteId && o.competencia === compSel && (o.status === 'concluido' || o.status === 'nao_aplica'))
-    return comecou ? 'em_andamento' : 'a_fazer'
+    return feitas > 0 ? 'em_andamento' : 'a_fazer'
   }
 
   // Entrega automática: empresa com todas as obrigações da competência
   // concluídas vai pra "Entregue"; se aparecer obrigação nova, volta pra
   // "A entregar" (em andamento) e, quando tudo for concluído de novo, volta
   // pra "Entregue". Tarefas não contam — nem impedem nem desfazem a entrega.
-  // Arrastar o card na mão continua valendo: na carga da tela só muda quem
-  // teve item concluído (ou criado) depois da última mudança de status; com
-  // a tela aberta, muda quando a empresa passa de incompleta pra completa
-  // ou o contrário.
+  // Empresa completa sempre fica como entregue. Marcar "entregue" na mão com
+  // obrigação pendente continua valendo: só volta pra "A entregar" quando
+  // aparece obrigação nova depois da marcação, ou quando, com a tela aberta,
+  // a empresa deixa de estar completa.
   const completoAntes = useRef(new Map())
+  const jaEntregou = useRef(new Set())
   useEffect(() => {
     // espera as obrigações carregarem, senão a empresa "parece" completa
     if (entregaLida !== compSel || obrigacoes.length === 0) return
@@ -383,9 +387,11 @@ export default function Empresas({ onOpenTarefas, onOpenCadastro, clienteInicial
       anteriores.set(c.id, completo)
       const st = statusGeral(c.id)
       const mudouEm = ts(entregaEm.get(c.id))
+      const chave = `${compSel}|${c.id}`
+      if (!completo) jaEntregou.current.delete(chave)
       if (completo && st !== 'entregue') {
-        const ultimaConclusao = Math.max(0, ...obs.map(o => ts(o.updated_at)))
-        if (antes === false || ultimaConclusao > mudouEm) handleMudarStatusGeral(c.id, 'entregue')
+        // uma tentativa por empresa/competência: se a gravação falhar, não fica repetindo
+        if (!jaEntregou.current.has(chave)) { jaEntregou.current.add(chave); handleMudarStatusGeral(c.id, 'entregue') }
       } else if (!completo && st === 'entregue') {
         const pendentes = obs.filter(o => !okObs(o))
         if (antes === true || pendentes.some(i => ts(i.created_at) > mudouEm)) handleMudarStatusGeral(c.id, 'a_entregar')
