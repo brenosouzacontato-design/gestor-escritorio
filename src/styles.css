@@ -110,9 +110,55 @@
 }
 
 
+/* ── Tema Areia (claro quente, padrão) ──────────────────────
+   Fundo bege bem claro, com menos brilho que o branco puro.
+   Escolhido no seletor de tema do topo (src/lib/tema.js). */
+:root[data-theme="areia"] {
+  color-scheme: light;
+
+  --bg:       #F3EFE7;
+  --surface:  #FBF9F5;
+  --surface2: #EFEAE0;
+  --surface3: #E4DDD0;
+  --border:   #E2DBCE;
+  --border2:  #C9C0B0;
+
+  --text1: #2A2620;
+  --text2: #5B544A;
+  --text3: #6E665A;
+
+  --navy:            #2B2824;
+  --navy2:           #35312C;
+  --navy3:           #3E3933;
+  --navy-border:     #4A443D;
+  --navy-text:       #F5F1EA;
+  --navy-text-dim:   #C9C1B5;
+
+  --accent:      #1E8557;
+  --accent-dim:  rgba(36,159,100,0.14);
+  --accent-dark: #186B46;
+
+  --ok:        #15803D;
+  --ok-dim:    rgba(21,128,61,0.12);
+  --warn:      #B45309;
+  --warn-dim:  rgba(180,83,9,0.12);
+  --danger:    #B91C1C;
+  --danger-dim:rgba(185,28,28,0.11);
+  --info:      #1E8557;
+  --info-dim:  rgba(36,159,100,0.12);
+
+  --overlay: rgba(43,40,36,.45);
+
+  --sand:      #C9C0B0;
+  --sand-dim:  #EFEAE0;
+
+  --shadow-sm: 0 1px 3px rgba(60,45,25,.07);
+  --shadow-md: 0 4px 16px rgba(60,45,25,.09);
+  --shadow-lg: 0 8px 32px rgba(60,45,25,.15);
+}
+
 /* ── Tema cinza médio (meio-termo entre claro e escuro) ──────
-   Padrão do gestor; o botão de tema no topo alterna
-   claro → cinza médio → escuro (src/lib/tema.js). */
+   Uma das três opções do seletor de tema do topo (src/lib/tema.js). */
 :root[data-theme="cinza"] {
   color-scheme: dark;
 
@@ -283,6 +329,29 @@ input, select, textarea { font-family: var(--font); }
 .busca-campo kbd { border-color: var(--border); }
 .busca-lista { max-height: 60vh; overflow-y: auto; padding: 6px; display: flex; flex-direction: column; gap: 2px; }
 .busca-vazio { padding: 16px; color: var(--text3); font-size: 13px; }
+
+/* Seletor de tema (Areia / Cinza médio / Escuro) */
+.tema-seletor { position: relative; }
+.tema-caixa {
+  position: absolute; top: calc(100% + 8px); right: 0; z-index: 200; width: 280px;
+  background: var(--surface); border: 1px solid var(--border); border-radius: 14px;
+  box-shadow: var(--shadow-lg); padding: 6px; display: flex; flex-direction: column; gap: 2px;
+}
+.tema-titulo { font-size: 10.5px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--text3); padding: 6px 10px 4px; }
+.tema-opcao {
+  display: flex; align-items: center; gap: 10px; width: 100%; min-height: 44px; padding: 6px 10px;
+  border: 0; border-radius: 10px; background: transparent; color: var(--text1); text-align: left;
+}
+.tema-opcao:hover { background: var(--surface2); }
+.tema-opcao.active { background: var(--accent-dim); }
+.tema-amostra {
+  width: 30px; height: 30px; border-radius: 8px; flex-shrink: 0; border: 1px solid var(--border2);
+  overflow: hidden; display: flex;
+}
+.tema-amostra span { flex: 1; }
+.tema-textos { display: flex; flex-direction: column; flex: 1; min-width: 0; }
+.tema-nome { font-size: 13px; font-weight: 600; }
+.tema-desc { font-size: 11.5px; color: var(--text3); }
 
 .menu-celular {
   position: fixed; top: 0; left: 0; bottom: 0; width: 320px; max-width: 88vw;
