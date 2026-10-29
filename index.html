@@ -9,10 +9,10 @@
     <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
     <script>
       // aplica o tema salvo antes do React montar, pra não piscar (mesma regra de src/lib/tema.js)
-      var t = 'cinza';
+      var t = 'areia';
       try {
         var salvo = localStorage.getItem('tema');
-        if (salvo === 'light' || salvo === 'cinza' || salvo === 'dark') t = salvo;
+        if (salvo === 'areia' || salvo === 'cinza' || salvo === 'dark') t = salvo;
       } catch (e) {}
       document.documentElement.setAttribute('data-theme', t);
     </script>

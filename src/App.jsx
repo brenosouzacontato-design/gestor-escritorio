@@ -1,7 +1,8 @@
 import { useState, useEffect, Fragment } from 'react'
-import { RefreshCwIcon, SettingsIcon, PlusIcon, SunIcon, MoonIcon, CloudIcon, LogOutIcon, SearchIcon } from 'lucide-react'
+import { RefreshCwIcon, SettingsIcon, PlusIcon, LogOutIcon, SearchIcon } from 'lucide-react'
 import { MenuTopo, BuscaRapida, MenuCelular } from './components/MenuTopo'
-import { temaInicial, salvarTema, proximoTema, TEMA_LABEL } from './lib/tema'
+import { temaInicial, salvarTema } from './lib/tema'
+import SeletorTema from './components/SeletorTema'
 import { useStore } from './store'
 import { ToastContainer } from './components/shared'
 import { sair } from './components/ComLogin'
@@ -95,8 +96,6 @@ export default function App() {
   // pra não depender de todo callsite lembrar de embrulhar em arrow fn.
   const openNewTask = (clienteId = '') => { setNewTaskClienteId(typeof clienteId === 'string' ? clienteId : ''); setShowNewTask(true) }
   const navigate    = (p) => { setPage(p); if (p !== 'clientes') setSelectedCliente(null) }
-  const toggleTheme = () => setTheme(proximoTema)
-  const IconeTema = theme === 'light' ? SunIcon : theme === 'dark' ? MoonIcon : CloudIcon
   const badges = {
     tarefas:    { n: pendingCount, tipo: 'warn' },
     pagamentos: { n: comprovantesPendentes, tipo: 'warn' },
@@ -121,9 +120,7 @@ export default function App() {
             title={atualizando ? 'Atualizando...' : 'Atualizar dados desta tela (sem recarregar a página)'}>
             <RefreshCwIcon size={18} style={atualizando ? { animation:'spin 0.8s linear infinite' } : undefined} />
           </button>
-          <button className="btn btn-icon btn-ghost" onClick={toggleTheme} title={`Tema: ${TEMA_LABEL[theme]} (clique para trocar)`}>
-            <IconeTema size={18} />
-          </button>
+          <SeletorTema tema={theme} onEscolher={setTheme} />
           <NotificacoesBell onClick={() => setShowNotifs(true)} />
           <button className="btn btn-icon btn-ghost" onClick={() => setShowConfig(true)} title="Configurações"><SettingsIcon size={18} /></button>
           <button className="btn btn-icon btn-ghost" onClick={sair} title="Sair"><LogOutIcon size={18} /></button>
