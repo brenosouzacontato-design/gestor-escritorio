@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState } from 'react'
-import { SparklesIcon, AlertOctagonIcon, AlertTriangleIcon, LightbulbIcon, ExternalLinkIcon, ChevronDownIcon, ChevronRightIcon, ScaleIcon, NewspaperIcon, RouteIcon, ActivityIcon } from 'lucide-react'
+import { MessageCircleIcon, SparklesIcon, AlertOctagonIcon, AlertTriangleIcon, LightbulbIcon, ExternalLinkIcon, ChevronDownIcon, ChevronRightIcon, ScaleIcon, NewspaperIcon, RouteIcon, ActivityIcon } from 'lucide-react'
 import { useStore } from '../../store'
 import { useToast } from '../../components/shared'
 import { montarAssessor, cardsDoCliente, resumoAnonimo } from '../../lib/assessor'
 import { dataBR } from '../../lib/assessor/datas'
 import { carregarDadosAssessor, pedirResumoAssessor } from './assessorApi'
+import ChatAssessor from './ChatAssessor'
 
 const NIVEL = {
   urgente: { rotulo: 'Urgente', cor: 'var(--danger)', Icone: AlertOctagonIcon },
@@ -13,6 +14,7 @@ const NIVEL = {
 }
 const ABAS = [
   { id: 'tudo', rotulo: 'Tudo' },
+  { id: 'chat', rotulo: 'Pergunte (IA)', Icone: MessageCircleIcon },
   { id: 'reforma', rotulo: 'Reforma Tributária', Icone: ScaleIcon },
   { id: 'uso', rotulo: 'Uso do sistema', Icone: ActivityIcon },
   { id: 'dicas', rotulo: 'Dicas e fluxos', Icone: RouteIcon },
@@ -93,6 +95,8 @@ export default function AssessorPage({ onNavigate }) {
           </button>
         ))}
       </div>
+
+      {aba === 'chat' && <ChatAssessor />}
 
       {(aba === 'tudo' || aba === 'reforma') && !clienteId && <Cronograma assessor={assessor} />}
 

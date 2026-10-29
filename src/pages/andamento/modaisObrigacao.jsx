@@ -345,22 +345,24 @@ export function ModalTarefasLote({ dept, clientes, onClose, onSaved }) {
 }
 
 // ── Modal Obrigações em Lote (escolha manual de empresas + tipo) ────────────
-export function ModalObrigacoesLote({ departamentos, clientes, competenciaInicial, onClose, onSaved }) {
+// sugestao (opcional, vem das Sugestões do Assessor): { nome, periodicidade,
+// mesVencimento, diaVencimento, clienteIds } — abre já em "Criar tipo novo".
+export function ModalObrigacoesLote({ departamentos, clientes, competenciaInicial, sugestao = null, onClose, onSaved }) {
   const [departamentoId, setDepartamentoId] = useState(departamentos[0]?.id || '')
   const [tipos,          setTipos]          = useState([])
   const [tipoId,         setTipoId]         = useState('')
-  const [criandoNovo,    setCriandoNovo]    = useState(false)
-  const [novoNome,       setNovoNome]       = useState('')
-  const [novaPeriodicidade, setNovaPeriodicidade] = useState('mensal')
-  const [recorrente,     setRecorrente]     = useState(true)
-  const [mesVencimento,  setMesVencimento]  = useState('mesmo')
-  const [diaVencimento,  setDiaVencimento]  = useState('')
+  const [criandoNovo,    setCriandoNovo]    = useState(!!sugestao)
+  const [novoNome,       setNovoNome]       = useState(sugestao?.nome || '')
+  const [novaPeriodicidade, setNovaPeriodicidade] = useState(['mensal', 'trimestral', 'semestral', 'anual'].includes(sugestao?.periodicidade) ? sugestao.periodicidade : 'mensal')
+  const [recorrente,     setRecorrente]     = useState(sugestao ? sugestao.periodicidade !== 'eventual' : true)
+  const [mesVencimento,  setMesVencimento]  = useState(sugestao?.mesVencimento || 'mesmo')
+  const [diaVencimento,  setDiaVencimento]  = useState(sugestao?.diaVencimento ? String(sugestao.diaVencimento) : '')
   const [diasLembrete,   setDiasLembrete]   = useState(3)
   const [prazoDias,      setPrazoDias]      = useState(15) // usado só quando não é recorrente
   const [competencia,    setCompetencia]    = useState(competenciaInicial)
   const [dataEntrega,    setDataEntrega]    = useState('')
   const [busca,          setBusca]          = useState('')
-  const [clientesSel,    setClientesSel]    = useState([])
+  const [clientesSel,    setClientesSel]    = useState(sugestao?.clienteIds || [])
   const [saving,         setSaving]         = useState(false)
   const [erro,           setErro]           = useState(null)
 

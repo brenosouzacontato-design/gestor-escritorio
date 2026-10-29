@@ -17,6 +17,7 @@ import {
 import { BotaoAnexos, AnexosItemModal } from '../components/AnexosItem'
 import OpcoesCandidatos from '../components/OpcoesCandidatos'
 import ModalLembrete from '../components/ModalLembrete'
+import SugestoesObrigacoes, { regimeSigla } from './assessor/SugestoesObrigacoes'
 import { listarLembretesPorItens } from './andamento/lembretesApi'
 
 // Casamento histórico tipo-texto → departamento, só pra competências
@@ -279,6 +280,8 @@ export default function Empresas({ onOpenTarefas, onOpenCadastro, clienteInicial
   const [showNovaObs,     setShowNovaObs]     = useState(false)
   const [loteDept,         setLoteDept]       = useState(null) // dept aberto pro modal de tarefas em lote
   const [showLoteObs,      setShowLoteObs]    = useState(false)
+  const [showSugestoes,    setShowSugestoes]  = useState(false) // sugestões do Assessor para a competência
+  const [sugestaoLote,     setSugestaoLote]   = useState(null)  // sugestão escolhida -> 'Obrigações em lote' preenchido
   const [lembreteAlvo,     setLembreteAlvo]   = useState(null) // {obrigacaoId} ou {tarefaId} aberto pro modal de lembrete
   const [atribuirAlvo,     setAtribuirAlvo]   = useState(null) // {obrigacaoId} ou {tarefaId} aberto pro modal "Atribuir a"
   const [showCndManual,   setShowCndManual]   = useState(false) // modal de marcar CND estadual/municipal
@@ -817,6 +820,8 @@ export default function Empresas({ onOpenTarefas, onOpenCadastro, clienteInicial
         (feitas, total) => setProgressoGeracao(`${feitas}/${total}`))
       await fetchObrigacoes()
       show?.(n > 0 ? `${n} obrigação${n!==1?'ões':''} gerada${n!==1?'s':''} para ${compSel}` : `Nada novo pra gerar em ${compSel}`)
+      // o Assessor confere no calendário oficial se falta alguma obrigação
+      setShowSugestoes(true)
     } catch (e) { show?.('Erro: ' + e.message); await fetchObrigacoes() }
     setGerando(false)
     setProgressoGeracao('')
@@ -878,6 +883,11 @@ export default function Empresas({ onOpenTarefas, onOpenCadastro, clienteInicial
             title="Gerar obrigações recorrentes desta competência (automático, todas as empresas)"
             style={{ display:'flex', alignItems:'center', gap:5, background:'var(--surface2)', border:'1px solid var(--border)', borderRadius:8, padding:'5px 10px', fontSize:11, color:'var(--text2)', cursor:'pointer', fontWeight:500, opacity:gerando?.6:1 }}>
             <RefreshCwIcon size={12} /> {gerando ? `Gerando ${compSel}… ${progressoGeracao}` : `Gerar ${compSel}`}
+          </button>
+          <button onClick={() => setShowSugestoes(true)}
+            title={`Obrigações de ${compSel} segundo o calendário oficial (Agenda Tributária, eSocial, SPED), para os regimes das suas empresas`}
+            style={{ display:'flex', alignItems:'center', gap:5, background:'var(--accent-dim)', border:'1px solid var(--border)', borderRadius:8, padding:'5px 10px', fontSize:11, color:'var(--accent)', cursor:'pointer', fontWeight:600 }}>
+            <SparklesIcon size={12} /> Sugestões do Assessor
           </button>
           <button onClick={() => setShowLoteObs(true)}
             title="Criar uma obrigação escolhida à mão pra várias empresas"
@@ -1956,15 +1966,42 @@ export default function Empresas({ onOpenTarefas, onOpenCadastro, clienteInicial
         />
       )}
 
+      {/* Sugestões do Assessor (calendário oficial) para a competência */}
+      {showSugestoes && (
+        <SugestoesObrigacoes
+          competencia={compSel}
+          clientes={clientes}
+          nomesExistentes={[...new Set(obrigacoes.map(o => o.titulo || o.tipo).filter(Boolean))]}
+          onClose={() => setShowSugestoes(false)}
+          onProgramar={(o) => {
+            // vencimento no mesmo mês da competência ou no seguinte vira regra recorrente
+            const [mc, ac] = compSel.split('/').map(Number)
+            const [av, mv, dv] = (o.vencimento || '').split('-').map(Number)
+            const difMeses = o.vencimento ? (av * 12 + mv) - (ac * 12 + mc) : null
+            setSugestaoLote({
+              nome: o.nome,
+              periodicidade: o.periodicidade,
+              mesVencimento: difMeses === 0 ? 'mesmo' : difMeses === 1 ? 'seguinte' : null,
+              diaVencimento: difMeses === 0 || difMeses === 1 ? dv : null,
+              clienteIds: clientes.filter(c => !o.regimes.length || o.regimes.includes(regimeSigla(c.regime))).map(c => c.id),
+            })
+            setShowSugestoes(false)
+            setShowLoteObs(true)
+          }}
+        />
+      )}
+
       {/* Modal obrigações em lote (escolha manual de empresas + tipo) */}
       {showLoteObs && (
         <ModalObrigacoesLote
           departamentos={departamentos}
           clientes={clientes}
           competenciaInicial={compSel}
-          onClose={() => setShowLoteObs(false)}
+          sugestao={sugestaoLote}
+          onClose={() => { setShowLoteObs(false); setSugestaoLote(null) }}
           onSaved={async (resultado) => {
             setShowLoteObs(false)
+            setSugestaoLote(null)
             await fetchObrigacoes()
             show?.(`${resultado.criadas} criada${resultado.criadas!==1?'s':''}${resultado.reativadas ? `, ${resultado.reativadas} reativada${resultado.reativadas!==1?'s':''} (estava${resultado.reativadas!==1?'m':''} "não aplica")` : ''}${resultado.jaExistiam ? `, ${resultado.jaExistiam} já existia${resultado.jaExistiam!==1?'m':''}` : ''}`)
           }}
