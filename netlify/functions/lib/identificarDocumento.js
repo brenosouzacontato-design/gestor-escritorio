@@ -12,7 +12,7 @@
 const ANTHROPIC_API_URL = 'https://api.anthropic.com/v1/messages';
 const MODELO = 'claude-haiku-4-5-20251001';
 
-const MIME_IMAGEM = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
+const { tipoReal, leituraPossivel, blocoArquivo, textoLegenda } = require('./midiaWhatsapp');
 
 const SYSTEM_PROMPT = `Você é um assistente de escritório contábil brasileiro. Recebe um documento (comprovante, guia, certidão, recibo etc) e uma lista de "candidatos" — obrigações e tarefas em aberto de vários clientes — e precisa: 1) identificar que tipo de documento é; 2) identificar de qual cliente ele é (comparando com a lista); 3) apontar qual candidato da lista esse documento resolve, se houver um.
 
@@ -25,11 +25,13 @@ Regras:
 - "candidatoId": só preencha se o tipo de documento corresponder claramente ao rótulo de um candidato daquele MESMO cliente (ex: documento é "guia do DAS" e existe candidato "PGDAS" do mesmo cliente). Se não achar correspondência clara, null.
 - "confianca": "alta" só quando cliente E candidato foram identificados com bastante segurança; "media" quando um dos dois ficou incerto; "baixa" quando pouca coisa foi identificada.
 - "observacao": uma frase curta explicando a escolha (ou por que ficou null).
+- O arquivo pode ser PDF, foto ou print de tela. Leia o que estiver visível; se estiver cortado ou ilegível, use confiança "baixa".
+- Se vier uma mensagem junto com o arquivo (ex: "guia do FGTS da Loja"), use como pista, mas só conte como certo o que o documento mostrar.
 - Se o arquivo não parecer um documento relevante pra um escritório de contabilidade, devolva tipoDocumento "Documento não identificado" e os dois ids null.`;
 
 // candidatos: [{id, clienteId, clienteNome, rotulo}]
 // Retorna { tipoDocumento, clienteId, candidatoId, confianca, observacao }
-async function identificarDocumento({ arquivoBase64, filename, mimeType, candidatos, apiKey }) {
+async function identificarDocumento({ arquivoBase64, filename, mimeType: mimeInformado, legenda = null, candidatos, apiKey }) {
   if (!apiKey) throw new Error('ANTHROPIC_API_KEY não configurada.');
   if (!arquivoBase64) throw new Error('arquivoBase64 não informado.');
 
@@ -37,9 +39,10 @@ async function identificarDocumento({ arquivoBase64, filename, mimeType, candida
     .map((c) => `- id: ${c.id} | cliente: ${c.clienteNome} (clienteId: ${c.clienteId}) | ${c.rotulo}`)
     .join('\n');
 
-  const conteudoArquivo = MIME_IMAGEM.includes(mimeType)
-    ? { type: 'image', source: { type: 'base64', media_type: mimeType, data: arquivoBase64 } }
-    : { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: arquivoBase64 } };
+  const mimeType = tipoReal(arquivoBase64, mimeInformado);
+  const leitura = leituraPossivel(arquivoBase64, mimeType);
+  if (!leitura.ok) throw new Error(`Leitura automática indisponível: ${leitura.motivo}.`);
+  const conteudoArquivo = blocoArquivo(arquivoBase64, mimeType);
 
   const anthropicResp = await fetch(ANTHROPIC_API_URL, {
     method: 'POST',
@@ -59,7 +62,7 @@ async function identificarDocumento({ arquivoBase64, filename, mimeType, candida
             conteudoArquivo,
             {
               type: 'text',
-              text: `Documento: "${filename || 'documento'}".\n\nCandidatos (obrigações/tarefas em aberto):\n${listaCandidatos || '(nenhum candidato em aberto no momento)'}`,
+              text: `Documento: "${filename || 'documento'}".${textoLegenda(legenda)}\n\nCandidatos (obrigações/tarefas em aberto):\n${listaCandidatos || '(nenhum candidato em aberto no momento)'}`,
             },
           ],
         },
