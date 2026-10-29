@@ -58,3 +58,31 @@ export async function pedirResumoAssessor(resumo) {
   if (!resp.ok) throw new Error(corpo.error || `Falha ao gerar o resumo (${resp.status}).`)
   return corpo
 }
+
+// Chat do Assessor / sugestões de obrigações: dispara a background function
+// (a busca em sites oficiais pode levar mais de um minuto) e consulta o
+// resultado de tempos em tempos. pedido = { modo: 'chat', mensagens } ou
+// { modo: 'obrigacoes', competencia, regimes, existentes }.
+export async function perguntarAssessor(pedido, { limiteMs = 5 * 60_000, intervaloMs = 3000 } = {}) {
+  const id = crypto.randomUUID()
+  const headers = await cabecalhosFunctions()
+  const hoje = new Date().toLocaleDateString('sv-SE') // AAAA-MM-DD no fuso local
+  const disparo = await fetch('/.netlify/functions/assessor-chat-background', {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ id, pedido: { ...pedido, hoje } }),
+  })
+  if (!disparo.ok && disparo.status !== 202) throw new Error(`Não consegui enviar a pergunta (${disparo.status}).`)
+
+  const fim = Date.now() + limiteMs
+  while (Date.now() < fim) {
+    await new Promise((r) => setTimeout(r, intervaloMs))
+    const resp = await fetch(`/.netlify/functions/assessor-chat-resultado?id=${id}`, { headers })
+    if (resp.status === 404) continue
+    const corpo = await resp.json().catch(() => ({}))
+    if (!resp.ok) throw new Error(corpo.error || `Falha ao buscar a resposta (${resp.status}).`)
+    if (corpo.status === 'pronto') return corpo
+    if (corpo.status === 'erro') throw new Error(corpo.erro || 'Falha ao consultar o Assessor.')
+  }
+  throw new Error('A resposta demorou demais. Tente de novo em instantes.')
+}

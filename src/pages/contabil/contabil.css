@@ -58,7 +58,7 @@
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--r-sm);
-  overflow: hidden;
+  overflow: clip;
 }
 
 .contabil-tabela th {
@@ -174,7 +174,8 @@
 }
 
 .contabil-tabela-scroll {
-  overflow-x: auto;
+  overflow: auto;
+  max-height: calc(100vh - 170px);
 }
 
 .contabil-tabela-scroll .contabil-tabela {

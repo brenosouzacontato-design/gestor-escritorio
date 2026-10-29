@@ -1,10 +1,14 @@
 import { useState, useMemo, useRef, useEffect } from 'react'
-import { Trash2Icon, CheckIcon, XIcon, SaveIcon, MessageSquareIcon, PlusIcon, GripVerticalIcon, SendIcon, TruckIcon } from 'lucide-react'
+import { Trash2Icon, CheckIcon, XIcon, SaveIcon, MessageSquareIcon, PlusIcon, GripVerticalIcon, SendIcon, TruckIcon,
+  BellIcon, BellRingIcon, CalendarIcon, Building2Icon, ArchiveIcon, CircleDashedIcon, Loader2Icon, HourglassIcon, CheckCircle2Icon,
+  AlertTriangleIcon, ArrowLeftIcon, SearchIcon } from 'lucide-react'
 import { useStore } from '../store'
-import { DeptChip, PriDot, fmtDate, isOverdue } from '../components/shared'
+import { DeptChip, PriDot, fmtDate } from '../components/shared'
 import { supabase } from '../lib/supabase'
 import { uploadArquivo, criarLinkAssinado, anexarDocumentoAoItem, abrirLinkAssinado } from './documentos/documentosApi'
 import { BotaoAnexos, AnexosItemModal } from '../components/AnexosItem'
+import ModalLembrete from '../components/ModalLembrete'
+import { estaArquivada, diasDesdeConclusao, situacaoPrazo, dataConclusao, DIAS_PARA_ARQUIVAR } from '../lib/tarefasPrazo'
 
 const DEPTS = [
   { id: 'todos', label: 'Todos' },
@@ -16,11 +20,23 @@ const DEPTS = [
 ]
 
 const COLUNAS = [
-  { id: 'pendente',    label: 'A Fazer',       color: 'var(--text3)',  bg: 'var(--surface2)' },
-  { id: 'andamento',   label: 'Em Andamento',  color: 'var(--info)',   bg: 'var(--info-dim)' },
-  { id: 'aguardando',  label: 'Aguardando',    color: 'var(--warn)',   bg: 'var(--warn-dim)' },
-  { id: 'concluido',   label: 'Concluído',     color: 'var(--ok)',     bg: 'var(--ok-dim)'   },
+  { id: 'pendente',    label: 'A Fazer',       color: 'var(--text3)',  bg: 'var(--surface2)', Icon: CircleDashedIcon },
+  { id: 'andamento',   label: 'Em Andamento',  color: 'var(--info)',   bg: 'var(--info-dim)', Icon: Loader2Icon },
+  { id: 'aguardando',  label: 'Aguardando',    color: 'var(--warn)',   bg: 'var(--warn-dim)', Icon: HourglassIcon },
+  { id: 'concluido',   label: 'Concluído',     color: 'var(--ok)',     bg: 'var(--ok-dim)',   Icon: CheckCircle2Icon },
 ]
+
+// Cor do selo de prazo no card
+const COR_PRAZO = {
+  atrasada: { cor: 'var(--danger)', bg: 'var(--danger-dim)' },
+  hoje:     { cor: 'var(--warn)',   bg: 'var(--warn-dim)' },
+  breve:    { cor: 'var(--warn)',   bg: 'var(--warn-dim)' },
+  futuro:   { cor: 'var(--text2)',  bg: 'var(--surface2)' },
+}
+
+function iniciais(nome = '') {
+  return nome.split(/\s+/).filter(Boolean).slice(0, 2).map(p => p[0]).join('').toUpperCase()
+}
 
 // kanban_status: pendente | andamento | aguardando | concluido
 // Se não tiver kanban_status, deriva do campo concluida
@@ -53,6 +69,20 @@ export default function Tarefas({ onAddTarefa, highlightTaskId, onHighlightConsu
     .order('created_at', { ascending: false })
     .then(({ data }) => setAnexos(data || []))
   useEffect(() => { carregarAnexos() }, [])
+
+  // Lembretes pendentes das tarefas (sino no card). Os lembretes de tarefa
+  // ficam todos aqui; no Fechamento a aba de tarefas é só para consulta.
+  const [lembretes,     setLembretes]     = useState([])
+  const [lembreteAlvo,  setLembreteAlvo]  = useState(null) // { tarefaId, titulo, lembrete }
+  const carregarLembretes = () => supabase.from('lembretes').select('*')
+    .eq('enviado', false).not('tarefa_id', 'is', null)
+    .then(({ data }) => setLembretes(data || []))
+  useEffect(() => { carregarLembretes() }, [])
+  const lembreteDaTarefa = (id) => lembretes.find(l => l.tarefa_id === id)
+
+  // Concluídas há 7 dias ou mais saem do quadro (ficam em "Arquivadas")
+  const [verArquivadas, setVerArquivadas] = useState(false)
+  const [buscaArquivo,  setBuscaArquivo]  = useState('')
   const anexosDaTarefa = (id) => anexos.filter(a => a.tarefa_id === id)
   const enviarAnexo = async (arquivo, { darBaixa }) => {
     await anexarDocumentoAoItem({ clienteId: anexoAlvo.cliente_id || null, alvo: { tipo: 'tarefa', id: anexoAlvo.id }, arquivo, darBaixa })
@@ -83,10 +113,30 @@ export default function Tarefas({ onAddTarefa, highlightTaskId, onHighlightConsu
     return t
   }, [tarefas, deptFilter, clienteFilter])
 
+  const arquivadas = useMemo(() => {
+    const q = buscaArquivo.trim().toLowerCase()
+    return filtered.filter(t => estaArquivada(t))
+      .filter(t => !q || `${t.titulo} ${t.clientes?.nome || ''}`.toLowerCase().includes(q))
+      .sort((a, b) => String(dataConclusao(b)).localeCompare(String(dataConclusao(a))))
+  }, [filtered, buscaArquivo])
+  const qtdArquivadas = useMemo(() => filtered.filter(t => estaArquivada(t)).length, [filtered])
+
+  // Números do topo (só tarefas abertas)
+  const resumo = useMemo(() => {
+    const abertas = filtered.filter(t => getKanbanStatus(t) !== 'concluido')
+    const tipos = abertas.map(t => situacaoPrazo(t.vencimento).tipo)
+    return {
+      abertas: abertas.length,
+      atrasadas: tipos.filter(x => x === 'atrasada').length,
+      hoje: tipos.filter(x => x === 'hoje').length,
+      comLembrete: abertas.filter(t => lembreteDaTarefa(t.id)).length,
+    }
+  }, [filtered, lembretes])
+
   const porColuna = useMemo(() => {
     const map = {}
     COLUNAS.forEach(c => { map[c.id] = [] })
-    filtered.forEach(t => {
+    filtered.filter(t => !estaArquivada(t)).forEach(t => {
       const col = getKanbanStatus(t)
       if (map[col]) map[col].push(t)
       else map['pendente'].push(t)
@@ -151,22 +201,54 @@ export default function Tarefas({ onAddTarefa, highlightTaskId, onHighlightConsu
         </button>
       </div>
 
-      <div style={{ marginBottom:14 }}>
-        <select value={clienteFilter} onChange={e => setClienteFilter(e.target.value)}>
+      <div style={{ display:'flex', gap:8, flexWrap:'wrap', alignItems:'center', marginBottom:12 }}>
+        <select value={clienteFilter} onChange={e => setClienteFilter(e.target.value)} style={{ flex:'1 1 220px', maxWidth:360 }}>
           <option value="todos">— Todos os clientes —</option>
           {clientes.map(c => <option key={c.id} value={c.id}>{c.nome}</option>)}
         </select>
+        <div className="tarefas-resumo">
+          <span className="tarefas-resumo-item"><b>{resumo.abertas}</b> abertas</span>
+          {resumo.atrasadas > 0 && <span className="tarefas-resumo-item perigo"><AlertTriangleIcon size={12} /> <b>{resumo.atrasadas}</b> atrasada{resumo.atrasadas !== 1 ? 's' : ''}</span>}
+          {resumo.hoje > 0 && <span className="tarefas-resumo-item alerta"><CalendarIcon size={12} /> <b>{resumo.hoje}</b> vence{resumo.hoje !== 1 ? 'm' : ''} hoje</span>}
+          {resumo.comLembrete > 0 && <span className="tarefas-resumo-item"><BellRingIcon size={12} /> <b>{resumo.comLembrete}</b> com lembrete</span>}
+        </div>
+        <button className={`btn btn-sm ${verArquivadas ? 'btn-accent' : ''}`} onClick={() => setVerArquivadas(v => !v)}
+          title={`Tarefas concluídas há ${DIAS_PARA_ARQUIVAR} dias ou mais saem do quadro e ficam aqui`} style={{ marginLeft:'auto' }}>
+          {verArquivadas ? <><ArrowLeftIcon size={12} /> Voltar ao quadro</> : <><ArchiveIcon size={12} /> Arquivadas ({qtdArquivadas})</>}
+        </button>
       </div>
 
-      {/* Board Kanban */}
-      <div style={{
-        display: 'grid',
-        gridTemplateColumns: 'repeat(4, minmax(220px, 1fr))',
-        gap: 12,
-        overflowX: 'auto',
-        paddingBottom: 8,
-        minHeight: 'calc(100vh - 240px)',
-      }}>
+      {verArquivadas && (
+        <div>
+          <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:10, flexWrap:'wrap' }}>
+            <span style={{ fontSize:12, color:'var(--text3)', flex:1 }}>
+              Concluídas há {DIAS_PARA_ARQUIVAR} dias ou mais. Para reabrir, use ⇄ no card e mova para outra coluna.
+            </span>
+            <div style={{ position:'relative' }}>
+              <SearchIcon size={13} style={{ position:'absolute', left:9, top:'50%', transform:'translateY(-50%)', color:'var(--text3)' }} />
+              <input value={buscaArquivo} onChange={e => setBuscaArquivo(e.target.value)} placeholder="Buscar nas arquivadas"
+                style={{ paddingLeft:28, width:240 }} />
+            </div>
+          </div>
+          {arquivadas.length === 0 && (
+            <div style={{ textAlign:'center', color:'var(--text3)', fontSize:13, padding:'40px 0' }}>Nenhuma tarefa arquivada{buscaArquivo ? ' com essa busca' : ''}.</div>
+          )}
+          <div className="tarefas-arquivo-grade">
+            {arquivadas.map(t => (
+              <KanbanCard key={t.id} tarefa={t} colunas={COLUNAS} colAtual="concluido" arquivada
+                onOpen={() => setTarefaAberta(t)}
+                onDelete={() => deleteTarefa(t.id)}
+                onMove={novaCol => handleMoveCard(t.id, novaCol)}
+                onToggleEntrega={() => handleToggleEntrega(t)}
+                qtdAnexos={anexosDaTarefa(t.id).length}
+                onAnexos={() => setAnexoAlvo(t)} />
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Board Kanban — cada coluna rola sozinha e o cabeçalho dela fica fixo */}
+      {!verArquivadas && <div className="tarefas-quadro">
         {COLUNAS.map(col => {
           const cards = porColuna[col.id] || []
           const isDragTarget = dragOver === col.id
@@ -175,22 +257,16 @@ export default function Tarefas({ onAddTarefa, highlightTaskId, onHighlightConsu
               onDragOver={e => { e.preventDefault(); setDragOver(col.id) }}
               onDragLeave={() => setDragOver(null)}
               onDrop={e => handleDrop(e, col.id)}
+              className="tarefas-coluna"
               style={{
                 background: isDragTarget ? col.bg : 'var(--surface2)',
                 border: `2px solid ${isDragTarget ? col.color : 'var(--border)'}`,
-                borderRadius: 'var(--r-lg)',
-                padding: '10px 8px',
-                display: 'flex',
-                flexDirection: 'column',
-                gap: 8,
-                transition: 'border-color .15s, background .15s',
-                minWidth: 220,
               }}>
 
-              {/* Cabeçalho coluna */}
-              <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'0 4px 6px', borderBottom:`2px solid ${col.color}` }}>
-                <span style={{ fontSize:11, fontWeight:800, color: col.color, textTransform:'uppercase', letterSpacing:'.8px' }}>
-                  {col.label}
+              {/* Cabeçalho coluna (fica fixo enquanto a coluna rola) */}
+              <div className="tarefas-coluna-cabecalho" style={{ borderBottom:`2px solid ${col.color}` }}>
+                <span style={{ fontSize:11, fontWeight:800, color: col.color, textTransform:'uppercase', letterSpacing:'.8px', display:'flex', alignItems:'center', gap:6 }}>
+                  <col.Icon size={13} /> {col.label}
                 </span>
                 <span style={{ fontSize:11, fontWeight:700, color:'var(--text3)', background:'var(--surface3)', borderRadius:99, padding:'1px 8px' }}>
                   {cards.length}
@@ -218,12 +294,27 @@ export default function Tarefas({ onAddTarefa, highlightTaskId, onHighlightConsu
                   isDragging={dragging?.id === t.id}
                   qtdAnexos={anexosDaTarefa(t.id).length}
                   onAnexos={() => setAnexoAlvo(t)}
+                  lembrete={lembreteDaTarefa(t.id)}
+                  onLembrete={() => setLembreteAlvo({ tarefaId: t.id, titulo: t.titulo, lembrete: lembreteDaTarefa(t.id) })}
                 />
               ))}
+              {col.id === 'concluido' && cards.length > 0 && (
+                <div style={{ fontSize:10.5, color:'var(--text3)', textAlign:'center', padding:'4px 0' }}>
+                  <ArchiveIcon size={10} style={{ verticalAlign:-1 }} /> Arquivadas automaticamente {DIAS_PARA_ARQUIVAR} dias após concluir
+                </div>
+              )}
             </div>
           )
         })}
-      </div>
+      </div>}
+
+      {lembreteAlvo && (
+        <ModalLembrete
+          alvo={lembreteAlvo}
+          onClose={() => setLembreteAlvo(null)}
+          onSaved={async () => { setLembreteAlvo(null); await carregarLembretes() }}
+        />
+      )}
 
       {anexoAlvo && (
         <AnexosItemModal
@@ -250,87 +341,110 @@ export default function Tarefas({ onAddTarefa, highlightTaskId, onHighlightConsu
   )
 }
 
-function KanbanCard({ tarefa, colunas, colAtual, onOpen, onDelete, onMove, onToggleEntrega, onDragStart, isDragging, qtdAnexos = 0, onAnexos }) {
-  const overdue = isOverdue(tarefa.vencimento) && colAtual !== 'concluido'
+function KanbanCard({ tarefa, colunas, colAtual, onOpen, onDelete, onMove, onToggleEntrega, onDragStart, isDragging, qtdAnexos = 0, onAnexos, lembrete, onLembrete, arquivada = false }) {
+  const concluida = colAtual === 'concluido'
+  const prazo = concluida ? { tipo: null } : situacaoPrazo(tarefa.vencimento)
   const [showMove, setShowMove] = useState(false)
+  const diasConcluida = concluida ? diasDesdeConclusao(tarefa) : null
+  const faltam = diasConcluida !== null ? Math.max(DIAS_PARA_ARQUIVAR - diasConcluida, 0) : null
+
+  // Faixa lateral: atrasada > vence hoje/em breve > prioridade alta > concluída
+  const faixa = concluida ? 'var(--ok)'
+    : prazo.tipo === 'atrasada' ? 'var(--danger)'
+    : (prazo.tipo === 'hoje' || prazo.tipo === 'breve') ? 'var(--warn)'
+    : tarefa.prioridade === 'alta' ? 'var(--danger)'
+    : 'var(--border2)'
+  const corPrazo = COR_PRAZO[prazo.tipo]
 
   return (
     <div
-      draggable
+      draggable={!arquivada}
       onDragStart={onDragStart}
       onClick={onOpen}
-      style={{
-        background: 'var(--surface)',
-        border: '1px solid var(--border)',
-        borderRadius: 'var(--r-md)',
-        padding: '10px 12px',
-        cursor: 'pointer',
-        opacity: isDragging ? 0.4 : 1,
-        transition: 'box-shadow .15s, transform .15s',
-        position: 'relative',
-      }}
-      onMouseEnter={e => e.currentTarget.style.boxShadow = 'var(--shadow-md)'}
-      onMouseLeave={e => { e.currentTarget.style.boxShadow = 'none'; setShowMove(false) }}>
+      className={`tarefa-card ${concluida ? 'concluida' : ''}`}
+      style={{ borderLeftColor: faixa, opacity: isDragging ? 0.4 : 1 }}
+      onMouseLeave={() => setShowMove(false)}>
 
-      {/* Grip + ações */}
-      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', marginBottom:6 }}>
-        <GripVerticalIcon size={12} style={{ color:'var(--text3)', cursor:'grab', flexShrink:0 }} />
-        <div style={{ display:'flex', gap:4 }} onClick={e => e.stopPropagation()}>
-          {/* Mover para coluna */}
-          <div style={{ position:'relative' }}>
-            <button
-              title="Mover para..."
-              onClick={e => { e.stopPropagation(); setShowMove(v => !v) }}
-              style={{ background:'none', border:'none', cursor:'pointer', fontSize:12, color:'var(--text3)', padding:'1px 4px', borderRadius:4 }}>
-              ⇄
+      {/* Linha de cima: empresa + ações */}
+      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', gap:6, marginBottom:6 }}>
+        <span style={{ display:'flex', alignItems:'center', gap:5, minWidth:0, fontSize:10.5, color:'var(--text2)', fontWeight:600 }}>
+          {!arquivada && <GripVerticalIcon size={12} style={{ color:'var(--text3)', cursor:'grab', flexShrink:0 }} />}
+          {tarefa.clientes?.nome ? (
+            <>
+              <Building2Icon size={11} style={{ flexShrink:0, color:'var(--text3)' }} />
+              <span style={{ overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }} title={tarefa.clientes.nome}>
+                {tarefa.clientes.nome.split(' ').slice(0,3).join(' ')}
+              </span>
+            </>
+          ) : <span style={{ color:'var(--text3)', fontWeight:500 }}>Sem empresa</span>}
+        </span>
+        <div style={{ display:'flex', gap:2, flexShrink:0 }} onClick={e => e.stopPropagation()}>
+          {onLembrete && (
+            <button className="tarefa-card-acao" onClick={onLembrete}
+              title={lembrete ? `Lembrete para ${new Date(lembrete.data_hora).toLocaleString('pt-BR')}` : 'Marcar lembrete'}
+              style={{ color: lembrete ? 'var(--accent)' : undefined }}>
+              {lembrete ? <BellRingIcon size={12} /> : <BellIcon size={12} />}
             </button>
+          )}
+          <div style={{ position:'relative' }}>
+            <button className="tarefa-card-acao" title="Mover para..." onClick={() => setShowMove(v => !v)}>⇄</button>
             {showMove && (
-              <div style={{ position:'absolute', right:0, top:20, background:'var(--surface)', border:'1px solid var(--border)', borderRadius:'var(--r-sm)', zIndex:50, minWidth:140, boxShadow:'var(--shadow-md)' }}>
-                {colunas.filter(c => c.id !== colAtual).map(c => (
-                  <button key={c.id} onClick={e => { e.stopPropagation(); onMove(c.id); setShowMove(false) }}
-                    style={{ display:'block', width:'100%', padding:'7px 12px', textAlign:'left', background:'none', border:'none', cursor:'pointer', fontSize:12, color: c.color, fontWeight:600 }}>
-                    → {c.label}
+              <div style={{ position:'absolute', right:0, top:22, background:'var(--surface)', border:'1px solid var(--border)', borderRadius:'var(--r-sm)', zIndex:50, minWidth:150, boxShadow:'var(--shadow-md)' }}>
+                {colunas.filter(c => arquivada || c.id !== colAtual).map(c => (
+                  <button key={c.id} onClick={() => { onMove(c.id); setShowMove(false) }}
+                    style={{ display:'flex', alignItems:'center', gap:6, width:'100%', padding:'7px 12px', textAlign:'left', background:'none', border:'none', cursor:'pointer', fontSize:12, color: c.color, fontWeight:600 }}>
+                    <c.Icon size={12} /> {c.label}
                   </button>
                 ))}
               </div>
             )}
           </div>
-          <button onClick={e => { e.stopPropagation(); onDelete() }}
-            style={{ background:'none', border:'none', cursor:'pointer', color:'var(--text3)', padding:'1px 4px', borderRadius:4 }}>
-            <Trash2Icon size={11} color="var(--danger)" style={{ opacity:.5 }} />
+          <button className="tarefa-card-acao perigo" onClick={onDelete} title="Excluir tarefa">
+            <Trash2Icon size={11} />
           </button>
         </div>
       </div>
 
       {/* Prioridade + título */}
-      <div style={{ fontSize:12, fontWeight:600, color:'var(--text1)', lineHeight:1.4, marginBottom:8, display:'flex', gap:6, alignItems:'flex-start' }}>
+      <div style={{ fontSize:12.5, fontWeight:600, lineHeight:1.4, marginBottom:8, display:'flex', gap:6, alignItems:'flex-start',
+        textDecoration: concluida ? 'line-through' : 'none', color: concluida ? 'var(--text3)' : 'var(--text1)' }}>
         <PriDot pri={tarefa.prioridade} />
-        <span style={{ textDecoration: colAtual === 'concluido' ? 'line-through' : 'none', color: colAtual === 'concluido' ? 'var(--text3)' : 'var(--text1)' }}>
-          {tarefa.titulo}
-        </span>
+        <span>{tarefa.titulo}</span>
       </div>
 
-      {/* Meta */}
+      {/* Selos */}
       <div style={{ display:'flex', flexWrap:'wrap', gap:5, alignItems:'center' }}>
-        {tarefa.clientes?.nome && (
-          <span style={{ fontSize:10, color:'var(--text2)', fontWeight:500, maxWidth:120, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
-            {tarefa.clientes.nome.split(' ').slice(0,2).join(' ')}
+        {prazo.tipo && (
+          <span className="tarefa-selo" style={{ color: corPrazo.cor, background: corPrazo.bg, fontWeight: prazo.tipo === 'futuro' ? 500 : 700 }}
+            title={`Vencimento ${fmtDate(String(tarefa.vencimento).slice(0,10))}`}>
+            {prazo.tipo === 'atrasada' ? <AlertTriangleIcon size={10} /> : <CalendarIcon size={10} />} {prazo.texto}
+          </span>
+        )}
+        {concluida && diasConcluida !== null && (
+          <span className="tarefa-selo" style={{ color:'var(--ok)', background:'var(--ok-dim)' }}
+            title={arquivada ? `Concluída em ${new Date(dataConclusao(tarefa)).toLocaleDateString('pt-BR')}` : `Vai para Arquivadas em ${faltam} dia${faltam !== 1 ? 's' : ''}`}>
+            <CheckIcon size={10} /> {diasConcluida <= 0 ? 'Concluída hoje' : `Concluída há ${diasConcluida} dia${diasConcluida !== 1 ? 's' : ''}`}
           </span>
         )}
         <DeptChip dept={tarefa.departamento} />
-        {tarefa.vencimento && (
-          <span style={{ fontSize:10, color: overdue ? 'var(--danger)' : 'var(--text3)', fontWeight: overdue ? 700 : 400 }}>
-            {overdue ? '⚠ ' : ''}{fmtDate(tarefa.vencimento)}
-          </span>
-        )}
         {tarefa.origem === 'whatsapp' && (
-          <span style={{ fontSize:9, background:'var(--info-dim)', color:'var(--info)', borderRadius:99, padding:'1px 6px', fontWeight:700 }}>WA</span>
+          <span className="tarefa-selo" style={{ background:'var(--info-dim)', color:'var(--info)', fontWeight:700 }}>WhatsApp</span>
         )}
-        {tarefa.observacao && <MessageSquareIcon size={10} style={{ color:'var(--text3)' }} />}
+        {tarefa.observacao && <span title="Tem observação" style={{ display:'flex' }}><MessageSquareIcon size={11} style={{ color:'var(--text3)' }} /></span>}
         {onAnexos && <BotaoAnexos qtd={qtdAnexos} onClick={onAnexos} tamanho={11} />}
+      </div>
+
+      {/* Rodapé: responsável + entrega */}
+      <div style={{ display:'flex', alignItems:'center', gap:6, marginTop:8, paddingTop:7, borderTop:'1px solid var(--border)' }}>
+        {tarefa.responsavel ? (
+          <span style={{ display:'flex', alignItems:'center', gap:5, fontSize:10.5, color:'var(--text2)', minWidth:0 }} title={`Responsável: ${tarefa.responsavel}`}>
+            <span className="tarefa-avatar">{iniciais(tarefa.responsavel)}</span>
+            <span style={{ overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{tarefa.responsavel.split(' ')[0]}</span>
+          </span>
+        ) : <span style={{ fontSize:10.5, color:'var(--text3)' }}>Sem responsável</span>}
         <button onClick={e => { e.stopPropagation(); onToggleEntrega() }}
           title={tarefa.entregue ? 'Entregue — clique pra marcar como a entregar' : 'A entregar — clique pra marcar como entregue'}
-          style={{ marginLeft:'auto', display:'flex', alignItems:'center', gap:3, fontSize:9, fontWeight:700, border:'none', cursor:'pointer', borderRadius:99, padding:'2px 7px',
+          style={{ marginLeft:'auto', display:'flex', alignItems:'center', gap:3, fontSize:9.5, fontWeight:700, border:'none', cursor:'pointer', borderRadius:99, padding:'2px 8px',
             background: tarefa.entregue ? 'var(--ok-dim)' : 'var(--surface3)',
             color: tarefa.entregue ? 'var(--ok)' : 'var(--text3)' }}>
           <TruckIcon size={10} /> {tarefa.entregue ? 'Entregue' : 'A entregar'}

@@ -5,7 +5,7 @@ import { DeptChip, PriDot, fmtDate, isOverdue, useToast } from '../components/sh
 import { supabase } from '../lib/supabase'
 import { chavePainel, urlPublica } from '../lib/linksPublicos'
 import { listarDepartamentos, criarDepartamento, gerarObrigacoesRecorrentesCompetencia } from './andamento/andamentoApi'
-import { NovaObrigacaoModal, NovaTarefaModuloModal, ModalTarefasLote, ModalObrigacoesLote, ModalBase, ModalAtribuir } from './andamento/modaisObrigacao'
+import { NovaObrigacaoModal, ModalTarefasLote, ModalObrigacoesLote, ModalBase, ModalAtribuir } from './andamento/modaisObrigacao'
 import { atribuidaAoCliente } from '../lib/responsavel'
 import { uploadDeclaracaoSimples, uploadSituacaoFiscal, obterCndManual, salvarCndManual } from './painel/painelApi'
 import PainelViewerModal from './painel/PainelViewerModal'
@@ -16,7 +16,9 @@ import {
 } from './documentos/documentosApi'
 import { BotaoAnexos, AnexosItemModal } from '../components/AnexosItem'
 import OpcoesCandidatos from '../components/OpcoesCandidatos'
-import { criarLembrete, listarLembretesPorItens, excluirLembrete } from './andamento/lembretesApi'
+import ModalLembrete from '../components/ModalLembrete'
+import SugestoesObrigacoes, { regimeSigla } from './assessor/SugestoesObrigacoes'
+import { listarLembretesPorItens } from './andamento/lembretesApi'
 
 // Casamento histórico tipo-texto → departamento, só pra competências
 // anteriores à adoção do modelo novo (departamento_id em obrigacoes, ver
@@ -276,10 +278,10 @@ export default function Empresas({ onOpenTarefas, onOpenCadastro, clienteInicial
   const [progressoGeracao, setProgressoGeracao] = useState("")
   // Modal nova obrigação / nova tarefa / tarefas em lote
   const [showNovaObs,     setShowNovaObs]     = useState(false)
-  const [showNovaTarefa,  setShowNovaTarefa]  = useState(false)
   const [loteDept,         setLoteDept]       = useState(null) // dept aberto pro modal de tarefas em lote
   const [showLoteObs,      setShowLoteObs]    = useState(false)
-  const [tarefaEditando,   setTarefaEditando] = useState(null) // tarefa aberta pro modal de edição
+  const [showSugestoes,    setShowSugestoes]  = useState(false) // sugestões do Assessor para a competência
+  const [sugestaoLote,     setSugestaoLote]   = useState(null)  // sugestão escolhida -> 'Obrigações em lote' preenchido
   const [lembreteAlvo,     setLembreteAlvo]   = useState(null) // {obrigacaoId} ou {tarefaId} aberto pro modal de lembrete
   const [atribuirAlvo,     setAtribuirAlvo]   = useState(null) // {obrigacaoId} ou {tarefaId} aberto pro modal "Atribuir a"
   const [showCndManual,   setShowCndManual]   = useState(false) // modal de marcar CND estadual/municipal
@@ -586,6 +588,8 @@ export default function Empresas({ onOpenTarefas, onOpenCadastro, clienteInicial
     return t.departamento_id === drawer.dept.id || (t.departamento||'').toLowerCase() === drawer.dept.nome.toLowerCase()
   })
 
+  const drawerTasksPend = drawerTasks.filter(t => !t.concluida)
+
   // Lembretes pendentes dos itens do drawer aberto — alimenta o sino
   // preenchido nas linhas de obrigação/tarefa.
   useEffect(() => {
@@ -797,23 +801,6 @@ export default function Empresas({ onOpenTarefas, onOpenCadastro, clienteInicial
     setUpdatingId(null)
   }
 
-  // Toggle tarefa diretamente via supabase + refetch
-  const handleToggleTask = async (t) => {
-    setUpdatingId(t.id)
-    const concluida = !t.concluida
-    await supabase.from('tarefas').update({ concluida, concluida_em: concluida ? new Date().toISOString() : null, updated_at: new Date().toISOString() }).eq('id', t.id)
-    await fetchTarefas()
-    setUpdatingId(null)
-  }
-
-  const handleDeleteTask = async (t) => {
-    if (!window.confirm(`Excluir a tarefa "${t.titulo}"?`)) return
-    setUpdatingId(t.id)
-    await supabase.from('tarefas').delete().eq('id', t.id)
-    await fetchTarefas()
-    setUpdatingId(null)
-  }
-
   const handleAddDept = async () => {
     const nome = novoDept.trim()
     if (!nome) return
@@ -833,6 +820,8 @@ export default function Empresas({ onOpenTarefas, onOpenCadastro, clienteInicial
         (feitas, total) => setProgressoGeracao(`${feitas}/${total}`))
       await fetchObrigacoes()
       show?.(n > 0 ? `${n} obrigação${n!==1?'ões':''} gerada${n!==1?'s':''} para ${compSel}` : `Nada novo pra gerar em ${compSel}`)
+      // o Assessor confere no calendário oficial se falta alguma obrigação
+      setShowSugestoes(true)
     } catch (e) { show?.('Erro: ' + e.message); await fetchObrigacoes() }
     setGerando(false)
     setProgressoGeracao('')
@@ -894,6 +883,11 @@ export default function Empresas({ onOpenTarefas, onOpenCadastro, clienteInicial
             title="Gerar obrigações recorrentes desta competência (automático, todas as empresas)"
             style={{ display:'flex', alignItems:'center', gap:5, background:'var(--surface2)', border:'1px solid var(--border)', borderRadius:8, padding:'5px 10px', fontSize:11, color:'var(--text2)', cursor:'pointer', fontWeight:500, opacity:gerando?.6:1 }}>
             <RefreshCwIcon size={12} /> {gerando ? `Gerando ${compSel}… ${progressoGeracao}` : `Gerar ${compSel}`}
+          </button>
+          <button onClick={() => setShowSugestoes(true)}
+            title={`Obrigações de ${compSel} segundo o calendário oficial (Agenda Tributária, eSocial, SPED), para os regimes das suas empresas`}
+            style={{ display:'flex', alignItems:'center', gap:5, background:'var(--accent-dim)', border:'1px solid var(--border)', borderRadius:8, padding:'5px 10px', fontSize:11, color:'var(--accent)', cursor:'pointer', fontWeight:600 }}>
+            <SparklesIcon size={12} /> Sugestões do Assessor
           </button>
           <button onClick={() => setShowLoteObs(true)}
             title="Criar uma obrigação escolhida à mão pra várias empresas"
@@ -1325,10 +1319,10 @@ export default function Empresas({ onOpenTarefas, onOpenCadastro, clienteInicial
                       </span>
                     )}
                   </div>
-                  <div style={{ border:'1px solid var(--border)', borderRadius:'var(--r-md)', overflow:'hidden', background:'var(--surface)' }}>
-                    {/* Cabeçalho de coluna, estilo grid do Microsoft Lists */}
+                  <div style={{ border:'1px solid var(--border)', borderRadius:'var(--r-md)', overflow:'clip', background:'var(--surface)' }}>
+                    {/* Cabeçalho de coluna, estilo grid do Microsoft Lists (fica fixo na rolagem) */}
                     <div style={{ display:'flex', alignItems:'center', gap:8, padding:'7px 10px 7px 13px',
-                      background:'var(--surface2)', borderBottom:'1px solid var(--border)' }}>
+                      background:'var(--surface2)', borderBottom:'1px solid var(--border)', position:'sticky', top:0, zIndex:2 }}>
                       <span style={{ width:COL_CHECK + COL_AGUARDANDO + COL_GRIP + 16, flexShrink:0 }} />
                       <span style={{ ...HEAD, flex:1, minWidth:0 }}>Empresa</span>
                       <span style={{ ...HEAD, width:COL_MODULOS, flexShrink:0 }}>Módulos</span>
@@ -1661,7 +1655,7 @@ export default function Empresas({ onOpenTarefas, onOpenCadastro, clienteInicial
 
               {/* Tabs */}
               <div style={{ display:'flex', borderBottom:'1px solid var(--border)', flexShrink:0, background:'var(--surface)' }}>
-                {[['obrig',`📋 Obrigações (${drawerObs.length})`],['tarefas',`✓ Tarefas (${drawerTasks.length})`],['anexos',`📎 Anexos`]].map(([id,lbl]) => (
+                {[['obrig',`📋 Obrigações (${drawerObs.length})`],['tarefas',`✓ Tarefas pendentes (${drawerTasksPend.length})`],['anexos',`📎 Anexos`]].map(([id,lbl]) => (
                   <button key={id} onClick={() => setDrawerTab(id)}
                     style={{ flex:1, padding:'8px', fontSize:11, fontWeight:500, border:'none', background:'none', cursor:'pointer',
                       borderBottom:`2px solid ${drawerTab===id?'var(--accent)':'transparent'}`,
@@ -1756,88 +1750,47 @@ export default function Empresas({ onOpenTarefas, onOpenCadastro, clienteInicial
                   )
                 })()}
 
-                {/* ── Tarefas — duas colunas: a entregar x entregue ── */}
+                {/* ── Tarefas pendentes — só consulta. Tarefas não contam no
+                    fechamento; criar, editar, concluir e marcar lembretes fica
+                    tudo na tela Tarefas. ── */}
                 {drawerTab === 'tarefas' && (() => {
-                  const aEntregar = drawerTasks.filter(t => !t.concluida)
-                  const entregues = drawerTasks.filter(t => t.concluida)
-                  const CardTask = ({ t }) => {
-                    const overdue = isOverdue(t.vencimento) && !t.concluida
-                    const altaPrioridade = t.prioridade === 'alta' && !t.concluida
-                    const corStatus = overdue ? 'var(--danger)' : altaPrioridade ? 'var(--warn)' : 'transparent'
-                    const busy = updatingId === t.id
-                    const lembrete = lembreteDoItem(null, t.id)
-                    return (
-                      <div style={{ background:'var(--surface2)', border:'1px solid var(--border)',
-                        borderLeft:`3px solid ${corStatus}`, borderRadius:8, padding:'10px 12px' }}>
-                        <div style={{ display:'flex', alignItems:'flex-start', gap:8 }}>
-                          <button onClick={() => handleToggleTask(t)} disabled={busy}
-                            style={{ width:16, height:16, borderRadius:4, flexShrink:0, marginTop:1, cursor:'pointer',
-                              border:`1px solid ${t.concluida?'#34d399':'#3b4570'}`,
-                              background:t.concluida?'#34d399':'transparent',
-                              display:'flex', alignItems:'center', justifyContent:'center', opacity:busy?.5:1 }}>
-                            {t.concluida && <CheckIcon size={10} color="#12151f" strokeWidth={3} />}
+                  const pendentes = drawerTasksPend
+                  const irParaTarefas = () => { setDrawer(null); onOpenTarefas?.(drawer.c.id) }
+                  return (
+                    <div style={{ display:'flex', flexDirection:'column', gap:7 }}>
+                      <div style={{ display:'flex', alignItems:'center', gap:8, fontSize:11, color:'var(--text3)',
+                        background:'var(--surface)', border:'1px dashed var(--border2)', borderRadius:8, padding:'8px 10px' }}>
+                        <span style={{ flex:1 }}>Só para consulta: tarefas não contam no fechamento. Para criar, editar, concluir ou marcar lembretes, use a tela Tarefas.</span>
+                        {onOpenTarefas && (
+                          <button onClick={irParaTarefas} className="btn btn-sm" style={{ flexShrink:0 }}>
+                            Abrir em Tarefas <ChevronRightIcon size={12} />
                           </button>
-                          <div style={{ flex:1, minWidth:0, cursor:'pointer' }} onClick={() => setTarefaEditando(t)} title="Editar tarefa">
-                            <div style={{ fontSize:11, fontWeight:500, lineHeight:1.4,
-                              color:t.concluida?'var(--text3)':'var(--text1)',
-                              textDecoration:t.concluida?'line-through':'none' }}>
+                        )}
+                      </div>
+                      {pendentes.length === 0 && <VazioColuna texto="Nenhuma tarefa pendente para esta empresa" />}
+                      {pendentes.map(t => {
+                        const overdue = isOverdue(t.vencimento)
+                        const corStatus = overdue ? 'var(--danger)' : t.prioridade === 'alta' ? 'var(--warn)' : 'var(--border2)'
+                        return (
+                          <div key={t.id} onClick={irParaTarefas} title="Abrir na tela Tarefas"
+                            style={{ background:'var(--surface)', border:'1px solid var(--border)', borderLeft:`3px solid ${corStatus}`,
+                              borderRadius:8, padding:'9px 12px', cursor: onOpenTarefas ? 'pointer' : 'default' }}>
+                            <div style={{ fontSize:12, fontWeight:500, color:'var(--text1)', lineHeight:1.4 }}>
                               <PriDot pri={t.prioridade} /> {t.titulo}
                             </div>
-                            <div style={{ display:'flex', gap:5, alignItems:'center', marginTop:3, flexWrap:'wrap' }}>
+                            <div style={{ display:'flex', gap:6, alignItems:'center', marginTop:4, flexWrap:'wrap' }}>
                               <DeptChip dept={t.departamento} />
                               {t.vencimento && (
-                                <span style={{ fontSize:10, color:overdue?'#f87171':'var(--text3)', display:'flex', alignItems:'center', gap:2 }}>
-                                  <CalendarIcon size={9} />{overdue?'⚠ ':''}{fmtDate(t.vencimento)}
+                                <span style={{ fontSize:10, color:overdue?'var(--danger)':'var(--text3)', fontWeight:overdue?700:400, display:'flex', alignItems:'center', gap:3 }}>
+                                  <CalendarIcon size={9} />{overdue ? 'Atrasada · ' : ''}{fmtDate(t.vencimento)}
                                 </span>
                               )}
                               {t.responsavel && <ChipResponsavel item={t} />}
                             </div>
                             {t.observacao && <ObservacaoCard texto={t.observacao} />}
                           </div>
-                          <button onClick={() => setObsAlvo({ tipo: 'tarefa', item: t })}
-                            title={t.observacao ? `Observação: ${t.observacao}` : 'Escrever observação'}
-                            style={{ background:'none', border:'none', cursor:'pointer', padding:2, flexShrink:0,
-                              color: t.observacao ? 'var(--text1)' : 'var(--text3)' }}>
-                            <MessageSquareIcon size={12} />
-                          </button>
-                          <BotaoAnexos qtd={anexosDoItem('tarefa', t.id).length}
-                            onClick={() => setAnexoAlvo({ tipo: 'tarefa', item: t })} />
-                          <button onClick={() => setLembreteAlvo({ tarefaId: t.id, titulo: t.titulo, lembrete })}
-                            title={lembrete ? `Lembrete pra ${new Date(lembrete.data_hora).toLocaleString('pt-BR')}` : 'Marcar lembrete'}
-                            style={{ background:'none', border:'none', cursor:'pointer', padding:2, flexShrink:0,
-                              color: lembrete ? 'var(--accent)' : 'var(--text3)' }}>
-                            {lembrete ? <BellRingIcon size={12} /> : <BellIcon size={12} />}
-                          </button>
-                          <button onClick={() => setAtribuirAlvo({ tarefaId: t.id, titulo: t.titulo, responsavel: t.responsavel })}
-                            title={t.responsavel ? `Atribuída a ${t.responsavel}` : 'Atribuir a alguém'}
-                            style={{ background:'none', border:'none', cursor:'pointer', padding:2, flexShrink:0,
-                              color: t.responsavel ? 'var(--accent)' : 'var(--text3)' }}>
-                            <UserIcon size={12} />
-                          </button>
-                          <button onClick={() => setTarefaEditando(t)} title="Editar"
-                            style={{ background:'none', border:'none', color:'var(--text3)', cursor:'pointer', padding:2, flexShrink:0 }}>
-                            <PencilIcon size={12} />
-                          </button>
-                          <button onClick={() => handleDeleteTask(t)} title="Excluir tarefa"
-                            style={{ background:'none', border:'none', color:'var(--text3)', cursor:'pointer', padding:2, flexShrink:0 }}>
-                            <Trash2Icon size={12} />
-                          </button>
-                        </div>
-                      </div>
-                    )
-                  }
-                  return (
-                    <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10 }}>
-                      <div style={{ display:'flex', flexDirection:'column', gap:7, minWidth:0 }}>
-                        <ColunaTitulo label="A entregar" qtd={aEntregar.length} cor="var(--warn)" />
-                        {aEntregar.length === 0 && <VazioColuna texto="Nada pendente" />}
-                        {aEntregar.map(t => <CardTask key={t.id} t={t} />)}
-                      </div>
-                      <div style={{ display:'flex', flexDirection:'column', gap:7, minWidth:0 }}>
-                        <ColunaTitulo label="Entregue" qtd={entregues.length} cor="var(--ok)" />
-                        {entregues.length === 0 && <VazioColuna texto="Nada entregue ainda" />}
-                        {entregues.map(t => <CardTask key={t.id} t={t} />)}
-                      </div>
+                        )
+                      })}
                     </div>
                   )
                 })()}
@@ -1852,10 +1805,6 @@ export default function Empresas({ onOpenTarefas, onOpenCadastro, clienteInicial
                   <button onClick={() => { setShowNovaObs(true) }}
                     style={{ flex:1, background:'var(--surface2)', border:'1px solid var(--border)', borderRadius:8, padding:'7px', fontSize:11, color:'var(--text2)', fontWeight:500, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', gap:4 }}>
                     🧾 + Obrigação
-                  </button>
-                  <button onClick={() => { setShowNovaTarefa(true) }}
-                    style={{ flex:1, background:'var(--navy)', border:'none', borderRadius:8, padding:'7px', fontSize:11, color:'#fff', fontWeight:500, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', gap:4 }}>
-                    ✓ + Tarefa
                   </button>
                 </div>
                 <div style={{ display:'flex', gap:7 }}>
@@ -1922,26 +1871,6 @@ export default function Empresas({ onOpenTarefas, onOpenCadastro, clienteInicial
           competencia={compDrawer}
           onClose={() => setShowNovaObs(false)}
           onSaved={async () => { setShowNovaObs(false); await fetchObrigacoes() }}
-        />
-      )}
-
-      {/* Modal nova tarefa */}
-      {showNovaTarefa && drawer && (
-        <NovaTarefaModuloModal
-          cliente={drawer.c}
-          dept={drawer.dept}
-          onClose={() => setShowNovaTarefa(false)}
-          onSaved={async () => { setShowNovaTarefa(false); await fetchTarefas() }}
-        />
-      )}
-
-      {/* Modal editar tarefa */}
-      {tarefaEditando && drawer && (
-        <NovaTarefaModuloModal
-          cliente={drawer.c}
-          tarefa={tarefaEditando}
-          onClose={() => setTarefaEditando(null)}
-          onSaved={async () => { setTarefaEditando(null); await fetchTarefas() }}
         />
       )}
 
@@ -2037,15 +1966,42 @@ export default function Empresas({ onOpenTarefas, onOpenCadastro, clienteInicial
         />
       )}
 
+      {/* Sugestões do Assessor (calendário oficial) para a competência */}
+      {showSugestoes && (
+        <SugestoesObrigacoes
+          competencia={compSel}
+          clientes={clientes}
+          nomesExistentes={[...new Set(obrigacoes.map(o => o.titulo || o.tipo).filter(Boolean))]}
+          onClose={() => setShowSugestoes(false)}
+          onProgramar={(o) => {
+            // vencimento no mesmo mês da competência ou no seguinte vira regra recorrente
+            const [mc, ac] = compSel.split('/').map(Number)
+            const [av, mv, dv] = (o.vencimento || '').split('-').map(Number)
+            const difMeses = o.vencimento ? (av * 12 + mv) - (ac * 12 + mc) : null
+            setSugestaoLote({
+              nome: o.nome,
+              periodicidade: o.periodicidade,
+              mesVencimento: difMeses === 0 ? 'mesmo' : difMeses === 1 ? 'seguinte' : null,
+              diaVencimento: difMeses === 0 || difMeses === 1 ? dv : null,
+              clienteIds: clientes.filter(c => !o.regimes.length || o.regimes.includes(regimeSigla(c.regime))).map(c => c.id),
+            })
+            setShowSugestoes(false)
+            setShowLoteObs(true)
+          }}
+        />
+      )}
+
       {/* Modal obrigações em lote (escolha manual de empresas + tipo) */}
       {showLoteObs && (
         <ModalObrigacoesLote
           departamentos={departamentos}
           clientes={clientes}
           competenciaInicial={compSel}
-          onClose={() => setShowLoteObs(false)}
+          sugestao={sugestaoLote}
+          onClose={() => { setShowLoteObs(false); setSugestaoLote(null) }}
           onSaved={async (resultado) => {
             setShowLoteObs(false)
+            setSugestaoLote(null)
             await fetchObrigacoes()
             show?.(`${resultado.criadas} criada${resultado.criadas!==1?'s':''}${resultado.reativadas ? `, ${resultado.reativadas} reativada${resultado.reativadas!==1?'s':''} (estava${resultado.reativadas!==1?'m':''} "não aplica")` : ''}${resultado.jaExistiam ? `, ${resultado.jaExistiam} já existia${resultado.jaExistiam!==1?'m':''}` : ''}`)
           }}
@@ -2347,82 +2303,6 @@ function AbaAnexosEmpresa({ clienteId }) {
 }
 
 const CONFIANCA_BADGE_EMPRESA = { alta: 'badge-ok', media: 'badge-warn', baixa: 'badge-gray' }
-
-// ── Modal marcar lembrete ────────────────────────────────────────────────────
-// Data/hora própria (independente do vencimento) numa obrigação ou tarefa —
-// disparado por WhatsApp pra o grupo do escritório (lembretes-cron.js).
-function ModalLembrete({ alvo, onClose, onSaved }) {
-  const [dataHora, setDataHora] = useState('')
-  const [mensagem, setMensagem] = useState('')
-  const [saving, setSaving] = useState(false)
-  const { show } = useToast()
-
-  const handleSalvar = async () => {
-    if (!dataHora) return
-    setSaving(true)
-    try {
-      await criarLembrete({
-        obrigacaoId: alvo.obrigacaoId || null,
-        tarefaId: alvo.tarefaId || null,
-        dataHora: new Date(dataHora).toISOString(),
-        mensagem: mensagem.trim(),
-      })
-      onSaved()
-    } catch (e) {
-      show?.('Erro ao salvar lembrete: ' + e.message)
-    }
-    setSaving(false)
-  }
-
-  const handleExcluir = async () => {
-    setSaving(true)
-    try {
-      await excluirLembrete(alvo.lembrete.id)
-      onSaved()
-    } catch (e) {
-      show?.('Erro ao excluir lembrete: ' + e.message)
-    }
-    setSaving(false)
-  }
-
-  return (
-    <ModalBase onClose={onClose} titulo={`🔔 Lembrete — ${alvo.titulo}`}>
-      <div style={{ display:'flex', flexDirection:'column', gap:12 }}>
-        {alvo.lembrete && (
-          <div style={{ fontSize:12, color:'var(--text2)', background:'var(--surface2)', borderRadius:8, padding:'8px 10px' }}>
-            Já tem um lembrete marcado pra {new Date(alvo.lembrete.data_hora).toLocaleString('pt-BR')}.
-          </div>
-        )}
-        <div>
-          <label style={{ fontSize:11, color:'var(--text2)', display:'block', marginBottom:4 }}>Data e hora *</label>
-          <input type="datetime-local" value={dataHora} onChange={e => setDataHora(e.target.value)} autoFocus
-            style={{ width:'100%', background:'var(--surface2)', border:'1px solid var(--border)', borderRadius:8, padding:'8px 10px', fontSize:13, color:'var(--text1)', outline:'none' }} />
-        </div>
-        <div>
-          <label style={{ fontSize:11, color:'var(--text2)', display:'block', marginBottom:4 }}>Nota (opcional)</label>
-          <textarea value={mensagem} onChange={e => setMensagem(e.target.value)} rows={2}
-            placeholder="Vai junto na mensagem do WhatsApp..."
-            style={{ width:'100%', background:'var(--surface2)', border:'1px solid var(--border)', borderRadius:8, padding:'8px 10px', fontSize:13, color:'var(--text1)', outline:'none', resize:'vertical', fontFamily:'inherit' }} />
-        </div>
-        <p style={{ fontSize:11, color:'var(--text3)' }}>Manda um WhatsApp pro grupo do escritório na hora marcada.</p>
-      </div>
-      <div style={{ display:'flex', gap:8, marginTop:16 }}>
-        {alvo.lembrete && (
-          <button onClick={handleExcluir} disabled={saving}
-            style={{ background:'var(--danger-dim)', border:'1px solid var(--danger)', borderRadius:8, padding:'9px 14px', fontSize:12, color:'var(--danger)', cursor:'pointer', opacity:saving?.6:1 }}>
-            <Trash2Icon size={13} style={{ verticalAlign:-2 }} />
-          </button>
-        )}
-        <button onClick={onClose}
-          style={{ flex:1, background:'var(--surface2)', border:'1px solid var(--border)', borderRadius:8, padding:'9px', fontSize:12, color:'var(--text2)', cursor:'pointer' }}>Cancelar</button>
-        <button onClick={handleSalvar} disabled={saving||!dataHora}
-          style={{ flex:1, background:'var(--accent)', border:'none', borderRadius:8, padding:'9px', fontSize:12, color:'#fff', fontWeight:500, cursor:'pointer', opacity:(saving||!dataHora)?.6:1 }}>
-          {saving?'Salvando...':'Marcar lembrete'}
-        </button>
-      </div>
-    </ModalBase>
-  )
-}
 
 // ── Modal CND Estadual/Municipal ─────────────────────────────────────────────
 // Marcação manual (sem upload/IA — layout de certidão varia demais entre
