@@ -11,7 +11,7 @@ export const FLUXOS = [
       'O painel do cliente mostra a guia com código de barras e PIX.',
       'Quando o comprovante chega no WhatsApp, a guia é marcada como paga sozinha.',
     ],
-    acao: { pagina: 'empresas', rotulo: 'Começar por Empresas' },
+    acao: { pagina: 'empresas', rotulo: 'Começar pelo Fechamento' },
   },
   {
     id: 'fluxo-nfse',
@@ -40,7 +40,7 @@ export const DICAS = [
     titulo: 'Lembrete no WhatsApp para obrigação com data própria',
     texto: 'Em qualquer obrigação ou tarefa dá para criar um lembrete com data e hora; ele chega no grupo do escritório.',
     quando: (i) => i.obrigacoesAbertas > 0,
-    acao: { pagina: 'empresas', rotulo: 'Abrir Empresas' },
+    acao: { pagina: 'empresas', rotulo: 'Abrir Fechamento' },
   },
   {
     id: 'dica-secoes-ocultas',

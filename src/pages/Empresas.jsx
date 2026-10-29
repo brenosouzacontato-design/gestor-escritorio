@@ -57,11 +57,12 @@ function isVencendo(o) {
 // dept: linha da tabela "departamentos" ({id, nome, icone}). Une as duas
 // fontes de obrigação pra essa competência — modelo novo (departamento_id)
 // e modelo legado (tipo-texto, só existe em competências antigas).
-function getStatusDept(obsEmp, tarefasEmp, dept) {
+// Tarefas não entram: o fechamento conta só obrigações/etapas (as tarefas,
+// inclusive as criadas pelo WhatsApp, ficam na tela Tarefas).
+function getStatusDept(obsEmp, dept) {
   const tiposLegado = LEGACY_DEPT_TIPOS[dept.nome] || []
   const obs   = obsEmp.filter(o => o.departamento_id === dept.id || tiposLegado.includes(o.tipo))
-  const tasks = tarefasEmp.filter(t => (t.departamento_id === dept.id || (t.departamento||'').toLowerCase() === dept.nome.toLowerCase()) && !t.concluida)
-  if (obs.length === 0 && tasks.length === 0) return { s:'empty', pct:0, val:'—' }
+  if (obs.length === 0) return { s:'empty', pct:0, val:'—' }
   const ok       = obs.filter(o => o.status==='concluido'||o.status==='nao_aplica').length
   const venc     = obs.filter(o => o.status==='vencido').length
   const vencendo = obs.some(isVencendo)
@@ -69,7 +70,7 @@ function getStatusDept(obsEmp, tarefasEmp, dept) {
   if (naAll) return { s:'na', pct:100, val:'N/A' }
   const pct = obs.length > 0 ? Math.round((ok/obs.length)*100) : 0
   const s   = venc > 0 ? 'danger' : vencendo ? 'venc_breve' : pct===100 ? 'ok' : obs.filter(o=>o.status==='pendente').length > 0 ? 'warn' : 'empty'
-  return { s, pct, val: obs.length > 0 ? `${ok}/${obs.length}` : tasks.length > 0 ? `${tasks.length}t` : '—' }
+  return { s, pct, val: `${ok}/${obs.length}` }
 }
 
 const COR_VENCENDO = '#C2410C'
@@ -346,32 +347,27 @@ export default function Empresas({ onOpenTarefas, onOpenCadastro, clienteInicial
   const handleMudarEntrega = (clienteId, entregue) => handleMudarStatusGeral(clienteId, entregue ? 'entregue' : 'a_entregar')
 
   // Coluna do kanban: Concluído = entregue; Em andamento = já tem obrigação da
-  // competência concluída, tarefa concluída desde o início do mês da
-  // competência, ou está aguardando o cliente; A fazer = nada começado.
-  const inicioCompetencia = useMemo(() => {
-    const m = /^(\d{2})\/(\d{4})$/.exec(compSel || '')
-    return m ? new Date(Number(m[2]), Number(m[1]) - 1, 1).getTime() : 0
-  }, [compSel])
+  // competência concluída ou está aguardando o cliente; A fazer = nada começado.
+  // Tarefas não mexem na coluna (são independentes do fechamento).
   const faseEmpresa = (clienteId) => {
     const st = statusGeral(clienteId)
     if (st === 'entregue') return 'concluido'
     if (st === 'aguardando_cliente') return 'em_andamento'
     const comecou = obrigacoes.some(o => o.cliente_id === clienteId && o.competencia === compSel && (o.status === 'concluido' || o.status === 'nao_aplica'))
-      || tarefas.some(t => t.cliente_id === clienteId && t.concluida && (Date.parse(t.concluida_em || t.updated_at || '') || 0) >= inicioCompetencia)
     return comecou ? 'em_andamento' : 'a_fazer'
   }
 
-  // Entrega automática: empresa com tudo concluído na competência (obrigações
-  // da competência + tarefas pendentes) vai pra "Entregue"; se aparecer
-  // obrigação/tarefa nova, volta pra "A entregar" (em andamento) e, quando
-  // tudo for concluído de novo, volta pra "Entregue".
+  // Entrega automática: empresa com todas as obrigações da competência
+  // concluídas vai pra "Entregue"; se aparecer obrigação nova, volta pra
+  // "A entregar" (em andamento) e, quando tudo for concluído de novo, volta
+  // pra "Entregue". Tarefas não contam — nem impedem nem desfazem a entrega.
   // Arrastar o card na mão continua valendo: na carga da tela só muda quem
   // teve item concluído (ou criado) depois da última mudança de status; com
   // a tela aberta, muda quando a empresa passa de incompleta pra completa
   // ou o contrário.
   const completoAntes = useRef(new Map())
   useEffect(() => {
-    // espera obrigações e tarefas carregarem, senão a empresa "parece" completa
+    // espera as obrigações carregarem, senão a empresa "parece" completa
     if (entregaLida !== compSel || obrigacoes.length === 0) return
     const ts = (v) => (v ? Date.parse(v) || 0 : 0)
     const okObs = (o) => o.status === 'concluido' || o.status === 'nao_aplica'
@@ -379,23 +375,21 @@ export default function Empresas({ onOpenTarefas, onOpenCadastro, clienteInicial
     if (anteriores.comp !== compSel) { anteriores.clear(); anteriores.comp = compSel }
     for (const c of clientes) {
       const obs = obrigacoes.filter(o => o.cliente_id === c.id && o.competencia === compSel)
-      const doCliente = tarefas.filter(t => t.cliente_id === c.id)
-      const tarefasPend = doCliente.filter(t => !t.concluida)
-      if (obs.length === 0 && tarefasPend.length === 0 && !anteriores.has(c.id)) continue
-      const completo = tarefasPend.length === 0 && obs.every(okObs) && obs.length + doCliente.length > 0
+      if (obs.length === 0 && !anteriores.has(c.id)) continue
+      const completo = obs.length > 0 && obs.every(okObs)
       const antes = anteriores.get(c.id)
       anteriores.set(c.id, completo)
       const st = statusGeral(c.id)
       const mudouEm = ts(entregaEm.get(c.id))
       if (completo && st !== 'entregue') {
-        const ultimaConclusao = Math.max(0, ...obs.map(o => ts(o.updated_at)), ...doCliente.map(t => ts(t.concluida_em || t.updated_at)))
+        const ultimaConclusao = Math.max(0, ...obs.map(o => ts(o.updated_at)))
         if (antes === false || ultimaConclusao > mudouEm) handleMudarStatusGeral(c.id, 'entregue')
       } else if (!completo && st === 'entregue') {
-        const pendentes = [...obs.filter(o => !okObs(o)), ...tarefasPend]
+        const pendentes = obs.filter(o => !okObs(o))
         if (antes === true || pendentes.some(i => ts(i.created_at) > mudouEm)) handleMudarStatusGeral(c.id, 'a_entregar')
       }
     }
-  }, [entregaLida, compSel, clientes, obrigacoes, tarefas, entregues, aguardando, entregaEm])
+  }, [entregaLida, compSel, clientes, obrigacoes, entregues, aguardando, entregaEm])
 
   const carteiras = useMemo(() => {
     const s = new Set(clientes.map(c => c.carteira).filter(Boolean))
@@ -412,9 +406,8 @@ export default function Empresas({ onOpenTarefas, onOpenCadastro, clienteInicial
       })
       .map(c => {
         const obsEmp   = obrigacoes.filter(o => o.cliente_id===c.id && o.competencia===compSel)
-        const tasksEmp = tarefas.filter(t => t.cliente_id===c.id)
         const deptData = {}
-        departamentos.forEach(d => { deptData[d.id] = getStatusDept(obsEmp, tasksEmp, d) })
+        departamentos.forEach(d => { deptData[d.id] = getStatusDept(obsEmp, d) })
         const hasDanger = Object.values(deptData).some(d => d.s==='danger')
         const hasPend   = Object.values(deptData).some(d => d.s==='warn')
         const allOk     = Object.values(deptData).every(d => d.s==='ok'||d.s==='na'||d.s==='empty')
@@ -426,7 +419,7 @@ export default function Empresas({ onOpenTarefas, onOpenCadastro, clienteInicial
         if (filtro==='ok')        return r.allOk
         return true
       })
-  }, [clientes, obrigacoes, tarefas, compSel, busca, departamentos, filtro, carteira])
+  }, [clientes, obrigacoes, compSel, busca, departamentos, filtro, carteira])
 
   // Aplica a ordem manual (visão cards) por cima do resultado filtrado —
   // empresas com posição salva vêm primeiro nessa ordem, o resto mantém a
@@ -851,7 +844,7 @@ export default function Empresas({ onOpenTarefas, onOpenCadastro, clienteInicial
       {/* Topbar */}
       <div style={{ display:'flex', alignItems:'center', gap:8, padding:'10px 16px', background:'var(--surface)', borderBottom:'1px solid var(--border)', flexShrink:0, flexWrap:'wrap', rowGap:6 }}>
         <div>
-          <h2 style={{ fontSize:14, fontWeight:500, color:'var(--text1)', margin:0 }}>Empresas</h2>
+          <h2 style={{ fontSize:14, fontWeight:500, color:'var(--text1)', margin:0 }}>Fechamento</h2>
           <p style={{ fontSize:10, color:'var(--text3)', margin:0 }}>Status por módulo · {rows.length} empresas</p>
         </div>
         <div style={{ display:'flex', alignItems:'center', gap:5, background:'var(--surface2)', border:'1px solid var(--border)', borderRadius:8, padding:'5px 9px', marginLeft:12 }}>
@@ -1016,8 +1009,9 @@ export default function Empresas({ onOpenTarefas, onOpenCadastro, clienteInicial
 
                 return (
                   <tr key={c.id}
-                    style={{ background: isSel?'var(--accent-dim)':zebra, borderBottom:'1px solid var(--border)', cursor:'pointer', transition:'background .12s' }}
-                    onMouseEnter={e => { if(!isSel) e.currentTarget.style.background='var(--surface2)' }}
+                    style={{ background: isSel?'var(--accent-dim)':zebra, borderBottom:'1px solid var(--border)', cursor:'pointer', transition:'background .12s',
+                      boxShadow:`inset 4px 0 0 ${S_COLOR[resS]}` }}
+                    onMouseEnter={e => { if(!isSel) e.currentTarget.style.background='var(--surface3)' }}
                     onMouseLeave={e => { if(!isSel) e.currentTarget.style.background=zebra }}>
 
                     {/* Empresa */}
@@ -1112,16 +1106,12 @@ export default function Empresas({ onOpenTarefas, onOpenCadastro, clienteInicial
                 const resPct  = obsTotal.length > 0 ? Math.round((resOk/obsTotal.length)*100) : 0
                 const tasksCliente = tarefas.filter(t => t.cliente_id === c.id)
                 const tasksPend = tasksCliente.filter(t => !t.concluida).length
-                // "Tudo em dia" só com obrigações da competência E tarefas concluídas
-                const resS    = resVenc > 0 ? 'danger' : resVencendo ? 'venc_breve' : resPct===100 && tasksPend === 0 ? 'ok'
-                  : obsTotal.filter(o=>o.status==='pendente').length > 0 || tasksPend > 0 ? 'warn' : 'empty'
+                // "Tudo em dia" olha só as obrigações da competência — tarefas
+                // aparecem no atalho do card, mas não contam no fechamento
+                const resS    = resVenc > 0 ? 'danger' : resVencendo ? 'venc_breve' : resPct===100 ? 'ok'
+                  : obsTotal.filter(o=>o.status==='pendente').length > 0 ? 'warn' : 'empty'
                 const completo = resS === 'ok' && obsTotal.length > 0
-                // Progresso combinado (obrigações + tarefas) só pra guiar o
-                // gradiente de fundo do card — os números exibidos (% e
-                // "Tudo em dia") continuam olhando só pra obrigações.
-                const totalItens = obsTotal.length + tasksCliente.length
-                const itensOk = resOk + (tasksCliente.length - tasksPend)
-                const progressoGeral = totalItens > 0 ? Math.round((itensOk / totalItens) * 100) : 0
+                const progressoGeral = resPct
                 const arrastando = arrastandoId === c.id
                 return (
                   <div key={c.id} onClick={() => openDrawer(c, null)}
@@ -1168,10 +1158,6 @@ export default function Empresas({ onOpenTarefas, onOpenCadastro, clienteInicial
                           <span style={{ display:'flex', alignItems:'center', gap:3, color:COR_VENCENDO, fontSize:9.5, fontWeight:700, flexShrink:0 }}>
                             <ClockIcon size={10} /> em breve
                           </span>
-                        ) : resPct === 100 && tasksPend > 0 ? (
-                          <span title="Obrigações concluídas, falta tarefa" style={{ display:'flex', alignItems:'center', gap:3, color:'var(--warn)', fontSize:9.5, fontWeight:700, flexShrink:0 }}>
-                            <CheckSquareIcon size={10} /> {tasksPend} tarefa{tasksPend !== 1 ? 's' : ''}
-                          </span>
                         ) : (
                           <span style={{ fontSize:9.5, fontWeight:600, color:'var(--text3)', flexShrink:0 }}>
                             {resOk}/{obsTotal.length || 0}
@@ -1205,7 +1191,7 @@ export default function Empresas({ onOpenTarefas, onOpenCadastro, clienteInicial
                         )
                       })}
                       <button onClick={(e) => { e.stopPropagation(); onOpenTarefas?.(c.id) }}
-                        title={`Tarefas: ${tasksCliente.length===0 ? 'nenhuma' : `${tasksCliente.length-tasksPend}/${tasksCliente.length}`}`}
+                        title={`Tarefas (não contam no fechamento): ${tasksCliente.length===0 ? 'nenhuma' : `${tasksCliente.length-tasksPend}/${tasksCliente.length}`}`}
                         style={{ display:'flex', alignItems:'center', gap:2,
                           background:completo?'rgba(255,255,255,.5)':'var(--surface2)', border:'1px solid var(--border)', borderRadius:5,
                           padding:'2px 5px', cursor:'pointer' }}>
@@ -1248,8 +1234,9 @@ export default function Empresas({ onOpenTarefas, onOpenCadastro, clienteInicial
             const resVencendo = obsTotal.filter(isVencendo).length
             const resPct  = obsTotal.length > 0 ? Math.round((resOk/obsTotal.length)*100) : 0
             const tasksPend = tarefas.filter(t => t.cliente_id === c.id && !t.concluida)
-            const resS    = resVenc > 0 ? 'danger' : resVencendo > 0 ? 'venc_breve' : obsTotal.length > 0 && resPct===100 && tasksPend.length === 0 ? 'ok'
-              : resPend > 0 || tasksPend.length > 0 ? 'warn' : 'empty'
+            // status do fechamento: só obrigações (tarefas aparecem num selo à parte)
+            const resS    = resVenc > 0 ? 'danger' : resVencendo > 0 ? 'venc_breve' : obsTotal.length > 0 && resPct===100 ? 'ok'
+              : resPend > 0 ? 'warn' : 'empty'
             const tasksAtrasadas = tasksPend.filter(t => t.vencimento && new Date(t.vencimento + 'T00:00:00') < hoje).length
             const proxVenc = obsTotal.filter(o => o.status==='pendente' && o.vencimento).map(o => o.vencimento).sort()[0] || null
             return { c, deptData, obsTotal, resOk, resVenc, resPend, resVencendo, resPct, resS, tasksPend: tasksPend.length, tasksAtrasadas, proxVenc, entregue: entregues.has(c.id), status: statusGeral(c.id), fase: faseEmpresa(c.id) }
@@ -1365,6 +1352,8 @@ export default function Empresas({ onOpenTarefas, onOpenCadastro, clienteInicial
                       const initials = (palavras.length ? palavras : [c.nome]).slice(0,2).map(w=>w[0]).join('').toUpperCase()
                       const regime = REGIME[c.regime === 'Lucro Presumido' ? 'LP' : c.regime === 'Lucro Real' ? 'LR' : 'SN']
                       const diasProx = proxVenc ? Math.round((new Date(proxVenc + 'T00:00:00') - hoje) / 86400000) : null
+                      // linhas alternadas + faixa de cor do status, pra separar bem uma empresa da outra
+                      const zebra = ri % 2 === 0 ? 'var(--surface)' : 'var(--surface2)'
                       return (
                         <div key={c.id} onClick={() => openDrawer(c, null)}
                           draggable
@@ -1372,10 +1361,10 @@ export default function Empresas({ onOpenTarefas, onOpenCadastro, clienteInicial
                           onDragOver={e => e.preventDefault()}
                           onDrop={e => { e.preventDefault(); e.stopPropagation(); handleDropCard(c.id, secao.id) }}
                           onDragEnd={() => setArrastandoId(null)}
-                          onMouseEnter={e => { e.currentTarget.style.background = 'var(--surface2)' }}
-                          onMouseLeave={e => { e.currentTarget.style.background = 'transparent' }}
-                          style={{ display:'flex', alignItems:'center', gap:8, cursor:'pointer',
-                            borderBottom: ultima ? 'none' : '1px solid var(--border)', borderLeft:`3px solid ${corStatus}`,
+                          onMouseEnter={e => { e.currentTarget.style.background = 'var(--surface3)' }}
+                          onMouseLeave={e => { e.currentTarget.style.background = zebra }}
+                          style={{ display:'flex', alignItems:'center', gap:8, cursor:'pointer', background:zebra,
+                            borderBottom: ultima ? 'none' : '1px solid var(--border)', borderLeft:`4px solid ${corStatus}`,
                             padding:'8px 10px', opacity:arrastando?.4:entregue?.72:1, transition:'opacity .1s, background .1s' }}>
                           <button onClick={e => { e.stopPropagation(); handleMudarEntrega(c.id, !entregue) }}
                             title={entregue ? 'Voltar para em andamento' : 'Marcar como concluído'}
@@ -1436,7 +1425,7 @@ export default function Empresas({ onOpenTarefas, onOpenCadastro, clienteInicial
                                 )}
                                 {tasksPend > 0 && (
                                   <Selo Icon={CheckSquareIcon} cor={tasksAtrasadas > 0 ? 'var(--danger)' : 'var(--info)'} bg={tasksAtrasadas > 0 ? 'var(--danger-dim)' : 'var(--info-dim)'}
-                                    title={`${tasksPend} tarefa${tasksPend!==1?'s':''} pendente${tasksPend!==1?'s':''}${tasksAtrasadas > 0 ? `, ${tasksAtrasadas} atrasada${tasksAtrasadas!==1?'s':''}` : ''}`}>
+                                    title={`${tasksPend} tarefa${tasksPend!==1?'s':''} pendente${tasksPend!==1?'s':''}${tasksAtrasadas > 0 ? `, ${tasksAtrasadas} atrasada${tasksAtrasadas!==1?'s':''}` : ''} — não contam no fechamento`}>
                                     {tasksPend} tarefa{tasksPend!==1?'s':''}
                                   </Selo>
                                 )}

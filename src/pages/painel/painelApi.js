@@ -168,7 +168,7 @@ export async function uploadDeclaracaoSimples(arquivo, competenciaFallback, { cl
 
   const clienteFinal = clienteId || extraido.clienteId;
   if (!clienteFinal) {
-    throw new Error('Não consegui identificar a empresa no documento — abra a empresa certa em Empresas e envie por lá.');
+    throw new Error('Não consegui identificar a empresa no documento — abra a empresa certa em Fechamento e envie por lá.');
   }
 
   const competencia = extraido.competencia || competenciaFallback;
@@ -454,7 +454,7 @@ export async function uploadSituacaoFiscal(arquivo, competencia, { clienteId = n
     await supabase.storage.from(BUCKET).remove([path]).catch(() => {});
     throw new Error(extraido.tipoDocumento === 'outro'
       ? `"${arquivo.name}" não parece Relatório de Situação Fiscal nem CND.`
-      : 'Não consegui identificar a empresa no documento — abra a empresa certa em Empresas e envie por lá.');
+      : 'Não consegui identificar a empresa no documento — abra a empresa certa em Fechamento e envie por lá.');
   }
 
   // Certidão (CND): marca a esfera como regular/pendente e guarda o PDF pro

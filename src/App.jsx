@@ -1,5 +1,7 @@
 import { useState, useEffect, Fragment } from 'react'
-import { LayoutDashboardIcon, CheckSquareIcon, UsersIcon, RefreshCwIcon, SettingsIcon, PlusIcon, TargetIcon, BuildingIcon, AppWindowIcon, CalculatorIcon, ChevronsLeftIcon, ChevronsRightIcon, SunIcon, MoonIcon, PaperclipIcon, BellIcon, BanknoteIcon, CircleDollarSignIcon, MonitorIcon, ReceiptIcon, LogOutIcon, FileSignatureIcon, SparklesIcon, CalendarDaysIcon } from 'lucide-react'
+import { RefreshCwIcon, SettingsIcon, PlusIcon, SunIcon, MoonIcon, CloudIcon, LogOutIcon, SearchIcon } from 'lucide-react'
+import { MenuTopo, BuscaRapida, MenuCelular } from './components/MenuTopo'
+import { temaInicial, salvarTema, proximoTema, TEMA_LABEL } from './lib/tema'
 import { useStore } from './store'
 import { ToastContainer } from './components/shared'
 import { sair } from './components/ComLogin'
@@ -25,26 +27,6 @@ import NfseEmissaoPage from './pages/nfse/NfseEmissaoPage'
 import AssessorPage from './pages/assessor/AssessorPage'
 import AgendaPage from './pages/agenda/AgendaPage'
 
-const NAV = [
-  { id: 'overview',   label: 'Painel',      Icon: LayoutDashboardIcon },
-  { id: 'assessor',   label: 'Assessor',    Icon: SparklesIcon },
-  { id: 'empresas',   label: 'Empresas',    Icon: BuildingIcon },
-  { id: 'paineis',    label: 'Painéis',     Icon: MonitorIcon },
-  { id: 'documentos', label: 'Documentos',  Icon: PaperclipIcon },
-  { id: 'pagamentos', label: 'Pagamentos',  Icon: CircleDollarSignIcon },
-  { id: 'notificacoes', label: 'Notificações', Icon: BellIcon },
-  { id: 'honorarios', label: 'Honorários',  Icon: BanknoteIcon },
-  { id: 'tarefas',    label: 'Tarefas',     Icon: CheckSquareIcon },
-  { id: 'agenda',     label: 'Agenda',      Icon: CalendarDaysIcon },
-  { id: 'clientes',   label: 'Clientes',    Icon: UsersIcon },
-  { id: 'prospectos', label: 'Prospectos',  Icon: TargetIcon },
-  { id: 'erp',        label: 'ERP',         Icon: RefreshCwIcon },
-  { id: 'contabil',   label: 'Financeiro',  Icon: CalculatorIcon },
-  { id: 'notasfiscais', label: 'Notas Fiscais', Icon: ReceiptIcon },
-  { id: 'nfse',       label: 'Emitir NFS-e', Icon: FileSignatureIcon },
-  { id: 'central',    label: 'Central',     Icon: AppWindowIcon },
-]
-
 export default function App() {
   const [page, setPage]                       = useState('overview')
   const [selectedCliente, setSelectedCliente] = useState(null)
@@ -55,14 +37,18 @@ export default function App() {
   const [filtroClienteTarefas, setFiltroClienteTarefas] = useState(null)
   const [clienteAbrirEmpresas, setClienteAbrirEmpresas] = useState(null)
   const [showNotifs, setShowNotifs]           = useState(false)
-  const [collapsed, setCollapsed] = useState(() => localStorage.getItem('sidebar-collapsed') === '1')
-  const [theme, setTheme] = useState(() =>
-    localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
-  )
+  const [buscaAberta, setBuscaAberta]         = useState(false)
+  const [theme, setTheme] = useState(temaInicial)
+  useEffect(() => { salvarTema(theme) }, [theme])
+
+  // Ctrl K (ou Cmd K) abre a busca rápida de telas
   useEffect(() => {
-    document.documentElement.setAttribute('data-theme', theme)
-    localStorage.setItem('theme', theme)
-  }, [theme])
+    const atalho = (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); setBuscaAberta(true) }
+    }
+    window.addEventListener('keydown', atalho)
+    return () => window.removeEventListener('keydown', atalho)
+  }, [])
 
   const init       = useStore(s => s.init)
   const loading    = useStore(s => s.loading)
@@ -109,61 +95,42 @@ export default function App() {
   // pra não depender de todo callsite lembrar de embrulhar em arrow fn.
   const openNewTask = (clienteId = '') => { setNewTaskClienteId(typeof clienteId === 'string' ? clienteId : ''); setShowNewTask(true) }
   const navigate    = (p) => { setPage(p); if (p !== 'clientes') setSelectedCliente(null) }
-  const toggleTheme = () => setTheme(t => t === 'dark' ? 'light' : 'dark')
-  const toggleCollapsed = () => setCollapsed(c => {
-    localStorage.setItem('sidebar-collapsed', c ? '0' : '1')
-    return !c
-  })
-  const pageTitle = NAV.find(n => n.id === page)?.label || 'Gestor'
+  const toggleTheme = () => setTheme(proximoTema)
+  const IconeTema = theme === 'light' ? SunIcon : theme === 'dark' ? MoonIcon : CloudIcon
+  const badges = {
+    tarefas:    { n: pendingCount, tipo: 'warn' },
+    pagamentos: { n: comprovantesPendentes, tipo: 'warn' },
+    empresas:   { n: obrigVencidas || obrigPendentes, tipo: obrigVencidas > 0 ? 'err' : 'warn' },
+  }
 
   return (
     <div className="app-shell">
       <div className="topbar">
-        <span className="topbar-title topbar-title--brand"><span style={{ fontSize:20 }}>⬡</span> Gestor</span>
-        <span className="topbar-title topbar-title--page">{pageTitle}</span>
-        <div style={{ display:'flex', gap:6, alignItems:'center' }}>
+        <div className="topbar-marca">
+          <MenuCelular page={page} onNavigate={navigate} badges={badges} />
+          <span className="topbar-logo" aria-hidden="true">G</span>
+          <span className="topbar-title">Gestor</span>
+        </div>
+        <MenuTopo page={page} onNavigate={navigate} badges={badges} />
+        <div style={{ flex:1 }} />
+        <button type="button" className="busca-botao" onClick={() => setBuscaAberta(true)} title="Ir para uma tela (Ctrl K)">
+          <SearchIcon size={16} /> <span className="busca-botao-texto">Ir para tela…</span> <kbd>Ctrl K</kbd>
+        </button>
+        <div style={{ display:'flex', gap:4, alignItems:'center' }}>
           <button className="btn btn-icon btn-ghost" onClick={atualizarDados} disabled={atualizando}
             title={atualizando ? 'Atualizando...' : 'Atualizar dados desta tela (sem recarregar a página)'}>
             <RefreshCwIcon size={18} style={atualizando ? { animation:'spin 0.8s linear infinite' } : undefined} />
           </button>
-          <button className="btn btn-icon btn-ghost" onClick={toggleTheme} title={theme === 'dark' ? 'Tema claro' : 'Tema escuro'}>
-            {theme === 'dark' ? <SunIcon size={18} /> : <MoonIcon size={18} />}
+          <button className="btn btn-icon btn-ghost" onClick={toggleTheme} title={`Tema: ${TEMA_LABEL[theme]} (clique para trocar)`}>
+            <IconeTema size={18} />
           </button>
           <NotificacoesBell onClick={() => setShowNotifs(true)} />
-          <button className="btn btn-icon btn-ghost" onClick={() => setShowConfig(true)}><SettingsIcon size={18} /></button>
+          <button className="btn btn-icon btn-ghost" onClick={() => setShowConfig(true)} title="Configurações"><SettingsIcon size={18} /></button>
           <button className="btn btn-icon btn-ghost" onClick={sair} title="Sair"><LogOutIcon size={18} /></button>
         </div>
       </div>
 
       <div className="app-body">
-      <aside className={`sidebar ${collapsed ? 'collapsed' : ''}`}>
-        <div className="sidebar-brand">
-          <h1><span style={{ fontSize:20 }}>⬡</span> <span className="brand-text">Gestor</span></h1>
-          <p className="brand-text">Escritório Contábil</p>
-        </div>
-        {NAV.map(({ id, label, Icon }) => (
-          <button key={id} className={`nav-item ${page === id ? 'active' : ''}`} onClick={() => navigate(id)} title={collapsed ? label : undefined}>
-            <Icon size={17} /> <span className="nav-label">{label}</span>
-            {id === 'tarefas' && pendingCount > 0 && (
-              <span className="badge badge-warn" style={{ marginLeft:'auto', fontSize:10 }}>{pendingCount}</span>
-            )}
-            {id === 'pagamentos' && comprovantesPendentes > 0 && (
-              <span className="badge badge-warn" style={{ marginLeft:'auto', fontSize:10 }}>{comprovantesPendentes}</span>
-            )}
-            {id === 'empresas' && (obrigVencidas > 0 || obrigPendentes > 0) && (
-              <span className={`badge ${obrigVencidas > 0 ? 'badge-err' : 'badge-warn'}`} style={{ marginLeft:'auto', fontSize:10 }}>
-                {obrigVencidas > 0 ? obrigVencidas : obrigPendentes}
-              </span>
-            )}
-          </button>
-        ))}
-        <div style={{ flex:1 }} />
-        <div style={{ height:1, background:'var(--border)', margin:'8px 0' }} />
-        <button className="nav-item" onClick={toggleCollapsed} title={collapsed ? 'Expandir menu' : 'Recolher menu'}>
-          {collapsed ? <ChevronsRightIcon size={16} /> : <ChevronsLeftIcon size={16} />} <span className="nav-label">Recolher</span>
-        </button>
-      </aside>
-
       <main className="app-main">
         {loading && page === 'overview' ? (
           <div className="center"><div className="spinner" /></div>
@@ -194,19 +161,12 @@ export default function App() {
       </main>
       </div>
 
-      <nav className="bottom-nav">
-        {NAV.map(({ id, label, Icon }) => (
-          <button key={id} className={`bottom-nav-item ${page === id ? 'active' : ''}`} onClick={() => navigate(id)}>
-            <Icon /> {label}
-          </button>
-        ))}
-      </nav>
-
       <button className="fab" onClick={() => openNewTask()} title="Nova tarefa"><PlusIcon size={22} /></button>
 
       {showNewTask && <NovaTarefaModal clienteIdInicial={newTaskClienteId} onClose={() => setShowNewTask(false)} />}
       {showConfig  && <OneflowConfigModal onClose={() => setShowConfig(false)} />}
       {showNotifs  && <NotificacoesPanel onClose={() => setShowNotifs(false)} />}
+      <BuscaRapida aberta={buscaAberta} onFechar={() => setBuscaAberta(false)} onNavigate={navigate} badges={badges} />
       <ToastContainer />
     </div>
   )
