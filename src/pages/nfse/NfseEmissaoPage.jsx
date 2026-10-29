@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { FileSignatureIcon, UploadIcon, ShieldCheckIcon, SendIcon, RefreshCwIcon, CopyIcon, Trash2Icon, FileCodeIcon, SettingsIcon } from 'lucide-react'
+import { FileSignatureIcon, UploadIcon, ShieldCheckIcon, SendIcon, RefreshCwIcon, CopyIcon, Trash2Icon, FileCodeIcon, SettingsIcon, CheckCircleIcon, AlertTriangleIcon } from 'lucide-react'
 import { useStore } from '../../store'
 import EmpresaCombobox from '../../components/EmpresaCombobox'
 import { Modal, useToast } from '../../components/shared'
@@ -42,7 +42,33 @@ function situacao(n) {
   if (n.erros.some((e) => e.startsWith(COMPLEMENTAR))) return 'complementar'
   return n.status_validacao
 }
-const ROTULO = { pronto: 'emitir', pendente: 'falta dado', invalido: 'inválido', ja_emitida: 'já emitida', complementar: 'complementar?', autorizada: 'emitida' }
+const ROTULO = { pronto: 'pronta', pendente: 'falta dado', invalido: 'com erro', ja_emitida: 'já emitida', complementar: 'decidir', autorizada: 'emitida', rejeitada: 'rejeitada', indeterminada: 'sem resposta', enviada: 'enviando', numero_reservado: 'reservada', cancelada: 'cancelada' }
+
+// Trecho útil da mensagem da validação ("… já tem NFS-e nº 12 de R$ 2.500,00 (…)"), sem a instrução
+const anteriorDe = (n, prefixo) => (n.erros.find((e) => e.startsWith(prefixo)) || '')
+  .slice(prefixo.length).replace(/\s*(Se faltar só a diferença|Remova do lote|O valor já emitido cobre|Confira com).*$/, '').trim()
+// Valor da diferença sugerida na "Complementar?" (null quando o já emitido cobre a nota)
+const diferencaDe = (n) => ((n.erros.find((e) => e.startsWith(COMPLEMENTAR)) || '').match(/mude o valor para (R\$\s?[\d.,]+)/) || [])[1] || null
+
+// Abas da conferência: o que fazer com cada nota
+const ABAS = [
+  ['', 'Todas', () => true],
+  ['pronto', 'Prontas', (n) => situacao(n) === 'pronto'],
+  ['pendente', 'Falta dado', (n) => situacao(n) === 'pendente'],
+  ['decidir', 'Precisa decidir', (n) => ['complementar', 'ja_emitida'].includes(situacao(n)) && !n.ciente_em],
+  ['invalido', 'Com erro', (n) => situacao(n) === 'invalido'],
+  ['emitidas', 'Emitidas', (n) => n.estado === 'autorizada'],
+  ['problema', 'Rejeitadas / sem resposta', (n) => ['rejeitada', 'indeterminada', 'enviada'].includes(n.estado)],
+  ['ciente', 'Já emitidas (cliente ciente)', (n) => !!n.ciente_em && EDITAVEL(n)],
+]
+const DICA_ABA = {
+  pronto: 'Conferidas e prontas. Use "Emitir" para mandar todas (ou só as que você marcar).',
+  pendente: 'Falta algum dado (borda tracejada). Preencha na própria linha ou espere o cliente completar no painel.',
+  decidir: 'O paciente já tem NFS-e parecida. Escolha em cada linha: emitir só a diferença, emitir o valor cheio (é outro serviço) ou remover do lote.',
+  invalido: 'Algum dado está errado (CPF, data, valor…). Corrija na linha.',
+  problema: 'A Sefin recusou ou não respondeu. Rejeitada: copie para corrigir. Sem resposta: reconsulte.',
+  ciente: 'O cliente confirmou no painel que estas já tinham sido emitidas. Pode remover do lote.',
+}
 // Campo da tabela → nome usado nas pendências da validação
 const PENDENCIA = { nome: 'Nome', cpf: 'CPF', data: 'Data', valor: 'Valor', descricao: 'Descrição', endereco: 'Endereço' }
 
@@ -115,13 +141,16 @@ function Configuracao({ clienteId, status, onAtualizado }) {
   }
 
   const cert = status.certificado
+  const tudoCerto = status.configurada && cert && !cert.bloqueios.length && !faltaIbsCbs && !faltaSimples
   return (
     <div style={card}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-        <h3 style={{ ...titulo, margin: 0 }}><SettingsIcon size={16} /> Configuração de emissão</h3>
-        {status.configurada && <AmbienteBadge ambiente={emp.ambiente} />}
-        {status.configurada && (
-          <span style={suave}>
+        <h3 style={{ ...titulo, margin: 0 }}><SettingsIcon size={16} /> Configuração</h3>
+        {tudoCerto
+          ? <span style={{ color: 'var(--ok)', fontWeight: 700, fontSize: 12, display: 'flex', alignItems: 'center', gap: 4 }}><CheckCircleIcon size={14} /> Tudo certo para emitir</span>
+          : <span style={{ color: 'var(--danger)', fontWeight: 700, fontSize: 12, display: 'flex', alignItems: 'center', gap: 4 }}><AlertTriangleIcon size={14} /> {status.configurada ? 'Falta ajustar — veja abaixo' : 'Empresa ainda não configurada'}</span>}
+        {status.configurada && aberto && (
+          <span style={{ ...suave, flexBasis: '100%' }}>
             CNPJ {emp.cnpj} · município {emp.codigo_municipio} · serviço {emp.servico_padrao?.cTribNac} · série DPS {emp.serie_dps}
             {' · '}competência padrão: {emp.regra_competencia === 'mes_da_emissao' ? 'data da emissão' : 'data do atendimento'}
             {optanteSimples && emp.servico_padrao?.cAtvSN && <>{' · '}Simples: IBS/CBS {emp.servico_padrao.regApIBSCBSSN}, atividade {emp.servico_padrao.cAtvSN}</>}
@@ -137,7 +166,7 @@ function Configuracao({ clienteId, status, onAtualizado }) {
             Falta informar o regime de IBS/CBS e a atividade do Simples Nacional (obrigatórios no leiaute novo da NFS-e). Clique em Editar.
           </div>
         )}
-        <button className="btn" style={{ marginLeft: 'auto' }} onClick={() => setAberto((a) => !a)}>{aberto ? 'Fechar' : 'Editar'}</button>
+        <button className="btn" style={{ marginLeft: 'auto' }} onClick={() => setAberto((a) => !a)}>{aberto ? 'Fechar' : 'Ver / editar'}</button>
       </div>
 
       <div style={{ marginTop: 10, fontSize: 13 }}>
@@ -328,7 +357,7 @@ export default function NfseEmissaoPage() {
 
   async function emitirSelecionadas() {
     setConfirmar(false)
-    const fila = notas.filter((n) => selecionadas.has(n.id) && n.estado === 'validada').map((n) => n.id)
+    const fila = alvoEmissao.map((n) => n.id)
     const conta = { autorizada: 0, rejeitada: 0, indeterminada: 0, pulada: 0 }
     setOcupado(true)
     try {
@@ -372,20 +401,30 @@ export default function NfseEmissaoPage() {
     await carregarNotas()
   }
 
+  // Decisões da trava "Complementar?" / "Já emitida"
+  async function decidir(nota, nomeAcao, extra, msgOk) {
+    await acao(() => chamarNfse(nomeAcao, { nota_id: nota.id, ...extra }), msgOk)
+    await carregarNotas()
+  }
+
   async function verPrevia(nota) {
     const r = await acao(() => chamarNfse('previa', { nota_id: nota.id }))
     if (r) setPrevia(r)
   }
 
   const t = totais(notas)
-  const visiveis = notas.filter((n) => !filtro || (filtro.startsWith('estado:') ? n.estado === filtro.slice(7) : EDITAVEL(n) && situacao(n) === filtro))
+  const abaAtual = ABAS.find(([id]) => id === filtro) || ABAS[0]
+  const visiveis = notas.filter(abaAtual[2])
   const prontas = notas.filter((n) => n.estado === 'validada')
   const editaveis = notas.filter(EDITAVEL)
   const marcadas = notas.filter((n) => selecionadas.has(n.id)) // para competência em massa
   const sel = marcadas.filter((n) => n.estado === 'validada') // o que de fato pode ser emitido
   const totalSel = sel.reduce((s, n) => s + Number(n.valor || 0), 0)
   const conta = (f) => notas.filter(f).length
-  const competencias = Object.entries(sel.reduce((m, n) => {
+  // Sem nada marcado, "Emitir" manda todas as prontas
+  const alvoEmissao = sel.length ? sel : prontas
+  const totalAlvo = alvoEmissao.reduce((s, n) => s + Number(n.valor || 0), 0)
+  const competencias = Object.entries(alvoEmissao.reduce((m, n) => {
     const c = n.competencia ? dataBR(n.competencia) : status?.empresa?.regra_competencia === 'mes_da_emissao' ? dataBR(hoje()) : dataBR(n.data)
     m[c] = (m[c] || 0) + 1
     return m
@@ -411,7 +450,7 @@ export default function NfseEmissaoPage() {
           <h2 style={{ fontSize: 16, fontWeight: 700, color: 'var(--text1)', display: 'flex', alignItems: 'center', gap: 8 }}>
             <FileSignatureIcon size={18} /> Emitir NFS-e
           </h2>
-          <p style={suave}>Emissão pela API da Sefin Nacional com o certificado A1 de cada empresa.</p>
+          <p style={suave}>Escolha a empresa, importe os atendimentos e confira antes de emitir. A nota sai pela Sefin Nacional com o certificado A1 da empresa.</p>
         </div>
       </div>
 
@@ -438,13 +477,13 @@ export default function NfseEmissaoPage() {
 
       {status?.configurada && (
         <div style={card}>
-          <h3 style={titulo}><UploadIcon size={16} /> Importar atendimentos</h3>
-          <textarea value={texto} onChange={(e) => setTexto(e.target.value)} rows={6}
+          <h3 style={titulo}><UploadIcon size={16} /> 1. Importar atendimentos</h3>
+          <textarea value={texto} onChange={(e) => setTexto(e.target.value)} rows={5}
             placeholder={'Cole aqui as mensagens do WhatsApp…\n\n[10:03, 13/10/2026] Fulana: Nome do Paciente\n123.456.789-09\nRua Tal 150\n22/01/26\nValor: 900,00\nDescrição do serviço'}
             style={{ fontFamily: 'ui-monospace, Consolas, monospace', fontSize: 12 }} />
           <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginTop: 10, flexWrap: 'wrap' }}>
             <button className="btn btn-accent" disabled={ocupado || !texto.trim()} onClick={importarTexto}>Ler mensagens</button>
-            <span style={suave}>ou planilha (data, nome, cpf, endereco, cep, descricao, valor):</span>
+            <span style={suave}>ou envie uma planilha (colunas: data, nome, cpf, endereco, cep, descricao, valor):</span>
             <input type="file" accept=".xlsx,.xls,.csv" style={{ width: 'auto' }} disabled={ocupado}
               onChange={(e) => { importarPlanilha(e.target.files[0]); e.target.value = '' }} />
           </div>
@@ -454,72 +493,86 @@ export default function NfseEmissaoPage() {
       {status?.configurada && lotes.length > 0 && (
         <div style={card}>
           <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', marginBottom: 12 }}>
-            <h3 style={{ ...titulo, margin: 0 }}>Lote</h3>
-            <select value={loteId} onChange={(e) => setLoteId(e.target.value)} style={{ width: 'auto', minWidth: 280 }}>
-              {lotes.map((l) => <option key={l.id} value={l.id}>{new Date(l.criado_em).toLocaleString('pt-BR')} · {l.origem}{l.descricao ? ` · ${l.descricao}` : ''}</option>)}
+            <h3 style={{ ...titulo, margin: 0 }}><SendIcon size={16} /> 2. Conferir e emitir</h3>
+            <select value={loteId} onChange={(e) => setLoteId(e.target.value)} style={{ width: 'auto', minWidth: 260, marginLeft: 'auto' }} title="Lote (cada importação vira um lote)">
+              {lotes.map((l) => <option key={l.id} value={l.id}>Lote de {new Date(l.criado_em).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })} · {l.origem}{l.descricao ? ` · ${l.descricao}` : ''}</option>)}
             </select>
             <button className="btn btn-icon btn-ghost" title="Atualizar" onClick={() => carregarNotas()}><RefreshCwIcon size={16} /></button>
-            <span style={suave}>
-              {notas.length} registros: {conta((n) => situacao(n) === 'pronto')} para emitir,{' '}
-              {conta((n) => situacao(n) === 'pendente')} com dado faltando, {conta((n) => situacao(n) === 'invalido')} inválidos,{' '}
-              {conta((n) => situacao(n) === 'ja_emitida')} já emitidas antes,{' '}
-              {conta((n) => situacao(n) === 'complementar') > 0 && <b style={{ color: 'var(--info)' }}>{conta((n) => situacao(n) === 'complementar')} possíveis complementares, </b>}
-              {conta((n) => n.estado === 'autorizada')} emitidas neste lote{conta((n) => n.estado === 'rejeitada') ? `, ${conta((n) => n.estado === 'rejeitada')} rejeitadas` : ''}
-            </span>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 10, marginBottom: 12 }}>
-            {[['Serviço', brl(t.servico)], ['Emitido', brl(t.emitido)], ['Faltando', brl(t.faltando)], ['Selecionado', marcadas.length ? `${marcadas.length}${marcadas.length !== sel.length ? ` (${sel.length} pronta${sel.length === 1 ? '' : 's'})` : ''} · ${brl(totalSel)}` : '—']].map(([r, v]) => (
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 10, marginBottom: 14 }}>
+            {[['Total do lote', brl(t.servico), 'var(--text1)'], ['Já emitido', brl(t.emitido), 'var(--ok)'], ['Falta emitir', brl(t.faltando), 'var(--warn)']].map(([r, v, cor]) => (
               <div key={r} style={{ background: 'var(--surface2)', borderRadius: 8, padding: '8px 12px' }}>
-                <div style={suave}>{r}</div><div style={{ fontSize: 17, fontWeight: 700, color: 'var(--text1)' }}>{v}</div>
+                <div style={suave}>{r}</div><div style={{ fontSize: 18, fontWeight: 800, color: cor }}>{v}</div>
               </div>
             ))}
           </div>
 
-          <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginBottom: 10 }}>
-            <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12 }}>
-              <input type="checkbox" style={{ width: 'auto' }} checked={editaveis.length > 0 && editaveis.every((n) => selecionadas.has(n.id))}
-                onChange={(e) => setSelecionadas(e.target.checked ? new Set(editaveis.map((n) => n.id)) : new Set())} />
-              selecionar todas as não emitidas
-            </label>
-            <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12 }}>
-              <input type="checkbox" style={{ width: 'auto' }} checked={prontas.length > 0 && prontas.every((n) => selecionadas.has(n.id)) && marcadas.length === prontas.length}
-                onChange={(e) => setSelecionadas(e.target.checked ? new Set(prontas.map((n) => n.id)) : new Set())} />
-              só as prontas
-            </label>
-            <select value={filtro} onChange={(e) => setFiltro(e.target.value)} style={{ width: 'auto' }}>
-              <option value="">todos</option><option value="pronto">para emitir</option><option value="pendente">falta dado</option>
-              <option value="complementar">complementares?</option><option value="ja_emitida">já emitidas antes</option>
-              <option value="invalido">inválidos</option><option value="estado:autorizada">emitidas neste lote</option>
-              <option value="estado:rejeitada">rejeitadas</option><option value="estado:indeterminada">indeterminadas</option>
-            </select>
-            <span style={suave}>Competência das selecionadas:</span>
-            <input value={compMassa} onChange={(e) => setCompMassa(e.target.value)} placeholder="mm/aaaa ou dd/mm/aaaa" style={{ width: 150 }} />
-            <button className="btn" disabled={ocupado} onClick={() => aplicarCompetencia(compMassa.trim())}>Aplicar</button>
-            <button className="btn" disabled={ocupado} onClick={() => aplicarCompetencia('')}>Usar padrão</button>
-            <span style={{ fontWeight: 600, fontSize: 12 }}>{progresso}</span>
-            <button className="btn btn-accent" style={{ marginLeft: 'auto' }} disabled={ocupado || !sel.length || !podeEmitir}
-              title={podeEmitir ? '' : 'Configure o certificado A1 antes'} onClick={() => setConfirmar(true)}>
-              <SendIcon size={14} /> Emitir selecionados
-            </button>
+          {/* Abas: o que fazer com cada nota */}
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 8 }}>
+            {ABAS.map(([id, rotulo, f]) => {
+              const q = conta(f)
+              if (id && !q) return null
+              const ativa = filtro === id
+              const alerta = ['decidir', 'pendente', 'invalido', 'problema'].includes(id)
+              return (
+                <button key={id || 'todas'} type="button" onClick={() => setFiltro(id)}
+                  style={{ fontSize: 12, fontWeight: 700, borderRadius: 99, padding: '5px 12px', cursor: 'pointer',
+                    border: `1px solid ${ativa ? 'var(--accent)' : alerta ? 'var(--warn)' : 'var(--border)'}`,
+                    background: ativa ? 'var(--accent)' : 'transparent', color: ativa ? '#fff' : alerta ? 'var(--warn)' : 'var(--text2)' }}>
+                  {rotulo} <span style={{ opacity: 0.8 }}>{q}</span>
+                </button>
+              )
+            })}
           </div>
+          {DICA_ABA[filtro] && <div style={{ ...suave, marginBottom: 10 }}>{DICA_ABA[filtro]}</div>}
+
+          {/* Barra de emissão */}
+          <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', margin: '10px 0', padding: '10px 12px', background: 'var(--surface2)', borderRadius: 8 }}>
+            <button className="btn btn-accent" disabled={ocupado || !alvoEmissao.length || !podeEmitir}
+              title={podeEmitir ? '' : 'Configure o certificado A1 antes'} onClick={() => setConfirmar(true)}
+              style={{ fontSize: 13, padding: '8px 16px' }}>
+              <SendIcon size={14} /> {sel.length ? `Emitir ${sel.length} marcada${sel.length === 1 ? '' : 's'}` : `Emitir ${prontas.length} pronta${prontas.length === 1 ? '' : 's'}`} · {brl(totalAlvo)}
+            </button>
+            <span style={suave}>{sel.length ? 'Só as marcadas que estão prontas.' : 'Marque na caixinha para emitir só algumas.'}</span>
+            {marcadas.length > 0 && <button className="btn btn-ghost" onClick={() => setSelecionadas(new Set())}>Desmarcar ({marcadas.length})</button>}
+            <span style={{ fontWeight: 600, fontSize: 12, marginLeft: 'auto' }}>{progresso}</span>
+          </div>
+
+          <details style={{ marginBottom: 10 }}>
+            <summary style={{ ...suave, cursor: 'pointer' }}>Mudar a competência das notas marcadas</summary>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginTop: 8 }}>
+              <input value={compMassa} onChange={(e) => setCompMassa(e.target.value)} placeholder="mm/aaaa ou dd/mm/aaaa" style={{ width: 160 }} />
+              <button className="btn" disabled={ocupado} onClick={() => aplicarCompetencia(compMassa.trim())}>Aplicar nas marcadas</button>
+              <button className="btn" disabled={ocupado} onClick={() => aplicarCompetencia('')}>Voltar ao padrão</button>
+              <span style={suave}>Padrão: {status.empresa.regra_competencia === 'mes_da_emissao' ? 'data da emissão' : 'data do atendimento'}</span>
+            </div>
+          </details>
 
           <div style={{ overflowX: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
               <thead>
                 <tr style={{ color: 'var(--text3)', textAlign: 'left' }}>
-                  {['', 'Status', 'Nome', 'CPF', 'Data', 'Competência', 'Valor', 'Descrição', 'Endereço', 'Problemas / resultado', ''].map((h, i) => (
+                  <th style={{ padding: 6, borderBottom: '1px solid var(--border)' }}>
+                    <input type="checkbox" style={{ width: 'auto' }} title="Marcar todas as visíveis ainda não emitidas"
+                      checked={visiveis.some(EDITAVEL) && visiveis.filter(EDITAVEL).every((n) => selecionadas.has(n.id))}
+                      onChange={(e) => setSelecionadas((s) => { const x = new Set(s); visiveis.filter(EDITAVEL).forEach((n) => (e.target.checked ? x.add(n.id) : x.delete(n.id))); return x })} />
+                  </th>
+                  {['Situação', 'Paciente', 'CPF', 'Atendimento', 'Competência', 'Valor', 'Descrição', 'Endereço', 'O que fazer / resultado', ''].map((h, i) => (
                     <th key={i} style={{ padding: '6px', borderBottom: '1px solid var(--border)', whiteSpace: 'nowrap' }}>{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
+                {visiveis.length === 0 && <tr><td colSpan={11} style={{ padding: 16, ...suave, textAlign: 'center' }}>Nenhuma nota nesta aba.</td></tr>}
                 {visiveis.map((n) => {
                   const tipo = situacao(n)
-                  const fundo = { pronto: 'var(--ok-dim)', pendente: 'var(--warn-dim)', invalido: 'var(--danger-dim)', rejeitada: 'var(--danger-dim)', indeterminada: 'var(--warn-dim)', complementar: 'var(--info-dim)', ja_emitida: 'var(--surface2)' }[tipo]
+                  const fundo = { pendente: 'var(--warn-dim)', invalido: 'var(--danger-dim)', rejeitada: 'var(--danger-dim)', indeterminada: 'var(--warn-dim)', complementar: 'var(--info-dim)' }[tipo]
                   const padraoComp = status.empresa.regra_competencia === 'mes_da_emissao' ? 'data da emissão' : dataBR(n.data)
+                  const dif = tipo === 'complementar' ? diferencaDe(n) : null
+                  const outrosErros = n.erros.filter((e) => !e.startsWith(JA_EMITIDA) && !e.startsWith(COMPLEMENTAR))
                   return (
-                    <tr key={n.id} style={{ background: fundo, borderBottom: '1px solid var(--border)', verticalAlign: 'top' }}>
+                    <tr key={n.id} style={{ background: fundo, borderBottom: '1px solid var(--border)', verticalAlign: 'top', opacity: n.ciente_em ? 0.6 : 1 }}>
                       <td style={{ padding: 6 }}><input type="checkbox" style={{ width: 'auto' }} disabled={!EDITAVEL(n)} checked={selecionadas.has(n.id)}
                         onChange={(e) => setSelecionadas((s) => { const x = new Set(s); e.target.checked ? x.add(n.id) : x.delete(n.id); return x })} /></td>
                       <td style={{ padding: 6 }}><Pill tipo={tipo}>{ROTULO[tipo] || tipo.replace('_', ' ')}</Pill></td>
@@ -530,16 +583,16 @@ export default function NfseEmissaoPage() {
                       <td style={{ padding: 2 }}>{inp(n, 'valor', valorBR(n.valor), 80, { style: { minWidth: 80, padding: '4px 6px', fontSize: 12, textAlign: 'right', background: 'transparent', border: '1px solid transparent' } })}</td>
                       <td style={{ padding: 2 }}>{inp(n, 'descricao', n.descricao, 180)}</td>
                       <td style={{ padding: 2 }}>{inp(n, 'endereco', n.endereco, 180)}</td>
-                      <td style={{ padding: 6, minWidth: 220 }}>
+                      <td style={{ padding: 6, minWidth: 240, maxWidth: 360 }}>
                         {n.estado === 'autorizada' && <>
                           <div style={{ color: 'var(--ok)', fontWeight: 700 }}>✔ NFS-e nº {n.numero_nfse || '?'}</div>
-                          <div style={suave}>{n.chave_acesso}</div>
                           <a href="#" onClick={(e) => { e.preventDefault(); baixarNfse(clienteId, { id: n.id, numero: n.numero_nfse, chave: n.chave_acesso }, 'pdf', { incluirHomologacao: true }).catch((x) => show(x.message)) }}
-                            title="DANFSe (NT 008/2026) gerado a partir do XML autorizado">PDF (DANFSe)</a>{' · '}
-                          <a href="#" onClick={(e) => { e.preventDefault(); baixarXml(n.id, 'xml_retorno').catch((x) => show(x.message)) }}>XML NFS-e</a>{' · '}
-                          <a href="#" onClick={(e) => { e.preventDefault(); baixarXml(n.id, 'xml_enviado').catch((x) => show(x.message)) }}>XML DPS</a>{' · '}
+                            title="DANFSe (NT 008/2026) gerado a partir do XML autorizado">PDF</a>{' · '}
+                          <a href="#" onClick={(e) => { e.preventDefault(); baixarXml(n.id, 'xml_retorno').catch((x) => show(x.message)) }}>XML</a>{' · '}
+                          <a href="#" onClick={(e) => { e.preventDefault(); baixarXml(n.id, 'xml_enviado').catch((x) => show(x.message)) }} title="DPS assinada enviada à Sefin">DPS</a>{' · '}
                           <a href="#" style={{ color: 'var(--danger)' }} onClick={(e) => { e.preventDefault(); if (!ocupado) marcarCancelada(n) }}
                             title="Use depois de cancelar a nota no portal nacional (www.nfse.gov.br)">Cancelada no portal</a>
+                          <div style={{ ...suave, fontSize: 10.5, wordBreak: 'break-all' }}>{n.chave_acesso}</div>
                         </>}
                         {n.estado === 'cancelada' && <>
                           <div style={{ color: 'var(--text3)', textDecoration: 'line-through' }}>NFS-e nº {n.numero_nfse || '?'}</div>
@@ -557,17 +610,48 @@ export default function NfseEmissaoPage() {
                           <button className="btn" style={{ marginTop: 4 }} disabled={ocupado} onClick={() => reconsultar(n)}>Reconsultar (e reenviar se não existir)</button>
                         </>}
                         {n.estado === 'numero_reservado' && <div style={suave}>DPS nº {n.n_dps} reservada, ainda não enviada.</div>}
+
+                        {EDITAVEL(n) && tipo === 'pronto' && <div style={{ color: 'var(--ok)', fontWeight: 600 }}>Pronta para emitir</div>}
+
+                        {EDITAVEL(n) && tipo === 'complementar' && <>
+                          <div style={{ color: 'var(--info)', fontWeight: 700 }}>Paciente já tem nota parecida</div>
+                          <div style={{ color: 'var(--text2)' }}>{anteriorDe(n, COMPLEMENTAR)}</div>
+                          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 6 }}>
+                            {dif && <button className="btn btn-accent" disabled={ocupado} onClick={() => decidir(n, 'complementar', {}, `Nota ajustada para a diferença (${dif})`)}
+                              title="A nota vira a complementar: valor da diferença e descrição começando com Complementar">Emitir só a diferença ({dif})</button>}
+                            <button className="btn" disabled={ocupado} onClick={() => decidir(n, 'liberar_duplicidade', {}, 'Liberada: sai pelo valor cheio')}
+                              title="É outro serviço para o mesmo paciente">Emitir valor cheio ({brl(n.valor)})</button>
+                          </div>
+                        </>}
+
+                        {EDITAVEL(n) && tipo === 'ja_emitida' && <>
+                          <div style={{ color: 'var(--text2)', fontWeight: 700 }}>Já foi emitida</div>
+                          <div style={{ color: 'var(--text2)' }}>{anteriorDe(n, JA_EMITIDA)}</div>
+                          {n.ciente_em && <div style={{ color: 'var(--ok)', fontWeight: 600 }}>✔ Cliente ciente em {dataBR(n.ciente_em)}</div>}
+                          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 6 }}>
+                            <button className="btn" disabled={ocupado}
+                              onClick={async () => { await acao(() => chamarNfse('excluir', { nota_id: n.id }), 'Removida do lote'); await carregarNotas() }}>Remover do lote</button>
+                            {n.erros.some((e) => e.startsWith(JA_EMITIDA) && /fora do gestor/.test(e)) && (
+                              <button className="btn" disabled={ocupado} onClick={() => decidir(n, 'liberar_duplicidade', {}, 'Liberada: sai pelo valor cheio')}
+                                title="É outro atendimento, com o mesmo valor">É outro atendimento — emitir</button>
+                            )}
+                          </div>
+                        </>}
+
+                        {EDITAVEL(n) && n.duplicidade_liberada && (
+                          <div style={{ ...suave, marginTop: 4 }}>
+                            ✔ Conferido: sai pelo valor cheio · <a href="#" onClick={(e) => { e.preventDefault(); if (!ocupado) decidir(n, 'liberar_duplicidade', { liberar: false }, 'Trava de nota parecida reativada') }}>desfazer</a>
+                          </div>
+                        )}
+
                         {EDITAVEL(n) && <>
-                          {n.erros.map((e) => (
-                            e.startsWith(JA_EMITIDA) ? <div key={e} style={{ color: 'var(--ok)' }}>✔ {e}</div>
-                              : e.startsWith(COMPLEMENTAR) ? <div key={e} style={{ color: 'var(--info)', fontWeight: 600 }}>⚠ {e}</div>
-                                : <div key={e} style={{ color: 'var(--danger)' }}>✖ {e}</div>))}
-                          {n.pendencias.length > 0 && <div style={{ color: 'var(--warn)' }}>Falta: {n.pendencias.join(', ')}</div>}
+                          {outrosErros.map((e) => <div key={e} style={{ color: 'var(--danger)' }}>✖ {e}</div>)}
+                          {n.pendencias.length > 0 && <div style={{ color: 'var(--warn)', fontWeight: 600 }}>Falta: {n.pendencias.join(', ')}</div>}
                           {n.avisos.map((a) => <div key={a} style={suave}>• {a}</div>)}
                         </>}
-                        {n.observacao_cliente && <div style={{ color: 'var(--info)', whiteSpace: 'pre-wrap', maxWidth: 320 }}>💬 Cliente: {n.observacao_cliente}</div>}
+                        {n.observacao_cliente && <div style={{ color: 'var(--info)', whiteSpace: 'pre-wrap' }}>💬 Cliente: {n.observacao_cliente}</div>}
                         {n.n_dps && <div style={suave}>DPS série {n.serie} nº {n.n_dps}</div>}
-                        {n.texto_original && <details><summary style={{ ...suave, cursor: 'pointer' }}>mensagem {n.autor ? `de ${n.autor}` : ''}</summary>
+                        {n.texto_original && <details><summary style={{ ...suave, cursor: 'pointer' }}>mensagem original{n.autor ? ` de ${n.autor}` : ''}</summary>
                           <pre style={{ whiteSpace: 'pre-wrap', fontSize: 11, margin: '4px 0 0', maxWidth: 320 }}>{n.texto_original}</pre></details>}
                       </td>
                       <td style={{ padding: 6, whiteSpace: 'nowrap' }}>
@@ -590,7 +674,7 @@ export default function NfseEmissaoPage() {
           <div className="modal-title">Confirmar emissão</div>
           <div style={{ textAlign: 'center', margin: '12px 0' }}><AmbienteBadge ambiente={ambiente} grande /></div>
           {ambiente === 'producao' && <p style={{ color: 'var(--danger)', fontWeight: 600, textAlign: 'center' }}>Notas fiscais reais.</p>}
-          <p><b>{sel.length}</b> nota(s), total <b>{brl(totalSel)}</b>.</p>
+          <p><b>{alvoEmissao.length}</b> nota(s), total <b>{brl(totalAlvo)}</b>.</p>
           <p>Competência: <b>{competencias}</b></p>
           <p style={suave}>{empresas.find((e) => e.id === clienteId)?.nome} · série DPS {status.empresa.serie_dps}</p>
           <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 12 }}>

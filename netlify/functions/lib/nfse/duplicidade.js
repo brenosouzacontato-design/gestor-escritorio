@@ -61,6 +61,8 @@ function mensagemParecida(nota, parecidas) {
 //   - nota do Ambiente Nacional emitida FORA do gestor (sem data de atendimento) para o mesmo CPF,
 //     emitida depois do atendimento: mesmo valor → "Já emitida"; outro valor → "Complementar?".
 // As duas travam a emissão. Descrição começando com "Complementar" libera (é a nota da diferença).
+// duplicidade_liberada (escritório ou cliente conferiu que é outro serviço) também libera: a nota
+// sai pelo valor cheio.
 
 const PREFIXO_JA_EMITIDA = 'Já emitida:'
 const PREFIXO_COMPLEMENTAR = 'Complementar?'
@@ -76,7 +78,7 @@ function descreverAnterior(o) {
 // já sem as que saíram do gestor. Devolve null ou { tipo: 'emitida' | 'complementar', mensagem,
 // falta } (falta: diferença em centavos, só para complementar).
 function conferirJaEmitida(nota, doGestor, nacionais) {
-  if (!nota.cpf || centavos(nota.valor) === null || ehComplementar(nota.descricao)) return null
+  if (nota.duplicidade_liberada || !nota.cpf || centavos(nota.valor) === null || ehComplementar(nota.descricao)) return null
   const candidatas = [
     ...doGestor.filter((o) => o.id !== nota.id && o.cpf === nota.cpf && nota.data && o.data === nota.data
       && EM_EMISSAO_OU_EMITIDA.includes(o.estado)),

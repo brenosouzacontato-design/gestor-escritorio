@@ -75,9 +75,13 @@ function NotasEmitidas({ clienteId, nomeSessao }) {
     return () => { ativo = false; };
   }, [clienteId]);
 
+  // nota com ciência do cliente sai da lista
   const completar = async (nota, campos) => {
     const salva = await completarNfse(clienteId, nota.id, campos);
-    setPendentes((lista) => lista.map((n) => (n.id === salva.id ? salva : n)));
+    setPendentes((lista) => (salva.ciente ? lista.filter((n) => n.id !== salva.id) : lista.map((n) => (n.id === salva.id ? salva : n))));
+  };
+  const cienteDeTodas = async (lista) => {
+    for (const n of lista) await completar(n, { ciente: true });
   };
 
   const notas = dados?.notas || [];
@@ -182,7 +186,7 @@ function NotasEmitidas({ clienteId, nomeSessao }) {
           </div>
         )}
 
-        {pendentes.length > 0 && <NotasAEmitir pendentes={pendentesFiltradas} total={pendentes.length} onSalvar={completar} largo={largo} />}
+        {pendentes.length > 0 && <NotasAEmitir pendentes={pendentesFiltradas} total={pendentes.length} onSalvar={completar} onCienteTodas={cienteDeTodas} largo={largo} />}
 
         {dados && (
           <>
@@ -244,34 +248,49 @@ function CardValor({ titulo, valor, detalhe, cor }) {
   );
 }
 
-function NotasAEmitir({ pendentes, total, onSalvar, largo }) {
-  const conta = (...s) => pendentes.filter((n) => s.includes(situacaoDe(n))).length;
-  const lista = [...pendentes].sort((a, b) => ORDEM[situacaoDe(a)] - ORDEM[situacaoDe(b)] || String(a.data || '').localeCompare(String(b.data || '')));
-  const resumo = [
-    [conta('falta', 'invalida'), ['precisa de informação', 'precisam de informação'], 'var(--warn)'],
-    [conta('complementar'), ['possível complementar', 'possíveis complementares'], 'var(--info)'],
-    [conta('pronta'), ['pronta para emitir', 'prontas para emitir'], 'var(--ok)'],
-    [conta('ja_emitida'), ['já emitida antes', 'já emitidas antes'], 'var(--text3)'],
-  ].filter(([q]) => q > 0);
+// Notas a emitir em três blocos, na ordem do que pede ação: o que depende do cliente, o que o
+// escritório vai emitir, e as que já tinham sido emitidas (o cliente marca ciência e elas saem)
+const BLOCOS_A_EMITIR = [
+  { id: 'acao', titulo: 'Precisam de você', cor: 'var(--warn)', situacoes: ['falta', 'invalida', 'complementar'],
+    explica: 'Complete o que falta ou escolha o que fazer. Assim que estiver certo, o escritório emite.' },
+  { id: 'pronta', titulo: 'O escritório vai emitir', cor: 'var(--ok)', situacoes: ['pronta'],
+    explica: 'Está tudo certo com estas. Não precisa fazer nada.' },
+  { id: 'ja', titulo: 'Já tinham sido emitidas', cor: 'var(--text3)', situacoes: ['ja_emitida'],
+    explica: 'Estas já têm nota fiscal e não serão emitidas de novo. Marque "Ciente" para tirar da lista.' },
+];
+
+function NotasAEmitir({ pendentes, total, onSalvar, onCienteTodas, largo }) {
+  const [marcando, setMarcando] = useState(false);
+  const ordenar = (l) => [...l].sort((a, b) => ORDEM[situacaoDe(a)] - ORDEM[situacaoDe(b)] || String(a.data || '').localeCompare(String(b.data || '')));
   return (
     <section style={{ marginTop: 20 }}>
       <h2 style={{ fontSize: 15, fontWeight: 800, margin: '0 0 4px' }}>Notas a emitir</h2>
-      <div style={{ fontSize: 12, color: 'var(--text3)', marginBottom: 10 }}>
-        Atendimentos enviados ao escritório que ainda não viraram nota.
-        Complete o que falta aqui mesmo; o escritório emite assim que estiver tudo certo.
-      </div>
-      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 10 }}>
-        {resumo.map(([q, [um, varios], cor]) => (
-          <span key={um} style={{ fontSize: 11, fontWeight: 700, color: cor, border: `1px solid ${cor}`, borderRadius: 99, padding: '3px 10px' }}>{q} {q === 1 ? um : varios}</span>
-        ))}
-      </div>
+      <div style={{ fontSize: 12, color: 'var(--text3)', marginBottom: 6 }}>Atendimentos enviados ao escritório que ainda não viraram nota fiscal.</div>
       {pendentes.length === 0 && <div style={{ fontSize: 13, color: 'var(--text3)' }}>Nenhuma das {total} notas a emitir com esses filtros.</div>}
-      {pendentes.length > 0 && (
-        <div className="lista-tabela">
-          {largo && <Cabecalho colunas={['Paciente', 'Data', 'Serviço e endereço', 'Valor', 'Situação']} />}
-          {lista.map((n) => <LinhaNfsePendente key={n.id} n={n} onSalvar={onSalvar} largo={largo} emTabela />)}
-        </div>
-      )}
+      {BLOCOS_A_EMITIR.map((b) => {
+        const lista = ordenar(pendentes.filter((n) => b.situacoes.includes(situacaoDe(n))));
+        if (!lista.length) return null;
+        return (
+          <div key={b.id} style={{ marginTop: 14 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 4 }}>
+              <span style={{ width: 8, height: 8, borderRadius: 99, background: b.cor }} />
+              <h3 style={{ fontSize: 13.5, fontWeight: 800, margin: 0 }}>{b.titulo}</h3>
+              <span style={{ fontSize: 12, color: 'var(--text3)', fontWeight: 600 }}>{lista.length} · {fmt(lista.reduce((t, n) => t + Number(n.valor || 0), 0))}</span>
+              {b.id === 'ja' && lista.length > 1 && (
+                <button type="button" disabled={marcando} onClick={async () => { setMarcando(true); try { await onCienteTodas(lista); } catch (e) { window.alert(e.message); } finally { setMarcando(false); } }}
+                  style={{ marginLeft: 'auto', fontSize: 12, fontWeight: 700, color: 'var(--ok)', background: 'transparent', border: '1px solid var(--ok)', borderRadius: 8, padding: '5px 12px', cursor: 'pointer' }}>
+                  {marcando ? 'Marcando…' : `Ciente de todas (${lista.length})`}
+                </button>
+              )}
+            </div>
+            <div style={{ fontSize: 11.5, color: 'var(--text3)', marginBottom: 8 }}>{b.explica}</div>
+            <div className="lista-tabela">
+              {largo && <Cabecalho colunas={['Paciente', 'Data', 'Serviço e endereço', 'Valor', 'Situação']} />}
+              {lista.map((n) => <LinhaNfsePendente key={n.id} n={n} onSalvar={onSalvar} largo={largo} emTabela />)}
+            </div>
+          </div>
+        );
+      })}
     </section>
   );
 }

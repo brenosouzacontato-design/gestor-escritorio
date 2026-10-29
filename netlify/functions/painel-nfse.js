@@ -10,6 +10,10 @@
 //        completa a nota; o CPF também vai para o cadastro de clientes do prestador (nfse_tomadores)
 //   POST { acao: 'completar', nota_id, complementar: true } → o cliente confirma que falta só a
 //        diferença de uma nota já emitida: a nota vira a complementar (valor da diferença)
+//   POST { acao: 'completar', nota_id, valor_cheio: true } → não é complementar (outro serviço):
+//        a nota sai pelo valor cheio
+//   POST { acao: 'completar', nota_id, ciente: true } → a nota já tinha sido emitida e o cliente
+//        está ciente: sai do painel dele (devolve { ..., ciente: true })
 //   POST { acao: 'link', nota_id }                → link público assinado do PDF (para mandar ao
 //        paciente pelo WhatsApp), válido por LINK_DIAS dias
 //   GET  ?nota=…&exp=…&sig=…                      → o PDF, sem login, se a assinatura e o prazo baterem
@@ -153,15 +157,19 @@ async function notaDoCliente(acesso, notaId) {
 // Notas ainda não emitidas (importada/validada), para o cliente completar. Só produção: as de
 // homologação são teste do escritório.
 async function pendentes(acesso) {
-  const { data, error } = await db().from('nfse_notas')
-    .select('id, nome, cpf, data, valor, descricao, endereco, observacao_cliente, status_validacao, pendencias, erros, avisos, criado_em')
+  const campos = 'id, nome, cpf, data, valor, descricao, endereco, observacao_cliente, status_validacao, pendencias, erros, avisos, criado_em'
+  const consulta = (extras) => db().from('nfse_notas')
+    .select(campos + extras)
     .eq('cliente_id', acesso.clienteId)
     .eq('ambiente', 'producao')
     .in('estado', EDITAVEIS)
     .order('data', { ascending: true })
     .limit(500)
+  // ciente_em/duplicidade_liberada vêm de supabase-schema-nfse-conferencia.sql; sem ele, segue sem
+  let { data, error } = await consulta(', ciente_em, duplicidade_liberada')
+  if (error && /ciente_em|duplicidade_liberada|column/i.test(error.message || '')) ({ data, error } = await consulta(''))
   if (error) throw error
-  return (data || []).map(resumoPendente)
+  return (data || []).filter((n) => !n.ciente_em).map(resumoPendente)
 }
 
 // situacao: pronta | falta (dado a preencher) | complementar (confirmar a diferença) | ja_emitida | invalida
@@ -176,7 +184,7 @@ function situacaoPendente(n) {
 const resumoPendente = (n) => ({
   id: n.id, nome: n.nome, cpf: n.cpf, data: n.data, valor: n.valor, descricao: n.descricao, endereco: n.endereco,
   observacao: n.observacao_cliente || '',
-  pronta: n.status_validacao === 'pronto', situacao: situacaoPendente(n),
+  pronta: n.status_validacao === 'pronto', situacao: situacaoPendente(n), liberada: !!n.duplicidade_liberada,
   pendencias: n.pendencias || [], erros: n.erros || [], avisos: n.avisos || [],
 })
 
@@ -190,13 +198,23 @@ async function completar(acesso, corpo) {
   const empresa = await repo.obterEmpresa(acesso.clienteId)
   if (!empresa) return null
 
-  if (corpo.complementar === true) {
-    try {
-      return resumoPendente(await lotes.confirmarComplementar(repo, empresa, nota.id))
-    } catch (e) {
+  const situacao = situacaoPendente(nota)
+  const decisao = async (fn) => {
+    try { return await fn() } catch (e) {
       if (e instanceof lotes.NotaNaoEditavel) throw new ErroCliente(e.message)
       throw e
     }
+  }
+  if (corpo.complementar === true) {
+    return resumoPendente(await decisao(() => lotes.confirmarComplementar(repo, empresa, nota.id)))
+  }
+  if (corpo.valor_cheio === true) {
+    if (situacao !== 'complementar' && situacao !== 'ja_emitida') throw new ErroCliente('Esta nota não está travada como complementar.')
+    return resumoPendente(await decisao(() => lotes.liberarDuplicidade(repo, empresa, nota.id, true)))
+  }
+  if (corpo.ciente === true) {
+    if (situacao !== 'complementar' && situacao !== 'ja_emitida') throw new ErroCliente('Só dá para marcar ciência em nota que já foi emitida.')
+    return { ...resumoPendente(await decisao(() => lotes.marcarCiente(repo, nota.id, true))), ciente: true }
   }
 
   const campos = {}

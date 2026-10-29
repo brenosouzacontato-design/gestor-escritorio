@@ -1,6 +1,7 @@
 // Nota ainda não emitida, no painel do cliente: mostra a situação e deixa o cliente preencher o que
-// falta (nome, CPF, data, descrição, endereço) ou confirmar a nota complementar (a diferença de uma
-// nota já emitida). Usada no painel mensal e no link "todas as notas". Ver painel-nfse.js.
+// falta (nome, CPF, data, descrição, endereço) ou decidir a nota parecida com outra já emitida
+// (emitir só a diferença, emitir o valor cheio por ser outro serviço, ou ficar ciente de que já foi
+// emitida — aí ela sai da lista). Usada no painel mensal e no link "todas as notas". Ver painel-nfse.js.
 import { useState } from 'react';
 import { CalendarIcon, CheckCircleIcon, MessageSquareIcon } from 'lucide-react';
 
@@ -20,7 +21,7 @@ export const fmtDoc = (d) => {
   if (s.length === 14) return `${s.slice(0, 2)}.${s.slice(2, 5)}.${s.slice(5, 8)}/${s.slice(8, 12)}-${s.slice(12)}`;
   return s;
 };
-const ROTULO = { pronta: 'Pronta para emitir', ja_emitida: 'Já emitida antes', complementar: 'Possível complementar', invalida: 'Precisa de correção', falta: 'Falta informação' };
+const ROTULO = { pronta: 'Pronta para emitir', ja_emitida: 'Já emitida antes', complementar: 'Decidir', invalida: 'Precisa de correção', falta: 'Falta informação' };
 
 // Valor que de fato falta emitir: na complementar, só a diferença sugerida
 export function valorAEmitir(n) {
@@ -48,6 +49,7 @@ export default function NfsePendenteLinha({ n, onSalvar, largo = false, emTabela
   const falta = (rotulo) => n.pendencias.includes(rotulo);
   const [valores, setValores] = useState({ cpf: n.cpf || '', nome: n.nome || '', data: '', descricao: n.descricao || '', endereco: n.endereco || '' });
   const [obs, setObs] = useState(n.observacao || '');
+  const [obsAberta, setObsAberta] = useState(!!n.observacao);
   const obsMudou = obs.trim() !== (n.observacao || '').trim();
   const [salvando, setSalvando] = useState(false);
   const [erro, setErro] = useState(null);
@@ -75,7 +77,12 @@ export default function NfsePendenteLinha({ n, onSalvar, largo = false, emTabela
 
   const campo = { fontSize: 13, padding: '7px 10px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--surface, var(--bg))', color: 'var(--text1)', fontFamily: 'inherit' };
   const botao = (cor) => ({ fontSize: 12, fontWeight: 700, color: '#fff', background: cor, border: 'none', borderRadius: 8, padding: '7px 14px', cursor: 'pointer' });
+  const contorno = (cor) => ({ fontSize: 12, fontWeight: 700, color: cor, background: 'transparent', border: `1px solid ${cor}`, borderRadius: 8, padding: '6px 12px', cursor: 'pointer' });
   const mensagem = (prefixo) => n.erros.find((e) => e.startsWith(prefixo)) || '';
+  // "… já tem NFS-e nº 12 de R$ 2.500,00 (…)" sem a instrução para o escritório
+  const anterior = (prefixo) => mensagem(prefixo).slice(prefixo.length)
+    .replace(/\s*(Se faltar só a diferença|Remova do lote|O valor já emitido cobre|Confira com).*$/, '').trim();
+  const diferenca = (mensagem('Complementar?').match(/mude o valor para (R\$\s?[\d.,]+)/) || [])[1];
 
   return (
     <div className={emTabela ? 'linha-lista' : undefined} style={emTabela
@@ -114,29 +121,44 @@ export default function NfsePendenteLinha({ n, onSalvar, largo = false, emTabela
 
       {situacao === 'pronta' && (
         <span style={{ fontSize: 11.5, color: 'var(--ok)', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 4 }}>
-          <CheckCircleIcon size={12} /> Pronta — o escritório vai emitir
+          <CheckCircleIcon size={12} /> Tudo certo — o escritório vai emitir{n.liberada ? ' pelo valor cheio' : ''}
         </span>
       )}
 
       {situacao === 'ja_emitida' && (
-        <span style={{ fontSize: 11.5, color: 'var(--text2)', fontWeight: 600 }}>
-          Já emitida — {mensagem('Já emitida:').replace(/^Já emitida:\s*/, '').replace(/\.?\s*Remova do lote.*$/, '')}. Não será emitida de novo.
-        </span>
+        <>
+          <span style={{ fontSize: 12, color: 'var(--text1)', fontWeight: 700 }}>Esta nota já foi emitida</span>
+          <span style={{ fontSize: 11.5, color: 'var(--text2)' }}>{anterior('Já emitida:')}. Não será emitida de novo.</span>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+            <button type="button" disabled={salvando} onClick={() => enviar({ ciente: true })} style={botao('var(--ok)')}>
+              {salvando ? 'Salvando…' : 'Ciente — tirar da lista'}
+            </button>
+          </div>
+        </>
       )}
 
       {situacao === 'complementar' && (
         <>
-          <span style={{ fontSize: 11.5, color: 'var(--info)', fontWeight: 700 }}>
-            Possível nota complementar: {mensagem('Complementar?').replace(/^Complementar\?\s*/, '').replace(/\s*Se faltar só a diferença.*$/, '')}
-          </span>
-          {/mude o valor para/.test(mensagem('Complementar?')) ? (
-            <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-              <button type="button" disabled={salvando} onClick={() => enviar({ complementar: true })} style={botao('var(--info)')}>
-                {salvando ? 'Salvando…' : `Emitir só a diferença (${(mensagem('Complementar?').match(/mude o valor para (R\$\s?[\d.,]+)/) || [])[1] || ''})`}
+          <span style={{ fontSize: 12, color: 'var(--info)', fontWeight: 700 }}>Este paciente já tem uma nota parecida</span>
+          <span style={{ fontSize: 11.5, color: 'var(--text2)' }}>{anterior('Complementar?')}</span>
+          <span style={{ fontSize: 11.5, color: 'var(--text2)', fontWeight: 600 }}>O que fazer com esta?</span>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+            {diferenca && (
+              <button type="button" disabled={salvando} onClick={() => enviar({ complementar: true })} style={botao('var(--info)')}
+                title="A nota sai só com a diferença, como complementar">
+                Emitir só a diferença ({diferenca})
               </button>
-              <span style={{ fontSize: 10.5, color: 'var(--text3)' }}>Se não for o caso, avise o escritório.</span>
-            </div>
-          ) : <span style={{ fontSize: 11, color: 'var(--text3)' }}>O escritório vai conferir com você.</span>}
+            )}
+            <button type="button" disabled={salvando} onClick={() => enviar({ valor_cheio: true })} style={contorno('var(--accent)')}
+              title="É outro serviço para o mesmo paciente">
+              É outro serviço — emitir {fmt(n.valor)}
+            </button>
+            <button type="button" disabled={salvando} onClick={() => enviar({ ciente: true })} style={contorno('var(--text2)')}
+              title="Já está tudo emitido; tira esta da lista">
+              Já está emitida — ciente
+            </button>
+          </div>
+          {salvando && <span style={{ fontSize: 11, color: 'var(--text3)' }}>Salvando…</span>}
         </>
       )}
 
@@ -159,8 +181,14 @@ export default function NfsePendenteLinha({ n, onSalvar, largo = false, emTabela
           {!temCampos && <span style={{ fontSize: 11, color: 'var(--text3)' }}>O escritório vai conferir esta nota.</span>}
         </>
       )}
-      {/* Recado livre do cliente para o escritório (não vai na nota fiscal) */}
-      <form onSubmit={(e) => { e.preventDefault(); if (obsMudou) enviar({ observacao: obs }); }}
+      {/* Recado livre do cliente para o escritório (não vai na nota fiscal) — fechado até pedir */}
+      {!obsAberta && (
+        <button type="button" onClick={() => setObsAberta(true)}
+          style={{ alignSelf: 'flex-start', background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontSize: 11.5, color: 'var(--text3)', display: 'flex', alignItems: 'center', gap: 4, fontFamily: 'inherit' }}>
+          <MessageSquareIcon size={12} /> Mandar um recado ao escritório sobre esta nota
+        </button>
+      )}
+      {obsAberta && <form onSubmit={(e) => { e.preventDefault(); if (obsMudou) enviar({ observacao: obs }); }}
         style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
         <label style={{ ...campo, flex: '1 1 260px', display: 'flex', alignItems: 'center', gap: 6, padding: '0 10px' }}>
           <MessageSquareIcon size={13} style={{ color: 'var(--text3)', flexShrink: 0 }} />
@@ -169,8 +197,8 @@ export default function NfsePendenteLinha({ n, onSalvar, largo = false, emTabela
             style={{ border: 'none', outline: 'none', background: 'transparent', color: 'inherit', fontSize: 13, padding: '7px 0', flex: 1, minWidth: 0, fontFamily: 'inherit' }} />
         </label>
         {obsMudou && <button type="submit" disabled={salvando} style={botao('var(--text2)')}>{salvando ? 'Salvando…' : 'Enviar observação'}</button>}
-        {!obsMudou && n.observacao && <span style={{ fontSize: 11, color: 'var(--ok)', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 3 }}><CheckCircleIcon size={11} /> Observação enviada</span>}
-      </form>
+        {!obsMudou && n.observacao && <span style={{ fontSize: 11, color: 'var(--ok)', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 3 }}><CheckCircleIcon size={11} /> Recado enviado</span>}
+      </form>}
       {erro && <span style={{ fontSize: 11, color: 'var(--danger)' }}>{erro}</span>}
     </div>
   );

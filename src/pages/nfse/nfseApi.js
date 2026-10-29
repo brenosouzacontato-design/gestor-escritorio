@@ -26,9 +26,11 @@ export async function listarLotes(clienteId, ambiente) {
   return data || []
 }
 
+// duplicidade_liberada / ciente_em: supabase-schema-nfse-conferencia.sql (sem ele, lê sem as duas)
 export async function listarNotas(loteId) {
-  const { data, error } = await supabase.from('nfse_notas').select(CAMPOS_NOTA)
-    .eq('lote_id', loteId).order('criado_em').order('id')
+  const ler = (campos) => supabase.from('nfse_notas').select(campos).eq('lote_id', loteId).order('criado_em').order('id')
+  let { data, error } = await ler(`${CAMPOS_NOTA},duplicidade_liberada,ciente_em`)
+  if (error && /duplicidade_liberada|ciente_em|column/i.test(error.message || '')) ({ data, error } = await ler(CAMPOS_NOTA))
   if (error) throw new Error(error.message)
   return data || []
 }
