@@ -14,6 +14,10 @@
 //        a nota sai pelo valor cheio
 //   POST { acao: 'completar', nota_id, ciente: true } → a nota já tinha sido emitida e o cliente
 //        está ciente: sai do painel dele (devolve { ..., ciente: true })
+//   POST { acao: 'pix_pendentes' }                → PIX do extrato que o escritório pediu para o cliente
+//        identificar: [{ id, data, valor, nomeExtrato, resposta, respondidoEm }] (lib/nfse/extrato)
+//   POST { acao: 'pix_responder', id, nome, cpf?, observacao? } ou { acao: 'pix_responder', id, nao_servico: true,
+//        observacao? } → quem pagou o PIX (ou que não é serviço); o escritório confere e cria a nota
 //   POST { acao: 'link', nota_id }                → link público assinado do PDF (para mandar ao
 //        paciente pelo WhatsApp), válido por LINK_DIAS dias
 //   GET  ?nota=…&exp=…&sig=…                      → o PDF, sem login, se a assinatura e o prazo baterem
@@ -35,6 +39,7 @@ const { RepositorioSupabase, EDITAVEIS } = require('./lib/nfse/repositorio')
 const lotes = require('./lib/nfse/lotes')
 const { cpfValido } = require('./lib/nfse/validador')
 const { PREFIXO_JA_EMITIDA, PREFIXO_COMPLEMENTAR } = require('./lib/nfse/duplicidade')
+const { listarPedidosCliente, responderPedido, ErroPedido } = require('./lib/nfse/extrato')
 
 // Dependências externas (substituídas nos testes, ver lib/nfse/__tests__/painelNfse.test.cjs)
 const deps = {
@@ -67,6 +72,13 @@ exports.handler = async (event) => {
 
     if (corpo.acao === 'pendentes') return json(200, { notas: await pendentes(acesso) })
 
+    if (corpo.acao === 'pix_pendentes') return json(200, { pix: await listarPedidosCliente(db(), acesso.clienteId) })
+
+    if (corpo.acao === 'pix_responder') {
+      const pix = await responderPedido(db(), acesso.clienteId, corpo.id, corpo)
+      return pix ? json(200, { pix }) : json(404, { error: 'Este PIX não está mais esperando resposta.' })
+    }
+
     if (corpo.acao === 'completar') {
       const nota = await completar(acesso, corpo)
       return nota ? json(200, { nota }) : json(404, { error: 'Nota não encontrada ou já emitida.' })
@@ -90,7 +102,7 @@ exports.handler = async (event) => {
 
     return json(400, { error: 'Ação desconhecida.' })
   } catch (e) {
-    if (e instanceof ErroCliente || /inválid|não pode/i.test(e.message)) return json(400, { error: e.message })
+    if (e instanceof ErroCliente || e instanceof ErroPedido || /inválid|não pode/i.test(e.message)) return json(400, { error: e.message })
     console.error('painel-nfse:', e.message)
     return json(500, { error: e.message })
   }

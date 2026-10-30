@@ -13,6 +13,7 @@
 // mais de uma pessoa vira lista para escolher; nada é emitido sem conferência na tela.
 
 const { semAcento, parseValor, montarData } = require('./importador')
+const { cpfValido } = require('./validador')
 
 // Créditos que não são pagamento de cliente (aparecem na lista, desmarcados)
 const NAO_RECEITA = /\b(REND|RENDIMENTO|DIVIDENDO|JCP|JUROS|APLIC|RESGATE|ESTORNO|DEVOL|SALDO|CASHBACK)\b/
@@ -267,7 +268,80 @@ async function marcarGuardados(db, clienteId, ids, campos) {
   checar(error)
 }
 
+// ------------------------------------------------------------------------------- pedidos ao cliente
+//
+// O escritório pede ao cliente que diga quem pagou um PIX (pedido_cliente_em). O pedido aparece no
+// painel do cliente e no link "todas as notas" (painel-nfse: pix_pendentes / pix_responder). A
+// resposta (resposta_cliente) volta para a conferência do extrato já preenchida, e o escritório cria
+// a nota como sempre: nada é emitido pela resposta do cliente sozinha.
+// Colunas de supabase-schema-nfse-extrato-cliente.sql.
+
+class ErroPedido extends Error {}
+const AVISO_SEM_PEDIDO = 'Para pedir ao cliente, falta rodar supabase-schema-nfse-extrato-cliente.sql no SQL Editor do Supabase.'
+const semColunaPedido = (error) => error && /pedido_cliente_em|resposta_cliente|respondido_em|42703/i.test(`${error.code || ''} ${error.message || ''}`)
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+const limpar = (t, max) => String(t || '').replace(/\s+/g, ' ').trim().slice(0, max)
+
+// pedir = false desfaz o pedido. Só vale para os que ainda estão pendentes. Devolve quantos mudaram.
+async function pedirAoCliente(db, clienteId, ids, pedir = true) {
+  if (!ids.length) return 0
+  const campos = pedir ? { pedido_cliente_em: new Date().toISOString(), resposta_cliente: null, respondido_em: null } : { pedido_cliente_em: null }
+  const { data, error } = await db.from('nfse_extrato_lancamentos').update(campos)
+    .eq('cliente_id', clienteId).eq('situacao', 'pendente').in('id', ids).select('id')
+  if (semColunaPedido(error)) throw new SemTabelaExtrato(AVISO_SEM_PEDIDO)
+  checar(error)
+  return (data || []).length
+}
+
+const resumoPedido = (r) => ({
+  id: r.id,
+  data: String(r.data_pix || r.data).slice(0, 10),
+  valor: Number(r.valor),
+  nomeExtrato: nomeDoPagador(r.descricao).nome,
+  descricao: r.descricao,
+  pedidoEm: r.pedido_cliente_em,
+  resposta: r.resposta_cliente || null,
+  respondidoEm: r.respondido_em || null,
+})
+
+// Os PIX que o escritório pediu e que ainda estão pendentes (respondidos ou não). Sem a tabela ou
+// sem as colunas, lista vazia: o painel só não mostra a seção.
+async function listarPedidosCliente(db, clienteId) {
+  const { data, error } = await db.from('nfse_extrato_lancamentos').select('*')
+    .eq('cliente_id', clienteId).eq('situacao', 'pendente').not('pedido_cliente_em', 'is', null)
+  if (semTabela(error) || semColunaPedido(error)) return []
+  checar(error)
+  return (data || []).sort((a, b) => String(a.data_pix || a.data).localeCompare(String(b.data_pix || b.data))).map(resumoPedido)
+}
+
+// Resposta do cliente: { nome, cpf?, observacao? } (quem pagou) ou { nao_servico: true, observacao? }.
+// Devolve o pedido atualizado, ou null se o PIX não for dele ou não estiver mais esperando resposta.
+async function responderPedido(db, clienteId, id, corpo = {}) {
+  if (!UUID.test(String(id || ''))) return null
+  const { data: r, error } = await db.from('nfse_extrato_lancamentos').select('*').eq('id', id).maybeSingle()
+  if (semColunaPedido(error)) throw new ErroPedido(AVISO_SEM_PEDIDO)
+  checar(error)
+  if (!r || r.cliente_id !== clienteId || r.situacao !== 'pendente' || !r.pedido_cliente_em) return null
+  const observacao = limpar(corpo.observacao, 300)
+  let resposta
+  if (corpo.nao_servico === true) {
+    resposta = { nao_servico: true, observacao }
+  } else {
+    const nome = limpar(corpo.nome, 150)
+    const cpf = String(corpo.cpf || '').replace(/\D/g, '')
+    if (nome.length < 3) throw new ErroPedido('Escreva o nome completo de quem pagou.')
+    if (cpf && !cpfValido(cpf)) throw new ErroPedido('CPF inválido — confira os números.')
+    resposta = { nome, cpf, observacao }
+  }
+  const respondidoEm = new Date().toISOString()
+  const { error: e2 } = await db.from('nfse_extrato_lancamentos').update({ resposta_cliente: resposta, respondido_em: respondidoEm })
+    .eq('id', id).eq('cliente_id', clienteId)
+  checar(e2)
+  return resumoPedido({ ...r, resposta_cliente: resposta, respondido_em: respondidoEm })
+}
+
 module.exports = {
   lerExtrato, nomeDoPagador, montarPessoas, sugerirNotas, comecaCom, norm, numerar,
   guardarLancamentos, listarGuardados, marcarGuardados, SemTabelaExtrato, AVISO_SEM_TABELA, MOTIVO_AUTOMATICO,
+  pedirAoCliente, listarPedidosCliente, responderPedido, ErroPedido,
 }
