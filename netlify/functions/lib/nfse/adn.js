@@ -2,9 +2,11 @@
 //
 // Todas as NFS-e emitidas por uma empresa, inclusive as que não saíram do gestor (Emissor Nacional,
 // outro sistema, notas antigas), pela distribuição do Ambiente de Dados Nacional:
-//   GET https://adn.nfse.gov.br/contribuintes/DFe/{NSU}  (TLS mútuo com o A1 da empresa)
-// Cada chamada devolve até 50 documentos com NSU maior que o informado (NFS-e e eventos em que o
-// dono do certificado é emitente, tomador ou intermediário), cada um em gzip + base64:
+//   GET https://adn.nfse.gov.br/contribuintes/DFe/{NSU}?lote=true  (TLS mútuo com o A1 da empresa)
+// Com lote=true, cada chamada devolve até 50 documentos a partir do NSU informado (NFS-e e eventos em
+// que o dono do certificado é emitente, tomador ou intermediário), cada um em gzip + base64. Sem
+// lote=true o ADN devolve um documento só, e a leitura andava de um em um (as notas novas não
+// apareciam no link). O NSU pedido pode voltar repetido: documento com NSU já lido é ignorado.
 //   200 { StatusProcessamento: 'DOCUMENTOS_LOCALIZADOS', LoteDFe: [{ NSU, ChaveAcesso,
 //         TipoDocumento: 'NFSE' | 'EVENTO' | ..., ArquivoXml, DataHoraGeracao }] }
 //   404 quando não há documento novo (NENHUM_DOCUMENTO_LOCALIZADO)
@@ -38,7 +40,7 @@ function criarClienteAdn({ tls, timeoutMs = 15000, transporte = null }) {
   function lote(nsu) {
     if (transporte) return transporte(nsu)
     return new Promise((resolve, reject) => {
-      const req = https.request(`${URL_ADN}/DFe/${nsu}`, { method: 'GET', agent, headers: { Accept: 'application/json' } }, (res) => {
+      const req = https.request(`${URL_ADN}/DFe/${nsu}?lote=true`, { method: 'GET', agent, headers: { Accept: 'application/json' } }, (res) => {
         const partes = []
         res.on('data', (p) => partes.push(p))
         res.on('end', () => {
@@ -97,7 +99,8 @@ function lerEvento(xml) {
 const descompactar = (b64) => zlib.gunzipSync(Buffer.from(b64, 'base64')).toString('utf8')
 
 // Lê os documentos novos de uma empresa e grava. Para antes de `prazoMs` (a function do Netlify
-// tem 10 s) e continua na próxima chamada a partir do último NSU gravado.
+// tem 10 s) e continua na próxima chamada a partir do último NSU gravado. `sincronizado_em` só
+// muda quando a leitura chega ao fim: leitura parcial ou com erro é retomada na próxima abertura.
 // Devolve { novas, eventos, nsu, completo }.
 async function sincronizar({ db, clienteId, cnpj, cliente, prazoMs = 6000, agora = Date.now }) {
   const inicio = agora()
@@ -110,7 +113,7 @@ async function sincronizar({ db, clienteId, cnpj, cliente, prazoMs = 6000, agora
 
   const gravarControle = async (extra = {}) => {
     const { error } = await db.from('nfse_adn_controle').upsert(
-      { cliente_id: clienteId, ultimo_nsu: nsu, sincronizado_em: new Date(agora()).toISOString(), ultimo_erro: null, ...extra },
+      { cliente_id: clienteId, ultimo_nsu: nsu, ultimo_erro: null, ...(completo ? { sincronizado_em: new Date(agora()).toISOString() } : {}), ...extra },
       { onConflict: 'cliente_id' })
     if (error) throw new Error(error.message)
   }
@@ -124,7 +127,9 @@ async function sincronizar({ db, clienteId, cnpj, cliente, prazoMs = 6000, agora
         throw new ErroAdn(`Ambiente Nacional respondeu ${r.status}${erro ? `: ${erro.Descricao || erro.descricao || JSON.stringify(erro)}` : ''}`)
       }
       const lote = r.dados.LoteDFe
-      for (const doc of lote.sort((a, b) => Number(a.NSU) - Number(b.NSU))) {
+      const novosDocs = lote.filter((d) => Number(d.NSU) > nsu).sort((a, b) => Number(a.NSU) - Number(b.NSU))
+      if (!novosDocs.length) { completo = true; break } // só voltou o NSU já lido
+      for (const doc of novosDocs) {
         const xml = descompactar(doc.ArquivoXml)
         if (String(doc.TipoDocumento).toUpperCase() === 'NFSE') {
           const nota = resumirNfse(xml)
@@ -145,8 +150,8 @@ async function sincronizar({ db, clienteId, cnpj, cliente, prazoMs = 6000, agora
         }
         nsu = Math.max(nsu, Number(doc.NSU))
       }
-      await gravarControle() // a cada lote: se a próxima chamada falhar, não relê o que já gravou
       if (lote.length < TAMANHO_LOTE) { completo = true; break }
+      await gravarControle() // a cada lote: se a próxima chamada falhar, não relê o que já gravou
     }
     await gravarControle()
   } catch (e) {

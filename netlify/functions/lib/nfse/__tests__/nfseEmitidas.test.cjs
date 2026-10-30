@@ -105,6 +105,46 @@ test('erro do ADN fica registrado e o que já foi lido não se perde', async () 
   assert.equal(data.length, 50)
 })
 
+// O ADN real devolve a partir do NSU pedido, inclusive: o já lido volta repetido no lote
+test('ADN devolve o NSU pedido de novo: ignora o repetido e não para no meio', async () => {
+  const docs = Array.from({ length: 120 }, (_, i) => doc(i + 1, 'NFSE', nfse(i + 1).xml))
+  const chamadas = []
+  const adn = {
+    lote: async (nsu) => {
+      chamadas.push(nsu)
+      const lote = docs.filter((d) => d.NSU >= nsu).slice(0, 50)
+      return lote.length ? { status: 200, dados: { LoteDFe: lote } } : { status: 404, dados: {} }
+    },
+  }
+  const supa = criarSupabaseFalso({ tabelas: tabelas() })
+  const r = await sincronizar({ db: supa, clienteId: A, cnpj: CNPJ, cliente: adn })
+  assert.equal(r.nsu, 120)
+  assert.equal(r.completo, true)
+  assert.equal(r.novas, 120)
+  assert.deepEqual(chamadas, [0, 50, 99])
+  // nada novo: volta só o NSU 120, que já foi lido
+  const r2 = await sincronizar({ db: supa, clienteId: A, cnpj: CNPJ, cliente: adn })
+  assert.deepEqual(r2, { novas: 0, eventos: 0, nsu: 120, completo: true })
+})
+
+test('leitura que para no prazo não conta como atualizada: continua na próxima abertura', async () => {
+  const docs = Array.from({ length: 120 }, (_, i) => doc(i + 1, 'NFSE', nfse(i + 1).xml))
+  const supa = criarSupabaseFalso({ tabelas: tabelas() })
+  let t = 0
+  const agora = () => t
+  const adn = { lote: async (nsu) => { t += 5000; return adnFalso(docs).lote(nsu) } }
+  const r = await sincronizar({ db: supa, clienteId: A, cnpj: CNPJ, cliente: adn, agora, prazoMs: 6000 })
+  assert.equal(r.completo, false)
+  let { data: controle } = await supa.from('nfse_adn_controle').select('*').eq('cliente_id', A).maybeSingle()
+  assert.equal(controle.ultimo_nsu, 100)
+  assert.equal(controle.sincronizado_em ?? null, null) // ainda não terminou
+  const r2 = await sincronizar({ db: supa, clienteId: A, cnpj: CNPJ, cliente: adn, agora, prazoMs: 60000 })
+  assert.equal(r2.completo, true)
+  ;({ data: controle } = await supa.from('nfse_adn_controle').select('*').eq('cliente_id', A).maybeSingle())
+  assert.equal(controle.ultimo_nsu, 120)
+  assert.ok(controle.sincronizado_em)
+})
+
 function montar({ docs = [], controle = [] } = {}) {
   const supa = criarSupabaseFalso({
     tabelas: {
