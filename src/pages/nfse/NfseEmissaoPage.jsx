@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useState } from 'react'
-import { FileSignatureIcon, UploadIcon, ShieldCheckIcon, SendIcon, RefreshCwIcon, CopyIcon, Trash2Icon, FileCodeIcon, SettingsIcon, CheckCircleIcon, AlertTriangleIcon } from 'lucide-react'
+import { FileSignatureIcon, LandmarkIcon, UploadIcon, ShieldCheckIcon, SendIcon, RefreshCwIcon, CopyIcon, Trash2Icon, FileCodeIcon, SettingsIcon, CheckCircleIcon, AlertTriangleIcon } from 'lucide-react'
 import { useStore } from '../../store'
 import EmpresaCombobox from '../../components/EmpresaCombobox'
 import { Modal, useToast } from '../../components/shared'
 import { chamarNfse, listarLotes, listarNotas, baixarXml, arquivoParaBase64, totais } from './nfseApi'
 import { baixarNfse } from '../painel/nfsePainelApi'
 import TomadoresPanel from './TomadoresPanel'
+import ExtratoPanel from './ExtratoPanel'
 import { chavePainelPorId, urlPublica } from '../../lib/linksPublicos'
 
 // Emissão de NFS-e pela API da Sefin Nacional, por empresa. Ver docs/nfse-emissao.md.
@@ -288,6 +289,7 @@ export default function NfseEmissaoPage() {
   const [progresso, setProgresso] = useState('')
   const [confirmar, setConfirmar] = useState(false)
   const [previa, setPrevia] = useState(null)
+  const [extratoAberto, setExtratoAberto] = useState(false)
 
   const ambiente = status?.empresa?.ambiente
   const podeEmitir = status?.configurada && status.certificado && !status.certificado.bloqueios.length
@@ -315,7 +317,7 @@ export default function NfseEmissaoPage() {
 
   useEffect(() => {
     localStorage.setItem('nfse-cliente', clienteId)
-    setStatus(null); setLotes([]); setLoteId(''); setNotas([]); setSelecionadas(new Set())
+    setStatus(null); setLotes([]); setLoteId(''); setNotas([]); setSelecionadas(new Set()); setExtratoAberto(false)
     carregarStatus(clienteId)
   }, [clienteId])
   useEffect(() => { carregarLotes().catch((e) => show(e.message)) }, [clienteId, ambiente])
@@ -486,7 +488,18 @@ export default function NfseEmissaoPage() {
             <span style={suave}>ou envie uma planilha (colunas: data, nome, cpf, endereco, cep, descricao, valor):</span>
             <input type="file" accept=".xlsx,.xls,.csv" style={{ width: 'auto' }} disabled={ocupado}
               onChange={(e) => { importarPlanilha(e.target.files[0]); e.target.value = '' }} />
+            {!extratoAberto && (
+              <button className="btn" style={{ marginLeft: 'auto' }} onClick={() => setExtratoAberto(true)} title="Cada PIX recebido no extrato vira uma sugestão de nota">
+                <LandmarkIcon size={14} /> Emitir pelo extrato bancário
+              </button>
+            )}
           </div>
+          {extratoAberto && (
+            <div style={{ marginTop: 12 }}>
+              <ExtratoPanel clienteId={clienteId} onFechar={() => setExtratoAberto(false)}
+                onLoteCriado={async (id) => { setExtratoAberto(false); await carregarLotes(id) }} />
+            </div>
+          )}
         </div>
       )}
 

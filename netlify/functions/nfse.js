@@ -22,6 +22,10 @@
 //   { acao: 'marcar_cancelada', nota_id, motivo }  ← registra o cancelamento feito no portal nacional
 //   { acao: 'tomador_salvar', cliente_id, tomador }  |  { acao: 'tomador_excluir', cliente_id, id }
 //   { acao: 'tomadores_importar', cliente_id, planilha_base64, gravar? }  ← sem gravar: só a prévia
+//   { acao: 'extrato_analisar', cliente_id, texto }  ← extrato bancário (linhas do PDF ou OFX): cada PIX
+//        recebido com quem pagou (cadastro + notas anteriores) e se já tem nota. Não grava nada.
+//   { acao: 'extrato_criar_lote', cliente_id, arquivo, itens: [{ nome, cpf, data, valor, descricao_extrato,
+//        nome_extrato, salvar_cadastro? }] }  ← os PIX conferidos viram um lote (conferir e emitir como sempre)
 //
 // Leitura de lotes/notas é feita direto pelo navegador (RLS: usuário logado só lê). Toda escrita passa
 // por aqui, onde valem a máquina de estados, a reserva de número e a duplicidade.
@@ -41,6 +45,8 @@ const { importarTexto, importarLinhas, parseValor, soDigitos } = require('./lib/
 const { completarComCadastro, lerPlanilhaTomadores, planejarImportacao } = require('./lib/nfse/tomadores')
 const { cpfValido } = require('./lib/nfse/validador')
 const { criarClienteAdn, sincronizar } = require('./lib/nfse/adn')
+const { lerExtrato, montarPessoas, sugerirNotas, norm } = require('./lib/nfse/extrato')
+const { novoRegistro } = require('./lib/nfse/importador')
 
 // Timeout da Sefin abaixo do limite da function: se estourar, a nota fica "indeterminada" e a
 // próxima tentativa reconsulta antes de reenviar (nunca há envio em dobro).
@@ -302,6 +308,67 @@ const acoes = {
       throw e
     }
     return { nota: await repo.obterNota(nota.id) }
+  },
+
+  // ---------------------------------------------------------------- emissão por extrato bancário
+
+  async extrato_analisar({ db, repo }, p) {
+    const empresa = await repo.obterEmpresa(uuid(p.cliente_id, 'cliente_id'))
+    exigir(empresa, 'Empresa sem configuração de NFS-e', 409)
+    exigir(String(p.texto || '').trim(), 'Envie o extrato')
+    const lancamentos = lerExtrato(String(p.texto).slice(0, 2000000))
+    exigir(lancamentos.length, 'Não encontrei créditos no extrato. Envie o PDF do extrato de conta corrente (com data, lançamento e valor) ou o arquivo OFX.', 422)
+    await deps.atualizarAdn(db, empresa)
+    const [tomadores, notasGestor, notasNacionais] = await Promise.all([
+      repo.listarTomadores(empresa.cliente_id),
+      repo.listarNotasEmpresa(empresa.cliente_id, empresa.ambiente),
+      empresa.ambiente === 'producao' ? repo.listarNotasNacionais(empresa.cliente_id) : [],
+    ])
+    const pessoas = montarPessoas({ tomadores, notasGestor, notasNacionais })
+    return {
+      lancamentos: sugerirNotas(lancamentos, pessoas),
+      pessoas: pessoas.map((x) => ({ cpf: x.cpf, nome: x.nome })).sort((a, b) => a.nome.localeCompare(b.nome)),
+    }
+  },
+
+  async extrato_criar_lote({ repo }, p) {
+    const empresa = await repo.obterEmpresa(uuid(p.cliente_id, 'cliente_id'))
+    exigir(empresa, 'Empresa sem configuração de NFS-e', 409)
+    const itens = Array.isArray(p.itens) ? p.itens.slice(0, 500) : []
+    exigir(itens.length, 'Marque ao menos um PIX para emitir')
+    const tomadores = await repo.listarTomadores(empresa.cliente_id)
+    const cpfsCadastro = new Set(tomadores.map((t) => t.cpf).filter(Boolean))
+    let registros = itens.map((it) => {
+      const valor = parseValor(String(it.valor ?? ''))
+      exigir(valor && Number(valor) > 0, 'Valor inválido em um dos PIX')
+      exigir(/^\d{4}-\d{2}-\d{2}$/.test(String(it.data || '')), 'Data inválida em um dos PIX')
+      const cpf = soDigitos(it.cpf || '')
+      const reg = novoRegistro({
+        origem: 'extrato', nome: String(it.nome || '').replace(/\s+/g, ' ').trim().slice(0, 150), cpf, data: it.data, valor,
+        dataMensagem: `extrato ${it.data.split('-').reverse().join('/')}`,
+        textoOriginal: `Extrato: ${String(it.descricao_extrato || '').slice(0, 300)} — R$ ${valor.replace('.', ',')}`,
+      })
+      if (!cpf) reg.avisos.push(`PIX de "${it.nome_extrato || '?'}" sem CPF: complete antes de emitir`)
+      return { reg, nomeExtrato: String(it.nome_extrato || '').trim().slice(0, 60),
+        salvar: it.salvar_cadastro && cpf.length === 11 && cpfValido(cpf) && reg.nome && !cpfsCadastro.has(cpf) }
+    })
+    // Quem não estava no cadastro e foi identificado na conferência entra nele (na próxima vez já sai sugerido)
+    let salvos = 0
+    // O nome como o banco mostra ("ZEZINHO") fica de apelido quando o nome completo não começa por ele
+    for (const { reg, salvar, nomeExtrato } of registros) {
+      if (!salvar || cpfsCadastro.has(reg.cpf)) continue
+      const apelidos = nomeExtrato && !norm(reg.nome).startsWith(norm(nomeExtrato)) ? [nomeExtrato] : []
+      try {
+        await repo.salvarTomador(normalizarTomador({ nome: reg.nome, cpf: reg.cpf, apelidos }, empresa.cliente_id))
+        cpfsCadastro.add(reg.cpf)
+        salvos += 1
+      } catch (e) { reg.avisos.push(`Não entrou no cadastro de clientes: ${e.message}`) }
+    }
+    registros = completarComCadastro(registros.map((x) => x.reg), await repo.listarTomadores(empresa.cliente_id), { descricaoPadrao: empresa.descricao_padrao || '' })
+    const arquivo = String(p.arquivo || '').slice(0, 120)
+    // nfse_lotes.origem ainda não tem 'extrato': o lote entra como planilha, com a descrição dizendo de onde veio
+    const loteId = await lotes.criarLote(repo, { empresa, origem: 'planilha', descricao: `Extrato bancário${arquivo ? ` · ${arquivo}` : ''}`, registros })
+    return { lote_id: loteId, salvos }
   },
 
   // ---------------------------------------------------------------- cadastro de clientes (tomadores)
