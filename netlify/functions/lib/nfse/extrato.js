@@ -199,4 +199,75 @@ function marcarJaEmitidas(sugestoes, pessoas) {
   return sugestoes
 }
 
-module.exports = { lerExtrato, nomeDoPagador, montarPessoas, sugerirNotas, comecaCom, norm }
+// ------------------------------------------------------------------------------- guardados
+//
+// Os créditos do extrato ficam em nfse_extrato_lancamentos (supabase-schema-nfse-extrato.sql) com o
+// que foi feito com cada um: pendente, em_lote, ja_tem_nota ou ignorado. Sem a tabela, a análise
+// funciona igual, só não guarda (guardarLancamentos devolve null).
+
+class SemTabelaExtrato extends Error {}
+const AVISO_SEM_TABELA = 'Os lançamentos não ficaram guardados: falta rodar supabase-schema-nfse-extrato.sql no SQL Editor do Supabase.'
+const semTabela = (error) => error && /nfse_extrato_lancamentos|42P01|does not exist|schema cache/i.test(`${error.code || ''} ${error.message || ''}`)
+function checar(error) {
+  if (!error) return
+  if (semTabela(error)) throw new SemTabelaExtrato(AVISO_SEM_TABELA)
+  throw new Error(error.message)
+}
+
+// Mesma linha repetida no mesmo dia (dois PIX iguais) ganha ordem 1, 2...: enviar o extrato de novo
+// não duplica e não junta os dois.
+function numerar(lancamentos) {
+  const vistos = new Map()
+  return lancamentos.map((l) => {
+    const base = `${l.data}|${norm(l.descricao)}|${Number(l.valor).toFixed(2)}`
+    const ordem = (vistos.get(base) || 0) + 1
+    vistos.set(base, ordem)
+    return { ...l, chave: `${base}|${ordem}` }
+  })
+}
+
+const MOTIVO_AUTOMATICO = 'Rendimento, dividendo ou estorno (marcado sozinho)'
+
+// Grava os que ainda não existem e devolve todos (os de antes com o que já foi feito com eles).
+async function guardarLancamentos(db, clienteId, lancamentos, arquivo) {
+  const numerados = numerar(lancamentos)
+  const { data: existentes, error } = await db.from('nfse_extrato_lancamentos').select('*').eq('cliente_id', clienteId)
+    .in('chave', numerados.map((l) => l.chave))
+  checar(error)
+  const porChave = new Map((existentes || []).map((r) => [r.chave, r]))
+  const novos = numerados.filter((l) => !porChave.has(l.chave)).map((l) => ({
+    cliente_id: clienteId, chave: l.chave, data: l.data, data_pix: l.dataPix, descricao: l.descricao, valor: l.valor, arquivo: arquivo || null, situacao: 'pendente',
+    ...(l.receita ? {} : { situacao: 'ignorado', motivo: MOTIVO_AUTOMATICO, tratado_em: new Date().toISOString() }),
+  }))
+  if (novos.length) {
+    const { data: gravados, error: e2 } = await db.from('nfse_extrato_lancamentos').insert(novos).select('*')
+    checar(e2)
+    for (const r of gravados || []) porChave.set(r.chave, r)
+  }
+  return numerados.map((l) => ({ ...l, guardado: porChave.get(l.chave) || null }))
+}
+
+// Lançamento guardado → o mesmo formato de lerExtrato (para sugerir de novo com o cadastro de hoje)
+function deGuardado(r) {
+  const l = lancamento({ data: String(r.data).slice(0, 10), descricao: r.descricao, valor: Number(r.valor).toFixed(2), origem: 'guardado' })
+  return { ...l, dataPix: r.data_pix ? String(r.data_pix).slice(0, 10) : l.dataPix, chave: r.chave, guardado: r }
+}
+
+async function listarGuardados(db, clienteId, situacoes = ['pendente']) {
+  const { data, error } = await db.from('nfse_extrato_lancamentos').select('*').eq('cliente_id', clienteId).in('situacao', situacoes).order('data')
+  checar(error)
+  return (data || []).sort((a, b) => String(a.data).localeCompare(String(b.data))).map(deGuardado)
+}
+
+async function marcarGuardados(db, clienteId, ids, campos) {
+  if (!ids.length) return
+  const { error } = await db.from('nfse_extrato_lancamentos')
+    .update({ ...campos, tratado_em: campos.situacao === 'pendente' ? null : new Date().toISOString() })
+    .eq('cliente_id', clienteId).in('id', ids)
+  checar(error)
+}
+
+module.exports = {
+  lerExtrato, nomeDoPagador, montarPessoas, sugerirNotas, comecaCom, norm, numerar,
+  guardarLancamentos, listarGuardados, marcarGuardados, SemTabelaExtrato, AVISO_SEM_TABELA, MOTIVO_AUTOMATICO,
+}

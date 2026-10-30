@@ -224,3 +224,25 @@ test('escritório força a atualização; falha do ADN não derruba a lista', as
   assert.match(r.corpo.erro, /Não foi possível buscar/)
   assert.deepEqual(r.corpo.notas, [])
 })
+
+test('nota emitida pelo gestor aparece na hora, sem esperar o ADN; quando o ADN distribui, não duplica', async () => {
+  const n9 = nfse(9)
+  const n10 = nfse(10)
+  const docs = []
+  const { chamar, supa } = montar({ docs })
+  supa.db.nfse_notas.push(
+    { id: 'g9', cliente_id: A, ambiente: 'producao', estado: 'autorizada', chave_acesso: n9.chave, xml_retorno: n9.xml },
+    { id: 'g10', cliente_id: A, ambiente: 'producao', estado: 'cancelada', chave_acesso: n10.chave, xml_retorno: n10.xml },
+    { id: 'g11', cliente_id: A, ambiente: 'producao', estado: 'autorizada', chave_acesso: 'x'.repeat(50), xml_retorno: null }, // XML ainda não baixado
+    { id: 'h1', cliente_id: A, ambiente: 'homologacao', estado: 'autorizada', chave_acesso: nfse(11).chave, xml_retorno: nfse(11).xml },
+  )
+  const r = await chamar({ acao: 'listar' }, { 'x-painel-token': 'tokA' })
+  assert.deepEqual(r.corpo.notas.map((n) => [n.numero, n.situacao]).sort(), [['10', 'cancelada'], ['9', 'autorizada']])
+
+  // o ADN distribui a nota 9 depois: continua uma só, agora com o NSU
+  docs.push(doc(7, 'NFSE', n9.xml))
+  await chamar({ acao: 'listar', cliente_id: A, atualizar: true }, { authorization: 'Bearer escritorio' })
+  const linhas = supa.db.nfse_adn_notas.filter((x) => x.chave_acesso === n9.chave)
+  assert.equal(linhas.length, 1)
+  assert.equal(linhas[0].nsu, 7)
+})
