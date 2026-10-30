@@ -10,6 +10,9 @@ const crypto = require('crypto')
 
 process.env.NFSE_CERT_KEY = process.env.NFSE_CERT_KEY || crypto.randomBytes(32).toString('base64')
 delete process.env.NFSE_EMAILS_PERMITIDOS
+// painel-nfse (pedido ao cliente) carrega lib/autenticacao, que cria o cliente Supabase ao carregar
+process.env.SUPABASE_URL = process.env.SUPABASE_URL || 'http://supabase.invalido'
+process.env.SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY || 'chave-de-teste'
 
 const { lerExtrato, nomeDoPagador, montarPessoas, sugerirNotas } = require('../extrato')
 const funcao = require('../../../nfse')
@@ -218,4 +221,57 @@ test('function: lançamentos ficam guardados; o que não virou nota fica pendent
 
   await chamar({ acao: 'extrato_marcar', ids: [ze.lancamentoId], situacao: 'pendente' })
   assert.equal((await chamar({ acao: 'extrato_pendentes', so_contar: true })).total, 5)
+})
+
+test('pedir ao cliente: o PIX aparece no painel, o cliente diz quem pagou e a resposta volta na conferência', async () => {
+  const { supa, chamar } = montar()
+  const CLIENTE = '11111111-1111-4111-8111-111111111111'
+  const OUTRO = '22222222-2222-4222-8222-222222222222'
+  const gabarito = fs.readFileSync(path.join(__dirname, 'golden', 'gabarito_dps.xml'), 'utf8')
+  await chamar({ acao: 'salvar_empresa', gabarito_xml: gabarito })
+  const a = await chamar({ acao: 'extrato_analisar', texto: ITAU, arquivo: 'out.pdf' })
+  const ze = a.lancamentos.find((l) => l.nomeExtrato === 'ZEZINHO')
+  const carla = a.lancamentos.find((l) => l.nomeExtrato === 'CARLA S')
+  const rend = a.lancamentos.find((l) => l.tratado)
+
+  // só os pendentes entram no pedido (o rendimento já foi tratado)
+  const p = await chamar({ acao: 'extrato_pedir_cliente', ids: [ze.lancamentoId, carla.lancamentoId, rend.lancamentoId] })
+  assert.deepEqual(p, { status: 200, pedidos: 2 })
+
+  // o painel do cliente (token) vê os dois; o de outro cliente, nenhum
+  const painel = require('../../../painel-nfse')
+  painel._deps.supabase = supa
+  painel._deps.usuarioEscritorio = async () => null
+  painel._deps.clienteDoPainel = async (event) => ({ tokA: { id: CLIENTE }, tokB: { id: OUTRO } }[event.headers['x-painel-token']] || null)
+  const doPainel = async (token, corpo) => {
+    const r = await painel.handler({ httpMethod: 'POST', headers: { 'x-painel-token': token }, body: JSON.stringify(corpo) })
+    return { status: r.statusCode, ...JSON.parse(r.body) }
+  }
+  const lista = await doPainel('tokA', { acao: 'pix_pendentes' })
+  assert.deepEqual(lista.pix.map((x) => [x.data, x.valor, x.nomeExtrato, x.resposta]), [['2026-10-03', 1000, 'CARLA S', null], ['2026-10-05', 90, 'ZEZINHO', null]])
+  assert.deepEqual((await doPainel('tokB', { acao: 'pix_pendentes' })).pix, [])
+  assert.equal((await doPainel('tokB', { acao: 'pix_responder', id: carla.lancamentoId, nome: 'Carla Santos' })).status, 404)
+
+  // CPF errado é recusado; resposta válida fica guardada
+  assert.equal((await doPainel('tokA', { acao: 'pix_responder', id: carla.lancamentoId, nome: 'Carla Santos', cpf: '12345678900' })).status, 400)
+  const r1 = await doPainel('tokA', { acao: 'pix_responder', id: carla.lancamentoId, nome: 'Carla  Santos', cpf: CARLA })
+  assert.equal(r1.status, 200)
+  assert.deepEqual(r1.pix.resposta, { nome: 'Carla Santos', cpf: CARLA, observacao: '' })
+  const r2 = await doPainel('tokA', { acao: 'pix_responder', id: ze.lancamentoId, nao_servico: true, observacao: 'Transferência minha' })
+  assert.deepEqual(r2.pix.resposta, { nao_servico: true, observacao: 'Transferência minha' })
+
+  // a conferência mostra o pedido com a resposta
+  const b = await chamar({ acao: 'extrato_pendentes' })
+  assert.deepEqual(b.lancamentos.find((l) => l.lancamentoId === carla.lancamentoId).pedido.resposta.cpf, CARLA)
+  assert.equal(b.lancamentos.find((l) => l.lancamentoId === ze.lancamentoId).pedido.resposta.nao_servico, true)
+  assert.equal(b.lancamentos.find((l) => l.nomeExtrato === 'BRUNO').pedido, null)
+
+  // tratado no gestor: sai do painel
+  await chamar({ acao: 'extrato_marcar', ids: [ze.lancamentoId], situacao: 'ignorado', motivo: 'Cliente: transferência minha' })
+  assert.deepEqual((await doPainel('tokA', { acao: 'pix_pendentes' })).pix.map((x) => x.nomeExtrato), ['CARLA S'])
+  assert.equal((await doPainel('tokA', { acao: 'pix_responder', id: ze.lancamentoId, nome: 'Zé' })).status, 404)
+
+  // desfazer o pedido
+  assert.deepEqual(await chamar({ acao: 'extrato_pedir_cliente', ids: [carla.lancamentoId], cancelar: true }), { status: 200, pedidos: 1 })
+  assert.deepEqual((await doPainel('tokA', { acao: 'pix_pendentes' })).pix, [])
 })

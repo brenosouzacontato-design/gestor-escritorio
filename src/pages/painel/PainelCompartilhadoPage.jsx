@@ -8,6 +8,7 @@ import { supabase } from '../../lib/supabase';
 import AcessoPainel, { obterClientePagina } from './AcessoPainel';
 import { listarNfseEmitidas, baixarNfse, listarNfsePendentes, completarNfse, linkPdfNfse, numeroWhatsapp } from './nfsePainelApi';
 import LinhaNfsePendente from './NfsePendenteLinha';
+import PixParaIdentificar, { usePixPedidos } from './PixParaIdentificar';
 import { descreverAparelho } from './aparelho';
 import { abrirLinkAssinado, criarLinkAssinado } from '../documentos/documentosApi';
 import { lerCodigosDaGuia } from './codigosGuia';
@@ -219,6 +220,7 @@ function PainelCompartilhado({ clienteId, competencia: competenciaInicial, admin
   const [erroEdicao, setErroEdicao] = useState(null);
   const [nfseEmitidas, setNfseEmitidas] = useState([]); // notas de serviço emitidas pelo gestor (módulo NFS-e)
   const [nfsePendentes, setNfsePendentes] = useState([]); // notas a emitir em que falta informação (o cliente completa)
+  const [pixPedidos, responderPix] = usePixPedidos(clienteId); // PIX do extrato que o escritório pediu para identificar
   const editando = admin && editandoPainel;
 
   // Fora do Promise.all do painel: sem o módulo de NFS-e no banco (ou com a
@@ -692,6 +694,13 @@ function PainelCompartilhado({ clienteId, competencia: competenciaInicial, admin
                   : <div style={LISTA}>{guias.map((g) => <LinhaGuia key={g.id} g={g} onBaixar={baixar} editando={editando} onSalvarValor={salvarValorGuia} onMarcarPaga={salvarGuiaPaga} />)}</div>}
               </Secao>
               </Ocultavel>
+
+              {/* ── PIX do extrato que o escritório pediu para o cliente dizer quem pagou (não depende da competência) ── */}
+              {pixPedidos.length > 0 && (
+                <Secao titulo="PIX para identificar" icone={<QrCodeIcon size={14} />}>
+                  <PixParaIdentificar pix={pixPedidos} onResponder={responderPix} />
+                </Secao>
+              )}
 
               {/* ── Notas fiscais de serviço (módulo NFS-e): totais emitido / a emitir, recolhidos;
                   abrindo, as emitidas (PDF, XML, WhatsApp) e as que faltam informação ── */}

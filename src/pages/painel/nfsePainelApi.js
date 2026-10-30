@@ -71,3 +71,20 @@ export function numeroWhatsapp(digitado) {
   if (!d.startsWith('55') || d.length < 12) d = `55${d}`;
   return d.length === 12 || d.length === 13 ? d : null;
 }
+
+// PIX do extrato que o escritório pediu para o cliente identificar:
+// [{ id, data, valor, nomeExtrato, descricao, resposta, respondidoEm }]. Falha → lista vazia (a seção some).
+export async function listarPixPedidos(clienteId) {
+  const resp = await chamar({ acao: 'pix_pendentes', cliente_id: clienteId });
+  const dados = await resp.json().catch(() => ({}));
+  if (!resp.ok) throw new Error(dados.error || 'Não foi possível carregar os PIX.');
+  return dados.pix || [];
+}
+
+// campos: { nome, cpf?, observacao? } ou { nao_servico: true, observacao? }. Devolve o PIX atualizado.
+export async function responderPix(clienteId, id, campos) {
+  const resp = await chamar({ acao: 'pix_responder', cliente_id: clienteId, id, ...campos });
+  const dados = await resp.json().catch(() => ({}));
+  if (!resp.ok) throw new Error(dados.error || 'Não foi possível salvar.');
+  return dados.pix;
+}

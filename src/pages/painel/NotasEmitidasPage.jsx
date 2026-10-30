@@ -1,6 +1,7 @@
 // Link "todas as notas" do cliente: ?notas=<token do painel>
-// No topo, as notas que o escritório ainda vai emitir (painel-nfse.js 'pendentes'): o cliente
-// completa o que falta e confirma as complementares. Abaixo, todas as NFS-e emitidas pela empresa
+// No topo, os PIX que o escritório pediu para o cliente identificar (PixParaIdentificar) e as notas
+// que o escritório ainda vai emitir (painel-nfse.js 'pendentes'): o cliente completa o que falta e
+// confirma as complementares. Abaixo, todas as NFS-e emitidas pela empresa
 // (inclusive fora do gestor), lidas do Ambiente Nacional, com busca e filtro por ano/mês, PDF (DANFSe
 // com QR Code de validação), XML e envio do PDF pelo WhatsApp. Ver netlify/functions/nfse-emitidas.js.
 import { useEffect, useMemo, useState } from 'react';
@@ -9,6 +10,7 @@ import AcessoPainel from './AcessoPainel';
 import { numeroWhatsapp, listarNfsePendentes, completarNfse } from './nfsePainelApi';
 import LinhaNfsePendente, { valorAEmitir, COLUNAS_LINHA, fmtDoc, Pilula } from './NfsePendenteLinha';
 import { listarTodasNfse, baixarNfseEmitida, linkPdfNfseEmitida } from './nfseEmitidasApi';
+import PixParaIdentificar, { usePixPedidos } from './PixParaIdentificar';
 
 const fmt = (v) => Number(v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 const fmtData = (iso) => (iso ? String(iso).slice(0, 10).split('-').reverse().join('/') : '');
@@ -66,6 +68,7 @@ function NotasEmitidas({ clienteId, nomeSessao }) {
   const [mes, setMes] = useState('todos');
   const [verCanceladas, setVerCanceladas] = useState(false);
   const [pendentes, setPendentes] = useState([]);
+  const [pix, responderPix] = usePixPedidos(clienteId);
   const largo = useLargo();
 
   useEffect(() => {
@@ -183,6 +186,15 @@ function NotasEmitidas({ clienteId, nomeSessao }) {
               detalhe={dados ? `${autorizadas.length} nota${autorizadas.length !== 1 ? 's' : ''}` : 'Buscando…'} />
             <CardValor titulo="Valor a emitir" valor={fmt(totalAEmitir)} cor="var(--warn)"
               detalhe={`${aEmitir.length} nota${aEmitir.length !== 1 ? 's' : ''}${faltaInfo ? ` · ${faltaInfo} com informação faltando` : ''}`} />
+          </div>
+        )}
+
+        {pix.length > 0 && (
+          <div style={{ marginTop: 24 }}>
+            <h2 style={{ fontSize: 15, fontWeight: 800, margin: '0 0 8px' }}>
+              PIX para identificar <span style={{ fontSize: 12, color: 'var(--text3)', fontWeight: 600 }}>{pix.length}</span>
+            </h2>
+            <PixParaIdentificar pix={pix} onResponder={responderPix} />
           </div>
         )}
 

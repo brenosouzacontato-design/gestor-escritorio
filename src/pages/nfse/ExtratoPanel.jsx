@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
-import { LandmarkIcon, PrinterIcon, XIcon, ClockIcon } from 'lucide-react'
+import { LandmarkIcon, PrinterIcon, XIcon, ClockIcon, SendIcon } from 'lucide-react'
 import { useToast } from '../../components/shared'
+import { chavePainelPorId, urlPublica } from '../../lib/linksPublicos'
 import { chamarNfse } from './nfseApi'
 
 // Emissão por extrato bancário: o escritório envia o extrato (PDF ou OFX), cada PIX recebido vira
@@ -8,6 +9,9 @@ import { chamarNfse } from './nfseApi'
 // viram um lote, que segue para "Conferir e emitir" como qualquer importação. Os lançamentos ficam
 // guardados: o que não virou nota fica pendente ("Pendentes de extratos anteriores") até ser tratado
 // (virar nota, "já tinha nota" ou "não é nota" com o motivo).
+// "Pedir ao cliente": os PIX selecionados aparecem no painel do cliente e no link "todas as notas"
+// (src/pages/painel/PixParaIdentificar.jsx) e vai uma mensagem pelo WhatsApp com o link. O que o
+// cliente responde volta aqui já preenchido (pedido.resposta), para conferir e criar o lote.
 // Servidor: ações extrato_* (netlify/functions/nfse.js, lib/nfse/extrato.js).
 
 const card = { background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, padding: 16, marginBottom: 14 }
@@ -43,10 +47,15 @@ const FILTROS = [
   ['', 'Todos'],
   ['emitir', 'Marcados para emitir'],
   ['voce', 'Precisam de você'],
+  ['cliente', 'Pedidos ao cliente'],
   ['pendentes', 'Ficam pendentes'],
   ['tratados', 'Já tratados'],
 ]
-const precisaDeVoce = (l, e) => !l.tratado && (e.emitir ? (!e.nome || !cpfValido(e.cpf)) : ['escolher', 'sem_cadastro'].includes(l.situacao))
+// Pedido ao cliente ainda sem resposta: espera o cliente, não precisa de você
+const aguardaCliente = (l) => !l.tratado && !!l.pedido && !l.pedido.resposta
+const precisaDeVoce = (l, e) => !l.tratado && (e.emitir ? (!e.nome || !cpfValido(e.cpf)) : !aguardaCliente(l) && ['escolher', 'sem_cadastro'].includes(l.situacao))
+// Onde dá para selecionar PIX para pedir ao cliente
+const FILTROS_PEDIDO = ['voce', 'pendentes']
 // Sem nota e sem decisão: continua pendente depois de criar o lote
 const ficaPendente = (l, e) => !l.tratado && !e.emitir && !['nao_receita', 'ja_tem_nota'].includes(l.situacao)
 
@@ -70,6 +79,7 @@ export default function ExtratoPanel({ clienteId, onLoteCriado, onFechar }) {
   const [ocupado, setOcupado] = useState(false)
   const [aviso, setAviso] = useState(null)
   const [anteriores, setAnteriores] = useState(null) // { total, valor } pendentes de extratos anteriores
+  const [paraCliente, setParaCliente] = useState(() => new Set()) // ids selecionados para pedir ao cliente
 
   async function contarAnteriores() {
     try { setAnteriores(await chamarNfse('extrato_pendentes', { cliente_id: clienteId, so_contar: true })) } catch { setAnteriores(null) }
@@ -81,9 +91,14 @@ export default function ExtratoPanel({ clienteId, onLoteCriado, onFechar }) {
     setAviso(r.aviso || null)
     setLancamentos(r.lancamentos)
     setPessoas(r.pessoas || [])
-    setEscolhas(Object.fromEntries(r.lancamentos.map((l) => [l.id, {
-      emitir: l.emitir, nome: l.sugerido?.nome || '', cpf: l.sugerido?.cpf || '', data: l.dataPix, salvar: true, digitar: l.situacao === 'sem_cadastro',
-    }])))
+    setEscolhas(Object.fromEntries(r.lancamentos.map((l) => {
+      // o cliente disse quem pagou: já vem preenchido e marcado (o escritório confere)
+      const resp = !l.tratado && l.pedido?.resposta?.nome ? l.pedido.resposta : null
+      return [l.id, resp
+        ? { emitir: true, nome: resp.nome, cpf: resp.cpf || '', data: l.dataPix, salvar: true, digitar: true }
+        : { emitir: l.emitir, nome: l.sugerido?.nome || '', cpf: l.sugerido?.cpf || '', data: l.dataPix, salvar: true, digitar: l.situacao === 'sem_cadastro' }]
+    })))
+    setParaCliente(new Set())
     setFiltro('')
   }
 
@@ -110,7 +125,8 @@ export default function ExtratoPanel({ clienteId, onLoteCriado, onFechar }) {
 
   // "Não é nota" (com o motivo) e "reabrir": gravados na hora
   async function naoENota(l) {
-    const motivo = window.prompt('Por que este lançamento não vira nota?\n(ex.: transferência entre contas, reembolso, empréstimo, venda de bem)', '')
+    const doCliente = l.pedido?.resposta?.nao_servico ? `Cliente informou: ${l.pedido.resposta.observacao || 'não é atendimento'}` : ''
+    const motivo = window.prompt('Por que este lançamento não vira nota?\n(ex.: transferência entre contas, reembolso, empréstimo, venda de bem)', doCliente)
     if (motivo === null) return
     if (!motivo.trim()) { show('Escreva o motivo'); return }
     try {
@@ -119,6 +135,37 @@ export default function ExtratoPanel({ clienteId, onLoteCriado, onFechar }) {
       mudar(l.id, { emitir: false })
     } catch (e) { show(e.message) }
   }
+  // Os selecionados vão para o painel do cliente; o WhatsApp abre com a lista e o link
+  async function pedirAoCliente() {
+    const sel = todos.filter((l) => paraCliente.has(l.id) && l.lancamentoId && !l.tratado)
+    if (!sel.length) return
+    const aba = window.open('', '_blank') // abre já no clique, antes do await (bloqueio de pop-up)
+    try {
+      await chamarNfse('extrato_pedir_cliente', { cliente_id: clienteId, ids: sel.map((l) => l.lancamentoId) })
+      const em = new Date().toISOString()
+      const ids = new Set(sel.map((l) => l.id))
+      setLancamentos((ls) => ls.map((l) => (ids.has(l.id) ? { ...l, pedido: { em, resposta: null, respondidoEm: null } } : l)))
+      setParaCliente(new Set())
+      const url = urlPublica({ notas: await chavePainelPorId(clienteId) })
+      const linhas = sel.map((l) => `• ${dataBR(l.dataPix)} · ${brl(l.valor)}${l.nomeExtrato ? ` · "${l.nomeExtrato}"` : ''}`).join('\n')
+      const texto = `Olá! ${sel.length === 1 ? 'Recebemos este PIX' : `Recebemos estes ${sel.length} PIX`} e o banco não mostra o nome completo de quem pagou:\n${linhas}\n\n`
+        + `Pode nos dizer o nome e o CPF de cada um (ou avisar se não foi atendimento)? É só responder neste link, que também está no seu painel:\n${url}`
+      const destino = `https://wa.me/?text=${encodeURIComponent(texto)}`
+      if (aba) aba.location.href = destino; else window.open(destino, '_blank')
+      show(`${sel.length} PIX pedido(s) ao cliente: aparecem no painel e no link de todas as notas.`)
+    } catch (e) {
+      if (aba) aba.close()
+      show(e.message)
+    }
+  }
+  async function cancelarPedido(l) {
+    try {
+      await chamarNfse('extrato_pedir_cliente', { cliente_id: clienteId, ids: [l.lancamentoId], cancelar: true })
+      mudarLancamento(l.id, { pedido: null })
+    } catch (e) { show(e.message) }
+  }
+  const selecionar = (id, sim) => setParaCliente((s) => { const n = new Set(s); if (sim) n.add(id); else n.delete(id); return n })
+
   async function reabrir(l) {
     try {
       await chamarNfse('extrato_marcar', { cliente_id: clienteId, ids: [l.lancamentoId], situacao: 'pendente' })
@@ -137,9 +184,13 @@ export default function ExtratoPanel({ clienteId, onLoteCriado, onFechar }) {
     emitir: (l, e) => !l.tratado && e.emitir,
     voce: (l, e) => precisaDeVoce(l, e),
     pendentes: (l, e) => ficaPendente(l, e),
+    cliente: (l) => !l.tratado && !!l.pedido,
     tratados: (l) => !!l.tratado,
   }
   const visiveis = todos.filter((l) => passa[filtro](l, escolhas[l.id] || {}))
+  const podePedir = FILTROS_PEDIDO.includes(filtro)
+  const selecionaveis = podePedir ? visiveis.filter((l) => !l.tratado && l.lancamentoId) : []
+  const nSel = selecionaveis.filter((l) => paraCliente.has(l.id)).length
   const contagem = Object.fromEntries(Object.entries(passa).map(([k, f]) => [k, todos.filter((l) => f(l, escolhas[l.id] || {})).length]))
 
   async function criarLote() {
@@ -250,17 +301,35 @@ export default function ExtratoPanel({ clienteId, onLoteCriado, onFechar }) {
         ))}
       </div>
 
+      {podePedir && selecionaveis.length > 0 && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 10, padding: '8px 10px', borderRadius: 8, background: 'var(--info-dim)' }}>
+          <span style={{ fontSize: 12 }}>
+            Não sabe quem pagou? Selecione na coluna <b>Pedir</b> e mande para o cliente: os PIX aparecem no painel dele e no link de todas as notas.
+          </span>
+          <button className="btn btn-accent" style={{ marginLeft: 'auto' }} disabled={!nSel} onClick={pedirAoCliente}>
+            <SendIcon size={14} /> Pedir ao cliente{nSel ? ` (${nSel})` : ''}
+          </button>
+        </div>
+      )}
+
       <div style={{ overflowX: 'auto' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
           <thead>
             <tr style={{ textAlign: 'left', color: 'var(--text3)' }}>
+              {podePedir && <th style={th}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 4 }} title="Selecionar todos para pedir ao cliente">
+                  <input type="checkbox" checked={!!selecionaveis.length && nSel === selecionaveis.length}
+                    onChange={(ev) => setParaCliente(ev.target.checked ? new Set(selecionaveis.map((l) => l.id)) : new Set())} /> Pedir
+                </label>
+              </th>}
               <th style={th}>Emitir</th><th style={th}>Data</th><th style={th}>No extrato</th><th style={{ ...th, textAlign: 'right' }}>Valor</th><th style={th}>Quem pagou (sai na nota)</th><th style={th}>Situação</th>
             </tr>
           </thead>
           <tbody>
             {visiveis.map((l) => <Linha key={l.id} l={l} e={escolhas[l.id]} pessoas={pessoas} mudar={(c) => mudar(l.id, c)}
-              onNaoENota={() => naoENota(l)} onReabrir={() => reabrir(l)} />)}
-            {!visiveis.length && <tr><td colSpan={6} style={{ ...td, ...suave }}>Nada aqui.</td></tr>}
+              onNaoENota={() => naoENota(l)} onReabrir={() => reabrir(l)} onCancelarPedido={() => cancelarPedido(l)}
+              pedir={podePedir ? { pode: !l.tratado && !!l.lancamentoId, marcado: paraCliente.has(l.id), mudar: (sim) => selecionar(l.id, sim) } : null} />)}
+            {!visiveis.length && <tr><td colSpan={podePedir ? 7 : 6} style={{ ...td, ...suave }}>Nada aqui.</td></tr>}
           </tbody>
         </table>
       </div>
@@ -283,11 +352,16 @@ const th = { padding: '6px 8px', borderBottom: '1px solid var(--border)', fontWe
 const td = { padding: '6px 8px', borderBottom: '1px solid var(--border)', verticalAlign: 'top' }
 const esc = (t) => String(t ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]))
 
-function Linha({ l, e, pessoas, mudar, onNaoENota, onReabrir }) {
+function Linha({ l, e, pessoas, mudar, onNaoENota, onReabrir, onCancelarPedido, pedir }) {
+  const colPedir = pedir && (
+    <td style={td}><input type="checkbox" disabled={!pedir.pode} checked={pedir.marcado} onChange={(ev) => pedir.mudar(ev.target.checked)}
+      title={l.pedido ? 'Já foi pedido ao cliente; pedir de novo apaga a resposta anterior' : 'Pedir ao cliente que diga quem pagou'} /></td>
+  )
   if (l.tratado) {
     const [rotT, bgT, corT] = TRATADO[l.tratado.situacao] || TRATADO.ignorado
     return (
       <tr style={{ opacity: 0.7 }}>
+        {colPedir}
         <td style={td}><input type="checkbox" checked={false} disabled /></td>
         <td style={td}>{dataBR(l.dataPix)}</td>
         <td style={{ ...td, maxWidth: 240 }}>{l.descricao}</td>
@@ -307,7 +381,8 @@ function Linha({ l, e, pessoas, mudar, onNaoENota, onReabrir }) {
   const opcoes = [...l.candidatos, ...pessoas.filter((p) => !l.candidatos.some((c) => c.cpf === p.cpf))]
   const cpfRuim = e.cpf && !cpfValido(e.cpf)
   return (
-    <tr style={{ opacity: e.emitir || l.situacao === 'escolher' || l.situacao === 'sem_cadastro' ? 1 : 0.6 }}>
+    <tr style={{ opacity: e.emitir || l.pedido || l.situacao === 'escolher' || l.situacao === 'sem_cadastro' ? 1 : 0.6 }}>
+      {colPedir}
       <td style={td}><input type="checkbox" checked={!!e.emitir} onChange={(ev) => mudar({ emitir: ev.target.checked })} title={foraDeUso ? 'Não parece pagamento de cliente, mas pode marcar' : ''} /></td>
       <td style={td}>
         <input type="date" value={e.data} onChange={(ev) => mudar({ data: ev.target.value })} style={{ padding: '2px 4px', fontSize: 12, width: 130 }} title="Data do atendimento na nota (veio a data do PIX)" />
@@ -351,9 +426,31 @@ function Linha({ l, e, pessoas, mudar, onNaoENota, onReabrir }) {
       <td style={{ ...td, maxWidth: 260 }}>
         <span style={{ background: bg, color: cor, borderRadius: 99, padding: '2px 8px', fontSize: 11, fontWeight: 700, whiteSpace: 'nowrap' }}>{rot}</span>
         <div style={{ ...suave, marginTop: 3 }}>{l.motivo}</div>
+        {l.pedido && <Pedido pedido={l.pedido} onCancelar={onCancelarPedido} />}
         {l.lancamentoId && !e.emitir && <button className="btn btn-ghost" style={{ padding: 0, fontSize: 11, marginTop: 2 }} onClick={onNaoENota}
           title="Tira dos pendentes, com o motivo (fica no histórico)">Não é nota…</button>}
       </td>
     </tr>
+  )
+}
+
+// O que foi pedido ao cliente e o que ele respondeu
+function Pedido({ pedido, onCancelar }) {
+  const r = pedido.resposta
+  const caixa = { marginTop: 4, padding: '4px 6px', borderRadius: 6, fontSize: 11, background: r ? 'var(--ok-dim)' : 'var(--info-dim)', color: r ? 'var(--ok)' : 'var(--info)' }
+  if (!r) {
+    return (
+      <div style={caixa}>
+        <b>Aguardando o cliente</b> · pedido em {dataBR(pedido.em)}
+        <button className="btn btn-ghost" style={{ padding: '0 0 0 6px', fontSize: 11 }} onClick={onCancelar} title="Tira do painel do cliente">cancelar pedido</button>
+      </div>
+    )
+  }
+  return (
+    <div style={caixa}>
+      <b>Cliente respondeu</b>{pedido.respondidoEm ? ` em ${dataBR(pedido.respondidoEm)}` : ''}:{' '}
+      {r.nao_servico ? 'não é atendimento' : `${r.nome}${r.cpf ? ` · ${cpfFmt(r.cpf)}` : ' · sem CPF'}`}
+      {r.observacao ? ` · ${r.observacao}` : ''}
+    </div>
   )
 }

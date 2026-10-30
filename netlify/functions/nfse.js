@@ -29,6 +29,8 @@
 //        como sempre). Os lançamentos ficam guardados (nfse_extrato_lancamentos): o que não virou nota fica pendente.
 //   { acao: 'extrato_pendentes', cliente_id, so_contar? }  ← lançamentos de extratos anteriores ainda não tratados
 //   { acao: 'extrato_marcar', cliente_id, ids, situacao: 'ignorado'|'pendente'|'ja_tem_nota', motivo? }
+//   { acao: 'extrato_pedir_cliente', cliente_id, ids, cancelar? }  ← os PIX aparecem no painel do cliente e no
+//        link "todas as notas" para ele dizer quem pagou; a resposta volta na conferência (pedido.resposta)
 //
 // Leitura de lotes/notas é feita direto pelo navegador (RLS: usuário logado só lê). Toda escrita passa
 // por aqui, onde valem a máquina de estados, a reserva de número e a duplicidade.
@@ -48,7 +50,7 @@ const { importarTexto, importarLinhas, parseValor, soDigitos } = require('./lib/
 const { completarComCadastro, lerPlanilhaTomadores, planejarImportacao } = require('./lib/nfse/tomadores')
 const { cpfValido } = require('./lib/nfse/validador')
 const { criarClienteAdn, sincronizar } = require('./lib/nfse/adn')
-const { lerExtrato, montarPessoas, sugerirNotas, norm, guardarLancamentos, listarGuardados, marcarGuardados, SemTabelaExtrato } = require('./lib/nfse/extrato')
+const { lerExtrato, montarPessoas, sugerirNotas, norm, guardarLancamentos, listarGuardados, marcarGuardados, SemTabelaExtrato, pedirAoCliente } = require('./lib/nfse/extrato')
 const { novoRegistro } = require('./lib/nfse/importador')
 
 // Timeout da Sefin abaixo do limite da function: se estourar, a nota fica "indeterminada" e a
@@ -366,6 +368,20 @@ const acoes = {
     return { ok: true }
   },
 
+  // { ids, cancelar? } → pede (ou desfaz o pedido) ao cliente que diga quem pagou cada PIX
+  async extrato_pedir_cliente({ repo, db }, p) {
+    const empresa = await repo.obterEmpresa(uuid(p.cliente_id, 'cliente_id'))
+    exigir(empresa, 'Empresa sem configuração de NFS-e', 409)
+    const ids = (Array.isArray(p.ids) ? p.ids : []).slice(0, 500).map((i) => uuid(i, 'id'))
+    exigir(ids.length, 'Escolha ao menos um lançamento')
+    try {
+      return { pedidos: await pedirAoCliente(db, empresa.cliente_id, ids, !p.cancelar) }
+    } catch (e) {
+      if (e instanceof SemTabelaExtrato) throw new ErroHttp(409, e.message)
+      throw e
+    }
+  },
+
   async extrato_criar_lote({ repo, db }, p) {
     const empresa = await repo.obterEmpresa(uuid(p.cliente_id, 'cliente_id'))
     exigir(empresa, 'Empresa sem configuração de NFS-e', 409)
@@ -470,6 +486,9 @@ async function conferirExtrato(repo, empresa, lancamentos) {
       lancamentoId: guardado ? guardado.id : null,
       tratado: tratado ? { situacao: guardado.situacao, motivo: guardado.motivo || '', loteId: guardado.lote_id || null, nome: guardado.nome || '', em: guardado.tratado_em } : null,
       emitir: tratado ? false : s.emitir,
+      pedido: guardado && guardado.pedido_cliente_em
+        ? { em: guardado.pedido_cliente_em, resposta: guardado.resposta_cliente || null, respondidoEm: guardado.respondido_em || null }
+        : null,
     }
   })
   return { lancamentos: sugestoes, pessoas: pessoas.map((x) => ({ cpf: x.cpf, nome: x.nome })).sort((a, b) => a.nome.localeCompare(b.nome)) }
