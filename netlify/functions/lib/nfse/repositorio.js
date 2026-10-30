@@ -72,11 +72,16 @@ class RepositorioSupabase {
       .eq('cliente_id', clienteId).eq('ambiente', ambiente).eq('cpf', cpf))
   }
 
+  // Todas as notas da empresa no ambiente (emissão por extrato: quem já teve nota e de quanto)
+  listarNotasEmpresa(clienteId, ambiente) {
+    return this._q(this.db.from('nfse_notas').select(CAMPOS_DUPLICIDADE).eq('cliente_id', clienteId).eq('ambiente', ambiente))
+  }
+
   // NFS-e autorizadas da empresa no Ambiente Nacional (nfse_adn_notas, inclusive as emitidas fora
   // do gestor). Sem a tabela (SQL ainda não aplicado), volta vazio: a validação segue como antes.
   async listarNotasNacionais(clienteId) {
     const { data, error } = await this.db.from('nfse_adn_notas')
-      .select('chave_acesso, numero_nfse, tomador_doc, valor, emitida_em, competencia')
+      .select('chave_acesso, numero_nfse, tomador_doc, tomador_nome, valor, emitida_em, competencia')
       .eq('cliente_id', clienteId).eq('ambiente', 'producao').eq('situacao', 'autorizada')
     if (error) { console.warn('nfse: notas do Ambiente Nacional indisponíveis:', error.message); return [] }
     return data || []
@@ -168,6 +173,10 @@ class RepositorioMemoria {
 
   async listarNotasDoTomador(clienteId, ambiente, cpf) {
     return this.notas.filter((n) => n.cliente_id === clienteId && n.ambiente === ambiente && n.cpf === cpf).map((n) => this._copia(n))
+  }
+
+  async listarNotasEmpresa(clienteId, ambiente) {
+    return this.notas.filter((n) => n.cliente_id === clienteId && n.ambiente === ambiente).map((n) => this._copia(n))
   }
 
   async listarNotasNacionais(clienteId) {
