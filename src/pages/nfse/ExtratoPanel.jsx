@@ -1,12 +1,14 @@
-import { useMemo, useState } from 'react'
-import { LandmarkIcon, PrinterIcon, XIcon } from 'lucide-react'
+import { useEffect, useMemo, useState } from 'react'
+import { LandmarkIcon, PrinterIcon, XIcon, ClockIcon } from 'lucide-react'
 import { useToast } from '../../components/shared'
 import { chamarNfse } from './nfseApi'
 
 // Emissão por extrato bancário: o escritório envia o extrato (PDF ou OFX), cada PIX recebido vira
 // uma linha com quem pagou (sugerido pelo cadastro e pelas notas anteriores), e os PIX conferidos
-// viram um lote, que segue para "Conferir e emitir" como qualquer importação.
-// Servidor: ações extrato_analisar e extrato_criar_lote (netlify/functions/nfse.js, lib/nfse/extrato.js).
+// viram um lote, que segue para "Conferir e emitir" como qualquer importação. Os lançamentos ficam
+// guardados: o que não virou nota fica pendente ("Pendentes de extratos anteriores") até ser tratado
+// (virar nota, "já tinha nota" ou "não é nota" com o motivo).
+// Servidor: ações extrato_* (netlify/functions/nfse.js, lib/nfse/extrato.js).
 
 const card = { background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, padding: 16, marginBottom: 14 }
 const suave = { color: 'var(--text3)', fontSize: 12 }
@@ -31,14 +33,22 @@ const SITUACAO = {
   ja_tem_nota: ['Já tem nota', 'var(--surface3)', 'var(--ok)'],
   nao_receita: ['Não é de cliente', 'var(--surface2)', 'var(--text3)'],
 }
+// O que já foi feito com o lançamento (guardado no banco)
+const TRATADO = {
+  em_lote: ['Foi para lote', 'var(--ok-dim)', 'var(--ok)'],
+  ja_tem_nota: ['Já tinha nota', 'var(--surface3)', 'var(--ok)'],
+  ignorado: ['Não é nota', 'var(--surface2)', 'var(--text3)'],
+}
 const FILTROS = [
   ['', 'Todos'],
   ['emitir', 'Marcados para emitir'],
   ['voce', 'Precisam de você'],
-  ['ja_tem_nota', 'Já têm nota'],
-  ['nao_receita', 'Não são de cliente'],
+  ['pendentes', 'Ficam pendentes'],
+  ['tratados', 'Já tratados'],
 ]
-const precisaDeVoce = (l, e) => e.emitir && (!e.nome || !cpfValido(e.cpf))
+const precisaDeVoce = (l, e) => !l.tratado && (e.emitir ? (!e.nome || !cpfValido(e.cpf)) : ['escolher', 'sem_cadastro'].includes(l.situacao))
+// Sem nota e sem decisão: continua pendente depois de criar o lote
+const ficaPendente = (l, e) => !l.tratado && !e.emitir && !['nao_receita', 'ja_tem_nota'].includes(l.situacao)
 
 // Texto do PDF linha a linha, na ordem da página (pdf.js, o mesmo leitor do extrato contábil)
 async function textoDoArquivo(arquivo) {
@@ -58,43 +68,79 @@ export default function ExtratoPanel({ clienteId, onLoteCriado, onFechar }) {
   const [escolhas, setEscolhas] = useState({}) // id → { emitir, nome, cpf, data, salvar, digitar }
   const [filtro, setFiltro] = useState('')
   const [ocupado, setOcupado] = useState(false)
+  const [aviso, setAviso] = useState(null)
+  const [anteriores, setAnteriores] = useState(null) // { total, valor } pendentes de extratos anteriores
+
+  async function contarAnteriores() {
+    try { setAnteriores(await chamarNfse('extrato_pendentes', { cliente_id: clienteId, so_contar: true })) } catch { setAnteriores(null) }
+  }
+  useEffect(() => { contarAnteriores() }, [clienteId])
+
+  function carregar(r, nome) {
+    setArquivo(nome)
+    setAviso(r.aviso || null)
+    setLancamentos(r.lancamentos)
+    setPessoas(r.pessoas || [])
+    setEscolhas(Object.fromEntries(r.lancamentos.map((l) => [l.id, {
+      emitir: l.emitir, nome: l.sugerido?.nome || '', cpf: l.sugerido?.cpf || '', data: l.dataPix, salvar: true, digitar: l.situacao === 'sem_cadastro',
+    }])))
+    setFiltro('')
+  }
 
   async function analisar(f) {
     if (!f) return
     setOcupado(true)
     try {
       const texto = await textoDoArquivo(f)
-      const r = await chamarNfse('extrato_analisar', { cliente_id: clienteId, texto })
-      setArquivo(f.name)
-      setLancamentos(r.lancamentos)
-      setPessoas(r.pessoas || [])
-      setEscolhas(Object.fromEntries(r.lancamentos.map((l) => [l.id, {
-        emitir: l.emitir, nome: l.sugerido?.nome || '', cpf: l.sugerido?.cpf || '', data: l.dataPix, salvar: true, digitar: l.situacao === 'sem_cadastro',
-      }])))
-      setFiltro('')
+      carregar(await chamarNfse('extrato_analisar', { cliente_id: clienteId, texto, arquivo: f.name }), f.name)
+    } catch (e) { show(e.message) } finally { setOcupado(false) }
+  }
+
+  async function tratarAnteriores() {
+    setOcupado(true)
+    try {
+      const r = await chamarNfse('extrato_pendentes', { cliente_id: clienteId })
+      if (!r.lancamentos.length) { show(r.aviso || 'Nenhum lançamento pendente'); return }
+      carregar(r, 'Pendentes de extratos anteriores')
     } catch (e) { show(e.message) } finally { setOcupado(false) }
   }
 
   const mudar = (id, campos) => setEscolhas((s) => ({ ...s, [id]: { ...s[id], ...campos } }))
+  const mudarLancamento = (id, campos) => setLancamentos((ls) => ls.map((l) => (l.id === id ? { ...l, ...campos } : l)))
 
-  const receitas = useMemo(() => (lancamentos || []).filter((l) => l.situacao !== 'nao_receita'), [lancamentos])
-  const marcados = useMemo(() => (lancamentos || []).filter((l) => escolhas[l.id]?.emitir), [lancamentos, escolhas])
-  const pendentes = marcados.filter((l) => precisaDeVoce(l, escolhas[l.id]))
-  const soma = (ls) => ls.reduce((s, l) => s + Number(l.valor), 0)
-  const visiveis = (lancamentos || []).filter((l) => {
-    const e = escolhas[l.id] || {}
-    if (filtro === 'emitir') return e.emitir
-    if (filtro === 'voce') return precisaDeVoce(l, e) || (!e.emitir && ['escolher', 'sem_cadastro'].includes(l.situacao))
-    if (filtro) return l.situacao === filtro
-    return true
-  })
-  const contagem = {
-    '': (lancamentos || []).length,
-    emitir: marcados.length,
-    voce: (lancamentos || []).filter((l) => precisaDeVoce(l, escolhas[l.id] || {}) || (!escolhas[l.id]?.emitir && ['escolher', 'sem_cadastro'].includes(l.situacao))).length,
-    ja_tem_nota: (lancamentos || []).filter((l) => l.situacao === 'ja_tem_nota').length,
-    nao_receita: (lancamentos || []).filter((l) => l.situacao === 'nao_receita').length,
+  // "Não é nota" (com o motivo) e "reabrir": gravados na hora
+  async function naoENota(l) {
+    const motivo = window.prompt('Por que este lançamento não vira nota?\n(ex.: transferência entre contas, reembolso, empréstimo, venda de bem)', '')
+    if (motivo === null) return
+    if (!motivo.trim()) { show('Escreva o motivo'); return }
+    try {
+      await chamarNfse('extrato_marcar', { cliente_id: clienteId, ids: [l.lancamentoId], situacao: 'ignorado', motivo })
+      mudarLancamento(l.id, { tratado: { situacao: 'ignorado', motivo: motivo.trim() } })
+      mudar(l.id, { emitir: false })
+    } catch (e) { show(e.message) }
   }
+  async function reabrir(l) {
+    try {
+      await chamarNfse('extrato_marcar', { cliente_id: clienteId, ids: [l.lancamentoId], situacao: 'pendente' })
+      mudarLancamento(l.id, { tratado: null })
+    } catch (e) { show(e.message) }
+  }
+
+  const todos = lancamentos || []
+  const receitas = useMemo(() => todos.filter((l) => l.situacao !== 'nao_receita'), [lancamentos])
+  const marcados = useMemo(() => todos.filter((l) => !l.tratado && escolhas[l.id]?.emitir), [lancamentos, escolhas])
+  const pendentes = marcados.filter((l) => precisaDeVoce(l, escolhas[l.id]))
+  const ficam = todos.filter((l) => ficaPendente(l, escolhas[l.id] || {}))
+  const soma = (ls) => ls.reduce((s, l) => s + Number(l.valor), 0)
+  const passa = {
+    '': () => true,
+    emitir: (l, e) => !l.tratado && e.emitir,
+    voce: (l, e) => precisaDeVoce(l, e),
+    pendentes: (l, e) => ficaPendente(l, e),
+    tratados: (l) => !!l.tratado,
+  }
+  const visiveis = todos.filter((l) => passa[filtro](l, escolhas[l.id] || {}))
+  const contagem = Object.fromEntries(Object.entries(passa).map(([k, f]) => [k, todos.filter((l) => f(l, escolhas[l.id] || {})).length]))
 
   async function criarLote() {
     const semNome = marcados.filter((l) => !escolhas[l.id].nome.trim())
@@ -107,21 +153,28 @@ export default function ExtratoPanel({ clienteId, onLoteCriado, onFechar }) {
         cliente_id: clienteId, arquivo,
         itens: marcados.map((l) => {
           const e = escolhas[l.id]
-          return { nome: e.nome.trim(), cpf: e.cpf, data: e.data, valor: l.valor, descricao_extrato: l.descricao, nome_extrato: l.nomeExtrato,
-            salvar_cadastro: e.digitar && e.salvar }
+          return { lancamento_id: l.lancamentoId, nome: e.nome.trim(), cpf: e.cpf, data: e.data, valor: l.valor, descricao_extrato: l.descricao,
+            nome_extrato: l.nomeExtrato, salvar_cadastro: e.digitar && e.salvar }
         }),
+        // vistos na conferência como "já tem nota" e deixados de fora
+        ja_tem_nota_ids: todos.filter((l) => !l.tratado && l.situacao === 'ja_tem_nota' && !escolhas[l.id]?.emitir && l.lancamentoId).map((l) => l.lancamentoId),
       })
-      show(`Lote criado com ${marcados.length} nota(s)${r.salvos ? ` · ${r.salvos} cliente(s) novo(s) no cadastro` : ''}. Confira e emita abaixo.`)
+      show(`Lote criado com ${marcados.length} nota(s)${r.salvos ? ` · ${r.salvos} cliente(s) novo(s) no cadastro` : ''}.`
+        + `${ficam.length ? ` ${ficam.length} lançamento(s) ficaram pendentes para tratar depois.` : ''} Confira e emita abaixo.`)
       setLancamentos(null)
+      contarAnteriores()
       onLoteCriado(r.lote_id)
     } catch (e) { show(e.message) } finally { setOcupado(false) }
   }
 
   function imprimir() {
-    const linhas = (lancamentos || []).map((l) => {
+    const linhas = todos.map((l) => {
       const e = escolhas[l.id] || {}
-      return `<tr><td>${e.emitir ? '✔' : ''}</td><td>${dataBR(e.data || l.dataPix)}</td><td>${esc(l.descricao)}</td><td style="text-align:right">${brl(l.valor)}</td>`
-        + `<td>${esc(e.nome || '')}${e.cpf ? `<br><small>${cpfFmt(e.cpf)}</small>` : ''}</td><td>${SITUACAO[l.situacao][0]}<br><small>${esc(l.motivo)}</small></td></tr>`
+      const [rot] = l.tratado ? TRATADO[l.tratado.situacao] : ficaPendente(l, e) ? ['Fica pendente'] : SITUACAO[l.situacao]
+      const motivo = l.tratado ? l.tratado.motivo : l.motivo
+      const nome = l.tratado ? l.tratado.nome : e.nome
+      return `<tr><td>${!l.tratado && e.emitir ? '✔' : ''}</td><td>${dataBR(e.data || l.dataPix)}</td><td>${esc(l.descricao)}</td><td style="text-align:right">${brl(l.valor)}</td>`
+        + `<td>${esc(nome || '')}${!l.tratado && e.cpf ? `<br><small>${cpfFmt(e.cpf)}</small>` : ''}</td><td>${rot}<br><small>${esc(motivo)}</small></td></tr>`
     }).join('')
     const w = window.open('', '_blank')
     if (!w) { show('O navegador bloqueou a janela do relatório'); return }
@@ -129,7 +182,7 @@ export default function ExtratoPanel({ clienteId, onLoteCriado, onFechar }) {
       <style>body{font:12px system-ui,sans-serif;margin:24px;color:#111}table{border-collapse:collapse;width:100%}th,td{border:1px solid #ccc;padding:5px 6px;vertical-align:top}th{background:#f2f2f2;text-align:left}small{color:#666}h1{font-size:16px}p{margin:4px 0}</style>
       <h1>Conferência do extrato para emissão de NFS-e</h1>
       <p>Arquivo: ${esc(arquivo)} · emitido em ${new Date().toLocaleString('pt-BR')}</p>
-      <p>PIX recebidos: ${receitas.length} (${brl(soma(receitas))}) · Marcados para emitir: ${marcados.length} (${brl(soma(marcados))}) · Já têm nota: ${contagem.ja_tem_nota}</p>
+      <p>PIX recebidos: ${receitas.length} (${brl(soma(receitas))}) · Marcados para emitir: ${marcados.length} (${brl(soma(marcados))}) · Ficam pendentes: ${ficam.length} (${brl(soma(ficam))}) · Já tratados: ${contagem.tratados}</p>
       <table><thead><tr><th>Emitir</th><th>Data</th><th>No extrato</th><th>Valor</th><th>Cliente</th><th>Situação</th></tr></thead><tbody>${linhas}</tbody></table>`)
     w.document.close()
     w.focus()
@@ -150,6 +203,13 @@ export default function ExtratoPanel({ clienteId, onLoteCriado, onFechar }) {
         <input type="file" accept=".pdf,.ofx,.txt" disabled={ocupado} style={{ width: 'auto' }}
           onChange={(e) => { analisar(e.target.files[0]); e.target.value = '' }} />
         {ocupado && <span style={{ ...suave, marginLeft: 8 }}>Lendo o extrato…</span>}
+        {anteriores?.total > 0 && (
+          <div style={{ marginTop: 12, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', padding: '8px 10px', borderRadius: 8, background: 'var(--warn-dim)' }}>
+            <ClockIcon size={14} style={{ color: 'var(--warn)' }} />
+            <span style={{ fontSize: 12 }}><b>{anteriores.total}</b> lançamento(s) de extratos anteriores esperando tratamento ({brl(anteriores.valor)})</span>
+            <button className="btn" style={{ marginLeft: 'auto' }} disabled={ocupado} onClick={tratarAnteriores}>Tratar pendentes</button>
+          </div>
+        )}
       </div>
     )
   }
@@ -157,8 +217,8 @@ export default function ExtratoPanel({ clienteId, onLoteCriado, onFechar }) {
   const resumo = [
     ['PIX recebidos', receitas.length, soma(receitas), 'var(--text1)'],
     ['Marcados para emitir', marcados.length, soma(marcados), 'var(--accent)'],
-    ['Já têm nota', contagem.ja_tem_nota, soma((lancamentos || []).filter((l) => l.situacao === 'ja_tem_nota')), 'var(--ok)'],
-    ['Precisam de você', contagem.voce, null, contagem.voce ? 'var(--warn)' : 'var(--text3)'],
+    ['Ficam pendentes', ficam.length, soma(ficam), ficam.length ? 'var(--warn)' : 'var(--text3)'],
+    ['Já tratados', contagem.tratados, soma(todos.filter((l) => l.tratado)), 'var(--ok)'],
   ]
 
   return (
@@ -168,9 +228,10 @@ export default function ExtratoPanel({ clienteId, onLoteCriado, onFechar }) {
         <span style={suave}>{arquivo}</span>
         <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
           <button className="btn" onClick={imprimir}><PrinterIcon size={14} /> Imprimir relatório</button>
-          <button className="btn btn-ghost" onClick={() => setLancamentos(null)}>Trocar extrato</button>
+          <button className="btn btn-ghost" onClick={() => { setLancamentos(null); contarAnteriores() }}>Trocar extrato</button>
         </div>
       </div>
+      {aviso && <div style={{ fontSize: 12, padding: '6px 10px', borderRadius: 8, background: 'var(--warn-dim)', color: 'var(--warn)', marginBottom: 10 }}>{aviso}</div>}
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 8, marginBottom: 12 }}>
         {resumo.map(([rot, n, v, cor]) => (
@@ -197,7 +258,8 @@ export default function ExtratoPanel({ clienteId, onLoteCriado, onFechar }) {
             </tr>
           </thead>
           <tbody>
-            {visiveis.map((l) => <Linha key={l.id} l={l} e={escolhas[l.id]} pessoas={pessoas} mudar={(c) => mudar(l.id, c)} />)}
+            {visiveis.map((l) => <Linha key={l.id} l={l} e={escolhas[l.id]} pessoas={pessoas} mudar={(c) => mudar(l.id, c)}
+              onNaoENota={() => naoENota(l)} onReabrir={() => reabrir(l)} />)}
             {!visiveis.length && <tr><td colSpan={6} style={{ ...td, ...suave }}>Nada aqui.</td></tr>}
           </tbody>
         </table>
@@ -209,6 +271,7 @@ export default function ExtratoPanel({ clienteId, onLoteCriado, onFechar }) {
         </button>
         <span style={suave}>
           {pendentes.length ? `${pendentes.length} marcado(s) sem nome ou CPF: a nota entra como "falta dado" e você completa antes de emitir. ` : ''}
+          {ficam.length ? `${ficam.length} sem decisão ficam pendentes e voltam em "Tratar pendentes". ` : ''}
           Nada é emitido agora: o lote vai para "Conferir e emitir".
         </span>
       </div>
@@ -220,7 +283,25 @@ const th = { padding: '6px 8px', borderBottom: '1px solid var(--border)', fontWe
 const td = { padding: '6px 8px', borderBottom: '1px solid var(--border)', verticalAlign: 'top' }
 const esc = (t) => String(t ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]))
 
-function Linha({ l, e, pessoas, mudar }) {
+function Linha({ l, e, pessoas, mudar, onNaoENota, onReabrir }) {
+  if (l.tratado) {
+    const [rotT, bgT, corT] = TRATADO[l.tratado.situacao] || TRATADO.ignorado
+    return (
+      <tr style={{ opacity: 0.7 }}>
+        <td style={td}><input type="checkbox" checked={false} disabled /></td>
+        <td style={td}>{dataBR(l.dataPix)}</td>
+        <td style={{ ...td, maxWidth: 240 }}>{l.descricao}</td>
+        <td style={{ ...td, textAlign: 'right', fontWeight: 600, whiteSpace: 'nowrap' }}>{brl(l.valor)}</td>
+        <td style={td}>{l.tratado.nome || '—'}</td>
+        <td style={{ ...td, maxWidth: 260 }}>
+          <span style={{ background: bgT, color: corT, borderRadius: 99, padding: '2px 8px', fontSize: 11, fontWeight: 700, whiteSpace: 'nowrap' }}>{rotT}</span>
+          {l.tratado.motivo && <div style={{ ...suave, marginTop: 3 }}>{l.tratado.motivo}</div>}
+          {l.lancamentoId && <button className="btn btn-ghost" style={{ padding: 0, fontSize: 11, marginTop: 2 }} onClick={onReabrir}
+            title="Volta para pendente (ex.: a nota do lote foi excluída)">reabrir</button>}
+        </td>
+      </tr>
+    )
+  }
   const [rot, bg, cor] = SITUACAO[l.situacao]
   const foraDeUso = l.situacao === 'nao_receita'
   const opcoes = [...l.candidatos, ...pessoas.filter((p) => !l.candidatos.some((c) => c.cpf === p.cpf))]
@@ -270,6 +351,8 @@ function Linha({ l, e, pessoas, mudar }) {
       <td style={{ ...td, maxWidth: 260 }}>
         <span style={{ background: bg, color: cor, borderRadius: 99, padding: '2px 8px', fontSize: 11, fontWeight: 700, whiteSpace: 'nowrap' }}>{rot}</span>
         <div style={{ ...suave, marginTop: 3 }}>{l.motivo}</div>
+        {l.lancamentoId && !e.emitir && <button className="btn btn-ghost" style={{ padding: 0, fontSize: 11, marginTop: 2 }} onClick={onNaoENota}
+          title="Tira dos pendentes, com o motivo (fica no histórico)">Não é nota…</button>}
       </td>
     </tr>
   )

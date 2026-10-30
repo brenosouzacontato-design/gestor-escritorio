@@ -2,7 +2,7 @@
 // Imita também a função SQL nfse_reservar_numero.
 
 function criarSupabaseFalso({ usuarios = {}, tabelas = {} } = {}) {
-  const db = { nfse_empresas: [], nfse_certificados: [], nfse_lotes: [], nfse_notas: [], nfse_sequencias: [], nfse_eventos: [], nfse_tomadores: [], nfse_adn_notas: [], nfse_adn_controle: [], clientes: [], ...tabelas }
+  const db = { nfse_empresas: [], nfse_certificados: [], nfse_lotes: [], nfse_notas: [], nfse_sequencias: [], nfse_eventos: [], nfse_tomadores: [], nfse_adn_notas: [], nfse_adn_controle: [], nfse_extrato_lancamentos: [], clientes: [], ...tabelas }
   let seq = 0
   const uid = () => `00000000-0000-4000-8000-${String(++seq).padStart(12, '0')}`
   const copia = (x) => JSON.parse(JSON.stringify(x))

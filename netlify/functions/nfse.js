@@ -22,10 +22,13 @@
 //   { acao: 'marcar_cancelada', nota_id, motivo }  ← registra o cancelamento feito no portal nacional
 //   { acao: 'tomador_salvar', cliente_id, tomador }  |  { acao: 'tomador_excluir', cliente_id, id }
 //   { acao: 'tomadores_importar', cliente_id, planilha_base64, gravar? }  ← sem gravar: só a prévia
-//   { acao: 'extrato_analisar', cliente_id, texto }  ← extrato bancário (linhas do PDF ou OFX): cada PIX
-//        recebido com quem pagou (cadastro + notas anteriores) e se já tem nota. Não grava nada.
-//   { acao: 'extrato_criar_lote', cliente_id, arquivo, itens: [{ nome, cpf, data, valor, descricao_extrato,
-//        nome_extrato, salvar_cadastro? }] }  ← os PIX conferidos viram um lote (conferir e emitir como sempre)
+//   { acao: 'extrato_analisar', cliente_id, texto, arquivo }  ← extrato bancário (linhas do PDF ou OFX): cada PIX
+//        recebido com quem pagou (cadastro + notas anteriores) e se já tem nota. Guarda os lançamentos (pendentes).
+//   { acao: 'extrato_criar_lote', cliente_id, arquivo, itens: [{ lancamento_id, nome, cpf, data, valor, descricao_extrato,
+//        nome_extrato, salvar_cadastro? }], ja_tem_nota_ids? }  ← os PIX conferidos viram um lote (conferir e emitir
+//        como sempre). Os lançamentos ficam guardados (nfse_extrato_lancamentos): o que não virou nota fica pendente.
+//   { acao: 'extrato_pendentes', cliente_id, so_contar? }  ← lançamentos de extratos anteriores ainda não tratados
+//   { acao: 'extrato_marcar', cliente_id, ids, situacao: 'ignorado'|'pendente'|'ja_tem_nota', motivo? }
 //
 // Leitura de lotes/notas é feita direto pelo navegador (RLS: usuário logado só lê). Toda escrita passa
 // por aqui, onde valem a máquina de estados, a reserva de número e a duplicidade.
@@ -45,7 +48,7 @@ const { importarTexto, importarLinhas, parseValor, soDigitos } = require('./lib/
 const { completarComCadastro, lerPlanilhaTomadores, planejarImportacao } = require('./lib/nfse/tomadores')
 const { cpfValido } = require('./lib/nfse/validador')
 const { criarClienteAdn, sincronizar } = require('./lib/nfse/adn')
-const { lerExtrato, montarPessoas, sugerirNotas, norm } = require('./lib/nfse/extrato')
+const { lerExtrato, montarPessoas, sugerirNotas, norm, guardarLancamentos, listarGuardados, marcarGuardados, SemTabelaExtrato } = require('./lib/nfse/extrato')
 const { novoRegistro } = require('./lib/nfse/importador')
 
 // Timeout da Sefin abaixo do limite da function: se estourar, a nota fica "indeterminada" e a
@@ -319,19 +322,51 @@ const acoes = {
     const lancamentos = lerExtrato(String(p.texto).slice(0, 2000000))
     exigir(lancamentos.length, 'Não encontrei créditos no extrato. Envie o PDF do extrato de conta corrente (com data, lançamento e valor) ou o arquivo OFX.', 422)
     await deps.atualizarAdn(db, empresa)
-    const [tomadores, notasGestor, notasNacionais] = await Promise.all([
-      repo.listarTomadores(empresa.cliente_id),
-      repo.listarNotasEmpresa(empresa.cliente_id, empresa.ambiente),
-      empresa.ambiente === 'producao' ? repo.listarNotasNacionais(empresa.cliente_id) : [],
-    ])
-    const pessoas = montarPessoas({ tomadores, notasGestor, notasNacionais })
-    return {
-      lancamentos: sugerirNotas(lancamentos, pessoas),
-      pessoas: pessoas.map((x) => ({ cpf: x.cpf, nome: x.nome })).sort((a, b) => a.nome.localeCompare(b.nome)),
+    let aviso = null
+    let guardados
+    try {
+      guardados = await guardarLancamentos(db, empresa.cliente_id, lancamentos, String(p.arquivo || '').slice(0, 120))
+    } catch (e) {
+      if (!(e instanceof SemTabelaExtrato)) throw e
+      aviso = e.message
+      guardados = lancamentos
     }
+    return { ...(await conferirExtrato(repo, empresa, guardados)), aviso }
   },
 
-  async extrato_criar_lote({ repo }, p) {
+  // Lançamentos de extratos anteriores ainda não tratados (pendentes), conferidos com o cadastro de hoje
+  async extrato_pendentes({ repo, db }, p) {
+    const empresa = await repo.obterEmpresa(uuid(p.cliente_id, 'cliente_id'))
+    exigir(empresa, 'Empresa sem configuração de NFS-e', 409)
+    let guardados
+    try { guardados = await listarGuardados(db, empresa.cliente_id) } catch (e) {
+      if (e instanceof SemTabelaExtrato) return { lancamentos: [], pessoas: [], total: 0, valor: 0, aviso: e.message }
+      throw e
+    }
+    if (p.so_contar) return { total: guardados.length, valor: guardados.reduce((s, l) => s + Number(l.valor), 0) }
+    return conferirExtrato(repo, empresa, guardados)
+  },
+
+  // { ids, situacao: 'ignorado' | 'pendente' | 'ja_tem_nota', motivo? }
+  async extrato_marcar({ repo, db }, p) {
+    const empresa = await repo.obterEmpresa(uuid(p.cliente_id, 'cliente_id'))
+    exigir(empresa, 'Empresa sem configuração de NFS-e', 409)
+    const ids = (Array.isArray(p.ids) ? p.ids : []).slice(0, 500).map((i) => uuid(i, 'id'))
+    exigir(ids.length, 'Escolha ao menos um lançamento')
+    exigir(['ignorado', 'pendente', 'ja_tem_nota'].includes(p.situacao), 'Situação inválida')
+    const motivo = String(p.motivo || '').replace(/\s+/g, ' ').trim().slice(0, 300)
+    exigir(p.situacao !== 'ignorado' || motivo, 'Diga por que não é nota (ex.: transferência entre contas, reembolso)')
+    const campos = p.situacao === 'pendente' ? { situacao: 'pendente', motivo: null, lote_id: null } : { situacao: p.situacao, motivo: motivo || null }
+    try {
+      await marcarGuardados(db, empresa.cliente_id, ids, campos)
+    } catch (e) {
+      if (e instanceof SemTabelaExtrato) throw new ErroHttp(409, e.message)
+      throw e
+    }
+    return { ok: true }
+  },
+
+  async extrato_criar_lote({ repo, db }, p) {
     const empresa = await repo.obterEmpresa(uuid(p.cliente_id, 'cliente_id'))
     exigir(empresa, 'Empresa sem configuração de NFS-e', 409)
     const itens = Array.isArray(p.itens) ? p.itens.slice(0, 500) : []
@@ -368,6 +403,15 @@ const acoes = {
     const arquivo = String(p.arquivo || '').slice(0, 120)
     // nfse_lotes.origem ainda não tem 'extrato': o lote entra como planilha, com a descrição dizendo de onde veio
     const loteId = await lotes.criarLote(repo, { empresa, origem: 'planilha', descricao: `Extrato bancário${arquivo ? ` · ${arquivo}` : ''}`, registros })
+    // O que foi feito com cada lançamento fica guardado; o resto continua pendente
+    const ids = (lista) => (Array.isArray(lista) ? lista : []).filter((i) => /^[0-9a-f-]{36}$/i.test(String(i || ''))).slice(0, 500)
+    try {
+      for (const it of itens) {
+        const [id] = ids([it.lancamento_id])
+        if (id) await marcarGuardados(db, empresa.cliente_id, [id], { situacao: 'em_lote', lote_id: loteId, nome: String(it.nome || '').slice(0, 150), cpf: soDigitos(it.cpf || '') || null, motivo: null })
+      }
+      await marcarGuardados(db, empresa.cliente_id, ids(p.ja_tem_nota_ids), { situacao: 'ja_tem_nota', motivo: 'Já havia nota (conferido no extrato)' })
+    } catch (e) { if (!(e instanceof SemTabelaExtrato)) throw e }
     return { lote_id: loteId, salvos }
   },
 
@@ -409,6 +453,26 @@ const acoes = {
     }
     return { plano, gravados }
   },
+}
+
+// Sugestão de quem pagou cada lançamento + o que já foi feito com ele (quando guardado)
+async function conferirExtrato(repo, empresa, lancamentos) {
+  const [tomadores, notasGestor, notasNacionais] = await Promise.all([
+    repo.listarTomadores(empresa.cliente_id),
+    repo.listarNotasEmpresa(empresa.cliente_id, empresa.ambiente),
+    empresa.ambiente === 'producao' ? repo.listarNotasNacionais(empresa.cliente_id) : [],
+  ])
+  const pessoas = montarPessoas({ tomadores, notasGestor, notasNacionais })
+  const sugestoes = sugerirNotas(lancamentos, pessoas).map(({ guardado, ...s }) => {
+    const tratado = guardado && guardado.situacao !== 'pendente'
+    return {
+      ...s,
+      lancamentoId: guardado ? guardado.id : null,
+      tratado: tratado ? { situacao: guardado.situacao, motivo: guardado.motivo || '', loteId: guardado.lote_id || null, nome: guardado.nome || '', em: guardado.tratado_em } : null,
+      emitir: tratado ? false : s.emitir,
+    }
+  })
+  return { lancamentos: sugestoes, pessoas: pessoas.map((x) => ({ cpf: x.cpf, nome: x.nome })).sort((a, b) => a.nome.localeCompare(b.nome)) }
 }
 
 async function clienteExistente(db, id) {

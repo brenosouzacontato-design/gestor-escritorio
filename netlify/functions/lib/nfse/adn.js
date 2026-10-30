@@ -161,4 +161,40 @@ async function sincronizar({ db, clienteId, cnpj, cliente, prazoMs = 6000, agora
   return { novas, eventos, nsu, completo }
 }
 
-module.exports = { criarClienteAdn, sincronizar, resumirNfse, lerEvento, EVENTOS_SITUACAO, ErroAdn, URL_ADN }
+// O ADN distribui a nota com atraso (de minutos a horas depois da autorização). As notas que o
+// próprio gestor emitiu entram na lista na hora, a partir do XML que a Sefin devolveu; quando o ADN
+// distribuir a mesma nota, o upsert por chave de acesso só completa o NSU. Nota cancelada no gestor
+// fica cancelada na lista. Devolve quantas entraram.
+async function incluirNotasDoGestor({ db, clienteId }) {
+  const { data: doGestor, error } = await db.from('nfse_notas').select('id, chave_acesso, estado')
+    .eq('cliente_id', clienteId).eq('ambiente', 'producao').in('estado', ['autorizada', 'cancelada'])
+  if (error) throw new Error(error.message)
+  const comChave = (doGestor || []).filter((n) => n.chave_acesso)
+  if (!comChave.length) return 0
+  const { data: jaTem, error: e2 } = await db.from('nfse_adn_notas').select('chave_acesso, situacao').eq('cliente_id', clienteId)
+  if (e2) throw new Error(e2.message)
+  const situacoes = new Map((jaTem || []).map((x) => [x.chave_acesso, x.situacao]))
+  let incluidas = 0
+  for (const n of comChave) {
+    if (situacoes.has(n.chave_acesso)) {
+      if (n.estado === 'cancelada' && situacoes.get(n.chave_acesso) === 'autorizada') {
+        await db.from('nfse_adn_notas').update({ situacao: 'cancelada' }).eq('chave_acesso', n.chave_acesso).eq('cliente_id', clienteId)
+      }
+      continue
+    }
+    const { data: completa } = await db.from('nfse_notas').select('xml_retorno').eq('id', n.id).maybeSingle()
+    const xml = completa && completa.xml_retorno
+    if (!xml) continue // XML ainda não baixado: entra quando o ADN distribuir
+    let resumo
+    try { resumo = resumirNfse(xml) } catch { continue }
+    if (resumo.chave_acesso !== n.chave_acesso) continue
+    // insert (não upsert): se o ADN gravou a mesma nota nesse meio-tempo, a dele fica
+    const { error: e3 } = await db.from('nfse_adn_notas').insert({
+      cliente_id: clienteId, nsu: 0, ...resumo, xml, situacao: n.estado === 'cancelada' ? 'cancelada' : 'autorizada',
+    })
+    if (!e3) incluidas += 1
+  }
+  return incluidas
+}
+
+module.exports = { criarClienteAdn, sincronizar, incluirNotasDoGestor, resumirNfse, lerEvento, EVENTOS_SITUACAO, ErroAdn, URL_ADN }

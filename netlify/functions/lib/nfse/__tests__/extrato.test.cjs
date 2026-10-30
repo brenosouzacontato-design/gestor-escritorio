@@ -178,3 +178,44 @@ test('function: analisa o extrato e cria o lote com os PIX conferidos (quem é n
   const b = await chamar({ acao: 'extrato_analisar', texto: ITAU })
   assert.equal(b.lancamentos.find((x) => x.nomeExtrato === 'ZEZINHO').situacao, 'identificado')
 })
+
+test('function: lançamentos ficam guardados; o que não virou nota fica pendente para tratar depois', async () => {
+  const { supa, chamar } = montar()
+  const gabarito = fs.readFileSync(path.join(__dirname, 'golden', 'gabarito_dps.xml'), 'utf8')
+  await chamar({ acao: 'salvar_empresa', gabarito_xml: gabarito })
+  await chamar({ acao: 'tomador_salvar', tomador: { nome: 'Bruno Alves', cpf: BRUNO } })
+
+  const a = await chamar({ acao: 'extrato_analisar', texto: ITAU, arquivo: 'out.pdf' })
+  assert.equal(a.status, 200)
+  assert.equal(a.aviso, null)
+  assert.equal(supa.db.nfse_extrato_lancamentos.length, 9)
+  assert.ok(a.lancamentos.every((l) => l.lancamentoId))
+  // rendimento e dividendo já entram tratados (ignorados sozinhos)
+  assert.deepEqual(a.lancamentos.filter((l) => l.tratado).map((l) => l.tratado.situacao), ['ignorado', 'ignorado'])
+
+  // emite os dois PIX do Bruno; o resto fica pendente
+  const brunos = a.lancamentos.filter((l) => l.nomeExtrato === 'BRUNO')
+  const r = await chamar({ acao: 'extrato_criar_lote', arquivo: 'out.pdf', itens: brunos.map((l) => ({
+    lancamento_id: l.lancamentoId, nome: 'Bruno Alves', cpf: BRUNO, data: l.dataPix, valor: l.valor, descricao_extrato: l.descricao })) })
+  assert.equal(r.status, 200)
+
+  const p = await chamar({ acao: 'extrato_pendentes' })
+  assert.equal(p.lancamentos.length, 5) // 9 - 2 ignorados - 2 em lote
+  assert.ok(!p.lancamentos.some((l) => l.nomeExtrato === 'BRUNO'))
+  assert.deepEqual(await chamar({ acao: 'extrato_pendentes', so_contar: true }), { status: 200, total: 5, valor: 1920 })
+
+  // "não é nota" pede motivo; depois sai dos pendentes; dá para desfazer
+  const ze = p.lancamentos.find((l) => l.nomeExtrato === 'ZEZINHO')
+  assert.equal((await chamar({ acao: 'extrato_marcar', ids: [ze.lancamentoId], situacao: 'ignorado' })).status, 400)
+  assert.equal((await chamar({ acao: 'extrato_marcar', ids: [ze.lancamentoId], situacao: 'ignorado', motivo: 'Transferência entre contas' })).status, 200)
+  assert.equal((await chamar({ acao: 'extrato_pendentes', so_contar: true })).total, 4)
+
+  // o mesmo extrato de novo: não duplica e mostra o que já foi feito
+  const b = await chamar({ acao: 'extrato_analisar', texto: ITAU, arquivo: 'out.pdf' })
+  assert.equal(supa.db.nfse_extrato_lancamentos.length, 9)
+  assert.equal(b.lancamentos.find((l) => l.lancamentoId === ze.lancamentoId).tratado.motivo, 'Transferência entre contas')
+  assert.ok(b.lancamentos.filter((l) => l.nomeExtrato === 'BRUNO').every((l) => l.tratado.situacao === 'em_lote' && l.tratado.loteId === r.lote_id && !l.emitir))
+
+  await chamar({ acao: 'extrato_marcar', ids: [ze.lancamentoId], situacao: 'pendente' })
+  assert.equal((await chamar({ acao: 'extrato_pendentes', so_contar: true })).total, 5)
+})

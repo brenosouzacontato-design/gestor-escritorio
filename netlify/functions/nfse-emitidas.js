@@ -4,7 +4,8 @@
 // Nacional (lib/nfse/adn.js), para o link "todas as notas" do cliente: ?notas=<token do painel>.
 //   POST { acao: 'listar', atualizar? }  → { empresa, notas, sincronizadoEm, erro } (nota com tomadorDoc: CPF/CNPJ)
 //        Antes de listar, busca as notas novas no ADN se a última leitura tiver mais de
-//        ATUALIZAR_MIN minutos (ou se o escritório pedir `atualizar`).
+//        ATUALIZAR_MIN minutos (ou se o escritório pedir `atualizar`). As notas que o gestor emitiu
+//        entram na hora (o ADN as distribui com atraso).
 //   POST { acao: 'pdf', nota_id }  → DANFSe (lib/nfse/danfse) com QR Code da consulta pública;
 //        marca d'água CANCELADA/SUBSTITUÍDA quando for o caso
 //   POST { acao: 'xml', nota_id }  → XML da NFS-e (o documento com validade jurídica)
@@ -20,7 +21,7 @@ const { clienteDoPainel, usuarioEscritorio } = require('./lib/autenticacao')
 const { gerarDanfse } = require('./lib/nfse/danfse/danfse')
 const { decifrar } = require('./lib/nfse/cofre')
 const { lerPfx } = require('./lib/nfse/certificado')
-const { criarClienteAdn, sincronizar } = require('./lib/nfse/adn')
+const { criarClienteAdn, sincronizar, incluirNotasDoGestor } = require('./lib/nfse/adn')
 
 const ATUALIZAR_MIN = 15
 const LINK_DIAS = 30
@@ -100,6 +101,8 @@ async function atualizarSePreciso(acesso, forcar) {
 
 async function listar(acesso, atualizar) {
   const erro = await atualizarSePreciso(acesso, atualizar && acesso.escritorio)
+  // As emitidas pelo gestor aparecem na hora, sem esperar a distribuição do ADN
+  try { await incluirNotasDoGestor({ db: db(), clienteId: acesso.clienteId }) } catch (e) { console.error('nfse-emitidas: notas do gestor:', e.message) }
   const [{ data: notas, error }, { data: controle }, { data: cliente }] = await Promise.all([
     db().from('nfse_adn_notas')
       .select('id, numero_nfse, chave_acesso, competencia, emitida_em, tomador_nome, tomador_doc, valor, valor_liquido, descricao, situacao')
