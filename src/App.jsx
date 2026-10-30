@@ -19,6 +19,7 @@ import Central from './pages/Central'
 import ContabilPage from './pages/contabil/ContabilPage'
 import DocumentosPage from './pages/documentos/DocumentosPage'
 import PagamentosPage from './pages/pagamentos/PagamentosPage'
+import ParcelamentosPage from './pages/parcelamentos/ParcelamentosPage'
 import { contarComprovantesPendentes } from './pages/pagamentos/pagamentosApi'
 import NotificacoesPage from './pages/Notificacoes'
 import HonorariosPage from './pages/honorarios/HonorariosPage'
@@ -140,6 +141,7 @@ export default function App() {
             {page === 'paineis'    && <PaineisPage />}
             {page === 'documentos' && <DocumentosPage />}
             {page === 'pagamentos' && <PagamentosPage />}
+            {page === 'parcelamentos' && <ParcelamentosPage />}
             {page === 'notificacoes' && <NotificacoesPage />}
             {page === 'honorarios' && <HonorariosPage />}
             {page === 'tarefas'    && <Tarefas onAddTarefa={openNewTask} highlightTaskId={highlightTaskId} onHighlightConsumed={() => setHighlightTaskId(null)}

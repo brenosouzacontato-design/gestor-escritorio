@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useMemo } from 'react'
 import {
   LayoutDashboardIcon, SparklesIcon, AppWindowIcon, ClipboardCheckIcon, CheckSquareIcon, CalendarDaysIcon, BellIcon,
   UsersIcon, TargetIcon, PaperclipIcon, MonitorIcon, CircleDollarSignIcon, BanknoteIcon, CalculatorIcon, RefreshCwIcon,
-  ReceiptIcon, FileSignatureIcon, ChevronDownIcon, SearchIcon, MenuIcon, XIcon,
+  ReceiptIcon, FileSignatureIcon, LayersIcon, ChevronDownIcon, SearchIcon, MenuIcon, XIcon,
 } from 'lucide-react'
 
 // Menu do gestor agrupado por assunto. O id de cada item é o mesmo `page`
@@ -28,6 +28,7 @@ export const GRUPOS = [
   ]},
   { id: 'financeiro', nome: 'Financeiro', itens: [
     { id: 'pagamentos', label: 'Pagamentos',   desc: 'Guias e comprovantes',          Icon: CircleDollarSignIcon },
+    { id: 'parcelamentos', label: 'Parcelamentos', desc: 'Guias de PARCMEI e PGFN',   Icon: LayersIcon },
     { id: 'honorarios', label: 'Honorários',   desc: 'Cobrança do escritório',        Icon: BanknoteIcon },
     { id: 'contabil',   label: 'Financeiro',   desc: 'Lançamentos e conciliação',     Icon: CalculatorIcon },
     { id: 'erp',        label: 'ERP',          desc: 'Fechamentos do sistema contábil', Icon: RefreshCwIcon },
