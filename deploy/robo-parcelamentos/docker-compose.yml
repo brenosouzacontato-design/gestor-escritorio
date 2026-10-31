@@ -1,0 +1,18 @@
+# Fica na mesma rede da Evolution API (deploy/whatsapp): fala com ela por
+# http://evolution:8080 e o Caddy de lá publica a tela remota em /robo/.
+services:
+  robo:
+    build: .
+    container_name: robo-parcelamentos
+    restart: always
+    env_file: .env
+    shm_size: 1gb
+    volumes:
+      - ./dados:/dados
+    networks:
+      - gestor
+
+networks:
+  gestor:
+    external: true
+    name: gestor-whatsapp_default

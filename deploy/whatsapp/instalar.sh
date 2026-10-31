@@ -57,9 +57,16 @@ WHATSAPP_WEBHOOK_SEGREDO=$WHATSAPP_WEBHOOK_SEGREDO
 EOF
 umask 022
 
-cat > Caddyfile <<'EOF'
-{$DOMINIO} {
-	reverse_proxy evolution:8080
+# Rotas extras de outros serviços no mesmo servidor (ex.: a tela remota do
+# robô de parcelamentos, deploy/robo-parcelamentos/instalar.sh, grava
+# Caddyfile.robo aqui). Sem elas, tudo vai para a Evolution, como antes.
+EXTRA=""
+for f in "$PASTA"/Caddyfile.*; do [ -f "$f" ] && EXTRA="$EXTRA$(cat "$f")"$'\n'; done
+cat > Caddyfile <<EOF
+{\$DOMINIO} {
+$EXTRA	handle {
+		reverse_proxy evolution:8080
+	}
 }
 EOF
 
