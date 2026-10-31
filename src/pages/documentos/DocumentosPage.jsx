@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react'
-import { PaperclipIcon, UploadCloudIcon, CheckCircle2Icon, Loader2Icon, FileIcon, Share2Icon, DownloadIcon, MessageCircleIcon, ExternalLinkIcon, SearchCheckIcon, Trash2Icon, ArchiveIcon } from 'lucide-react'
+import { PaperclipIcon, CameraIcon, UploadCloudIcon, CheckCircle2Icon, Loader2Icon, FileIcon, Share2Icon, DownloadIcon, MessageCircleIcon, ExternalLinkIcon, SearchCheckIcon, Trash2Icon, ArchiveIcon } from 'lucide-react'
 import { useStore } from '../../store'
 import { useToast } from '../../components/shared'
 import OpcoesCandidatos from '../../components/OpcoesCandidatos'
@@ -16,7 +16,7 @@ const CONFIANCA_BADGE = { alta: 'badge-ok', media: 'badge-warn', baixa: 'badge-g
 // Fila de anexos: cada item passa por enviando -> processando -> pronto|erro.
 // "pronto" já traz a sugestão da IA (empresa/tipo/candidato) pronta pra
 // revisão manual antes de confirmar de fato (nunca aplica a baixa sozinho).
-export default function DocumentosPage() {
+export default function DocumentosPage({ arquivosIniciais = null, onArquivosIniciaisConsumidos }) {
   const clientes = useStore((s) => s.clientes)
   const fetchObrigacoes = useStore((s) => s.fetchObrigacoes)
   const fetchTarefas = useStore((s) => s.fetchTarefas)
@@ -28,8 +28,9 @@ export default function DocumentosPage() {
   const [arrastando, setArrastando] = useState(false)
   const [confirmando, setConfirmando] = useState(false)
 
+  const [candidatosProntos, setCandidatosProntos] = useState(false)
   useEffect(() => {
-    listarCandidatos().then(setCandidatos).catch(() => {})
+    listarCandidatos().then(setCandidatos).catch(() => {}).finally(() => setCandidatosProntos(true))
   }, [])
 
   const clientePorId = useMemo(() => Object.fromEntries(clientes.map((c) => [c.id, c])), [clientes])
@@ -56,6 +57,15 @@ export default function DocumentosPage() {
     const arquivos = Array.from(fileList || [])
     arquivos.forEach(processarArquivo)
   }
+
+  // fotos tiradas na tela Hoje: entram na fila assim que os candidatos
+  // carregarem (a IA precisa deles pra sugerir a obrigação/tarefa)
+  useEffect(() => {
+    if (!candidatosProntos || !arquivosIniciais?.length) return
+    setAba('enviar')
+    adicionarArquivos(arquivosIniciais)
+    onArquivosIniciaisConsumidos?.()
+  }, [candidatosProntos, arquivosIniciais])
 
   const onDrop = (e) => {
     e.preventDefault()
@@ -152,6 +162,12 @@ export default function DocumentosPage() {
           </label>
         </div>
         <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 4 }}>PDF, JPG, PNG ou WEBP</div>
+        {/* tablet/celular: abre direto a câmera traseira */}
+        <label className="btn btn-accent so-toque" style={{ marginTop: 12, display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+          <CameraIcon size={18} /> Fotografar documento
+          <input type="file" accept="image/*" capture="environment" style={{ display: 'none' }}
+            onChange={(e) => { adicionarArquivos(e.target.files); e.target.value = '' }} />
+        </label>
       </div>
 
       {itens.length > 0 && (

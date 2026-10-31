@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useMemo } from 'react'
 import {
   LayoutDashboardIcon, SparklesIcon, AppWindowIcon, ClipboardCheckIcon, CheckSquareIcon, CalendarDaysIcon, BellIcon,
-  UsersIcon, TargetIcon, PaperclipIcon, MonitorIcon, CircleDollarSignIcon, BanknoteIcon, CalculatorIcon, RefreshCwIcon,
+  UsersIcon, TargetIcon, SunIcon, PaperclipIcon, MonitorIcon, CircleDollarSignIcon, BanknoteIcon, CalculatorIcon, RefreshCwIcon,
   ReceiptIcon, FileSignatureIcon, LayersIcon, ChevronDownIcon, SearchIcon, MenuIcon, XIcon,
 } from 'lucide-react'
 
@@ -10,6 +10,7 @@ import {
 // não quebrar navegações que já apontam pra ele).
 export const GRUPOS = [
   { id: 'inicio', nome: 'Início', itens: [
+    { id: 'hoje',       label: 'Hoje',         desc: 'Pendências do dia (tablet)',    Icon: SunIcon },
     { id: 'overview',   label: 'Painel',       desc: 'Resumo do dia',                 Icon: LayoutDashboardIcon },
     { id: 'assessor',   label: 'Assessor',     desc: 'Prioridades e notícias',        Icon: SparklesIcon },
     { id: 'central',    label: 'Central',      desc: 'Atalhos e sistemas',            Icon: AppWindowIcon },

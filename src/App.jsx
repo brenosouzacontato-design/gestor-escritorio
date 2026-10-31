@@ -1,6 +1,6 @@
 import { useState, useEffect, Fragment } from 'react'
 import { RefreshCwIcon, SettingsIcon, PlusIcon, LogOutIcon, SearchIcon } from 'lucide-react'
-import { MenuTopo, BuscaRapida, MenuCelular } from './components/MenuTopo'
+import { MenuTopo, BuscaRapida, MenuCelular, NAV } from './components/MenuTopo'
 import { temaInicial, salvarTema } from './lib/tema'
 import SeletorTema from './components/SeletorTema'
 import { useStore } from './store'
@@ -28,11 +28,21 @@ import NotasFiscaisPage from './pages/notasfiscais/NotasFiscaisPage'
 import NfseEmissaoPage from './pages/nfse/NfseEmissaoPage'
 import AssessorPage from './pages/assessor/AssessorPage'
 import AgendaPage from './pages/agenda/AgendaPage'
+import HojePage from './pages/hoje/HojePage'
+
+// Tela inicial pela URL (?tela=hoje, ?tela=documentos…) — é o que o app
+// instalado no tablet usa (start_url e atalhos do gestor.webmanifest).
+const paramsIniciais = new URLSearchParams(window.location.search)
+const telaUrl = paramsIniciais.get('tela')
+const TELA_INICIAL = NAV.some(i => i.id === telaUrl) ? telaUrl : 'overview'
+const ABRIR_NOVA_TAREFA = paramsIniciais.get('acao') === 'nova-tarefa'
 
 export default function App() {
-  const [page, setPage]                       = useState('overview')
+  const [page, setPage]                       = useState(TELA_INICIAL)
   const [selectedCliente, setSelectedCliente] = useState(null)
-  const [showNewTask, setShowNewTask]         = useState(false)
+  const [showNewTask, setShowNewTask]         = useState(ABRIR_NOVA_TAREFA)
+  // fotos/arquivos capturados na tela Hoje, entregues à tela Documentos (IA identifica)
+  const [arquivosCapturados, setArquivosCapturados] = useState(null)
   const [newTaskClienteId, setNewTaskClienteId] = useState('')
   const [showConfig, setShowConfig]           = useState(false)
   const [highlightTaskId, setHighlightTaskId] = useState(null)
@@ -130,7 +140,7 @@ export default function App() {
 
       <div className="app-body">
       <main className="app-main">
-        {loading && page === 'overview' ? (
+        {loading && (page === 'overview' || page === 'hoje') ? (
           <div className="center"><div className="spinner" /></div>
         ) : (
           <Fragment key={versaoPagina}>
@@ -139,7 +149,9 @@ export default function App() {
               onOpenCadastro={(id) => { setSelectedCliente(id); navigate('clientes') }}
               clienteInicialId={clienteAbrirEmpresas} onClienteInicialConsumido={() => setClienteAbrirEmpresas(null)} />}
             {page === 'paineis'    && <PaineisPage />}
-            {page === 'documentos' && <DocumentosPage />}
+            {page === 'documentos' && <DocumentosPage arquivosIniciais={arquivosCapturados} onArquivosIniciaisConsumidos={() => setArquivosCapturados(null)} />}
+            {page === 'hoje'       && <HojePage onNavigate={navigate} onAddTarefa={openNewTask}
+              onCapturar={(arquivos) => { setArquivosCapturados(arquivos); navigate('documentos') }} />}
             {page === 'pagamentos' && <PagamentosPage />}
             {page === 'parcelamentos' && <ParcelamentosPage />}
             {page === 'notificacoes' && <NotificacoesPage />}
