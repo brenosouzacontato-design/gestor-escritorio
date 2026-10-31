@@ -80,24 +80,22 @@ if (share === 'dre' || share === 'balancete') {
     : <PainelCompartilhadoPage clienteId={painel} competencia={params.get('competencia')} />
 }
 
-// Gestor como app instalável (tablet/celular): o manifest só entra no app
-// interno — os links públicos do painel do cliente usam o painel.webmanifest
-// próprio (painelPush.js), e o navegador pega o primeiro <link rel=manifest>.
+// Gestor como app instalável (tablet/celular). O <link rel=manifest> do
+// gestor vem no index.html (o Chrome só oferece "Instalar" se achar o
+// manifest no carregamento); nas páginas públicas ele sai, pra o painel do
+// cliente usar o painel.webmanifest próprio (painelPush.js).
 if (raiz.type === ComLogin) {
-  const link = document.createElement('link')
-  link.rel = 'manifest'
-  link.href = '/gestor.webmanifest'
-  document.head.appendChild(link)
-  const cor = document.createElement('meta')
-  cor.name = 'theme-color'
-  cor.content = '#1B2B4B'
-  document.head.appendChild(cor)
+  // service worker: o mesmo arquivo do painel (mesmo escopo "/"), pra um
+  // não substituir o registro do outro no mesmo navegador
+  if ('serviceWorker' in navigator) navigator.serviceWorker.register('/painel-sw.js').catch(() => {})
   // guarda o convite de instalação do Chrome pra tela Hoje oferecer o botão
   window.addEventListener('beforeinstallprompt', (e) => {
     e.preventDefault()
     window.__convitePwa = e
     window.dispatchEvent(new Event('gestor-instalavel'))
   })
+} else {
+  document.getElementById('manifest-gestor')?.remove()
 }
 
 ReactDOM.createRoot(document.getElementById('root')).render(
