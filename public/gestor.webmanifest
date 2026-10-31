@@ -1,0 +1,29 @@
+{
+  "id": "/?app=gestor",
+  "name": "Gestor Contábil",
+  "short_name": "Gestor",
+  "description": "Gestor do escritório — tarefas, fechamento, documentos e parcelamentos",
+  "lang": "pt-BR",
+  "start_url": "/?tela=hoje",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#1B2B4B",
+  "theme_color": "#1B2B4B",
+  "icons": [
+    { "src": "/icons/gestor-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/gestor-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/gestor-maskable-192.png", "sizes": "192x192", "type": "image/png", "purpose": "maskable" },
+    { "src": "/icons/gestor-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "shortcuts": [
+    { "name": "Hoje", "short_name": "Hoje", "description": "Pendências do dia", "url": "/?tela=hoje",
+      "icons": [{ "src": "/icons/gestor-192.png", "sizes": "192x192" }] },
+    { "name": "Fotografar documento", "short_name": "Fotografar", "description": "Câmera → Documentos (IA identifica a empresa)", "url": "/?tela=documentos",
+      "icons": [{ "src": "/icons/gestor-192.png", "sizes": "192x192" }] },
+    { "name": "Nova tarefa", "short_name": "Nova tarefa", "url": "/?tela=tarefas&acao=nova-tarefa",
+      "icons": [{ "src": "/icons/gestor-192.png", "sizes": "192x192" }] },
+    { "name": "Fechamento", "short_name": "Fechamento", "description": "Obrigações do mês por empresa", "url": "/?tela=empresas",
+      "icons": [{ "src": "/icons/gestor-192.png", "sizes": "192x192" }] }
+  ]
+}
