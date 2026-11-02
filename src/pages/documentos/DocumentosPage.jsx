@@ -1,12 +1,13 @@
 import { useState, useEffect, useMemo } from 'react'
-import { PaperclipIcon, CameraIcon, UploadCloudIcon, CheckCircle2Icon, Loader2Icon, FileIcon, Share2Icon, DownloadIcon, MessageCircleIcon, ExternalLinkIcon, SearchCheckIcon, Trash2Icon, ArchiveIcon } from 'lucide-react'
+import { PaperclipIcon, CameraIcon, UploadCloudIcon, CheckCircle2Icon, Loader2Icon, FileIcon, Share2Icon, DownloadIcon, MessageCircleIcon, ExternalLinkIcon, SearchCheckIcon, Trash2Icon, ArchiveIcon, ListPlusIcon } from 'lucide-react'
 import { useStore } from '../../store'
 import { useToast } from '../../components/shared'
 import OpcoesCandidatos from '../../components/OpcoesCandidatos'
+import NovaTarefaModal from '../../components/NovaTarefaModal'
 import {
   uploadArquivo, listarCandidatos, identificarDocumento, criarDocumento, confirmarDocumento,
   listarDocumentosConfirmados, listarDocumentosPendentes, excluirDocumento,
-  abrirLinkAssinado, itemResolvido, listarUploadsWhatsapp, listarGuiasEmAberto, pagarGuiaComComprovante,
+  abrirLinkAssinado, itemResolvido, listarUploadsWhatsapp, listarGuiasEmAberto, pagarGuiaComComprovante, criarTarefaDeDocumento,
 } from './documentosApi'
 
 const ACCEPT = '.pdf,.jpg,.jpeg,.png,.webp,application/pdf,image/jpeg,image/png,image/webp'
@@ -273,6 +274,7 @@ function AbaRevisar() {
   const [erro, setErro] = useState(null)
   const [selecoes, setSelecoes] = useState({}) // { [docId]: { clienteId, candidatoId } }
   const [processando, setProcessando] = useState(null) // id do doc em confirmação/exclusão
+  const [docTarefa, setDocTarefa] = useState(null) // doc com o modal "Criar tarefa" aberto
 
   const carregar = () => {
     Promise.all([listarDocumentosPendentes(), listarCandidatos()])
@@ -327,6 +329,21 @@ function AbaRevisar() {
     } finally {
       setProcessando(null)
     }
+  }
+
+  // Cria uma tarefa em aberto a partir do documento (além da baixa, se houver
+  // "Dar baixa em" escolhido) e tira o documento da fila.
+  const tarefaCriada = async (doc, tarefa) => {
+    const sel = selecoes[doc.id] || {}
+    const guiaId = (sel.candidatoId || '').startsWith('guia:') ? sel.candidatoId.slice(5) : null
+    const candidato = !guiaId && sel.candidatoId ? candidatos.find((c) => c.id === sel.candidatoId) : null
+    await criarTarefaDeDocumento(doc.id, { clienteId: sel.clienteId || tarefa.cliente_id || null, candidato, guiaId, tarefaId: tarefa.id })
+    setDocs((prev) => prev.filter((d) => d.id !== doc.id))
+    if (guiaId) setGuias((prev) => prev.filter((g) => g.id !== guiaId))
+    await Promise.all([fetchObrigacoes(), fetchTarefas(), listarCandidatos().then(setCandidatos)])
+    show?.(guiaId ? 'Tarefa criada e guia marcada como paga.'
+      : candidato ? 'Tarefa criada e baixa aplicada.'
+      : 'Tarefa criada com o documento anexado.')
   }
 
   const excluir = async (doc) => {
@@ -401,6 +418,10 @@ function AbaRevisar() {
               <button className="btn btn-ghost btn-sm" onClick={() => excluir(doc)} disabled={processando === doc.id} title="Excluir sem arquivar">
                 <Trash2Icon size={13} color="var(--danger)" /> Excluir
               </button>
+              <button className="btn btn-ghost btn-sm" onClick={() => setDocTarefa(doc)} disabled={processando === doc.id}
+                title={sel.candidatoId ? 'Cria uma tarefa nova e também aplica a baixa escolhida' : 'Cria uma tarefa nova com este documento anexado'}>
+                <ListPlusIcon size={13} /> {sel.candidatoId ? 'Baixa + tarefa' : 'Criar tarefa'}
+              </button>
               <button className="btn btn-accent btn-sm" onClick={() => confirmar(doc)} disabled={processando === doc.id}>
                 {sel.candidatoId ? <SearchCheckIcon size={13} /> : <ArchiveIcon size={13} />}
                 {processando === doc.id ? 'Confirmando...' : ehPagamento ? 'Confirmar pagamento da guia' : sel.candidatoId ? 'Confirmar e dar baixa' : 'Confirmar (arquivar)'}
@@ -409,6 +430,19 @@ function AbaRevisar() {
           </div>
         )
       })}
+
+      {docTarefa && (
+        <NovaTarefaModal
+          titulo="Criar tarefa a partir do documento"
+          onClose={() => setDocTarefa(null)}
+          clienteIdInicial={selecoes[docTarefa.id]?.clienteId || ''}
+          inicial={{
+            titulo: docTarefa.tipo_documento_sugerido || docTarefa.nome_arquivo || '',
+            descricao: [`Documento: ${docTarefa.nome_arquivo}`, docTarefa.observacao_ia].filter(Boolean).join('\n'),
+          }}
+          onCriada={(tarefa) => tarefaCriada(docTarefa, tarefa)}
+        />
+      )}
     </div>
   )
 }

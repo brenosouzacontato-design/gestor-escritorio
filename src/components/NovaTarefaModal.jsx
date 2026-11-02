@@ -6,7 +6,10 @@ import { useToast } from './shared'
 const DEPTS = ['fiscal','pessoal','societario','contabil','comunicacao']
 const DEPT_LABELS = { fiscal:'Fiscal', pessoal:'Pessoal', societario:'Societário', contabil:'Contábil', comunicacao:'Comunicação' }
 
-export default function NovaTarefaModal({ onClose, clienteIdInicial = '' }) {
+// inicial: valores pré-preenchidos (ex.: aba "A revisar" de Documentos passa
+// título/observação sugeridos pela IA). onCriada(tarefa): chamado depois de
+// salvar, antes de fechar — se lançar erro, o modal mostra e não fecha.
+export default function NovaTarefaModal({ onClose, clienteIdInicial = '', inicial = {}, onCriada, titulo = 'Nova tarefa' }) {
   const clientes = useStore(s => s.clientes)
   const addTarefa = useStore(s => s.addTarefa)
   const { show } = useToast()
@@ -19,6 +22,7 @@ export default function NovaTarefaModal({ onClose, clienteIdInicial = '' }) {
     prioridade: 'media',
     vencimento: '',
     origem: 'manual',
+    ...inicial,
   })
   const [loading, setLoading] = useState(false)
 
@@ -29,16 +33,26 @@ export default function NovaTarefaModal({ onClose, clienteIdInicial = '' }) {
     setLoading(true)
     // tarefa avulsa (sem cliente) é válida -- cliente_id vazio vira null
     // em vez de mandar '' pra uma coluna uuid (que dá erro no Postgres)
-    const { error } = await addTarefa({ ...form, cliente_id: form.cliente_id || null, vencimento: form.vencimento || null })
+    const { data, error } = await addTarefa({ ...form, cliente_id: form.cliente_id || null, vencimento: form.vencimento || null })
+    if (error) { setLoading(false); show('Erro ao salvar tarefa'); return }
+    if (onCriada) {
+      try {
+        await onCriada(data)
+      } catch (e) {
+        setLoading(false)
+        show('Tarefa criada, mas houve erro depois: ' + e.message)
+        return
+      }
+    } else {
+      show('Tarefa criada')
+    }
     setLoading(false)
-    if (error) { show('Erro ao salvar tarefa'); return }
-    show('Tarefa criada')
     onClose()
   }
 
   return (
     <Modal onClose={onClose}>
-      <p className="modal-title">Nova tarefa</p>
+      <p className="modal-title">{titulo}</p>
 
       <div className="form-field">
         <label className="form-label">Cliente</label>
