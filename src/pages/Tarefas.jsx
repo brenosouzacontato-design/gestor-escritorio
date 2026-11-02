@@ -474,6 +474,18 @@ function TarefaModal({ tarefa, clientes, onClose, onSaved }) {
   const [imagemPreviewUrl, setImagemPreviewUrl] = useState(null)
   const chatEndRef = useRef(null)
 
+  // Documentos anexados à tarefa — antes só dava pra ver pelo 📎 do card;
+  // abrindo a tarefa (ex.: criada pela aba "A revisar" de Documentos) o
+  // arquivo não aparecia em lugar nenhum.
+  const [anexosTarefa, setAnexosTarefa] = useState([])
+  useEffect(() => {
+    supabase.from('documentos')
+      .select('id, nome_arquivo, tipo_documento_sugerido, storage_path')
+      .eq('tarefa_id', tarefa.id).eq('status', 'confirmado')
+      .order('created_at', { ascending: false })
+      .then(({ data }) => setAnexosTarefa(data || []))
+  }, [tarefa.id])
+
   useEffect(() => {
     if (aba === 'chat') carregarComentarios()
   }, [aba])
@@ -597,6 +609,20 @@ function TarefaModal({ tarefa, clientes, onClose, onSaved }) {
                 <span className="badge badge-info" style={{ fontSize:11 }}>
                   {tarefa.origem === 'whatsapp' ? '📱 WhatsApp' : tarefa.origem === 'erp' ? '🔄 ERP' : '✏️ Manual'}
                 </span>
+              </div>
+            )}
+            {anexosTarefa.length > 0 && (
+              <div style={{ marginBottom:12, display:'flex', flexDirection:'column', gap:6 }}>
+                <label style={{ fontSize:12, color:'var(--text2)' }}>📎 Anexos</label>
+                {anexosTarefa.map(doc => (
+                  <button key={doc.id} type="button" className="btn btn-ghost btn-sm"
+                    onClick={() => abrirLinkAssinado(doc.storage_path).catch(e => alert('Erro ao abrir: ' + e.message))}
+                    style={{ justifyContent:'flex-start', border:'1px solid var(--border)', padding:'8px 10px', textAlign:'left' }}>
+                    <span style={{ overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
+                      {doc.tipo_documento_sugerido || doc.nome_arquivo}
+                    </span>
+                  </button>
+                ))}
               </div>
             )}
             <div style={{ display:'flex', flexDirection:'column', gap:12 }}>
