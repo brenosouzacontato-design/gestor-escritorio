@@ -441,3 +441,19 @@ export async function confirmarDocumento(documentoId, { clienteId, candidato }) 
     .eq('id', documentoId);
   if (errDoc) throw errDoc;
 }
+
+// Botão "Criar tarefa" da aba "A revisar": a tarefa nova (em aberto) já foi
+// criada pelo NovaTarefaModal; aqui o documento sai da fila. Se havia um
+// "Dar baixa em" escolhido, a baixa é aplicada normalmente (confirmarDocumento
+// / pagarGuiaComComprovante). O arquivo fica anexado à tarefa nova, exceto
+// quando já pertence a outra tarefa ou virou comprovante de uma guia.
+export async function criarTarefaDeDocumento(documentoId, { clienteId, candidato, guiaId, tarefaId }) {
+  if (guiaId) {
+    await pagarGuiaComComprovante(documentoId, guiaId);
+    return;
+  }
+  await confirmarDocumento(documentoId, { clienteId, candidato });
+  if (candidato?.tipo === 'tarefa') return;
+  const { error } = await supabase.from('documentos').update({ tarefa_id: tarefaId }).eq('id', documentoId);
+  if (error) throw error;
+}
