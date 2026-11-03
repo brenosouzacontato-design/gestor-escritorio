@@ -1,18 +1,21 @@
 // Tela "Hoje" — a primeira coisa que o tablet mostra (start_url do
 // gestor.webmanifest). Junta numa tela só o que precisa de você agora:
 // tarefas de hoje/atrasadas, obrigações vencendo, agenda do dia, robôs de
-// guia esperando captcha/erro e comprovantes a conferir — mais a captura
+// guia esperando captcha/erro, comprovantes a conferir e notas recorrentes a emitir (digita o
+// valor e emite ali mesmo) — mais a captura
 // rápida pela câmera (vai pra tela Documentos, onde a IA identifica a empresa).
 import { useState, useEffect, useMemo } from 'react'
 import {
   SunIcon, CameraIcon, CheckIcon, CalendarDaysIcon, ClipboardCheckIcon, BotIcon,
-  CircleDollarSignIcon, ChevronRightIcon, PlusIcon, DownloadIcon, LayersIcon, CheckSquareIcon,
+  CircleDollarSignIcon, ChevronRightIcon, PlusIcon, DownloadIcon, LayersIcon, CheckSquareIcon, ReceiptIcon,
 } from 'lucide-react'
 import { useStore } from '../../store'
-import { DeptChip, PriDot, fmtDate } from '../../components/shared'
+import { DeptChip, PriDot, fmtDate, useToast } from '../../components/shared'
 import { listarEventos } from '../agenda/agendaApi'
 import { listarParcelamentos } from '../parcelamentos/parcelamentosApi'
 import { contarComprovantesPendentes } from '../pagamentos/pagamentosApi'
+import { chamarNfse } from '../nfse/nfseApi'
+import NotaRecorrenteLinha from './NotaRecorrenteLinha'
 
 // datas em 'YYYY-MM-DD' no fuso local (comparar string com string evita o
 // problema de new Date('2026-10-30') virar 29/10 às 21h em UTC-3)
@@ -39,12 +42,15 @@ export default function HojePage({ onNavigate, onAddTarefa, onCapturar }) {
   const [eventos, setEventos] = useState(null)
   const [robos, setRobos] = useState(null)
   const [comprovantes, setComprovantes] = useState(null)
+  const [notasRec, setNotasRec] = useState(null) // semanas de nota recorrente a emitir (todas as empresas)
+  const { show } = useToast()
   useEffect(() => {
     listarEventos({ de: hoje, ate: hoje }).then(l => setEventos((l || []).filter(e => !e.cancelado))).catch(() => setEventos([]))
     listarParcelamentos()
       .then(l => setRobos((l || []).filter(p => p.busca_automatica && STATUS_ROBO[p.ultima_busca_status])))
       .catch(() => setRobos([]))
     contarComprovantesPendentes().then(setComprovantes).catch(() => setComprovantes(0))
+    chamarNfse('recorrentes_hoje').then(r => setNotasRec(r.semanas || [])).catch(() => setNotasRec([]))
   }, [hoje])
 
   // botão "Instalar app" (o main.jsx guarda o convite do Chrome)
@@ -78,7 +84,7 @@ export default function HojePage({ onNavigate, onAddTarefa, onCapturar }) {
   const obrigAVencer = obrigProximas.filter(o => o.vencimento.slice(0, 10) >= hoje)
 
   const dataExtenso = new Date().toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' })
-  const tudoEmDia = tarefasHoje.length === 0 && obrigVencidas.length === 0 && (robos?.length ?? 0) === 0 && !comprovantes
+  const tudoEmDia = tarefasHoje.length === 0 && obrigVencidas.length === 0 && (robos?.length ?? 0) === 0 && !comprovantes && !notasRec?.length
 
   return (
     <div className="page hoje-page">
@@ -106,6 +112,7 @@ export default function HojePage({ onNavigate, onAddTarefa, onCapturar }) {
         <Contador Icon={ClipboardCheckIcon} n={obrigVencidas.length} label="obrig. vencidas" tom={obrigVencidas.length ? 'err' : 'ok'} onClick={() => onNavigate('empresas')} />
         <Contador Icon={BotIcon} n={robos?.length} label="robôs esperando" tom={robos?.length ? 'warn' : 'ok'} onClick={() => onNavigate('parcelamentos')} />
         <Contador Icon={CircleDollarSignIcon} n={comprovantes} label="comprov. a conferir" tom={comprovantes ? 'warn' : 'ok'} onClick={() => onNavigate('pagamentos')} />
+        <Contador Icon={ReceiptIcon} n={notasRec?.length} label="NFS-e a emitir" tom={notasRec?.length ? 'warn' : 'ok'} onClick={() => onNavigate('nfse')} />
       </div>
 
       {tudoEmDia && (
@@ -121,6 +128,17 @@ export default function HojePage({ onNavigate, onAddTarefa, onCapturar }) {
             {tarefasAlta.map(t => <LinhaTarefa key={t.id} t={t} hoje={hoje} onToggle={() => toggleTarefa(t.id)} />)}
           </>}
         </Bloco>
+
+        {notasRec?.length > 0 && (
+          <Bloco titulo="Notas fiscais a emitir (recorrentes)" Icon={ReceiptIcon} qtd={notasRec.length} onVerTudo={() => onNavigate('nfse')}>
+            {notasRec.map(s => (
+              <NotaRecorrenteLinha key={`${s.modelo.id}-${s.inicio}`} s={s} onEmitida={(texto) => {
+                show(texto)
+                setNotasRec(l => l.filter(x => !(x.modelo.id === s.modelo.id && x.inicio === s.inicio)))
+              }} />
+            ))}
+          </Bloco>
+        )}
 
         <Bloco titulo={`Obrigações — vencidas e próximos ${DIAS_OBRIGACOES} dias`} Icon={ClipboardCheckIcon} qtd={obrigProximas.length} onVerTudo={() => onNavigate('empresas')}>
           {obrigProximas.length === 0 && <Vazio>Nada vencendo na semana.</Vazio>}

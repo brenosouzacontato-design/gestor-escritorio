@@ -141,6 +141,13 @@ test('function: modelo semanal com CNPJ, emite a semana com o valor digitado, pu
   assert.equal((await chamar({ acao: 'recorrentes_listar' })).recorrentes[0].semanas[2].situacao, 'a_emitir')
   assert.equal(enviados.length, 2)
 
+  // tela Hoje: só a semana que falta, com a empresa e o ambiente
+  const h = await chamar({ acao: 'recorrentes_hoje' })
+  assert.deepEqual(h.semanas.map((x) => [x.empresa, x.ambiente, x.modelo.nome, x.inicio]), [['Lanchonete Teste', 'homologacao', 'Market Ltda', s3.inicio]])
+  const e3 = await chamar({ acao: 'recorrente_emitir', cliente_id: h.semanas[0].cliente_id, id: h.semanas[0].modelo.id, semana: s3.inicio, valor: '80', ambiente: h.semanas[0].ambiente })
+  assert.equal(e3.resultado.estado, 'autorizada')
+  assert.deepEqual((await chamar({ acao: 'recorrentes_hoje' })).semanas, [])
+
   // modelo inexistente (ou de outra empresa) não é encontrado
   assert.equal((await chamar({ acao: 'recorrente_emitir', id: '99999999-9999-4999-8999-999999999999', semana: s3.inicio, valor: '1', ambiente: 'homologacao' })).status, 404)
 })
