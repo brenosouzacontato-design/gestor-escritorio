@@ -3,10 +3,12 @@
 // Notas recorrentes: o mesmo tomador, a mesma descrição e o mesmo serviço todo período; só o valor
 // muda. Ex.: lanchonete que é ponto de coleta e emite toda semana para a Shopee (tomador CNPJ).
 //
-// Semanal: semana de segunda a domingo. Cada semana fechada (o domingo já passou) aparece "a
-// emitir" até ter nota; o escritório digita o valor e a nota é emitida na hora (ação
-// recorrente_emitir em nfse.js). Data do atendimento = domingo da semana. Na descrição,
-// {inicio} e {fim} viram as datas da semana.
+// Semanal: semana de segunda a domingo. Cada semana, inclusive a que está em andamento, aparece "a
+// emitir" até ter nota; o escritório confere (e, se precisar, ajusta tomador, descrição e data só
+// daquela nota), digita o valor e a nota é emitida na hora (ação recorrente_emitir em nfse.js).
+// Data do atendimento: o domingo da semana, ou hoje se a semana ainda não acabou; pode ser qualquer
+// dia da semana até hoje. A nota pertence à semana em que cai a data. Na descrição, {inicio} e {fim}
+// viram as datas da semana.
 // Tabela nfse_recorrentes (supabase-schema-nfse.sql + supabase-schema-nfse-recorrentes-semanal.sql);
 // a coluna cpf guarda CPF (11) ou CNPJ (14) do tomador.
 
@@ -26,16 +28,21 @@ const somarDias = (iso, n) => {
 const segundaDa = (iso) => somarDias(iso, -((new Date(`${iso}T12:00:00Z`).getUTCDay() + 6) % 7))
 const dataBR = (iso) => iso.split('-').reverse().join('/')
 
-// Semanas fechadas (seg–dom) desde a de `inicio` até a última que terminou antes de hoje, em ordem;
-// no máximo LIMITE_SEMANAS (as mais recentes).
-function semanasFechadas(inicio, hoje) {
+// Semanas (seg–dom) desde a de `inicio` até a de hoje (em andamento), em ordem; no máximo
+// LIMITE_SEMANAS (as mais recentes).
+function semanasAte(inicio, hoje) {
   const primeira = segundaDa(inicio)
   const saida = []
-  for (let s = somarDias(segundaDa(hoje), -7); s >= primeira && saida.length < LIMITE_SEMANAS; s = somarDias(s, -7)) {
+  for (let s = segundaDa(hoje); s >= primeira && saida.length < LIMITE_SEMANAS; s = somarDias(s, -7)) {
     saida.push({ inicio: s, fim: somarDias(s, 6) })
   }
   return saida.reverse()
 }
+// Só as que já terminaram (o domingo já passou)
+const semanasFechadas = (inicio, hoje) => semanasAte(inicio, hoje).filter((s) => s.fim < hoje)
+// Dia padrão do atendimento: o domingo, ou hoje se a semana não acabou
+const dataSugerida = (semana, hoje) => (semana.fim < hoje ? semana.fim : hoje)
+const naSemana = (data, semana) => !!data && data >= semana.inicio && data <= semana.fim
 
 const descricaoDa = (modelo, semana) => String(modelo.descricao || '')
   .replace(/\{inicio\}/g, dataBR(semana.inicio)).replace(/\{fim\}/g, dataBR(semana.fim))
@@ -48,13 +55,16 @@ const resumoNota = (n) => n && {
 // situacao: a_emitir | emitida | em_emissao (enviada sem resposta, número reservado...) | pulada
 function semanasDoModelo(modelo, notas, hoje) {
   const puladas = new Set(modelo.puladas || [])
-  return semanasFechadas(modelo.inicio, hoje).map((s) => {
-    const daSemana = notas.filter((n) => n.data === s.fim)
+  return semanasAte(modelo.inicio, hoje).map((s) => {
+    const daSemana = notas.filter((n) => naSemana(n.data, s))
     const feita = daSemana.find((n) => FEITAS.includes(n.estado))
     const aberta = daSemana.find((n) => ABERTAS.includes(n.estado))
     const rejeitada = daSemana.filter((n) => n.estado === 'rejeitada').pop()
     const situacao = feita ? (feita.estado === 'autorizada' ? 'emitida' : 'em_emissao') : puladas.has(s.inicio) ? 'pulada' : 'a_emitir'
-    return { ...s, situacao, descricao: descricaoDa(modelo, s), nota: resumoNota(feita || aberta || rejeitada) }
+    return {
+      ...s, situacao, emAndamento: s.fim >= hoje, data: dataSugerida(s, hoje),
+      descricao: descricaoDa(modelo, s), nota: resumoNota(feita || aberta || rejeitada),
+    }
   })
 }
 
@@ -82,5 +92,5 @@ function validarModelo(m, hoje) {
 }
 
 module.exports = {
-  semanasFechadas, semanasDoModelo, descricaoDa, validarModelo, segundaDa, somarDias, DESCRICAO_PADRAO, FEITAS, ABERTAS,
+  semanasAte, semanasFechadas, dataSugerida, naSemana, docValido, semanasDoModelo, descricaoDa, validarModelo, segundaDa, somarDias, DESCRICAO_PADRAO, FEITAS, ABERTAS,
 }

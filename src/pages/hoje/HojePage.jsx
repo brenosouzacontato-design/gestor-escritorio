@@ -15,7 +15,7 @@ import { listarEventos } from '../agenda/agendaApi'
 import { listarParcelamentos } from '../parcelamentos/parcelamentosApi'
 import { contarComprovantesPendentes } from '../pagamentos/pagamentosApi'
 import { chamarNfse } from '../nfse/nfseApi'
-import NotaRecorrenteLinha from './NotaRecorrenteLinha'
+import NotaRecorrenteCard from '../nfse/NotaRecorrenteCard'
 
 // datas em 'YYYY-MM-DD' no fuso local (comparar string com string evita o
 // problema de new Date('2026-10-30') virar 29/10 às 21h em UTC-3)
@@ -132,10 +132,12 @@ export default function HojePage({ onNavigate, onAddTarefa, onCapturar }) {
         {notasRec?.length > 0 && (
           <Bloco titulo="Notas fiscais a emitir (recorrentes)" Icon={ReceiptIcon} qtd={notasRec.length} onVerTudo={() => onNavigate('nfse')}>
             {notasRec.map(s => (
-              <NotaRecorrenteLinha key={`${s.modelo.id}-${s.inicio}`} s={s} onEmitida={(texto) => {
-                show(texto)
-                setNotasRec(l => l.filter(x => !(x.modelo.id === s.modelo.id && x.inicio === s.inicio)))
-              }} />
+              <NotaRecorrenteCard key={`${s.modelo.id}-${s.inicio}`} clienteId={s.cliente_id} empresa={s.empresa} ambiente={s.ambiente}
+                modelo={s.modelo} s={s} onPronto={({ ok, texto }) => {
+                  if (!ok) return
+                  show(texto)
+                  setNotasRec(l => l.filter(x => !(x.modelo.id === s.modelo.id && x.inicio === s.inicio)))
+                }} />
             ))}
           </Bloco>
         )}

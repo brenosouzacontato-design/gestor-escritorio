@@ -105,13 +105,18 @@ test('function: modelo semanal com CNPJ, emite a semana com o valor digitado, pu
   let lista = await chamar({ acao: 'recorrentes_listar' })
   assert.equal(lista.status, 200)
   const [modelo] = lista.recorrentes
-  assert.deepEqual(modelo.semanas.map((x) => x.situacao), ['a_emitir', 'a_emitir', 'a_emitir'])
-  const [s1, s2, s3] = modelo.semanas
+  assert.deepEqual(modelo.semanas.map((x) => x.situacao), ['a_emitir', 'a_emitir', 'a_emitir', 'a_emitir'])
+  const [s1, s2, s3, s4] = modelo.semanas
+  // a semana em andamento já aparece, com a data de hoje
+  assert.deepEqual([s4.inicio, s4.emAndamento, s4.data, s1.emAndamento, s1.data], [segundaDa(hoje), true, hoje, false, s1.fim])
 
-  // ambiente divergente, sem valor ou semana ainda aberta: nada sai
+  // ambiente divergente, sem valor, semana futura ou data fora da semana / no futuro: nada sai
   assert.equal((await chamar({ acao: 'recorrente_emitir', id: modelo.id, semana: s1.inicio, valor: '100,00', ambiente: 'producao' })).status, 409)
   assert.equal((await chamar({ acao: 'recorrente_emitir', id: modelo.id, semana: s1.inicio, valor: '', ambiente: 'homologacao' })).status, 400)
-  assert.equal((await chamar({ acao: 'recorrente_emitir', id: modelo.id, semana: segundaDa(hoje), valor: '10', ambiente: 'homologacao' })).status, 400)
+  assert.equal((await chamar({ acao: 'recorrente_emitir', id: modelo.id, semana: somarDias(segundaDa(hoje), 7), valor: '10', ambiente: 'homologacao' })).status, 400)
+  assert.equal((await chamar({ acao: 'recorrente_emitir', id: modelo.id, semana: s1.inicio, valor: '10', data: s2.inicio, ambiente: 'homologacao' })).status, 400)
+  assert.equal((await chamar({ acao: 'recorrente_emitir', id: modelo.id, semana: s4.inicio, valor: '10', data: somarDias(hoje, 1), ambiente: 'homologacao' })).status, 400)
+  assert.equal((await chamar({ acao: 'recorrente_emitir', id: modelo.id, semana: s4.inicio, valor: '10', cpf: MARKET_ERRADO, ambiente: 'homologacao' })).status, 400)
   assert.equal(enviados.length, 0)
 
   const e1 = await chamar({ acao: 'recorrente_emitir', id: modelo.id, semana: s1.inicio, valor: '1.234,56', ambiente: 'homologacao' })
@@ -136,16 +141,25 @@ test('function: modelo semanal com CNPJ, emite a semana com o valor digitado, pu
   // semana sem serviço
   assert.equal((await chamar({ acao: 'recorrente_pular', id: modelo.id, semana: s3.inicio })).status, 200)
   lista = await chamar({ acao: 'recorrentes_listar' })
-  assert.deepEqual(lista.recorrentes[0].semanas.map((x) => [x.situacao, x.nota?.valor ?? null]), [['emitida', 1234.56], ['emitida', 1234.56], ['pulada', null]])
+  assert.deepEqual(lista.recorrentes[0].semanas.map((x) => [x.situacao, x.nota?.valor ?? null]), [['emitida', 1234.56], ['emitida', 1234.56], ['pulada', null], ['a_emitir', null]])
   await chamar({ acao: 'recorrente_pular', id: modelo.id, semana: s3.inicio, desfazer: true })
   assert.equal((await chamar({ acao: 'recorrentes_listar' })).recorrentes[0].semanas[2].situacao, 'a_emitir')
   assert.equal(enviados.length, 2)
 
-  // tela Hoje: só a semana que falta, com a empresa e o ambiente
+  // tela Hoje: as semanas que faltam (inclusive a atual), com a empresa e o ambiente
   const h = await chamar({ acao: 'recorrentes_hoje' })
-  assert.deepEqual(h.semanas.map((x) => [x.empresa, x.ambiente, x.modelo.nome, x.inicio]), [['Lanchonete Teste', 'homologacao', 'Market Ltda', s3.inicio]])
+  assert.deepEqual(h.semanas.map((x) => [x.empresa, x.ambiente, x.modelo.nome, x.inicio, x.emAndamento]),
+    [['Lanchonete Teste', 'homologacao', 'Market Ltda', s3.inicio, false], ['Lanchonete Teste', 'homologacao', 'Market Ltda', s4.inicio, true]])
+  assert.equal(h.semanas[1].modelo.endereco, 'Av. Teste, 100 - Centro')
   const e3 = await chamar({ acao: 'recorrente_emitir', cliente_id: h.semanas[0].cliente_id, id: h.semanas[0].modelo.id, semana: s3.inicio, valor: '80', ambiente: h.semanas[0].ambiente })
   assert.equal(e3.resultado.estado, 'autorizada')
+  // semana atual com ajustes só desta nota: tomador, descrição e data (dentro da semana, até hoje)
+  const e4 = await chamar({ acao: 'recorrente_emitir', id: modelo.id, semana: s4.inicio, valor: '75,50', ambiente: 'homologacao',
+    nome: '  Market   Filial ', descricao: 'Coleta extra', data: s4.inicio })
+  assert.equal(e4.status, 200, JSON.stringify(e4))
+  assert.deepEqual([e4.nota.nome, e4.nota.descricao, e4.nota.data, e4.nota.cpf], ['Market Filial', 'Coleta extra', s4.inicio, MARKET])
+  assert.equal(supa.db.nfse_recorrentes[0].nome, 'Market Ltda') // o modelo não muda
+  assert.equal((await chamar({ acao: 'recorrente_emitir', id: modelo.id, semana: s4.inicio, valor: '1', ambiente: 'homologacao' })).status, 409)
   assert.deepEqual((await chamar({ acao: 'recorrentes_hoje' })).semanas, [])
 
   // modelo inexistente (ou de outra empresa) não é encontrado
