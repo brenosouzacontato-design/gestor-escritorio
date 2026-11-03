@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useMemo } from 'react'
 import {
   LayoutDashboardIcon, SparklesIcon, AppWindowIcon, ClipboardCheckIcon, CheckSquareIcon, CalendarDaysIcon, BellIcon,
   UsersIcon, TargetIcon, SunIcon, PaperclipIcon, MonitorIcon, CircleDollarSignIcon, BanknoteIcon, CalculatorIcon, RefreshCwIcon,
-  ReceiptIcon, FileSignatureIcon, LayersIcon, ChevronDownIcon, SearchIcon, MenuIcon, XIcon,
+  ReceiptIcon, FileSignatureIcon, LayersIcon, FileBadgeIcon, ChevronDownIcon, SearchIcon, MenuIcon, XIcon,
 } from 'lucide-react'
 
 // Menu do gestor agrupado por assunto. O id de cada item é o mesmo `page`
@@ -25,6 +25,7 @@ export const GRUPOS = [
     { id: 'clientes',   label: 'Clientes',     desc: 'Cadastro das empresas',         Icon: UsersIcon },
     { id: 'prospectos', label: 'Prospectos',   desc: 'Novos clientes em negociação',  Icon: TargetIcon },
     { id: 'documentos', label: 'Documentos',   desc: 'Arquivos recebidos',            Icon: PaperclipIcon },
+    { id: 'licenciamento', label: 'Licenciamento', desc: 'Alvarás e licenças a vencer', Icon: FileBadgeIcon },
     { id: 'paineis',    label: 'Painéis',      desc: 'Painel do cliente',             Icon: MonitorIcon },
   ]},
   { id: 'financeiro', nome: 'Financeiro', itens: [
