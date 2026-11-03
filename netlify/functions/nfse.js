@@ -36,8 +36,10 @@
 //   { acao: 'recorrente_salvar', cliente_id, recorrente: { id?, nome, cpf (CPF ou CNPJ), endereco?, cep?, descricao, valor?, inicio?, ativo? } }
 //   { acao: 'recorrente_excluir', cliente_id, id }
 //   { acao: 'recorrente_pular', cliente_id, id, semana, desfazer? }  ← semana sem serviço (sai de "a emitir")
-//   { acao: 'recorrente_emitir', cliente_id, id, semana, valor, ambiente }  ← cria a nota da semana com o valor e
-//        emite na hora (ver lib/nfse/recorrentes.js). Cada semana é uma nota: o aviso de "parecida" não trava.
+//   { acao: 'recorrente_emitir', cliente_id, id, semana, valor, ambiente, data?, descricao?, nome?, cpf?, endereco? }
+//        ← cria a nota da semana com o valor e emite na hora (ver lib/nfse/recorrentes.js). Os campos opcionais
+//        mudam só esta nota (o modelo fica igual); data: qualquer dia da semana até hoje. Cada semana é uma
+//        nota: o aviso de "parecida" não trava.
 //
 // Leitura de lotes/notas é feita direto pelo navegador (RLS: usuário logado só lê). Toda escrita passa
 // por aqui, onde valem a máquina de estados, a reserva de número e a duplicidade.
@@ -377,8 +379,8 @@ const acoes = {
         if (s.situacao !== 'a_emitir') continue
         semanas.push({
           cliente_id: m.cliente_id, empresa: nome.get(m.cliente_id) || '', ambiente: amb,
-          modelo: { id: m.id, nome: m.nome, cpf: m.cpf, valor: m.valor === null ? null : Number(m.valor) },
-          inicio: s.inicio, fim: s.fim, descricao: s.descricao, nota: s.nota,
+          modelo: { id: m.id, nome: m.nome, cpf: m.cpf, endereco: m.endereco || '', valor: m.valor === null ? null : Number(m.valor) },
+          inicio: s.inicio, fim: s.fim, emAndamento: s.emAndamento, data: s.data, descricao: s.descricao, nota: s.nota,
         })
       }
     }
@@ -434,18 +436,30 @@ const acoes = {
     const semana = semanaDoModelo(modelo, p.semana)
     const valor = parseValor(String(p.valor ?? '').trim())
     exigir(valor !== null && Number(valor) > 0, 'Informe o valor da semana')
+    const hoje = hojeBrasilia()
+    const data = String(p.data || '').trim() || recorrentes.dataSugerida(semana, hoje)
+    exigir(/^\d{4}-\d{2}-\d{2}$/.test(data) && recorrentes.naSemana(data, semana) && data <= hoje,
+      `A data precisa ser um dia da semana de ${semana.inicio.split('-').reverse().join('/')} a ${semana.fim.split('-').reverse().join('/')}, até hoje`)
+    // ajustes só desta nota (o modelo fica igual)
+    const texto = (v, max) => String(v ?? '').replace(/\s+/g, ' ').trim().slice(0, max)
+    const nome = texto(p.nome, 150) || modelo.nome
+    const cpf = String(p.cpf ?? '').replace(/\D/g, '') || modelo.cpf
+    exigir(recorrentes.docValido(cpf), `${cpf.length === 14 ? 'CNPJ' : 'CPF'} do tomador inválido`)
+    const descricao = String(p.descricao ?? '').trim().slice(0, 2000) || recorrentes.descricaoDa(modelo, semana)
+    const endereco = p.endereco === undefined ? (modelo.endereco || '') : texto(p.endereco, 300)
 
-    const { data: daSemana, error } = await db.from('nfse_notas').select('id, estado, data')
-      .eq('recorrente_id', modelo.id).eq('ambiente', empresa.ambiente).eq('data', semana.fim)
+    const { data: doModelo, error } = await db.from('nfse_notas').select('id, estado, data')
+      .eq('recorrente_id', modelo.id).eq('ambiente', empresa.ambiente)
     if (error) throw new Error(error.message)
-    exigir(!(daSemana || []).some((x) => recorrentes.FEITAS.includes(x.estado)), 'Esta semana já tem nota emitida (ou em emissão)', 409)
+    const daSemana = (doModelo || []).filter((x) => recorrentes.naSemana(x.data, semana))
+    exigir(!daSemana.some((x) => recorrentes.FEITAS.includes(x.estado)), 'Esta semana já tem nota emitida (ou em emissão)', 409)
 
-    const campos = { nome: modelo.nome, cpf: modelo.cpf, endereco: modelo.endereco || '', cep: modelo.cep || '', data: semana.fim, valor, descricao: recorrentes.descricaoDa(modelo, semana) }
-    const aberta = (daSemana || []).find((x) => recorrentes.ABERTAS.includes(x.estado))
+    const campos = { nome, cpf, endereco, cep: modelo.cep || '', data, valor, descricao }
+    const aberta = daSemana.find((x) => recorrentes.ABERTAS.includes(x.estado))
     let notaId
     if (aberta) {
       // tentativa anterior que não saiu (ex.: faltou dado): reaproveita a mesma nota
-      await lotes.atualizarNota(repo, empresa, aberta.id, { ...campos, data: semana.fim.split('-').reverse().join('/'), valor: valor.replace('.', ',') })
+      await lotes.atualizarNota(repo, empresa, aberta.id, { ...campos, data: data.split('-').reverse().join('/'), valor: valor.replace('.', ',') })
       notaId = aberta.id
     } else {
       const loteId = await lotes.criarLote(repo, {
@@ -661,8 +675,8 @@ async function modeloDaEmpresa(db, empresa, id) {
 }
 
 function semanaDoModelo(modelo, inicio) {
-  const semana = recorrentes.semanasFechadas(modelo.inicio, hojeBrasilia()).find((s) => s.inicio === inicio)
-  exigir(semana, 'Semana inválida (só semanas já encerradas, desde o início do modelo)')
+  const semana = recorrentes.semanasAte(modelo.inicio, hojeBrasilia()).find((s) => s.inicio === inicio)
+  exigir(semana, 'Semana inválida (desde o início do modelo até a semana atual)')
   return semana
 }
 

@@ -5,7 +5,7 @@ import { AlertTriangleIcon, SendIcon } from 'lucide-react'
 
 const dataBR = (iso) => (iso ? String(iso).slice(0, 10).split('-').reverse().join('/') : '')
 
-export default function ConfirmarEmissao({ empresa, tomador, documento, inicio, fim, valor, descricao, ambiente, enviando, onConfirmar, onCancelar }) {
+export default function ConfirmarEmissao({ empresa, tomador, documento, inicio, fim, data, valor, descricao, ambiente, enviando, onConfirmar, onCancelar }) {
   const real = ambiente === 'producao'
   return (
     <div role="alertdialog" aria-label="Confirmar emissão da NFS-e"
@@ -17,7 +17,7 @@ export default function ConfirmarEmissao({ empresa, tomador, documento, inicio, 
       <div style={{ marginTop: 6, lineHeight: 1.5, color: 'var(--text1)' }}>
         {empresa && <div><b>{empresa}</b></div>}
         <div>para <b>{tomador}</b>{documento ? ` · ${documento}` : ''}</div>
-        <div>Semana {dataBR(inicio)} a {dataBR(fim)} · <b style={{ fontSize: 15 }}>R$ {valor}</b></div>
+        <div>Semana {dataBR(inicio)} a {dataBR(fim)}{data ? ` · data do serviço ${dataBR(data)}` : ''} · <b style={{ fontSize: 15 }}>R$ {valor}</b></div>
         {descricao && <div style={{ color: 'var(--text2)', fontSize: 12 }}>{descricao}</div>}
       </div>
       <div style={{ display: 'flex', gap: 8, marginTop: 10, flexWrap: 'wrap' }}>

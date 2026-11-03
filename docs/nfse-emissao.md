@@ -145,8 +145,9 @@ O DANFSe lê `finNFSe`/`indDest`/`dest` da posição nova e da antiga.
 - [ ] Antes de publicar: emitir 1 nota em homologação, conferir o PDF pela tela de emissão e o painel
       (com uma nota de produção já migrada, ex.: NFS-e 21).
 - [x] Fase 5 (recorrentes), semanal: "Notas recorrentes" na tela de emissão. Modelo com tomador (CNPJ ou CPF),
-      descrição com {inicio}/{fim}; cada semana fechada (seg a dom) aparece a emitir, o escritório digita o
-      valor e a nota sai na hora (lib/nfse/recorrentes.js, supabase-schema-nfse-recorrentes-semanal.sql).
+      descrição com {inicio}/{fim}; cada semana (seg a dom), inclusive a em andamento, aparece a emitir como
+      cartão da nota (tela Hoje e tela de emissão). O escritório pode ajustar só aquela nota (tomador,
+      descrição, data dentro da semana até hoje), digita o valor e a nota sai na hora (lib/nfse/recorrentes.js, supabase-schema-nfse-recorrentes-semanal.sql).
       Tomador pessoa jurídica: o campo cpf da nota guarda o CNPJ e a DPS sai com toma/CNPJ.
 - [ ] Fase 4 (WhatsApp). Recorrente mensal.
 
