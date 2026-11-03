@@ -12,6 +12,7 @@
 
 const { createClient } = require('@supabase/supabase-js')
 const { enviarMensagem } = require('./lib/whatsapp')
+const licencas = require('./lib/licencas')
 
 const supabase = createClient(
   process.env.SUPABASE_URL,
@@ -52,8 +53,9 @@ exports.handler = async () => {
   }
 
   const reunioes = await avisarReunioes()
+  const avisosLicencas = await avisarLicencas()
 
-  return { statusCode: 200, body: JSON.stringify({ enviados: (lembretes || []).length, reunioes }) }
+  return { statusCode: 200, body: JSON.stringify({ enviados: (lembretes || []).length, reunioes, licencas: avisosLicencas }) }
 }
 
 // Reuniões da Agenda (tabela agenda_eventos, supabase-schema-agenda.sql)
@@ -79,4 +81,38 @@ async function avisarReunioes() {
     await supabase.from('agenda_eventos').update({ lembrete_enviado: true }).eq('id', ev.id)
   }
   return (eventos || []).length
+}
+
+// Alvarás e licenças perto de vencer (tabela licencas,
+// supabase-schema-licencas.sql). Só a partir das 8h para não avisar de
+// madrugada. Sem a tabela ainda criada, só registra e segue.
+async function avisarLicencas(agora = new Date()) {
+  if (licencas.horaSaoPaulo(agora) < 8) return 0
+  const hoje = licencas.hojeSaoPaulo(agora)
+  const limite = new Date(Date.parse(`${hoje}T12:00:00Z`) + 400 * 86400000).toISOString().slice(0, 10)
+  const { data, error } = await supabase
+    .from('licencas')
+    .select('*, clientes(nome)')
+    .eq('arquivada', false)
+    .not('data_validade', 'is', null)
+    .lte('data_validade', limite)
+  if (error) {
+    console.error('Licenças indisponíveis:', error.message)
+    return 0
+  }
+  let enviados = 0
+  for (const l of data || []) {
+    const p = licencas.avisosPendentes(l, hoje)
+    if (!p.enviar) continue
+    const campos = { avisos_enviados: [...new Set([...(l.avisos_enviados || []), ...p.marcar])] }
+    if (licencas.deveCriarTarefa(l, p)) {
+      const { data: tarefa, error: errTarefa } = await supabase.from('tarefas').insert(licencas.dadosTarefa(l, p.dias)).select('id').single()
+      if (errTarefa) console.error('Tarefa da licença não criada:', errTarefa.message)
+      else campos.tarefa_id = tarefa.id
+    }
+    await enviarMensagem(GRUPO_ID, licencas.textoAviso(l, p.dias))
+    await supabase.from('licencas').update(campos).eq('id', l.id)
+    enviados++
+  }
+  return enviados
 }
