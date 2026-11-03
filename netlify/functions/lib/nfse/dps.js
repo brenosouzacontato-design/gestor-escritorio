@@ -15,7 +15,10 @@
 //   - indDest/dest: fase de 30/10/2026 segundo o cronograma divulgado;
 //   - grupo IBSCBS: em 20/10/2026 a Sefin passou a rejeitar sem ele (E0855: "obrigatório declarar
 //     informações de IBS/CBS quando a data de competência for igual ou posterior a 01/10/2026").
-// Produção: tudo em 03/11/2026. Qualquer data muda sem mexer no código pela variável
+// Produção: o previsto era 03/11/2026, mas nesse dia a Sefin de produção recusou a DPS com finNFSe
+// (E1235 "invalid child element 'finNFSe'"; esperava cMotivoEmisTI, chNFSeRej, cLocEmi), e em 30/10
+// tinha autorizado DPS sem nenhum campo da NT 009. Então a produção segue no leiaute antigo até a
+// Sefin abrir (PRODUCAO_A_CONFIRMAR); para ligar, NFSE_NT009_PRODUCAO_A_PARTIR=AAAA-MM-DD. Qualquer data muda sem mexer no código pela variável
 // NFSE_NT009_<GRUPO>_<AMBIENTE>=AAAA-MM-DD (ex.: NFSE_NT009_SIMPLES_HOMOLOGACAO=2026-11-03);
 // NFSE_NT009_PRODUCAO_A_PARTIR muda a data de produção de todos os grupos de uma vez.
 
@@ -78,11 +81,12 @@ function definir(raiz, caminho, valor) {
 
 // ---------- NT 009 ----------
 
+const PRODUCAO_A_CONFIRMAR = '9999-12-31' // desligado até a Sefin de produção aceitar (ver acima)
 const NT009_DATAS = {
-  finNFSe: { homologacao: '2026-10-16', producao: '2026-11-03' },
-  indDest: { homologacao: '2026-10-30', producao: '2026-11-03' },
-  simples: { homologacao: '2026-11-03', producao: '2026-11-03' },
-  ibscbs: { homologacao: '2026-10-20', producao: '2026-11-03' },
+  finNFSe: { homologacao: '2026-10-16', producao: PRODUCAO_A_CONFIRMAR },
+  indDest: { homologacao: '2026-10-30', producao: PRODUCAO_A_CONFIRMAR },
+  simples: { homologacao: '2026-11-03', producao: PRODUCAO_A_CONFIRMAR },
+  ibscbs: { homologacao: '2026-10-20', producao: PRODUCAO_A_CONFIRMAR },
 }
 
 // Grupos da NT 009 que valem nesse ambiente na data de emissão (AAAA-MM-DD de Brasília).

@@ -74,10 +74,14 @@ A Sefin liga a NT em fases, então cada grupo tem a sua data por ambiente (`NT00
 
 | Grupo | Homologação | Produção |
 |---|---|---|
-| finNFSe | 16/10/2026 | 03/11/2026 |
-| IBSCBS (com indDest dentro dele até a fase do indDest) | 20/10/2026 | 03/11/2026 |
-| indDest na raiz de infDPS | 30/10/2026 | 03/11/2026 |
-| regApIBSCBSSN e cAtvSN (Simples) | 03/11/2026 | 03/11/2026 |
+| finNFSe | 16/10/2026 | a confirmar |
+| IBSCBS (com indDest dentro dele até a fase do indDest) | 20/10/2026 | a confirmar |
+| indDest na raiz de infDPS | 30/10/2026 | a confirmar |
+| regApIBSCBSSN e cAtvSN (Simples) | 03/11/2026 | a confirmar |
+
+**Produção em 03/11/2026:** a Sefin recusou a DPS com finNFSe (E1235 "invalid child element 'finNFSe'"),
+e em 30/10 tinha autorizado DPS sem nenhum campo da NT 009. A produção segue no leiaute antigo; quando a
+Sefin abrir, ligar com `NFSE_NT009_PRODUCAO_A_PARTIR=AAAA-MM-DD` no Netlify (sem deploy de código).
 
 Cada data muda sem mexer no código pela variável `NFSE_NT009_<GRUPO>_<AMBIENTE>=AAAA-MM-DD` no Netlify
 (ex.: `NFSE_NT009_SIMPLES_HOMOLOGACAO`); `NFSE_NT009_PRODUCAO_A_PARTIR` muda a produção de todos.
