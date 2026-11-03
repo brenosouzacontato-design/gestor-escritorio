@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { RepeatIcon, PlusIcon, SendIcon, PencilIcon, Trash2Icon, ChevronDownIcon, ChevronRightIcon } from 'lucide-react'
 import { useToast } from '../../components/shared'
 import { chamarNfse } from './nfseApi'
+import ConfirmarEmissao from './ConfirmarEmissao'
 
 // Notas recorrentes semanais: mesmo tomador (CNPJ ou CPF), mesma descrição e serviço toda semana; só
 // o valor muda (ex.: ponto de coleta que emite toda semana para a Shopee). Cada semana fechada
@@ -51,7 +52,6 @@ export default function RecorrentesPanel({ clienteId, ambiente, onEmitida }) {
   }
 
   async function excluir(m) {
-    if (!window.confirm(`Excluir o modelo "${m.nome}"? As notas já emitidas continuam.`)) return
     try { await chamarNfse('recorrente_excluir', { cliente_id: clienteId, id: m.id }); await carregar() } catch (e) { show(e.message) }
   }
 
@@ -59,11 +59,8 @@ export default function RecorrentesPanel({ clienteId, ambiente, onEmitida }) {
     try { await chamarNfse('recorrente_pular', { cliente_id: clienteId, id: m.id, semana: s.inicio, desfazer }); await carregar() } catch (e) { show(e.message) }
   }
 
+  // a confirmação é feita na linha (SemanaAEmitir → ConfirmarEmissao)
   async function emitir(m, s, valor) {
-    const real = ambiente === 'producao'
-    const ok = window.confirm(`Emitir NFS-e ${real ? 'em PRODUÇÃO (nota fiscal real)' : 'em homologação (teste)'}?\n\n`
-      + `${m.nome} · ${docFmt(m.cpf)}\nSemana ${dataBR(s.inicio)} a ${dataBR(s.fim)}\nValor: ${valor}\n\n${s.descricao}`)
-    if (!ok) return false
     setOcupado(true)
     try {
       const r = await chamarNfse('recorrente_emitir', { cliente_id: clienteId, id: m.id, semana: s.inicio, valor, ambiente })
@@ -99,7 +96,7 @@ export default function RecorrentesPanel({ clienteId, ambiente, onEmitida }) {
       {lista === null && <div style={suave}>Carregando…</div>}
       {lista?.length === 0 && !form && !aviso && <div style={suave}>Nenhum modelo. Use “Novo modelo” para cadastrar (ex.: Shopee, toda semana).</div>}
       {(lista || []).map((m) => (
-        <Modelo key={m.id} m={m} ocupado={ocupado} onEditar={() => setForm({ ...VAZIO, ...m, valor: valorBR(m.valor) })}
+        <Modelo key={m.id} m={m} ambiente={ambiente} ocupado={ocupado} onEditar={() => setForm({ ...VAZIO, ...m, valor: valorBR(m.valor) })}
           onExcluir={() => excluir(m)} onPular={(s, d) => pular(m, s, d)} onEmitir={(s, v) => emitir(m, s, v)} />
       ))}
     </div>
@@ -131,8 +128,9 @@ function FormModelo({ form, setForm, onSalvar, onCancelar, ocupado }) {
   )
 }
 
-function Modelo({ m, ocupado, onEditar, onExcluir, onPular, onEmitir }) {
+function Modelo({ m, ambiente, ocupado, onEditar, onExcluir, onPular, onEmitir }) {
   const [historico, setHistorico] = useState(false)
+  const [excluindo, setExcluindo] = useState(false)
   const pendentes = m.semanas.filter((s) => s.situacao === 'a_emitir').reverse()
   const feitas = m.semanas.filter((s) => s.situacao !== 'a_emitir').reverse()
   return (
@@ -141,14 +139,21 @@ function Modelo({ m, ocupado, onEditar, onExcluir, onPular, onEmitir }) {
         <b>{m.nome}</b><span style={suave}>{docFmt(m.cpf)} · desde {dataBR(m.inicio)}</span>
         <span style={{ marginLeft: 'auto', display: 'flex', gap: 4 }}>
           <button className="btn btn-icon btn-ghost" title="Editar modelo" onClick={onEditar}><PencilIcon size={13} /></button>
-          <button className="btn btn-icon btn-ghost" title="Excluir modelo" onClick={onExcluir}><Trash2Icon size={13} /></button>
+          <button className="btn btn-icon btn-ghost" title="Excluir modelo" onClick={() => setExcluindo(true)}><Trash2Icon size={13} /></button>
         </span>
       </div>
+      {excluindo && (
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginTop: 6, padding: '6px 8px', borderRadius: 6, background: 'var(--warn-dim)', fontSize: 12 }}>
+          Excluir o modelo “{m.nome}”? As notas já emitidas continuam.
+          <button className="btn btn-sm" onClick={() => { setExcluindo(false); onExcluir() }}>Sim, excluir</button>
+          <button className="btn btn-ghost btn-sm" onClick={() => setExcluindo(false)}>Cancelar</button>
+        </div>
+      )}
       {pendentes.length === 0
         ? <div style={{ ...suave, marginTop: 6 }}>Nenhuma semana a emitir. A próxima aparece na segunda-feira.</div>
         : (
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12, marginTop: 8 }}>
-            <tbody>{pendentes.map((s) => <SemanaAEmitir key={s.inicio} m={m} s={s} ocupado={ocupado} onEmitir={onEmitir} onPular={onPular} />)}</tbody>
+            <tbody>{pendentes.map((s) => <SemanaAEmitir key={s.inicio} m={m} s={s} ambiente={ambiente} ocupado={ocupado} onEmitir={onEmitir} onPular={onPular} />)}</tbody>
           </table>
         )}
       {feitas.length > 0 && (
@@ -174,9 +179,19 @@ function Modelo({ m, ocupado, onEditar, onExcluir, onPular, onEmitir }) {
   )
 }
 
-function SemanaAEmitir({ m, s, ocupado, onEmitir, onPular }) {
+function SemanaAEmitir({ m, s, ambiente, ocupado, onEmitir, onPular }) {
   const [valor, setValor] = useState(s.nota?.valor ? valorBR(s.nota.valor) : valorBR(m.valor))
+  const [confirmando, setConfirmando] = useState(false)
   const problema = s.nota && (s.nota.estado === 'rejeitada' ? s.nota.mensagem : (s.nota.erros || []).join('; '))
+  if (confirmando) {
+    return (
+      <tr><td colSpan={4} style={td}>
+        <ConfirmarEmissao tomador={m.nome} documento={docFmt(m.cpf)} inicio={s.inicio} fim={s.fim} valor={valor} descricao={s.descricao}
+          ambiente={ambiente} enviando={ocupado} onCancelar={() => setConfirmando(false)}
+          onConfirmar={async () => { await onEmitir(s, valor); setConfirmando(false) }} />
+      </td></tr>
+    )
+  }
   return (
     <tr>
       <td style={{ ...td, whiteSpace: 'nowrap' }}><b>{curta(s.inicio)} a {dataBR(s.fim)}</b></td>
@@ -187,10 +202,10 @@ function SemanaAEmitir({ m, s, ocupado, onEmitir, onPular }) {
       <td style={{ ...td, whiteSpace: 'nowrap' }}>
         <input value={valor} onChange={(e) => setValor(e.target.value)} placeholder="Valor" inputMode="decimal"
           style={{ width: 110, padding: '4px 6px', fontSize: 12, textAlign: 'right' }}
-          onKeyDown={(e) => { if (e.key === 'Enter' && valor.trim()) onEmitir(s, valor) }} />
+          onKeyDown={(e) => { if (e.key === 'Enter' && valor.trim()) setConfirmando(true) }} />
       </td>
       <td style={{ ...td, whiteSpace: 'nowrap' }}>
-        <button className="btn btn-accent" style={{ padding: '4px 10px' }} disabled={ocupado || !valor.trim()} onClick={() => onEmitir(s, valor)}>
+        <button className="btn btn-accent" style={{ padding: '4px 10px' }} disabled={ocupado || !valor.trim()} onClick={() => setConfirmando(true)} title={valor.trim() ? '' : 'Digite o valor da semana'}>
           <SendIcon size={13} /> Emitir
         </button>
         <button className="btn btn-ghost" style={{ padding: '0 0 0 8px', fontSize: 11 }} disabled={ocupado} onClick={() => onPular(s)} title="Não teve serviço nesta semana">sem serviço</button>
