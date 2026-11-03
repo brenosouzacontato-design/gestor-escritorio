@@ -32,6 +32,7 @@
 //   { acao: 'extrato_pedir_cliente', cliente_id, ids, cancelar? }  ← os PIX aparecem no painel do cliente e no
 //        link "todas as notas" para ele dizer quem pagou; a resposta volta na conferência (pedido.resposta)
 //   { acao: 'recorrentes_listar', cliente_id }  ← modelos de nota recorrente (semanal) com as semanas a emitir
+//   { acao: 'recorrentes_hoje' }  ← semanas a emitir de todas as empresas (tela Hoje), com o ambiente de cada uma
 //   { acao: 'recorrente_salvar', cliente_id, recorrente: { id?, nome, cpf (CPF ou CNPJ), endereco?, cep?, descricao, valor?, inicio?, ativo? } }
 //   { acao: 'recorrente_excluir', cliente_id, id }
 //   { acao: 'recorrente_pular', cliente_id, id, semana, desfazer? }  ← semana sem serviço (sai de "a emitir")
@@ -347,6 +348,42 @@ const acoes = {
         semanas: m.inicio ? recorrentes.semanasDoModelo(m, notas.filter((x) => x.recorrente_id === m.id), hoje) : [],
       })),
     }
+  },
+
+  // Tela "Hoje": todas as semanas a emitir, de todas as empresas (modelos ativos)
+  async recorrentes_hoje({ db }) {
+    const { data, error } = await db.from('nfse_recorrentes').select('*').eq('periodicidade', 'semanal').eq('ativo', true)
+    if (semColunasRecorrentes(error) || /nfse_recorrentes/i.test(error?.message || '')) return { semanas: [] }
+    if (error) throw new Error(error.message)
+    const modelos = (data || []).filter((m) => m.inicio)
+    if (!modelos.length) return { semanas: [] }
+    const clienteIds = [...new Set(modelos.map((m) => m.cliente_id))]
+    const [empresas, clientes, notas] = await Promise.all([
+      db.from('nfse_empresas').select('cliente_id, ambiente').in('cliente_id', clienteIds),
+      db.from('clientes').select('id, nome').in('id', clienteIds),
+      db.from('nfse_notas').select('id, lote_id, recorrente_id, ambiente, estado, data, valor, numero_nfse, mensagem_sefin, erros')
+        .in('recorrente_id', modelos.map((m) => m.id)),
+    ])
+    for (const r of [empresas, clientes, notas]) if (r.error) throw new Error(r.error.message)
+    const ambiente = new Map((empresas.data || []).map((e) => [e.cliente_id, e.ambiente]))
+    const nome = new Map((clientes.data || []).map((c) => [c.id, c.nome]))
+    const hoje = hojeBrasilia()
+    const semanas = []
+    for (const m of modelos) {
+      const amb = ambiente.get(m.cliente_id)
+      if (!amb) continue // empresa sem configuração de NFS-e
+      const daEmpresa = (notas.data || []).filter((x) => x.recorrente_id === m.id && x.ambiente === amb)
+      for (const s of recorrentes.semanasDoModelo(m, daEmpresa, hoje)) {
+        if (s.situacao !== 'a_emitir') continue
+        semanas.push({
+          cliente_id: m.cliente_id, empresa: nome.get(m.cliente_id) || '', ambiente: amb,
+          modelo: { id: m.id, nome: m.nome, cpf: m.cpf, valor: m.valor === null ? null : Number(m.valor) },
+          inicio: s.inicio, fim: s.fim, descricao: s.descricao, nota: s.nota,
+        })
+      }
+    }
+    semanas.sort((a, b) => a.fim.localeCompare(b.fim) || a.empresa.localeCompare(b.empresa))
+    return { semanas }
   },
 
   async recorrente_salvar({ db, repo }, p) {

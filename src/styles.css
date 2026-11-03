@@ -869,7 +869,8 @@ input[type="checkbox"] {
 .hoje-acoes { display: flex; gap: 8px; flex-wrap: wrap; }
 .hoje-acoes .btn { min-height: 40px; padding: 8px 14px; font-size: 13px; }
 .hoje-contadores { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin-bottom: 16px; }
-@media (min-width: 640px) { .hoje-contadores { grid-template-columns: repeat(4, 1fr); } }
+@media (min-width: 640px) { .hoje-contadores { grid-template-columns: repeat(3, 1fr); } }
+@media (min-width: 1000px) { .hoje-contadores { grid-template-columns: repeat(5, 1fr); } }
 .hoje-contador {
   display: grid; grid-template-columns: auto 1fr; grid-template-rows: auto auto; column-gap: 10px; align-items: center;
   text-align: left; padding: 12px 14px; min-height: 72px; border-radius: var(--r-lg);
