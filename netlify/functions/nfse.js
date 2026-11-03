@@ -31,6 +31,12 @@
 //   { acao: 'extrato_marcar', cliente_id, ids, situacao: 'ignorado'|'pendente'|'ja_tem_nota', motivo? }
 //   { acao: 'extrato_pedir_cliente', cliente_id, ids, cancelar? }  ← os PIX aparecem no painel do cliente e no
 //        link "todas as notas" para ele dizer quem pagou; a resposta volta na conferência (pedido.resposta)
+//   { acao: 'recorrentes_listar', cliente_id }  ← modelos de nota recorrente (semanal) com as semanas a emitir
+//   { acao: 'recorrente_salvar', cliente_id, recorrente: { id?, nome, cpf (CPF ou CNPJ), endereco?, cep?, descricao, valor?, inicio?, ativo? } }
+//   { acao: 'recorrente_excluir', cliente_id, id }
+//   { acao: 'recorrente_pular', cliente_id, id, semana, desfazer? }  ← semana sem serviço (sai de "a emitir")
+//   { acao: 'recorrente_emitir', cliente_id, id, semana, valor, ambiente }  ← cria a nota da semana com o valor e
+//        emite na hora (ver lib/nfse/recorrentes.js). Cada semana é uma nota: o aviso de "parecida" não trava.
 //
 // Leitura de lotes/notas é feita direto pelo navegador (RLS: usuário logado só lê). Toda escrita passa
 // por aqui, onde valem a máquina de estados, a reserva de número e a duplicidade.
@@ -48,7 +54,8 @@ const lotes = require('./lib/nfse/lotes')
 const { criarEmissor, EmissaoBloqueada } = require('./lib/nfse/emissor')
 const { importarTexto, importarLinhas, parseValor, soDigitos } = require('./lib/nfse/importador')
 const { completarComCadastro, lerPlanilhaTomadores, planejarImportacao } = require('./lib/nfse/tomadores')
-const { cpfValido } = require('./lib/nfse/validador')
+const { cpfValido, hojeBrasilia } = require('./lib/nfse/validador')
+const recorrentes = require('./lib/nfse/recorrentes')
 const { criarClienteAdn, sincronizar } = require('./lib/nfse/adn')
 const { lerExtrato, montarPessoas, sugerirNotas, norm, guardarLancamentos, listarGuardados, marcarGuardados, SemTabelaExtrato, pedirAoCliente } = require('./lib/nfse/extrato')
 const { novoRegistro } = require('./lib/nfse/importador')
@@ -317,6 +324,108 @@ const acoes = {
 
   // ---------------------------------------------------------------- emissão por extrato bancário
 
+  // ------------------------------------------------------------------ notas recorrentes (semanal)
+  async recorrentes_listar({ db, repo }, p) {
+    const empresa = await repo.obterEmpresa(uuid(p.cliente_id, 'cliente_id'))
+    exigir(empresa, 'Empresa sem configuração de NFS-e', 409)
+    const modelos = await listarModelos(db, empresa.cliente_id)
+    if (modelos === null) return { recorrentes: [], aviso: AVISO_RECORRENTES }
+    const ids = modelos.map((m) => m.id)
+    let notas = []
+    if (ids.length) {
+      const { data, error } = await db.from('nfse_notas')
+        .select('id, lote_id, recorrente_id, estado, data, valor, numero_nfse, mensagem_sefin, erros')
+        .in('recorrente_id', ids).eq('ambiente', empresa.ambiente)
+      if (error) throw new Error(error.message)
+      notas = data || []
+    }
+    const hoje = hojeBrasilia()
+    return {
+      recorrentes: modelos.map((m) => ({
+        id: m.id, nome: m.nome, cpf: m.cpf, endereco: m.endereco || '', cep: m.cep || '', descricao: m.descricao, valor: m.valor === null ? null : Number(m.valor),
+        inicio: m.inicio, ativo: m.ativo,
+        semanas: m.inicio ? recorrentes.semanasDoModelo(m, notas.filter((x) => x.recorrente_id === m.id), hoje) : [],
+      })),
+    }
+  },
+
+  async recorrente_salvar({ db, repo }, p) {
+    const empresa = await repo.obterEmpresa(uuid(p.cliente_id, 'cliente_id'))
+    exigir(empresa, 'Empresa sem configuração de NFS-e', 409)
+    const { campos, erro } = recorrentes.validarModelo(p.recorrente || {}, hojeBrasilia())
+    exigir(!erro, erro)
+    const id = p.recorrente?.id
+    let q
+    if (id) {
+      await modeloDaEmpresa(db, empresa, id)
+      q = db.from('nfse_recorrentes').update(campos).eq('id', id).eq('cliente_id', empresa.cliente_id).select('id')
+    } else {
+      q = db.from('nfse_recorrentes').insert({ ...campos, cliente_id: empresa.cliente_id }).select('id')
+    }
+    const { data, error } = await q
+    if (error) throw new ErroHttp(semColunasRecorrentes(error) ? 409 : 500, semColunasRecorrentes(error) ? AVISO_RECORRENTES : error.message)
+    return { id: id || data?.[0]?.id }
+  },
+
+  async recorrente_excluir({ db, repo }, p) {
+    const empresa = await repo.obterEmpresa(uuid(p.cliente_id, 'cliente_id'))
+    exigir(empresa, 'Empresa sem configuração de NFS-e', 409)
+    await modeloDaEmpresa(db, empresa, p.id)
+    const { error } = await db.from('nfse_recorrentes').delete().eq('id', p.id).eq('cliente_id', empresa.cliente_id)
+    if (error) throw new Error(error.message)
+    return { ok: true }
+  },
+
+  async recorrente_pular({ db, repo }, p) {
+    const empresa = await repo.obterEmpresa(uuid(p.cliente_id, 'cliente_id'))
+    exigir(empresa, 'Empresa sem configuração de NFS-e', 409)
+    const modelo = await modeloDaEmpresa(db, empresa, p.id)
+    const semana = semanaDoModelo(modelo, p.semana)
+    const puladas = new Set(modelo.puladas || [])
+    if (p.desfazer) puladas.delete(semana.inicio); else puladas.add(semana.inicio)
+    const { error } = await db.from('nfse_recorrentes').update({ puladas: [...puladas].sort() }).eq('id', modelo.id)
+    if (error) throw new Error(error.message)
+    return { ok: true }
+  },
+
+  async recorrente_emitir({ db, repo, usuario }, p) {
+    const empresa = await repo.obterEmpresa(uuid(p.cliente_id, 'cliente_id'))
+    exigir(empresa, 'Empresa sem configuração de NFS-e', 409)
+    exigir(p.ambiente === empresa.ambiente, `Ambiente confirmado (${p.ambiente}) difere do configurado (${empresa.ambiente}). Nada foi enviado.`, 409)
+    const modelo = await modeloDaEmpresa(db, empresa, p.id)
+    exigir(modelo.ativo, 'Modelo desativado')
+    const semana = semanaDoModelo(modelo, p.semana)
+    const valor = parseValor(String(p.valor ?? '').trim())
+    exigir(valor !== null && Number(valor) > 0, 'Informe o valor da semana')
+
+    const { data: daSemana, error } = await db.from('nfse_notas').select('id, estado, data')
+      .eq('recorrente_id', modelo.id).eq('ambiente', empresa.ambiente).eq('data', semana.fim)
+    if (error) throw new Error(error.message)
+    exigir(!(daSemana || []).some((x) => recorrentes.FEITAS.includes(x.estado)), 'Esta semana já tem nota emitida (ou em emissão)', 409)
+
+    const campos = { nome: modelo.nome, cpf: modelo.cpf, endereco: modelo.endereco || '', cep: modelo.cep || '', data: semana.fim, valor, descricao: recorrentes.descricaoDa(modelo, semana) }
+    const aberta = (daSemana || []).find((x) => recorrentes.ABERTAS.includes(x.estado))
+    let notaId
+    if (aberta) {
+      // tentativa anterior que não saiu (ex.: faltou dado): reaproveita a mesma nota
+      await lotes.atualizarNota(repo, empresa, aberta.id, { ...campos, data: semana.fim.split('-').reverse().join('/'), valor: valor.replace('.', ',') })
+      notaId = aberta.id
+    } else {
+      const loteId = await lotes.criarLote(repo, {
+        empresa, origem: 'recorrente', recorrenteId: modelo.id,
+        descricao: `${modelo.nome} · semana ${semana.inicio.split('-').reverse().join('/')} a ${semana.fim.split('-').reverse().join('/')}`,
+        registros: [novoRegistro({ ...campos, origem: 'recorrente' })],
+      })
+      notaId = (await repo.listarNotasLote(loteId))[0].id
+    }
+    const nota = await repo.obterNota(notaId)
+    if (nota.status_validacao !== 'pronto') {
+      throw new ErroHttp(422, `A nota não foi emitida: ${[...(nota.erros || []), ...(nota.pendencias || []).map((x) => `falta ${x}`)].join('; ')}. Ela ficou no lote para conferir.`)
+    }
+    const resultado = await (await emissorDa(db, repo, empresa, usuario)).emitir(notaId, { confirmarRepetida: true })
+    return { resultado, nota: await repo.obterNota(notaId) }
+  },
+
   async extrato_analisar({ db, repo }, p) {
     const empresa = await repo.obterEmpresa(uuid(p.cliente_id, 'cliente_id'))
     exigir(empresa, 'Empresa sem configuração de NFS-e', 409)
@@ -492,6 +601,32 @@ async function conferirExtrato(repo, empresa, lancamentos) {
     }
   })
   return { lancamentos: sugestoes, pessoas: pessoas.map((x) => ({ cpf: x.cpf, nome: x.nome })).sort((a, b) => a.nome.localeCompare(b.nome)) }
+}
+
+// ---------------------------------------------------------------------- notas recorrentes
+const AVISO_RECORRENTES = 'Para usar notas recorrentes semanais, falta rodar supabase-schema-nfse-recorrentes-semanal.sql no SQL Editor do Supabase.'
+const semColunasRecorrentes = (error) => error && /periodicidade|inicio|puladas|nfse_recorrentes_cpf_check|nfse_recorrentes_valor_check|42703/i.test(`${error.code || ''} ${error.message || ''}`)
+
+// Modelos semanais da empresa; null se o banco ainda não tiver as colunas novas
+async function listarModelos(db, clienteId) {
+  const { data, error } = await db.from('nfse_recorrentes').select('*').eq('cliente_id', clienteId).eq('periodicidade', 'semanal')
+  if (semColunasRecorrentes(error)) return null
+  if (error) throw new Error(error.message)
+  return (data || []).sort((a, b) => String(a.criado_em).localeCompare(String(b.criado_em)))
+}
+
+async function modeloDaEmpresa(db, empresa, id) {
+  uuid(id, 'id')
+  const { data, error } = await db.from('nfse_recorrentes').select('*').eq('id', id).maybeSingle()
+  if (error) throw new Error(error.message)
+  exigir(data && data.cliente_id === empresa.cliente_id && data.periodicidade === 'semanal', 'Modelo não encontrado', 404)
+  return data
+}
+
+function semanaDoModelo(modelo, inicio) {
+  const semana = recorrentes.semanasFechadas(modelo.inicio, hojeBrasilia()).find((s) => s.inicio === inicio)
+  exigir(semana, 'Semana inválida (só semanas já encerradas, desde o início do modelo)')
+  return semana
 }
 
 async function clienteExistente(db, id) {

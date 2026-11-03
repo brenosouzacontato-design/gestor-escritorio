@@ -7,6 +7,7 @@ import { chamarNfse, listarLotes, listarNotas, baixarXml, arquivoParaBase64, tot
 import { baixarNfse } from '../painel/nfsePainelApi'
 import TomadoresPanel from './TomadoresPanel'
 import ExtratoPanel from './ExtratoPanel'
+import RecorrentesPanel from './RecorrentesPanel'
 import { chavePainelPorId, urlPublica } from '../../lib/linksPublicos'
 
 // Emissão de NFS-e pela API da Sefin Nacional, por empresa. Ver docs/nfse-emissao.md.
@@ -15,7 +16,8 @@ import { chavePainelPorId, urlPublica } from '../../lib/linksPublicos'
 const brl = (v) => (v === null || v === undefined || v === '' ? '' : Number(v).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }))
 const valorBR = (v) => (v === null || v === undefined ? '' : Number(v).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }))
 const dataBR = (iso) => (iso ? String(iso).slice(0, 10).split('-').reverse().join('/') : '')
-const cpfFmt = (c) => (c && c.length === 11 ? `${c.slice(0, 3)}.${c.slice(3, 6)}.${c.slice(6, 9)}-${c.slice(9)}` : c || '')
+const cpfFmt = (c) => (c && c.length === 11 ? `${c.slice(0, 3)}.${c.slice(3, 6)}.${c.slice(6, 9)}-${c.slice(9)}`
+  : c && c.length === 14 ? `${c.slice(0, 2)}.${c.slice(2, 5)}.${c.slice(5, 8)}/${c.slice(8, 12)}-${c.slice(12)}` : c || '')
 const hoje = () => new Date(Date.now() - 3 * 3600 * 1000).toISOString().slice(0, 10)
 
 const COR_STATUS = {
@@ -476,6 +478,7 @@ export default function NfseEmissaoPage() {
       {!clienteId && <div style={{ ...card, ...suave }}>Escolha a empresa para configurar ou emitir.</div>}
       {clienteId && status && <Configuracao clienteId={clienteId} status={status} onAtualizado={setStatus} />}
       {clienteId && <TomadoresPanel clienteId={clienteId} />}
+      {status?.configurada && ambiente && <RecorrentesPanel clienteId={clienteId} ambiente={ambiente} onEmitida={() => carregarLotes().catch(() => {})} />}
 
       {status?.configurada && (
         <div style={card}>
