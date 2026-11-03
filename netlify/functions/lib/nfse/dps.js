@@ -217,7 +217,8 @@ function montarDps({
   const toma = filho(inf, 'toma')
   if (!toma) throw new Error('Gabarito sem a tag toma')
   toma.text = ''
-  toma.children = [novo('CPF', cpfTomador), novo('xNome', espacos(nomeTomador))]
+  // cpfTomador: CPF (11 dígitos) ou CNPJ (14, tomador pessoa jurídica)
+  toma.children = [novo(String(cpfTomador).length === 14 ? 'CNPJ' : 'CPF', cpfTomador), novo('xNome', espacos(nomeTomador))]
 
   const sp = empresa.servicoPadrao || {}
   if (sp.cTribNac) definir(inf, 'serv/cServ/cTribNac', sp.cTribNac)

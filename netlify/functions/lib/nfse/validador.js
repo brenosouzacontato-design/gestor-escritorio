@@ -18,6 +18,19 @@ function cpfValido(cpf) {
   return true
 }
 
+// Tomador pessoa jurídica (ex.: Shopee): o campo cpf da nota guarda o CNPJ (14 dígitos)
+function cnpjValido(cnpj) {
+  if (!/^\d{14}$/.test(cnpj) || cnpj === cnpj[0].repeat(14)) return false
+  const digito = (base) => {
+    const pesos = base.length === 12 ? [5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2] : [6, 5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2]
+    const resto = base.split('').reduce((s, d, i) => s + Number(d) * pesos[i], 0) % 11
+    return resto < 2 ? 0 : 11 - resto
+  }
+  const d1 = digito(cnpj.slice(0, 12))
+  const d2 = digito(cnpj.slice(0, 12) + d1)
+  return cnpj.endsWith(`${d1}${d2}`)
+}
+
 const dataBR = (iso) => iso.split('-').reverse().join('/')
 
 // Datas como 'AAAA-MM-DD' e valor como string decimal ('1590.00'): comparação por texto funciona.
@@ -35,7 +48,8 @@ function validar({ nome, cpf, data, valor, descricao, endereco, competencia = nu
 
   const erros = []
   if (cpf) {
-    if (cpf.length !== 11) erros.push(`CPF com ${cpf.length} dígitos (precisa ter 11)`)
+    if (cpf.length === 14) { if (!cnpjValido(cpf)) erros.push('CNPJ com dígito verificador errado') }
+    else if (cpf.length !== 11) erros.push(`CPF com ${cpf.length} dígitos (precisa ter 11)`)
     else if (!cpfValido(cpf)) erros.push('CPF com dígito verificador errado')
   }
   if (presentes.valor && Number(valor) <= 0) erros.push('Valor precisa ser maior que zero')
@@ -58,4 +72,4 @@ function hojeBrasilia(agora = new Date()) {
   return new Date(agora.getTime() - 3 * 3600 * 1000).toISOString().slice(0, 10)
 }
 
-module.exports = { PRONTO, PENDENTE, INVALIDO, cpfValido, validar, chaveDuplicidade, hojeBrasilia }
+module.exports = { PRONTO, PENDENTE, INVALIDO, cpfValido, cnpjValido, validar, chaveDuplicidade, hojeBrasilia }
