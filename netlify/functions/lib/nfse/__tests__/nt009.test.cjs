@@ -49,7 +49,9 @@ test('fases: cada grupo da NT 009 liga na sua data por ambiente', () => {
   assert.deepEqual(gruposNt009('homologacao', '2026-10-20', {}), { finNFSe: true, indDest: false, simples: false, ibscbs: true })
   assert.deepEqual(gruposNt009('homologacao', '2026-10-30', {}), { finNFSe: true, indDest: true, simples: false, ibscbs: true })
   assert.deepEqual(gruposNt009('producao', '2026-11-02', {}), { finNFSe: false, indDest: false, simples: false, ibscbs: false })
-  assert.deepEqual(gruposNt009('producao', '2026-11-03', {}), { finNFSe: true, indDest: true, simples: true, ibscbs: true })
+  // produção: leiaute antigo até a Sefin aceitar (em 03/11/2026 recusou finNFSe)
+  assert.deepEqual(gruposNt009('producao', '2026-11-03', {}), { finNFSe: false, indDest: false, simples: false, ibscbs: false })
+  assert.deepEqual(gruposNt009('producao', '2026-11-20', { NFSE_NT009_PRODUCAO_A_PARTIR: '2026-11-20' }), { finNFSe: true, indDest: true, simples: true, ibscbs: true })
   // datas mudam por variável de ambiente, por grupo ou para toda a produção
   assert.equal(gruposNt009('homologacao', '2026-10-20', { NFSE_NT009_SIMPLES_HOMOLOGACAO: '2026-10-20' }).simples, true)
   assert.equal(usaLeiauteNt009('producao', '2026-11-03', { NFSE_NT009_PRODUCAO_A_PARTIR: '2026-12-01' }), false)
@@ -100,13 +102,13 @@ test('DPS no leiaute NT 009: finNFSe, indDest e campos do Simples, na ordem do A
   assert.equal(filho(cServ, 'cAtvSN').text, '7')
 })
 
-test('produção antes de 03/11 continua no leiaute em vigor', () => {
+test('produção continua no leiaute em vigor (a Sefin recusou finNFSe em 03/11)', () => {
   const inf = filho(gerar({ ambiente: 'producao', agora: '2026-10-30T10:00:00-03:00' }), 'infDPS')
   for (const t of ['finNFSe', 'indDest']) assert.equal(filho(inf, t), null)
   assert.equal(filho(inf, 'prest/regTrib/regApIBSCBSSN'), null)
   assert.equal(filho(inf, 'serv/cServ/cAtvSN'), null)
   const depois = filho(gerar({ ambiente: 'producao', agora: '2026-11-03T08:00:00-03:00' }), 'infDPS')
-  assert.equal(filho(depois, 'finNFSe').text, '0')
+  assert.equal(filho(depois, 'finNFSe'), null)
 })
 
 test('optante do Simples sem regime IBS/CBS ou atividade configurados: erro antes de gastar número', () => {
