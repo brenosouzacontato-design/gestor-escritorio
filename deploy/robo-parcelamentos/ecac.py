@@ -108,8 +108,10 @@ class Navegador:
         self.respostas_pdf: list = []
         self.downloads: list = []
         self.ctx.on("response", self._resposta)
-        self.ctx.on("page", lambda p: p.on("download", self.downloads.append))
+        self.ctx.on("page", lambda p: p.on("download", lambda d: self.downloads.append(d)))
         self.page = self.ctx.new_page()
+        # a primeira aba pode nascer antes do evento "page" ser tratado
+        self.page.on("download", lambda d: self.downloads.append(d) if d not in self.downloads else None)
 
     def _resposta(self, r) -> None:
         if "pdf" in (r.headers.get("content-type") or "").lower():
