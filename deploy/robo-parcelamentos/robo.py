@@ -89,6 +89,14 @@ def rodar(forcar: bool = False) -> None:
                 )
                 resultados.append(processar(p, emissao))
             except sispar.SemEmissao as e:
+                # guarda a tela e a tabela de prestações, pra entender o porquê
+                if e.diagnostico:
+                    log.warning("Sem emissão em %s — tabela do SISPAR:\n%s", nome, e.diagnostico)
+                foto = PASTA / "erros" / f"{p['conta']}_sem_emissao_{datetime.now():%Y%m%d_%H%M%S}.png"
+                try:
+                    page.screenshot(path=str(foto), full_page=True)
+                except Exception:  # noqa: BLE001
+                    pass
                 # "não permite emissão" costuma ser rescisão/suspensão — vira alerta no gestor
                 status = "nao_permite_emissao" if "não permite" in str(e) else "ok"
                 db.marcar_busca(p["id"], status, str(e))

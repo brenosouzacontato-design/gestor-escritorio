@@ -20,7 +20,12 @@ CAMPO_CONTA = '[id="formConsultaParcelamentoDarf:imNrContaParcelamento"]'
 
 
 class SemEmissao(Exception):
-    """O SISPAR recusou a emissão (ex.: 'situação do parcelamento não permite')."""
+    """O SISPAR recusou a emissão (ex.: 'situação do parcelamento não permite').
+    `diagnostico`: o que a tela mostrava (tabela de prestações e links), pro log."""
+
+    def __init__(self, msg: str, diagnostico: str | None = None):
+        super().__init__(msg)
+        self.diagnostico = diagnostico
 
 
 class CaptchaNaoResolvido(Exception):
@@ -68,6 +73,26 @@ def esperar_captcha(page: Page, minutos: int, ao_esperar: Callable[[int], None] 
     raise CaptchaNaoResolvido(f"Captcha não resolvido em {minutos} min.")
 
 
+# "Não emitido" pode vir com outra caixa/acentuação ou como botão
+RE_NAO_EMITIDO = re.compile(r"n[aã]o\s*emitid", re.I)
+
+
+def _diagnostico(page: Page) -> str:
+    """Linhas da tabela de prestações com o texto/tipo de cada link ou botão
+    da linha — sem dados do devedor (só prestação, vencimento, valores, situação)."""
+    return page.evaluate("""() => [...document.querySelectorAll('tr')]
+        .filter(tr => tr.cells.length >= 4 && /^\\d{1,4}$/.test((tr.cells[0].innerText || '').trim()))
+        .slice(0, 80)
+        .map(tr => [...tr.cells].map(td => {
+            const t = td.innerText.trim().replace(/\\s+/g, ' ');
+            const acoes = [...td.querySelectorAll('a,button,input[type=submit],input[type=image],img')]
+              .map(e => `<${e.tagName.toLowerCase()} ${(e.getAttribute('title') || e.getAttribute('alt') || e.value || '').trim()}>`)
+              .join('');
+            return acoes ? `${t} ${acoes}` : t;
+        }).join(' | '))
+        .join('\\n')""")
+
+
 def _linhas_prestacoes(page: Page) -> list[list[str]]:
     return page.evaluate("""() => [...document.querySelectorAll('tr')]
         .map(tr => [...tr.cells].map(td => td.innerText.trim()))
@@ -107,9 +132,15 @@ def emitir_parcela(page: Page, documento: str, conta: str, minutos_captcha: int,
     linhas = _linhas_prestacoes(page)
     pagas = sum(1 for c in linhas if c[2] in ("0.00", "0,00"))
 
-    nao_emitido = page.get_by_role("link", name="Não emitido")
+    nao_emitido = page.get_by_role("link", name=RE_NAO_EMITIDO)
     if not nao_emitido.count():
-        raise SemEmissao("Nenhuma parcela em aberto para emitir.")
+        nao_emitido = page.get_by_text(RE_NAO_EMITIDO)
+    if not nao_emitido.count():
+        try:
+            diag = _diagnostico(page)
+        except Exception as e:  # noqa: BLE001
+            diag = f"(não consegui ler a tabela: {e})"
+        raise SemEmissao("Nenhuma parcela em aberto para emitir.", diag)
     alvo = nao_emitido.first
     prestacao = alvo.evaluate("a => a.closest('tr')?.cells[0]?.innerText.trim()")
     alvo.click()
