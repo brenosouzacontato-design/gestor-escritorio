@@ -128,6 +128,22 @@ def emitir_parcela(page: Page, documento: str, conta: str, minutos_captcha: int,
         msgs = [l for l in texto.splitlines() if l.isupper() and len(l) > 15]
         raise RuntimeError("SISPAR não abriu o parcelamento: " + (msgs[-1] if msgs else "sem mensagem"))
 
+    # Os dados da negociação aparecem antes; a tabela de prestações chega
+    # depois, atrás do aviso "Aguarde — Solicitação em processamento...".
+    # Sem esperar, o robô lia a página vazia e achava que não havia parcela.
+    try:
+        page.wait_for_function(
+            """() => {
+                const ocupado = [...document.querySelectorAll('div,span')].some(e =>
+                    e.offsetParent !== null && e.children.length === 0 &&
+                    /Solicita[cç][aã]o em processamento/i.test(e.textContent || ''));
+                return !ocupado && /emitid/i.test(document.body.innerText);
+            }""",
+            timeout=90000)
+    except PWTimeout:
+        pass  # segue; sem a tabela, cai no diagnóstico abaixo
+    texto = page.inner_text("body")
+
     total = re.search(r"Total de Parcelas:\s*(\d+)", texto)
     linhas = _linhas_prestacoes(page)
     pagas = sum(1 for c in linhas if c[2] in ("0.00", "0,00"))
