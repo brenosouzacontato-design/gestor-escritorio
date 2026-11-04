@@ -8,6 +8,7 @@ import { supabase } from '../lib/supabase'
 import { uploadArquivo, criarLinkAssinado, anexarDocumentoAoItem, abrirLinkAssinado } from './documentos/documentosApi'
 import { BotaoAnexos, AnexosItemModal } from '../components/AnexosItem'
 import ModalLembrete from '../components/ModalLembrete'
+import AvisosAparelho from '../components/AvisosAparelho'
 import { estaArquivada, diasDesdeConclusao, situacaoPrazo, dataConclusao, DIAS_PARA_ARQUIVAR } from '../lib/tarefasPrazo'
 
 const DEPTS = [
@@ -102,7 +103,8 @@ export default function Tarefas({ onAddTarefa, highlightTaskId, onHighlightConsu
   useEffect(() => {
     if (!highlightTaskId) return
     const t = tarefas.find(x => x.id === highlightTaskId)
-    if (t) setTarefaAberta(t)
+    if (!t) return // lista ainda carregando: espera
+    setTarefaAberta(t)
     onHighlightConsumed?.()
   }, [highlightTaskId, tarefas])
 
@@ -212,8 +214,10 @@ export default function Tarefas({ onAddTarefa, highlightTaskId, onHighlightConsu
           {resumo.hoje > 0 && <span className="tarefas-resumo-item alerta"><CalendarIcon size={12} /> <b>{resumo.hoje}</b> vence{resumo.hoje !== 1 ? 'm' : ''} hoje</span>}
           {resumo.comLembrete > 0 && <span className="tarefas-resumo-item"><BellRingIcon size={12} /> <b>{resumo.comLembrete}</b> com lembrete</span>}
         </div>
+        <span style={{ marginLeft:'auto' }} />
+        <AvisosAparelho />
         <button className={`btn btn-sm ${verArquivadas ? 'btn-accent' : ''}`} onClick={() => setVerArquivadas(v => !v)}
-          title={`Tarefas concluídas há ${DIAS_PARA_ARQUIVAR} dias ou mais saem do quadro e ficam aqui`} style={{ marginLeft:'auto' }}>
+          title={`Tarefas concluídas há ${DIAS_PARA_ARQUIVAR} dias ou mais saem do quadro e ficam aqui`}>
           {verArquivadas ? <><ArrowLeftIcon size={12} /> Voltar ao quadro</> : <><ArchiveIcon size={12} /> Arquivadas ({qtdArquivadas})</>}
         </button>
       </div>

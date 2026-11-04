@@ -16,16 +16,21 @@ self.addEventListener('push', (event) => {
   event.waitUntil(self.registration.showNotification(dados.titulo || 'Recado do escritório', {
     body: dados.mensagem || '',
     data: { url: dados.url || null },
+    ...(dados.tag ? { tag: dados.tag } : {}),
   }));
 });
 
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
-  const url = event.notification.data && event.notification.data.url;
+  const bruta = event.notification.data && event.notification.data.url;
+  const url = bruta ? new URL(bruta, self.location.origin).href : null;
   event.waitUntil((async () => {
     const abas = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
     const aberta = abas.find((c) => !url || c.url === url);
     if (aberta) return aberta.focus();
+    // lembrete de tarefa: reaproveita a janela do app que já estiver aberta
+    const doApp = url && url.includes('tela=') ? abas.find((c) => !c.url.includes('painel=') && !c.url.includes('carteira=')) : null;
+    if (doApp && 'navigate' in doApp) return doApp.navigate(url).then((c) => (c || doApp).focus());
     if (url) return self.clients.openWindow(url);
   })());
 });

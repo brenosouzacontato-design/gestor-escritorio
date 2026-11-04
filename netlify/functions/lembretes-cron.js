@@ -1,9 +1,10 @@
 // netlify/functions/lembretes-cron.js
 //
-// Scheduled Function (ver netlify.toml, roda a cada 15 minutos). Varre a
+// Scheduled Function (ver netlify.toml, roda a cada 5 minutos). Varre a
 // tabela "lembretes" por lembretes pendentes (enviado=false) cuja data_hora
 // já passou, manda um WhatsApp pro grupo do escritório
-// (netlify/functions/lib/whatsapp.js) e marca como enviado.
+// (netlify/functions/lib/whatsapp.js) e uma notificação nos aparelhos da
+// equipe que ativaram os avisos (lib/gestorPush.js), e marca como enviado.
 //
 // Variáveis de ambiente necessárias no Netlify: SUPABASE_URL,
 // SUPABASE_SERVICE_KEY, WHATSAPP_GROUP_ID, EVOLUTION_API_URL,
@@ -13,6 +14,7 @@
 const { createClient } = require('@supabase/supabase-js')
 const { enviarMensagem } = require('./lib/whatsapp')
 const licencas = require('./lib/licencas')
+const { pushConfigurado, notificacaoLembrete, enviarPushEscritorio } = require('./lib/gestorPush')
 
 const supabase = createClient(
   process.env.SUPABASE_URL,
@@ -22,15 +24,15 @@ const supabase = createClient(
 const GRUPO_ID = process.env.WHATSAPP_GROUP_ID
 
 exports.handler = async () => {
-  if (!GRUPO_ID) {
-    console.error('WHATSAPP_GROUP_ID não configurada — não dá pra enviar lembretes.')
-    return { statusCode: 200, body: 'no group id' }
+  if (!GRUPO_ID && !pushConfigurado()) {
+    console.error('Nem WHATSAPP_GROUP_ID nem VAPID configurados — não dá pra enviar lembretes.')
+    return { statusCode: 200, body: 'sem canal de envio' }
   }
 
   const { data: lembretes, error } = await supabase
     .from('lembretes')
     .select(`
-      id, mensagem,
+      id, mensagem, tarefa_id,
       obrigacoes(titulo, tipo, clientes(nome)),
       tarefas(titulo, clientes(nome))
     `)
@@ -48,10 +50,13 @@ exports.handler = async () => {
     const cliente = item?.clientes?.nome
     const texto = `🔔 *Lembrete*\n${titulo}${cliente ? `\n👤 ${cliente}` : ''}${l.mensagem ? `\n${l.mensagem}` : ''}`
 
-    await enviarMensagem(GRUPO_ID, texto)
+    // marca antes de enviar: se o envio demorar, a próxima rodada não repete
     await supabase.from('lembretes').update({ enviado: true, enviado_em: new Date().toISOString() }).eq('id', l.id)
+    if (GRUPO_ID) await enviarMensagem(GRUPO_ID, texto).catch((e) => console.error('WhatsApp do lembrete falhou:', e.message))
+    await enviarPushEscritorio(supabase, notificacaoLembrete(l)).catch((e) => console.error('Aviso no aparelho falhou:', e.message))
   }
 
+  if (!GRUPO_ID) return { statusCode: 200, body: JSON.stringify({ enviados: (lembretes || []).length }) }
   const reunioes = await avisarReunioes()
   const avisosLicencas = await avisarLicencas()
 
