@@ -5,6 +5,8 @@ Uso (dentro do container):
   python robo.py rodar          # executa agora (ex.: docker compose exec robo python robo.py rodar)
   python robo.py rodar --forcar # busca mesmo quem já tem guia do mês
   python robo.py testar-aviso   # manda uma mensagem de teste no WhatsApp/Telegram
+  python robo.py ecac [--situacao] [CNPJ]  # e-CAC agora (situação fiscal + pagamentos); ver ecac.py
+  python robo.py ecac-explorar CNPJ        # calibração do e-CAC: prints/HTML em /dados/ecac/explorar
 
 Fluxo de uma execução:
   1. lê no Supabase os parcelamentos PGFN ativos com busca_automatica;
@@ -27,6 +29,7 @@ from zoneinfo import ZoneInfo
 
 from playwright.sync_api import sync_playwright
 
+import ecac
 import gestor_db as db
 import notificador as aviso
 import sispar
@@ -38,6 +41,9 @@ MINUTOS_CAPTCHA = int(os.environ.get("MINUTOS_CAPTCHA", "30"))
 DIAS = [int(d) for d in os.environ.get("DIAS_EXECUCAO", "20,25").split(",") if d.strip()]
 HORA = os.environ.get("HORA_EXECUCAO", "09:00")
 PASTA = Path(os.environ.get("PASTA_DADOS", "/dados"))
+# e-CAC: dias da semana (0 = segunda) e hora; vazio desliga
+ECAC_DIAS = [int(d) for d in os.environ.get("ECAC_DIAS_SEMANA", "0,3").split(",") if d.strip()]
+ECAC_HORA = os.environ.get("ECAC_HORA", "08:00")
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 log = logging.getLogger("robo")
@@ -168,11 +174,24 @@ def dia_alvo(hoje: date, dia: int) -> date:
 
 def agendar() -> None:
     marca = PASTA / "ultima_execucao.txt"
+    marca_ecac = PASTA / "ecac_ultima_execucao.txt"
     PASTA.mkdir(parents=True, exist_ok=True)
-    log.info("Agenda: dias %s às %s (%s)", DIAS, HORA, TZ)
+    log.info("Agenda: dias %s às %s (%s); e-CAC: dias da semana %s às %s", DIAS, HORA, TZ, ECAC_DIAS, ECAC_HORA)
+    if ECAC_DIAS and ecac.configurado():
+        log.warning("e-CAC desligado até configurar: %s", ecac.configurado())
     while True:
         agora = datetime.now(TZ)
         hoje = agora.date()
+        # e-CAC e parcelamentos usam a mesma tela remota: rodam um depois do outro
+        ja_ecac = marca_ecac.read_text().strip() if marca_ecac.exists() else ""
+        if (ECAC_DIAS and hoje.weekday() in ECAC_DIAS and agora.strftime("%H:%M") >= ECAC_HORA
+                and agora.hour < 20 and ja_ecac != hoje.isoformat() and not ecac.configurado()):
+            marca_ecac.write_text(hoje.isoformat())
+            try:
+                ecac.rodar()
+            except Exception as e:  # noqa: BLE001
+                log.exception("e-CAC falhou")
+                aviso.texto(f"❌ Robô do e-CAC falhou: {e}")
         ja = marca.read_text().strip() if marca.exists() else ""
         if (agora.strftime("%H:%M") >= HORA and ja != hoje.isoformat()
                 and any(dia_alvo(hoje, d) == hoje for d in DIAS) and agora.hour < 21):
@@ -189,6 +208,13 @@ if __name__ == "__main__":
     cmd = sys.argv[1] if len(sys.argv) > 1 else "agendar"
     if cmd == "rodar":
         rodar(forcar="--forcar" in sys.argv)
+    elif cmd == "ecac":
+        cnpj = next((a for a in sys.argv[2:] if not a.startswith("--")), None)
+        ecac.rodar(forcar_situacao="--situacao" in sys.argv, so_cnpj=cnpj)
+    elif cmd == "ecac-explorar":
+        if len(sys.argv) < 3:
+            sys.exit("Uso: python robo.py ecac-explorar CNPJ")
+        ecac.explorar(sys.argv[2])
     elif cmd == "testar-aviso":
         aviso.texto(f"🤖 Teste do robô de parcelamentos. Tela remota: {LINK_TELA}")
     else:

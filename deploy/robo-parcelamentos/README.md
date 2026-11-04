@@ -48,7 +48,51 @@ docker compose logs -f robo                              # acompanha
 
 Prints de tela de erro ficam em `/opt/gestor-robo/dados/erros/`.
 
+## e-CAC: situação fiscal e pagamentos (`ecac.py`)
+
+Entra no e-CAC com o **certificado A1 do escritório** e, para cada empresa ativa com CNPJ
+(menos as desmarcadas na tela Fiscal → Situação e-CAC), troca o perfil para a empresa
+(procuração) e:
+
+1. baixa o **Relatório de Situação Fiscal** (uma vez por semana, `ECAC_SITUACAO_DIAS`) e lê
+   com a mesma IA do upload manual → aparece no painel do cliente e na tela Situação e-CAC;
+2. consulta os **pagamentos** (DARF/DAS) dos últimos `ECAC_DIAS_PAGAMENTOS` dias e cruza com
+   as guias anexadas: primeiro pelo número do documento (que vai dentro da linha digitável),
+   depois por valor + vencimento quando só uma guia bate. A guia que bater fica **paga**
+   (`baixa_por = robô e-CAC`); pagamento sem guia fica listado na tela para conferência.
+
+Roda às `ECAC_HORA` nos dias da semana de `ECAC_DIAS_SEMANA` (padrão segunda e quinta, 08:00).
+O login do gov.br pede **um captcha por execução** (não um por empresa): o aviso chega no
+WhatsApp com o link da tela remota, igual aos parcelamentos.
+
+### Configurar (uma vez)
+
+1. No Supabase (SQL Editor), rode `supabase-schema-ecac.sql`.
+2. Copie o certificado para o servidor e instale (a senha é pedida sem aparecer na tela e fica
+   só no servidor, em `/opt/gestor-robo/dados/certificado`):
+   ```
+   scp certificado.pfx root@IP-DO-SERVIDOR:/root/
+   ssh root@IP-DO-SERVIDOR bash /opt/gestor-robo/configurar-ecac.sh /root/certificado.pfx
+   ```
+3. Calibração, acompanhando pela tela remota:
+   `docker compose exec robo python robo.py ecac-explorar CNPJ-DE-UMA-EMPRESA`
+   — salva print e HTML de cada tela em `/opt/gestor-robo/dados/ecac/explorar/`. Se o
+   e-CAC mudou algum nome de menu, ajuste `ECAC_TEXTO_SITUACAO` / `ECAC_TEXTO_PAGAMENTOS`
+   (ou `ECAC_URL_SITUACAO` / `ECAC_URL_PAGAMENTOS` com o endereço direto) no `.env`.
+
+### Comandos
+
+```
+docker compose exec robo python robo.py ecac                    # todas as empresas agora
+docker compose exec robo python robo.py ecac --situacao         # força baixar o relatório de todas
+docker compose exec robo python robo.py ecac 12345678000190     # só uma empresa
+```
+
+Empresa sem procuração para o certificado aparece como "sem procuração" na tela. Prints dos
+erros ficam em `/opt/gestor-robo/dados/erros/ecac_*`.
+
 ## Próximos passos
 
-- PARCMEI (Receita): exige login com certificado no eCAC (ou o Integra Contador).
+- PARCMEI (Receita): agora dá pra emitir pela mesma sessão do e-CAC (`ecac.py`).
+- Baixar o PDF do comprovante de cada pagamento achado no e-CAC.
 - Avisar vencimento de certificado A1 dos clientes.

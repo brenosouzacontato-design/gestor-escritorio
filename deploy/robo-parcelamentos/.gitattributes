@@ -1,0 +1,2 @@
+# Roda no servidor Linux: scripts .sh com CRLF quebram no bash (set: pipefail: invalid option)
+* text eol=lf

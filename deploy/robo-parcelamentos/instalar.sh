@@ -23,8 +23,9 @@ ENV="$PASTA/.env"
 # shellcheck disable=SC1091
 . "$WPP/.env"   # DOMINIO, EVOLUTION_API_KEY, EVOLUTION_INSTANCE
 
-mkdir -p "$PASTA/dados"
-cp "$ORIGEM"/{Dockerfile,docker-compose.yml,requirements.txt,supervisord.conf,*.py} "$PASTA"/
+mkdir -p "$PASTA/dados/certificado"
+chmod 700 "$PASTA/dados/certificado"
+cp "$ORIGEM"/{Dockerfile,docker-compose.yml,requirements.txt,supervisord.conf,*.py,configurar-ecac.sh} "$PASTA"/
 cd "$PASTA"
 
 # ── 1. Configuração (perguntada uma vez, guardada em .env) ─────────────
@@ -46,6 +47,11 @@ TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID:-}
 DIAS_EXECUCAO=${DIAS_EXECUCAO:-20,25}
 HORA_EXECUCAO=${HORA_EXECUCAO:-09:00}
 MINUTOS_CAPTCHA=${MINUTOS_CAPTCHA:-30}
+ECAC_DIAS_SEMANA=${ECAC_DIAS_SEMANA-0,3}
+ECAC_HORA=${ECAC_HORA:-08:00}
+ECAC_DIAS_PAGAMENTOS=${ECAC_DIAS_PAGAMENTOS:-90}
+ECAC_SITUACAO_DIAS=${ECAC_SITUACAO_DIAS:-7}
+GESTOR_URL=${GESTOR_URL:-https://gestorcount.netlify.app}
 
 umask 077
 cat > "$ENV" <<EOF
@@ -61,6 +67,11 @@ LINK_TELA_REMOTA="https://$DOMINIO/robo/vnc.html?autoconnect=1&resize=scale&path
 DIAS_EXECUCAO=$DIAS_EXECUCAO
 HORA_EXECUCAO=$HORA_EXECUCAO
 MINUTOS_CAPTCHA=$MINUTOS_CAPTCHA
+ECAC_DIAS_SEMANA=$ECAC_DIAS_SEMANA
+ECAC_HORA=$ECAC_HORA
+ECAC_DIAS_PAGAMENTOS=$ECAC_DIAS_PAGAMENTOS
+ECAC_SITUACAO_DIAS=$ECAC_SITUACAO_DIAS
+GESTOR_URL=$GESTOR_URL
 ROBO_USUARIO=$ROBO_USUARIO
 ROBO_SENHA=$ROBO_SENHA
 TZ=America/Sao_Paulo
@@ -112,5 +123,6 @@ cat <<EOF
  Rodar agora:        cd $PASTA && docker compose exec robo python robo.py rodar
  Ver o que ele faz:  cd $PASTA && docker compose logs -f robo
  Configurações:      $ENV (dias, hora, números, Telegram) — depois: docker compose up -d
+ e-CAC (certificado): bash $PASTA/configurar-ecac.sh /caminho/certificado.pfx
 ========================================================================
 EOF
