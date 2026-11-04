@@ -6,13 +6,13 @@
 import { useEffect, useMemo, useState } from 'react'
 import {
   LayersIcon, UploadCloudIcon, FileIcon, XIcon, ChevronDownIcon, ChevronUpIcon,
-  AlertTriangleIcon, CheckCircleIcon, ExternalLinkIcon, SearchIcon, RefreshCwIcon,
+  AlertTriangleIcon, CheckCircleIcon, ExternalLinkIcon, SearchIcon, RefreshCwIcon, UserIcon,
 } from 'lucide-react'
 import { useStore } from '../../store'
 import { useToast } from '../../components/shared'
 import EmpresaCombobox from '../../components/EmpresaCombobox'
 import {
-  ORIGENS, listarParcelamentos, prepararImportacao, salvarGuia, urlDaGuia, atualizarParcelamento,
+  ORIGENS, listarParcelamentos, prepararImportacao, salvarGuia, urlDaGuia, atualizarParcelamento, vincularEmpresa,
 } from './parcelamentosApi'
 
 const fmtMoeda = (v) => (v == null ? '—' : Number(v).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }))
@@ -83,7 +83,7 @@ export default function ParcelamentosPage() {
 
   const atualizarItem = (chave, patch) => setItens((prev) => prev.map((i) => (i.chave === chave ? { ...i, ...patch } : i)))
   const prontos = itens.filter((i) => i.dados && !i.ignorar)
-  const semEmpresa = prontos.filter((i) => !i.clienteId).length
+  const semEmpresa = prontos.filter((i) => !i.clienteId && !i.avulso).length
 
   const importar = async () => {
     setImportando(true)
@@ -112,7 +112,8 @@ export default function ParcelamentosPage() {
   const filtrados = useMemo(() => {
     const t = busca.trim().toLowerCase()
     return parcelamentos.filter((p) => {
-      if (filtroOrigem !== 'todos' && (p.origem || 'manual') !== filtroOrigem) return false
+      if (filtroOrigem === 'avulso') { if (p.cliente_id) return false }
+      else if (filtroOrigem !== 'todos' && (p.origem || 'manual') !== filtroOrigem) return false
       if (!t) return true
       return [p.clientes?.nome, p.nome_devedor, p.conta, p.documento_devedor].some((v) => (v || '').toLowerCase().includes(t))
     })
@@ -136,6 +137,12 @@ export default function ParcelamentosPage() {
 
   const alternarBusca = async (p) => {
     try { await atualizarParcelamento(p.id, { busca_automatica: !p.busca_automatica }); await carregar() }
+    catch (e) { show?.('Erro: ' + e.message) }
+  }
+
+  const vincular = async (p, clienteId) => {
+    if (!clienteId) return
+    try { await vincularEmpresa(p.id, clienteId); await carregar(); show?.('Parcelamento ligado à empresa.') }
     catch (e) { show?.('Erro: ' + e.message) }
   }
 
@@ -195,7 +202,7 @@ export default function ParcelamentosPage() {
             <div style={{ display: 'flex', gap: 6 }}>
               <button className="btn btn-ghost btn-sm" onClick={() => setItens([])} disabled={importando}>Limpar</button>
               <button className="btn btn-accent btn-sm" onClick={importar} disabled={importando || !prontos.length || semEmpresa > 0}
-                title={semEmpresa ? 'Escolha a empresa das guias sem empresa' : ''}>
+                title={semEmpresa ? 'Escolha a empresa ou marque "Sem empresa (avulso)" nas guias sem empresa' : ''}>
                 {importando ? 'Importando…' : `Importar ${prontos.length} guia${prontos.length !== 1 ? 's' : ''}`}
               </button>
             </div>
@@ -239,10 +246,27 @@ export default function ParcelamentosPage() {
                       <div>{fmtMoeda(it.dados.valor)} · vence {fmtData(it.dados.vencimento)}</div>
                     </div>
                     <div>
-                      <EmpresaCombobox empresas={clientes} value={it.clienteId || ''} onChange={(id) => atualizarItem(it.chave, { clienteId: id, como: 'manual' })} />
-                      <div style={{ fontSize: 10.5, marginTop: 3, color: it.clienteId ? 'var(--text3)' : 'var(--danger)' }}>
-                        {it.clienteId ? `Empresa achada por ${it.como}` : 'Empresa não encontrada — escolha acima'}
+                      {!it.avulso && (
+                        <EmpresaCombobox empresas={clientes} value={it.clienteId || ''} onChange={(id) => atualizarItem(it.chave, { clienteId: id, como: 'manual' })} />
+                      )}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginTop: 3 }}>
+                        {!it.avulso && (
+                          <span style={{ fontSize: 10.5, color: it.clienteId ? 'var(--text3)' : 'var(--danger)' }}>
+                            {it.clienteId ? `Empresa achada por ${it.como}` : 'Empresa não encontrada — escolha acima ou marque avulso'}
+                          </span>
+                        )}
+                        {!it.clienteId && (
+                          <label style={{ fontSize: 11.5, color: 'var(--text2)', display: 'flex', alignItems: 'center', gap: 5, cursor: 'pointer' }}>
+                            <input type="checkbox" checked={!!it.avulso} onChange={(e) => atualizarItem(it.chave, { avulso: e.target.checked })} />
+                            Sem empresa (avulso)
+                          </label>
+                        )}
                       </div>
+                      {it.avulso && (
+                        <div style={{ fontSize: 10.5, color: 'var(--text3)', marginTop: 3 }}>
+                          Fica no nome de <b>{it.dados.nome}</b>. O robô busca a guia e manda no WhatsApp; não aparece em obrigações nem no painel de cliente. Dá pra ligar a uma empresa depois.
+                        </div>
+                      )}
                     </div>
                   </div>
                 )}
@@ -255,7 +279,7 @@ export default function ParcelamentosPage() {
       {/* Filtros */}
       <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap', alignItems: 'center' }}>
         <div className="tabs" style={{ marginBottom: 0 }}>
-          {[['todos', 'Todos'], ['PARCMEI', 'PARCMEI'], ['PGFN', 'PGFN'], ['manual', 'Manuais']].map(([k, l]) => (
+          {[['todos', 'Todos'], ['PARCMEI', 'PARCMEI'], ['PGFN', 'PGFN'], ['manual', 'Manuais'], ['avulso', 'Avulsos']].map(([k, l]) => (
             <button key={k} className={`tab-btn ${filtroOrigem === k ? 'active' : ''}`} onClick={() => setFiltroOrigem(k)}>{l}</button>
           ))}
         </div>
@@ -281,6 +305,11 @@ export default function ParcelamentosPage() {
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                   <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text1)' }}>{p.clientes?.nome || p.nome_devedor || '—'}</span>
                   <Selo origem={p.origem} />
+                  {!p.cliente_id && (
+                    <span title="Devedor sem empresa cadastrada" style={{ fontSize: 10.5, fontWeight: 700, padding: '2px 8px', borderRadius: 99, color: 'var(--text2)', background: 'var(--surface2)', display: 'inline-flex', alignItems: 'center', gap: 3 }}>
+                      <UserIcon size={10} /> avulso
+                    </span>
+                  )}
                   {p.status !== 'ativo' && <span style={{ fontSize: 10.5, color: 'var(--text3)' }}>{p.status}</span>}
                   {guiaDoMes && <span style={{ fontSize: 10.5, color: 'var(--ok)', display: 'flex', gap: 3, alignItems: 'center' }}><CheckCircleIcon size={11} /> guia do mês</span>}
                   {statusBusca && <span style={{ fontSize: 10.5, fontWeight: 700, color: statusBusca.color }} title={p.ultima_busca_msg || ''}>{statusBusca.label}</span>}
@@ -321,6 +350,14 @@ export default function ParcelamentosPage() {
                   </select>
                   {p.ultima_busca_msg && <span style={{ fontSize: 11, color: 'var(--text3)' }}>{p.ultima_busca_msg}</span>}
                 </div>
+                {!p.cliente_id && (
+                  <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginBottom: 10 }}>
+                    <span style={{ fontSize: 12, color: 'var(--text2)' }}>Ligar a uma empresa:</span>
+                    <div style={{ flex: 1, minWidth: 220, maxWidth: 380 }}>
+                      <EmpresaCombobox empresas={clientes} value="" onChange={(id) => vincular(p, id)} />
+                    </div>
+                  </div>
+                )}
 
                 {p.guias.length === 0 && <div style={{ fontSize: 12, color: 'var(--text3)' }}>Nenhuma guia anexada.</div>}
                 <div style={{ display: 'grid', gap: 5 }}>

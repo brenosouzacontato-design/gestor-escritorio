@@ -8,6 +8,10 @@
 // empresa tem uma obrigação de parcelamento em aberto na competência da guia,
 // a guia é ligada a ela também — é isso que a faz aparecer na baixa de
 // pagamentos (pagamentosApi.listarGuiasPendentes) e no painel do cliente.
+// Parcelamento "avulso": devedor que não é cliente cadastrado. Fica sem
+// empresa (cliente_id nulo); o robô busca a guia e manda no WhatsApp do
+// mesmo jeito, só não liga a obrigação nem ao painel. Dá pra ligar a uma
+// empresa depois (vincularEmpresa).
 // Schema: supabase-schema-parcelamentos-guias.sql.
 import { supabase } from '../../lib/supabase';
 import { lerGuiaParcelamento } from './leitorGuiaParcelamento';
@@ -52,6 +56,14 @@ export async function urlDaGuia(storagePath) {
   return data.signedUrl;
 }
 
+// Liga um parcelamento avulso (e as guias dele) a uma empresa cadastrada.
+export async function vincularEmpresa(parcelamentoId, clienteId) {
+  await atualizarParcelamento(parcelamentoId, { cliente_id: clienteId });
+  const { error } = await supabase.from('documentos').update({ cliente_id: clienteId })
+    .eq('parcelamento_id', parcelamentoId).is('cliente_id', null);
+  if (error) throw error;
+}
+
 export async function atualizarParcelamento(id, patch) {
   const { error } = await supabase
     .from('parcelamentos')
@@ -82,13 +94,17 @@ export function sugerirCliente(dados, clientes, parcelamentos) {
     const porNome = clientes.filter((c) => normalizar(c.nome).replace(/\s*\d+$/, '') === nome);
     if (porNome.length === 1) return { clienteId: porNome[0].id, como: 'nome' };
   }
+  // devedor já cadastrado como avulso antes: continua avulso
+  if (parcelamentos.some((p) => p.documento_devedor === doc && !p.cliente_id)) {
+    return { clienteId: null, como: null, avulso: true };
+  }
   return { clienteId: null, como: null };
 }
 
 export async function prepararImportacao(arquivos, clientes, parcelamentos) {
   const itens = [];
   for (const arquivo of arquivos) {
-    const item = { chave: crypto.randomUUID(), arquivo, dados: null, erro: null, clienteId: null, como: null, duplicada: false };
+    const item = { chave: crypto.randomUUID(), arquivo, dados: null, erro: null, clienteId: null, como: null, avulso: false, duplicada: false };
     try {
       item.dados = await lerGuiaParcelamento(arquivo);
       Object.assign(item, sugerirCliente(item.dados, clientes, parcelamentos));
@@ -125,7 +141,8 @@ async function acharOuCriarParcelamento(dados, clienteId) {
 
   if (existente) {
     const patch = { updated_at: agora };
-    if (!existente.cliente_id) patch.cliente_id = clienteId;
+    if (!existente.cliente_id && clienteId) patch.cliente_id = clienteId;
+    if (!existente.nome_devedor && dados.nome) patch.nome_devedor = dados.nome;
     if (dados.totalParcelas) patch.total_parcelas = dados.totalParcelas;
     if (dados.parcela && dados.parcela > (existente.parcela_atual || 0)) patch.parcela_atual = dados.parcela;
     if (maisNova) {
@@ -178,8 +195,9 @@ async function acharObrigacao(clienteId, dados) {
 }
 
 export async function salvarGuia(item) {
-  const { dados, arquivo, clienteId } = item;
-  if (!clienteId) throw new Error('Escolha a empresa.');
+  const { dados, arquivo, avulso } = item;
+  const clienteId = avulso ? null : item.clienteId;
+  if (!clienteId && !avulso) throw new Error('Escolha a empresa ou marque como avulso.');
 
   const parcelamento = await acharOuCriarParcelamento(dados, clienteId);
 
@@ -187,7 +205,7 @@ export async function salvarGuia(item) {
   const { error: errUp } = await supabase.storage.from(BUCKET).upload(path, arquivo, { contentType: 'application/pdf' });
   if (errUp) throw errUp;
 
-  const obrigacaoId = await acharObrigacao(clienteId, dados).catch(() => null);
+  const obrigacaoId = clienteId ? await acharObrigacao(clienteId, dados).catch(() => null) : null;
   const agora = new Date().toISOString();
   const { error } = await supabase.from('documentos').insert({
     cliente_id: clienteId,
