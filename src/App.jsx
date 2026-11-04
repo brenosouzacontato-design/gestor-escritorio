@@ -37,6 +37,8 @@ const paramsIniciais = new URLSearchParams(window.location.search)
 const telaUrl = paramsIniciais.get('tela')
 const TELA_INICIAL = NAV.some(i => i.id === telaUrl) ? telaUrl : 'overview'
 const ABRIR_NOVA_TAREFA = paramsIniciais.get('acao') === 'nova-tarefa'
+// ?tarefa=<id> — vem do toque na notificação de lembrete: abre a tarefa
+const TAREFA_URL = /^[0-9a-f-]{36}$/i.test(paramsIniciais.get('tarefa') || '') ? paramsIniciais.get('tarefa') : null
 
 export default function App() {
   const [page, setPage]                       = useState(TELA_INICIAL)
@@ -46,7 +48,7 @@ export default function App() {
   const [arquivosCapturados, setArquivosCapturados] = useState(null)
   const [newTaskClienteId, setNewTaskClienteId] = useState('')
   const [showConfig, setShowConfig]           = useState(false)
-  const [highlightTaskId, setHighlightTaskId] = useState(null)
+  const [highlightTaskId, setHighlightTaskId] = useState(TAREFA_URL)
   const [filtroClienteTarefas, setFiltroClienteTarefas] = useState(null)
   const [clienteAbrirEmpresas, setClienteAbrirEmpresas] = useState(null)
   const [showNotifs, setShowNotifs]           = useState(false)

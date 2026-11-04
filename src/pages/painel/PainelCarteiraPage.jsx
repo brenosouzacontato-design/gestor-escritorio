@@ -7,6 +7,7 @@ import PainelCompartilhadoPage from './PainelCompartilhadoPage';
 import { listarEmpresasCarteira } from './carteiraApi';
 import { useTrabalhoCarteira, TrabalhoEmpresaCarteira, QuadroCarteira } from './TrabalhoCarteira';
 import { urlPublica } from '../../lib/linksPublicos';
+import { STATUS_ENTREGA, statusEntregaEmpresa, resumoEntregas } from '../../lib/entregaCarteira';
 
 // Página do link da carteira (?carteira=<token>) — pra pessoa responsável
 // pela carteira, sem login: lista as empresas da carteira e abre o painel de
@@ -43,6 +44,7 @@ export default function PainelCarteiraPage({ token, competencia: competenciaDoLi
   const [empresas, setEmpresas] = useState(null);
   const [erro, setErro] = useState(null);
   const [busca, setBusca] = useState('');
+  const [filtroEntrega, setFiltroEntrega] = useState(null); // status de entrega escolhido no resumo
   const [competencia, setCompetencia] = useState(competenciaDoLink || competenciaPadrao());
   const [selecionada, setSelecionada] = useState(empresaInicial || null); // chave da empresa aberta
   const [copiado, setCopiado] = useState(false);
@@ -69,10 +71,18 @@ export default function PainelCarteiraPage({ token, competencia: competenciaDoLi
     setCopiado(false);
   }, [selecionada]);
 
+  // status de entrega na competência (o mesmo do Fechamento do escritório)
+  const entregaDe = (id) => statusEntregaEmpresa(id, competencia, trabalho.dados?.obrigacoes || [], trabalho.dados?.entregas || []);
+  const resumoEntrega = useMemo(
+    () => (trabalho.dados && empresas ? resumoEntregas(empresas, competencia, trabalho.dados.obrigacoes || [], trabalho.dados.entregas || []) : null),
+    [trabalho.dados, empresas, competencia],
+  );
+
   const filtradas = useMemo(() => {
     const termo = normalizar(busca.trim());
-    return (empresas || []).filter((e) => !termo || normalizar(`${e.nome} ${e.cnpj || ''}`).includes(termo));
-  }, [empresas, busca]);
+    return (empresas || []).filter((e) => (!termo || normalizar(`${e.nome} ${e.cnpj || ''}`).includes(termo))
+      && (!filtroEntrega || statusEntregaEmpresa(e.id, competencia, trabalho.dados?.obrigacoes || [], trabalho.dados?.entregas || []).status === filtroEntrega));
+  }, [empresas, busca, filtroEntrega, competencia, trabalho.dados]);
 
   const carteira = empresas?.[0]?.carteira;
   const indice = (empresas || []).findIndex((e) => e.chave === selecionada);
@@ -113,7 +123,10 @@ export default function PainelCarteiraPage({ token, competencia: competenciaDoLi
               </button>
               <div style={{ flex: 1, minWidth: 0, textAlign: 'center' }}>
                 <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--text1)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{nomeCurto(atual.nome)}</div>
-                <div style={{ fontSize: 10.5, color: 'var(--text3)' }}>{indice + 1} de {empresas.length} · carteira {carteira}</div>
+                <div style={{ fontSize: 10.5, color: 'var(--text3)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, flexWrap: 'wrap' }}>
+                  <span>{indice + 1} de {empresas.length} · carteira {carteira}</span>
+                  {trabalho.dados && <SeloEntrega info={entregaDe(atual.id)} competencia={competencia} />}
+                </div>
               </div>
               <button type="button" onClick={() => setSelecionada(empresas[indice - 1]?.chave)} disabled={indice <= 0} style={botaoSeta} title="Empresa anterior">
                 <ChevronLeftIcon size={16} />
@@ -182,6 +195,25 @@ export default function PainelCarteiraPage({ token, competencia: competenciaDoLi
           </div>
         </div>
 
+        {resumoEntrega && (
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+            <span style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--text2)', marginRight: 2 }}>Entrega de {competencia}:</span>
+            {['entregue', 'aguardando', 'andamento', 'a_fazer', 'sem_obrigacao'].filter((s) => resumoEntrega[s] > 0).map((s) => {
+              const st = STATUS_ENTREGA[s];
+              const ativo = filtroEntrega === s;
+              return (
+                <button key={s} type="button" onClick={() => setFiltroEntrega(ativo ? null : s)}
+                  title={ativo ? 'Mostrar todas as empresas' : `Mostrar só: ${st.rotulo.toLowerCase()}`}
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 12, fontWeight: 700, borderRadius: 99, padding: '4px 11px', cursor: 'pointer',
+                    background: st.fundo, color: st.cor, border: `1px solid ${ativo ? st.cor : 'transparent'}` }}>
+                  <b>{resumoEntrega[s]}</b> {st.rotulo.toLowerCase()}
+                </button>
+              );
+            })}
+            {filtroEntrega && <button type="button" onClick={() => setFiltroEntrega(null)} style={{ fontSize: 11.5, border: 'none', background: 'none', color: 'var(--accent)', cursor: 'pointer', fontWeight: 600 }}>limpar filtro</button>}
+          </div>
+        )}
+
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: '9px 12px' }}>
           <SearchIcon size={15} color="var(--text3)" />
           <input value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Buscar empresa por nome ou CNPJ..."
@@ -208,9 +240,9 @@ export default function PainelCarteiraPage({ token, competencia: competenciaDoLi
                 const r = resumoEmpresa(e.id);
                 return (
                   <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
+                    <SeloEntrega info={entregaDe(e.id)} competencia={competencia} />
                     {r.vencidas > 0 && <span style={{ ...selo, background: 'var(--danger-dim)', color: 'var(--danger)' }}>{r.vencidas} vencida{r.vencidas !== 1 ? 's' : ''}</span>}
-                    {r.aFazer > 0 && <span style={{ ...selo, background: 'var(--warn-dim)', color: 'var(--warn)' }}>{r.aFazer} a fazer</span>}
-                    {r.vencidas === 0 && r.aFazer === 0 && <span style={{ ...selo, background: 'var(--ok-dim)', color: 'var(--ok)' }}>tudo em dia</span>}
+                    {r.aFazer > 0 && <span style={{ ...selo, background: 'var(--warn-dim)', color: 'var(--warn)' }}>{r.aFazer} pendente{r.aFazer !== 1 ? 's' : ''}</span>}
                   </div>
                 );
               })()}
@@ -233,6 +265,20 @@ export default function PainelCarteiraPage({ token, competencia: competenciaDoLi
         <QuadroCarteira trabalho={trabalho} competencia={competencia} onAbrirEmpresa={abrirEmpresaPorId} />
       </div>
     </div>
+  );
+}
+
+// Selo do status de entrega da competência (Entregue / Aguardando cliente /
+// Em andamento 3/5 / A fazer)
+function SeloEntrega({ info, competencia }) {
+  const st = STATUS_ENTREGA[info.status];
+  const contagem = info.total > 0 && info.status !== 'entregue' && info.status !== 'a_fazer' ? ` ${info.feitas}/${info.total}` : '';
+  const quando = info.atualizadoEm ? ` · marcado em ${new Date(info.atualizadoEm).toLocaleDateString('pt-BR')}` : '';
+  return (
+    <span title={`Competência ${competencia}: ${info.feitas} de ${info.total} obrigações concluídas${quando}`}
+      style={{ ...selo, background: st.fundo, color: st.cor, border: `1px solid ${st.cor}` }}>
+      {info.status === 'entregue' ? '✓ ' : ''}{st.rotulo}{contagem}
+    </span>
   );
 }
 

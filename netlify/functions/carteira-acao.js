@@ -109,7 +109,7 @@ async function listar(ctx, { competencia }) {
   const empresas = ctx.clientes
     .map((c) => ({ id: c.id, nome: c.nome, cnpj: c.cnpj, regime: c.regime }))
     .sort((a, b) => a.nome.localeCompare(b.nome))
-  if (ids.length === 0) return resposta(200, { carteira: ctx.carteira, empresas, obrigacoes: [], tarefas: [], anexos: [] })
+  if (ids.length === 0) return resposta(200, { carteira: ctx.carteira, empresas, obrigacoes: [], tarefas: [], anexos: [], entregas: [] })
 
   const comp = /^\d{2}\/\d{4}$/.test(competencia || '') ? competencia : null
   const desdeConcluidas = new Date(Date.now() - DIAS_CONCLUIDAS * 86400000).toISOString()
@@ -151,7 +151,19 @@ async function listar(ctx, { competencia }) {
     anexos = data || []
   }
 
-  return resposta(200, { carteira: ctx.carteira, empresas, obrigacoes, tarefas: tarefas || [], anexos })
+  // status de entrega marcado pelo escritório no Fechamento (só leitura aqui).
+  // '*' tolera banco sem a coluna aguardando_cliente; sem a tabela, vai vazio.
+  let entregas = []
+  if (comp) {
+    const { data, error } = await supabase.from('cliente_entrega_competencia').select('*')
+      .in('cliente_id', ids).eq('competencia', comp)
+    if (error) console.warn('carteira-acao: entregas indisponíveis:', error.message)
+    entregas = (data || []).map((e) => ({
+      cliente_id: e.cliente_id, entregue: !!e.entregue, aguardando_cliente: !!e.aguardando_cliente, atualizado_em: e.atualizado_em,
+    }))
+  }
+
+  return resposta(200, { carteira: ctx.carteira, empresas, obrigacoes, tarefas: tarefas || [], anexos, entregas })
 }
 
 async function statusObrigacao(ctx, { id, status }) {
