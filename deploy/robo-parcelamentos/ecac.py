@@ -21,11 +21,14 @@ from __future__ import annotations
 import logging
 import os
 import re
+import ssl
+import tempfile
 import time
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Callable
 
+import requests
 from playwright.sync_api import Frame, Page, sync_playwright
 
 import cruzamento as cz
@@ -66,6 +69,14 @@ URL_PAGTOS = os.environ.get("ECAC_URL_PAGAMENTOS", "")
 TEXTO_SITFIS = os.environ.get("ECAC_TEXTO_SITUACAO", r"Situa..o Fiscal|Diagn.stico Fiscal")
 TEXTO_PAGTOS = os.environ.get("ECAC_TEXTO_PAGAMENTOS", r"Comprovante de (Pagamento|Arrecada)|Consultar? Pagamentos")
 
+# Sites da Receita que não mandam o certificado intermediário (o Chrome
+# completa sozinho; o intermediário de certificados do Playwright não, e a
+# página vira "unable to verify the first certificate").
+HOSTS_CADEIA = [h.strip() for h in os.environ.get(
+    "ECAC_HOSTS_CADEIA",
+    "cav.receita.fazenda.gov.br,www2.cav.receita.fazenda.gov.br,www3.cav.receita.fazenda.gov.br",
+).split(",") if h.strip()]
+
 DIAS_PAGAMENTOS = int(os.environ.get("ECAC_DIAS_PAGAMENTOS", "90"))
 SITUACAO_DIAS = int(os.environ.get("ECAC_SITUACAO_DIAS", "7"))
 
@@ -92,6 +103,40 @@ def configurado() -> str | None:
 
 
 # ---------------------------------------------------------------- navegador
+def _intermediarios(host: str) -> list[str]:
+    """Certificados intermediários (PEM) indicados no certificado do site
+    (campo "CA Issuers"), baixados do endereço oficial da autoridade."""
+    folha = ssl.get_server_certificate((host, 443), timeout=15)
+    with tempfile.NamedTemporaryFile("w", suffix=".pem", delete=False) as f:
+        f.write(folha)
+    try:
+        info = ssl._ssl._test_decode_cert(f.name)  # noqa: SLF001 — único parser de X.509 da stdlib
+    finally:
+        os.unlink(f.name)
+    saida = []
+    for url in info.get("caIssuers", ()):
+        dado = requests.get(url, timeout=20).content
+        saida.append(dado.decode() if dado.lstrip().startswith(b"-----BEGIN") else ssl.DER_cert_to_PEM_cert(dado))
+    return saida
+
+
+def preparar_cadeia() -> None:
+    """Precisa rodar ANTES de sync_playwright(): o Node do Playwright lê
+    NODE_EXTRA_CA_CERTS só ao iniciar."""
+    pems = []
+    for host in HOSTS_CADEIA:
+        try:
+            pems += _intermediarios(host)
+        except Exception as e:  # noqa: BLE001
+            log.warning("Cadeia de %s não baixada: %s", host, e)
+    if not pems:
+        return
+    destino = PASTA / "ecac" / "cadeia.pem"
+    destino.parent.mkdir(parents=True, exist_ok=True)
+    destino.write_text("".join(dict.fromkeys(pems)), encoding="utf-8")
+    os.environ["NODE_EXTRA_CA_CERTS"] = str(destino)
+
+
 class Navegador:
     """Chromium visível (tela remota) com o certificado e captura de PDFs."""
 
@@ -181,9 +226,18 @@ def _na_tela_de_login(page: Page) -> bool:
     return "autenticacao" in u or "sso.acesso.gov.br" in u
 
 
+RE_ERRO_CERT = re.compile(r"client-certificate error|ERR_CERT|ERR_SSL", re.I)
+RE_LOGADO = re.compile(r"\bsair\b|perfil de acesso|titular", re.I)
+
+
 def logado(page: Page) -> bool:
     u = page.url.lower()
-    return "cav.receita.fazenda.gov.br" in u and "/ecac" in u and "autenticacao" not in u
+    if not ("cav.receita.fazenda.gov.br" in u and "/ecac" in u and "autenticacao" not in u):
+        return False
+    texto = _texto_pagina(page)
+    if RE_ERRO_CERT.search(texto):
+        raise RuntimeError(f"Erro de certificado ao abrir o e-CAC: {texto.strip()[:200]}")
+    return bool(RE_LOGADO.search(texto))
 
 
 def salvar_tela(page: Page, nome: str, pasta: str = "erros") -> Path:
@@ -223,7 +277,7 @@ def entrar(page: Page, minutos: int = MINUTOS_LOGIN, ao_esperar: Callable[[int],
             clicados.add(chave)
             page.wait_for_timeout(1500)
             if "cav.receita" in chave:
-                _clicar_texto(page, r"gov\.?br|entrar") or _clicar_texto(page, r"certificado")
+                _clicar_texto(page, r"^\s*(acesso|entrar com)\s+gov\.?\s*br\s*$") or _clicar_texto(page, r"certificado digital")
             elif "sso.acesso.gov.br" in chave and "certificado." not in chave:
                 _clicar_texto(page, r"certificado digital")
         decorrido = int((time.time() - inicio) / 60)
@@ -500,6 +554,7 @@ def rodar(forcar_situacao: bool = False, so_cnpj: str | None = None) -> None:
     )
 
     res = {"ok": 0, "pendentes": [], "sem_procuracao": [], "erros": [], "baixadas": 0, "sem_guia": 0}
+    preparar_cadeia()
     with sync_playwright() as pw:
         nav = Navegador(pw)
         try:
@@ -580,6 +635,8 @@ def explorar(cnpj: str) -> None:
         print("Falta configurar:", falta)
         return
     cnpj = cz.digitos(cnpj)
+    preparar_cadeia()
+    print("cadeia extra:", os.environ.get("NODE_EXTRA_CA_CERTS"))
     aviso.texto(f"🔧 Calibração do robô do e-CAC: abra {LINK_TELA} e resolva o captcha do login.")
     with sync_playwright() as pw:
         nav = Navegador(pw)
