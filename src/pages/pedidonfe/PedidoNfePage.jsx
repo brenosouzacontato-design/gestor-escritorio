@@ -7,9 +7,9 @@
 // Tudo passa por netlify/functions/nfe-solicitacao.js.
 import { useEffect, useMemo, useState } from 'react';
 import AcessoPainel from '../painel/AcessoPainel';
-import { FormDestinatario, ListaCadastros, Campo } from './Cadastros';
+import { FormDestinatario, ListaCadastros, Campo, SelectUnidade } from './Cadastros';
 import {
-  chamarPedidoNfe, FRETES, STATUS, fmtMoeda, fmtQuando, fmtDocumento, lerNumero, numeroPedido, calcularPedido, descontoParaEnvio,
+  chamarPedidoNfe, FRETES, STATUS, fmtMoeda, fmtQuando, fmtDocumento, lerNumero, numeroPedido, calcularPedido, descontoParaEnvio, limparNcm,
 } from './pedidoNfeApi';
 
 // O Chrome oferece a instalação uma vez, cedo: guarda o convite para o botão "Instalar".
@@ -243,6 +243,7 @@ function NovoPedido({ dados, salvarDest, onEnviado }) {
         const nome = `item ${k + 1} (${i.descricao.trim()})`;
         if (!(lerNumero(i.quantidade) > 0)) return `Informe a quantidade do ${nome}.`;
         if (!(lerNumero(i.valor_unitario) > 0)) return `Informe o valor do ${nome}.`;
+        if (limparNcm(i.ncm).length !== 8) return `Informe o NCM (8 dígitos) do ${nome}. Se não souber, peça ao escritório.`;
         if (invalido(i.desconto)) return `Desconto do ${nome} inválido.`;
         const c = contaItens.porItem[i.chave];
         if (c.descontoItem > 0 && c.descontoItem >= c.bruto) return `O desconto do ${nome} é maior que o valor dele.`;
@@ -326,9 +327,13 @@ function NovoPedido({ dados, salvarDest, onEnviado }) {
             <Campo label="Produto"><input list="pnfe-produtos" value={i.descricao} onChange={(e) => mudaItem(i.chave, 'descricao', e.target.value)} placeholder="Digite ou escolha um produto salvo" /></Campo>
             <div className="form-row">
               <Campo label="Quantidade"><input inputMode="decimal" value={i.quantidade} onChange={(e) => mudaItem(i.chave, 'quantidade', e.target.value)} /></Campo>
-              <Campo label="Unidade"><input value={i.unidade} onChange={(e) => mudaItem(i.chave, 'unidade', e.target.value)} /></Campo>
-              <Campo label="Valor unit. (R$)" flex={1.4}><input inputMode="decimal" value={i.valor_unitario} onChange={(e) => mudaItem(i.chave, 'valor_unitario', e.target.value)} placeholder="0,00" /></Campo>
+              <Campo label="Unidade" flex={1.4}><SelectUnidade value={i.unidade} onChange={(v) => mudaItem(i.chave, 'unidade', v)} /></Campo>
             </div>
+            <div className="form-row">
+              <Campo label="Valor unit. (R$)"><input inputMode="decimal" value={i.valor_unitario} onChange={(e) => mudaItem(i.chave, 'valor_unitario', e.target.value)} placeholder="0,00" /></Campo>
+              <Campo label="NCM"><input inputMode="numeric" value={i.ncm} onChange={(e) => mudaItem(i.chave, 'ncm', limparNcm(e.target.value))} placeholder="8 dígitos" /></Campo>
+            </div>
+            {i.produto_id && i.ncm && <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: -4 }}>NCM e unidade vêm do cadastro do produto.</div>}
             <Campo label="Desconto no item (opcional)">
               <CampoDesconto valor={i.desconto} tipo={i.desconto_tipo} onValor={(v) => mudaItem(i.chave, 'desconto', v)} onTipo={(t) => mudaItem(i.chave, 'desconto_tipo', t)} />
             </Campo>
