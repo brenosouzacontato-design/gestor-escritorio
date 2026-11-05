@@ -17,6 +17,8 @@ const FILTROS = [
   ['emitida', 'Emitidos'], ['cancelada', 'Cancelados'], ['todos', 'Todos'],
 ];
 const ABERTOS = ['recebida', 'em_emissao', 'erro'];
+// soma dos descontos dos itens (o desconto fica dentro de itens)
+const descontoDe = (p) => (p.itens || []).reduce((s, i) => s + (Number(i.desconto) || 0), 0);
 const qtd = (v) => Number(v).toLocaleString('pt-BR', { maximumFractionDigits: 4 });
 // robô do Emissor (deploy/robo-parcelamentos/emissor.py, supabase-schema-nfe-robo.sql)
 const ROBO = {
@@ -188,7 +190,7 @@ function LinhaPedido({ p, aberto, onAlternar, onAtualizar, onReenviar, onRobo, o
           <div className="tabela-rolagem">
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
               <thead><tr style={{ color: 'var(--text3)', textAlign: 'left' }}>
-                <th>#</th><th>Produto</th><th>NCM</th><th style={{ textAlign: 'right' }}>Qtd</th><th>Un</th><th style={{ textAlign: 'right' }}>Valor unit.</th><th style={{ textAlign: 'right' }}>Total</th>
+                <th>#</th><th>Produto</th><th>NCM</th><th style={{ textAlign: 'right' }}>Qtd</th><th>Un</th><th style={{ textAlign: 'right' }}>Valor unit.</th><th style={{ textAlign: 'right' }}>Total</th><th style={{ textAlign: 'right' }}>Desconto</th>
               </tr></thead>
               <tbody>
                 {(p.itens || []).map((i, n) => (
@@ -196,6 +198,7 @@ function LinhaPedido({ p, aberto, onAlternar, onAtualizar, onReenviar, onRobo, o
                     <td>{n + 1}</td><td>{i.descricao}{i.codigo ? ` (${i.codigo})` : ''}</td><td>{i.ncm || '—'}</td>
                     <td style={{ textAlign: 'right' }}>{qtd(i.quantidade)}</td><td>{i.unidade}</td>
                     <td style={{ textAlign: 'right' }}>{fmtMoeda(i.valor_unitario)}</td><td style={{ textAlign: 'right' }}>{fmtMoeda(i.valor_total)}</td>
+                    <td style={{ textAlign: 'right' }}>{Number(i.desconto) > 0 ? fmtMoeda(i.desconto) : '—'}</td>
                   </tr>
                 ))}
               </tbody>
@@ -204,6 +207,7 @@ function LinhaPedido({ p, aberto, onAlternar, onAtualizar, onReenviar, onRobo, o
 
           <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
             <span>Produtos: <b>{fmtMoeda(p.valor_produtos)}</b></span>
+            {descontoDe(p) > 0 && <span>Descontos: <b>− {fmtMoeda(descontoDe(p))}</b></span>}
             <span>Frete: <b>{FRETES.find((f) => f.id === p.frete_modalidade)?.label}</b>{p.frete_valor ? ` · ${fmtMoeda(p.frete_valor)}` : ''}</span>
             <span>Total: <b>{fmtMoeda(p.valor_total)}</b></span>
           </div>

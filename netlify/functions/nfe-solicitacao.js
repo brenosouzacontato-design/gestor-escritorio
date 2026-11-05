@@ -10,7 +10,8 @@
 //   POST { acao: 'excluir_destinatario', id }        → { ok }
 //   POST { acao: 'salvar_produto', produto }         → { produto }
 //   POST { acao: 'excluir_produto', id }             → { ok }
-//   POST { acao: 'enviar', destinatario, itens, frete_modalidade, frete_valor, observacao }
+//   POST { acao: 'enviar', destinatario, itens (com desconto: "10,00" ou "5%"), desconto_geral,
+//          frete_modalidade, frete_valor, observacao }
 //        → { pedido, whatsapp: { ok, erro? } }  (o pedido fica gravado mesmo se o WhatsApp falhar)
 //   POST { acao: 'reenviar_whatsapp', id }           → { whatsapp }  (só o escritório)
 //

@@ -371,6 +371,14 @@ def preencher_nota(t: Tela, ped: dict) -> None:
         page.wait_for_timeout(600)
         t.dinheiro("Quantidade", item["quantidade"])
         t.dinheiro("Valor Unitário", item["valor_unitario"])
+        desconto = float(item.get("desconto") or 0)
+        if desconto > 0:
+            # desconto do item (vDesc); o da nota toda já vem repartido entre os itens
+            g = page.locator("fieldset.form-group").filter(
+                has=page.locator("legend", has_text=re.compile(r"^\s*(valor (do )?)?desconto", re.I))).first
+            if not g.count():
+                raise ErroEmissor(f"Campo de desconto do item {n} não achado no Emissor (R$ {desconto:.2f}).")
+            t.dinheiro("", desconto, grupo=g)
         t.botao(r"\+ Adicionar").click()
         page.wait_for_timeout(1200)
         t.print(f"item-{n}")
