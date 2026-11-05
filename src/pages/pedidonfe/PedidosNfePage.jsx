@@ -4,12 +4,13 @@
 // emitida, reenvio do resumo pelo WhatsApp e o link do app de cada empresa.
 // Tabelas em supabase-schema-nfe-solicitacoes.sql.
 import { useEffect, useMemo, useState } from 'react';
-import { ReceiptTextIcon, RefreshCwIcon, LinkIcon, SendIcon, ChevronDownIcon, ChevronRightIcon, AlertTriangleIcon, BotIcon, FileDownIcon } from 'lucide-react';
+import { ReceiptTextIcon, RefreshCwIcon, LinkIcon, SendIcon, ChevronDownIcon, ChevronRightIcon, AlertTriangleIcon, BotIcon, FileDownIcon, SparklesIcon } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useStore } from '../../store';
 import { useToast } from '../../components/shared';
 import EmpresaCombobox from '../../components/EmpresaCombobox';
 import { chavePainel, urlPublica } from '../../lib/linksPublicos';
+import { roteiroClaude } from './roteiroClaude';
 import { chamarPedidoNfe, STATUS, FRETES, fmtMoeda, fmtQuando, fmtDocumento, numeroPedido } from './pedidoNfeApi';
 
 const FILTROS = [
@@ -76,7 +77,7 @@ export default function PedidosNfePage() {
   const carregar = async () => {
     setErro(null);
     const { data, error } = await supabase.from('nfe_solicitacoes')
-      .select('*, clientes(id, nome)').order('criado_em', { ascending: false }).limit(500);
+      .select('*, clientes(id, nome, cnpj)').order('criado_em', { ascending: false }).limit(500);
     if (error) { setErro(/nfe_solicitacoes/.test(error.message) ? 'Tabela ainda não criada: rode supabase-schema-nfe-solicitacoes.sql no Supabase.' : error.message); setPedidos([]); return; }
     setPedidos(data);
   };
@@ -106,7 +107,7 @@ export default function PedidosNfePage() {
   const atualizar = async (p, mudancas) => {
     const dados = { ...mudancas, atualizado_em: new Date().toISOString() };
     if (mudancas.status === 'emitida' && !p.emitida_em) dados.emitida_em = dados.atualizado_em;
-    const { data, error } = await supabase.from('nfe_solicitacoes').update(dados).eq('id', p.id).select('*, clientes(id, nome)').single();
+    const { data, error } = await supabase.from('nfe_solicitacoes').update(dados).eq('id', p.id).select('*, clientes(id, nome, cnpj)').single();
     if (error) { show('Erro: ' + error.message); return; }
     setPedidos((l) => l.map((x) => (x.id === p.id ? data : x)));
     show('Pedido atualizado.');
@@ -135,6 +136,14 @@ export default function PedidosNfePage() {
       setPedidos((l) => l.map((x) => (x.id === p.id ? { ...x, ...pedido } : x)));
       show(whatsapp.ok ? 'Pedido devolvido. O cliente foi avisado pelo WhatsApp.' : `Pedido devolvido, mas o WhatsApp não foi: ${whatsapp.erro}`);
     } catch (e) { show('Erro: ' + e.message); }
+  };
+
+  // copia o roteiro da nota para colar no Claude (Cowork); depois o número e a chave são salvos aqui
+  const copiarRoteiro = async (p) => {
+    try {
+      await navigator.clipboard.writeText(roteiroClaude(p));
+      show('Roteiro copiado. Cole no Claude (Cowork); depois salve aqui o número e a chave da nota.');
+    } catch (e) { show('Não consegui copiar: ' + e.message); }
   };
 
   const copiarLink = async () => {
@@ -190,14 +199,14 @@ export default function PedidosNfePage() {
         {visiveis.map((p) => (
           <LinhaPedido key={p.id} p={p} aberto={aberto === p.id} onAlternar={() => setAberto(aberto === p.id ? null : p.id)}
             onAtualizar={(m) => atualizar(p, m)} onReenviar={() => reenviar(p)} onRobo={() => mandarRobo(p)} onDevolver={(m) => devolver(p, m)}
-            onArquivo={(caminho) => abrirArquivo(caminho, show)} />
+            onArquivo={(caminho) => abrirArquivo(caminho, show)} onClaude={() => copiarRoteiro(p)} />
         ))}
       </div>
     </div>
   );
 }
 
-function LinhaPedido({ p, aberto, onAlternar, onAtualizar, onReenviar, onRobo, onArquivo, onDevolver }) {
+function LinhaPedido({ p, aberto, onAlternar, onAtualizar, onReenviar, onRobo, onArquivo, onDevolver, onClaude }) {
   const podeDevolver = !['emitida', 'cancelada'].includes(p.status);
   const [motivo, setMotivo] = useState('');
   // robô parou por falta de dado: já sugere o motivo (sem o aviso de "pode ter emitido")
@@ -269,6 +278,12 @@ function LinhaPedido({ p, aberto, onAlternar, onAtualizar, onReenviar, onRobo, o
             {p.status !== 'emitida' && p.status !== 'cancelada' && (
               <button type="button" className="btn btn-sm btn-accent" disabled={roboOcupado} onClick={onRobo}>
                 <BotIcon size={14} /> {p.robo_status === 'erro' ? 'Mandar de novo ao robô' : 'Emitir pelo robô'}
+              </button>
+            )}
+            {p.status !== 'emitida' && p.status !== 'cancelada' && (
+              <button type="button" className="btn btn-sm" disabled={roboOcupado} onClick={onClaude}
+                title="Copia o roteiro desta nota para colar no Claude (Cowork), que preenche o Emissor no seu navegador">
+                <SparklesIcon size={14} /> Emitir pelo Claude
               </button>
             )}
             {r && <span style={{ fontSize: 12, color: r.cor }}><b>{r.label}</b>{p.robo_mensagem ? ` — ${p.robo_mensagem}` : ''}{p.robo_em ? ` (${fmtQuando(p.robo_em)})` : ''}</span>}
