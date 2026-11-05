@@ -1,6 +1,6 @@
 // Cadastros.jsx — formulários de destinatário (cliente do cliente) e produto do app de pedido de NF-e.
 import { useState } from 'react';
-import { buscarCep, buscarCnpj, fmtMoeda, fmtDocumento, lerNumero } from './pedidoNfeApi';
+import { buscarCep, buscarCnpj, fmtMoeda, fmtDocumento, lerNumero, UNIDADES, limparNcm } from './pedidoNfeApi';
 
 const UFS = 'AC AL AP AM BA CE DF ES GO MA MT MS MG PA PB PR PE PI RJ RN RS RO RR SC SP SE TO'.split(' ');
 const VAZIO_DEST = { documento: '', nome: '', ie: '', email: '', telefone: '', cep: '', logradouro: '', numero: '', complemento: '', bairro: '', municipio: '', uf: '' };
@@ -81,6 +81,17 @@ export function FormDestinatario({ inicial, onSalvar, onCancelar, rotuloSalvar =
   );
 }
 
+// Unidade em lista (evita digitar a quantidade no lugar da unidade)
+export function SelectUnidade({ value, onChange }) {
+  const atual = String(value || 'UN').toUpperCase();
+  const lista = UNIDADES.some(([u]) => u === atual) ? UNIDADES : [[atual, atual], ...UNIDADES];
+  return (
+    <select value={atual} onChange={(e) => onChange(e.target.value)}>
+      {lista.map(([u, nome]) => <option key={u} value={u}>{u === nome ? u : `${u} – ${nome}`}</option>)}
+    </select>
+  );
+}
+
 export function FormProduto({ inicial, onSalvar, onCancelar }) {
   const [p, setP] = useState({
     descricao: '', codigo: '', ncm: '', unidade: 'UN', ...(inicial || {}),
@@ -103,11 +114,11 @@ export function FormProduto({ inicial, onSalvar, onCancelar }) {
     <form onSubmit={salvar} style={{ display: 'grid', gap: 10 }}>
       <Campo label="Descrição do produto"><input value={p.descricao} onChange={muda('descricao')} required /></Campo>
       <div className="form-row">
-        <Campo label="Unidade"><input value={p.unidade} onChange={muda('unidade')} placeholder="UN, KG, CX..." /></Campo>
+        <Campo label="Unidade"><SelectUnidade value={p.unidade} onChange={(v) => setP((x) => ({ ...x, unidade: v }))} /></Campo>
         <Campo label="Valor unitário (R$)"><input inputMode="decimal" value={p.valor_unitario} onChange={muda('valor_unitario')} placeholder="0,00" /></Campo>
       </div>
       <div className="form-row">
-        <Campo label="NCM"><input inputMode="numeric" value={p.ncm || ''} onChange={muda('ncm')} placeholder="opcional, 8 dígitos" /></Campo>
+        <Campo label="NCM (8 dígitos)"><input inputMode="numeric" value={p.ncm || ''} onChange={(e) => setP((x) => ({ ...x, ncm: limparNcm(e.target.value) }))} placeholder="usado como padrão no pedido" /></Campo>
         <Campo label="Código"><input value={p.codigo || ''} onChange={muda('codigo')} placeholder="opcional" /></Campo>
       </div>
       {aviso && <div className="notice notice-warn">{aviso}</div>}

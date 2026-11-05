@@ -13,7 +13,10 @@
 //   POST { acao: 'enviar', destinatario, itens (com desconto: "10,00" ou "5%"), desconto_geral,
 //          frete_modalidade, frete_valor, observacao }
 //        → { pedido, whatsapp: { ok, erro? } }  (o pedido fica gravado mesmo se o WhatsApp falhar)
+//        com id: corrige o mesmo pedido (só se ainda 'recebida' ou devolvido com pendência — 'erro')
 //   POST { acao: 'reenviar_whatsapp', id }           → { whatsapp }  (só o escritório)
+//   POST { acao: 'devolver', id, motivo }            → { pedido, whatsapp }  (só o escritório: volta para
+//        o cliente corrigir, status 'erro' + recado, e avisa pelo WhatsApp com o link do app)
 //
 // Quem pode: o cliente, com o x-painel-token (só os dados dele); o escritório
 // logado, passando cliente_id. Tabelas em supabase-schema-nfe-solicitacoes.sql.
@@ -23,6 +26,7 @@ const { clienteDoPainel, usuarioEscritorio } = require('./lib/autenticacao')
 const { enviarMensagem, numeroWhatsapp } = require('./lib/whatsapp')
 const {
   ErroPedido, normalizarDestinatario, normalizarProduto, normalizarPedido, resumoWhatsapp,
+  PODE_EDITAR, avisoPendencia,
 } = require('./lib/pedidoNfe')
 
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY)
@@ -53,6 +57,10 @@ exports.handler = async (event) => {
         if (!ped) return json(404, { error: 'Pedido não encontrado.' })
         return json(200, { whatsapp: await mandarResumo(clienteId, ped) })
       }
+      case 'devolver': {
+        if (!acesso.escritorio) return json(403, { error: 'Só o escritório pode devolver o pedido.' })
+        return json(200, await devolverPedido(clienteId, corpo))
+      }
       default: return json(400, { error: 'Ação desconhecida.' })
     }
   } catch (e) {
@@ -76,7 +84,7 @@ async function iniciar(clienteId) {
     supabase.from('nfe_destinatarios').select('*').eq('cliente_id', clienteId).order('nome').limit(2000),
     supabase.from('nfe_produtos').select('*').eq('cliente_id', clienteId).order('descricao').limit(2000),
     supabase.from('nfe_solicitacoes')
-      .select('id, destinatario, valor_total, status, status_mensagem, nfe_numero, emitida_em, criado_em, whatsapp_enviado_em, whatsapp_erro')
+      .select('id, destinatario, itens, frete_modalidade, frete_valor, observacao, valor_produtos, valor_total, status, status_mensagem, nfe_numero, emitida_em, criado_em, whatsapp_enviado_em, whatsapp_erro')
       .eq('cliente_id', clienteId).order('criado_em', { ascending: false }).limit(30),
   ])
   for (const r of [emp, dest, prod, ped]) if (r.error) throw r.error
@@ -84,7 +92,7 @@ async function iniciar(clienteId) {
     empresa: emp.data,
     destinatarios: dest.data,
     produtos: prod.data,
-    pedidos: ped.data.map((p) => ({ ...p, destinatario: { nome: p.destinatario?.nome, documento: p.destinatario?.documento } })),
+    pedidos: ped.data,
   }
 }
 
@@ -138,10 +146,20 @@ async function enviarPedido(clienteId, corpo) {
   const pedido = normalizarPedido(corpo)
   const destinatario = normalizarDestinatario(corpo.destinatario)
 
-  const umaHora = new Date(Date.now() - 60 * 60 * 1000).toISOString()
-  const { count } = await supabase.from('nfe_solicitacoes').select('id', { count: 'exact', head: true })
-    .eq('cliente_id', clienteId).gte('criado_em', umaHora)
-  if ((count || 0) >= PEDIDOS_POR_HORA) throw new ErroPedido('Muitos pedidos na última hora. Fale com o escritório.')
+  // correção de um pedido que ainda não foi emitido
+  let anterior = null
+  if (corpo.id != null) {
+    if (!UUID.test(corpo.id)) throw new ErroPedido('Pedido inválido.')
+    const { data } = await supabase.from('nfe_solicitacoes').select('id, status').eq('id', corpo.id).eq('cliente_id', clienteId).maybeSingle()
+    if (!data) throw new ErroPedido('Pedido não encontrado.')
+    if (!PODE_EDITAR.includes(data.status)) throw new ErroPedido('Este pedido já está em emissão e não pode mais ser alterado. Fale com o escritório.')
+    anterior = data
+  } else {
+    const umaHora = new Date(Date.now() - 60 * 60 * 1000).toISOString()
+    const { count } = await supabase.from('nfe_solicitacoes').select('id', { count: 'exact', head: true })
+      .eq('cliente_id', clienteId).gte('criado_em', umaHora)
+    if ((count || 0) >= PEDIDOS_POR_HORA) throw new ErroPedido('Muitos pedidos na última hora. Fale com o escritório.')
+  }
 
   // o cadastro do cliente fica sempre com o último endereço e preço usados
   const salvoDest = await salvarDestinatario(clienteId, corpo.destinatario)
@@ -152,25 +170,52 @@ async function enviarPedido(clienteId, corpo) {
     item.produto_id = salvo.id
   }
 
-  const { data: ped, error } = await supabase.from('nfe_solicitacoes').insert({
-    cliente_id: clienteId,
-    destinatario_id: salvoDest.id,
-    destinatario,
-    ...pedido,
-  }).select().single()
+  const linha = { destinatario_id: salvoDest.id, destinatario, ...pedido }
+  const { data: ped, error } = anterior
+    // volta para o escritório como pedido novo; o robô e o recado anteriores são zerados
+    ? await supabase.from('nfe_solicitacoes').update({
+      ...linha, status: 'recebida', status_mensagem: null,
+      robo_status: null, robo_mensagem: null, robo_em: null, atualizado_em: new Date().toISOString(),
+    }).eq('id', anterior.id).eq('cliente_id', clienteId).in('status', PODE_EDITAR).select().single()
+    : await supabase.from('nfe_solicitacoes').insert({ cliente_id: clienteId, ...linha }).select().single()
   if (error) throw error
 
-  const whatsapp = await mandarResumo(clienteId, ped)
-  return { pedido: ped, whatsapp }
+  const whatsapp = await mandarResumo(clienteId, ped, { corrigido: !!anterior })
+  return { pedido: ped, whatsapp, corrigido: !!anterior }
 }
 
-async function mandarResumo(clienteId, ped) {
+// Escritório devolve o pedido ao cliente com o que falta (status 'erro' = "Com pendência" no app)
+async function devolverPedido(clienteId, { id, motivo }) {
+  const texto = String(motivo || '').trim().slice(0, 500)
+  if (!texto) throw new ErroPedido('Escreva o que o cliente precisa corrigir.')
+  if (!UUID.test(id || '')) throw new ErroPedido('Pedido inválido.')
+  const { data: atual } = await supabase.from('nfe_solicitacoes').select('id, status, robo_status').eq('id', id).eq('cliente_id', clienteId).maybeSingle()
+  if (!atual) throw new ErroPedido('Pedido não encontrado.')
+  if (['emitida', 'cancelada'].includes(atual.status)) throw new ErroPedido('Pedido já emitido ou cancelado.')
+  if (['na_fila', 'processando', 'aguardando_pessoa'].includes(atual.robo_status)) throw new ErroPedido('O robô está com este pedido agora. Espere ele terminar.')
+  const { data: ped, error } = await supabase.from('nfe_solicitacoes').update({
+    status: 'erro', status_mensagem: texto, robo_status: null, atualizado_em: new Date().toISOString(),
+  }).eq('id', id).eq('cliente_id', clienteId).select('*').single()
+  if (error) throw error
+
+  const { data: cli } = await supabase.from('clientes').select('*').eq('id', clienteId).maybeSingle()
+  const destino = numeroWhatsapp(cli?.whatsapp_entrega || cli?.telefone)
+  const site = (process.env.URL || '').replace(/\/$/, '')
+  const chave = cli?.painel_token || cli?.id
+  const link = site && chave ? `${site}/?pedido=${chave}` : null
+  const envio = destino
+    ? await enviarMensagem(destino, avisoPendencia(ped, texto, link))
+    : { sucesso: false, erro: 'Empresa sem WhatsApp de entrega cadastrado (Entregas → Empresas).' }
+  return { pedido: ped, whatsapp: envio.sucesso ? { ok: true } : { ok: false, erro: envio.erro } }
+}
+
+async function mandarResumo(clienteId, ped, opcoes = {}) {
   const { data: cli } = await supabase.from('clientes').select('*').eq('id', clienteId).maybeSingle()
   const destino = numeroWhatsapp(cli?.whatsapp_entrega || cli?.telefone)
   const agora = new Date().toISOString()
   let envio
   if (!destino) envio = { sucesso: false, erro: 'Empresa sem WhatsApp de entrega cadastrado (Entregas → Empresas).' }
-  else envio = await enviarMensagem(destino, resumoWhatsapp(cli.nome, ped))
+  else envio = await enviarMensagem(destino, resumoWhatsapp(cli.nome, ped, opcoes))
   const marca = envio.sucesso
     ? { whatsapp_destino: destino, whatsapp_enviado_em: agora, whatsapp_erro: null }
     : { whatsapp_destino: destino, whatsapp_erro: `${agora.slice(0, 10)}: ${envio.erro}`.slice(0, 300) }

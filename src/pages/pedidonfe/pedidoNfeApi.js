@@ -55,6 +55,17 @@ export const FRETES = [
   { id: 'terceiros', label: 'Por conta de terceiros' },
 ];
 
+// Unidades comerciais mais usadas na NF-e (uCom). A do produto salvo entra na lista se for outra.
+export const UNIDADES = [
+  ['UN', 'Unidade'], ['CX', 'Caixa'], ['PC', 'Peça'], ['PCT', 'Pacote'], ['KG', 'Quilo'], ['G', 'Grama'],
+  ['TON', 'Tonelada'], ['L', 'Litro'], ['ML', 'Mililitro'], ['M', 'Metro'], ['M2', 'Metro quadrado'],
+  ['M3', 'Metro cúbico'], ['DZ', 'Dúzia'], ['PAR', 'Par'], ['KIT', 'Kit'], ['FD', 'Fardo'], ['SC', 'Saco'],
+  ['RL', 'Rolo'], ['GL', 'Galão'], ['BD', 'Balde'], ['LT', 'Lata'], ['FR', 'Frasco'], ['CJ', 'Conjunto'],
+];
+
+// NCM: só dígitos; válido com 8
+export const limparNcm = (v) => String(v ?? '').replace(/\D/g, '').slice(0, 8);
+
 export const STATUS = {
   recebida: { label: 'Recebido', cor: 'var(--info)', fundo: 'var(--info-dim)' },
   em_emissao: { label: 'Em emissão', cor: 'var(--warn)', fundo: 'var(--warn-dim)' },
