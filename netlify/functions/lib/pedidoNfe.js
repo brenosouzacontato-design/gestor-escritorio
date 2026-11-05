@@ -225,8 +225,22 @@ function avisoPendencia(ped, motivo, link) {
   ].join('\n')
 }
 
+// Número, chave, valor e CNPJ do emitente do XML da NF-e autorizada (anexo manual / pelo Claude).
+function dadosXmlNfe(xml) {
+  const t = String(xml || '')
+  const pega = (rx) => (t.match(rx) || [])[1] || null
+  const emit = pega(/<emit>([\s\S]*?)<\/emit>/)
+  return {
+    numero: pega(/<nNF>(\d+)<\/nNF>/),
+    chave: pega(/<chNFe>(\d{44})<\/chNFe>/) || pega(/Id="NFe(\d{44})"/),
+    valor: Number(pega(/<vNF>([\d.]+)<\/vNF>/)) || null,
+    cnpjEmitente: emit ? (emit.match(/<CNPJ>(\d{14})<\/CNPJ>/) || [])[1] || null : null,
+    autorizada: /<cStat>100<\/cStat>/.test(t),
+  }
+}
+
 module.exports = {
   PODE_EDITAR, avisoPendencia,
   FRETES, ErroPedido, numero, normalizarDestinatario, normalizarProduto, normalizarPedido,
-  descontoDoPedido, resumoWhatsapp, numeroPedido, fmtDocumento,
+  descontoDoPedido, resumoWhatsapp, numeroPedido, fmtDocumento, dadosXmlNfe,
 }

@@ -9,7 +9,9 @@ const FRETE_EMISSOR = {
   terceiros: 'Por conta de terceiros (2)',
 };
 
-const reais = (v) => `R$ ${Number(v || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+// endereço do gestor aberto agora (no teste fora do navegador, o nome genérico)
+const origem = () => (typeof window !== 'undefined' && window.location ? window.location.origin : 'o gestor');
+const reais =(v) => `R$ ${Number(v || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const numero = (v) => Number(v || 0).toLocaleString('pt-BR', { maximumFractionDigits: 4 });
 
 export function roteiroClaude(p) {
@@ -41,7 +43,12 @@ export function roteiroClaude(p) {
     `Se o total do Emissor for diferente, pare e me diga a diferença.`,
     '',
     `IMPORTANTE: preencha tudo e PARE antes de clicar em "Gerar Nota". Me mostre o resumo e espere eu confirmar.`,
-    `Depois de gerada, baixe o DANFE (PDF) e o XML e me informe o número da nota e a chave de acesso.`,
+    `Depois de gerada, baixe o DANFE (PDF) e o XML da nota.`,
+    '',
+    `POR FIM, ANEXE NO GESTOR: abra ${origem()}, vá em Fiscal → Pedidos de NF-e, abra o pedido ${numeroPedido(p.id)}`,
+    `(${p.clientes?.nome || ''} → ${d.nome || ''}), no bloco "Anexar nota emitida" escolha o DANFE em "DANFE (PDF)" e o XML em`,
+    `"XML da nota", deixe marcado "Mandar DANFE e XML ao cliente no WhatsApp" e toque em "Anexar e marcar como emitida".`,
+    `O gestor lê o número e a chave do XML. Me diga o número da nota e a mensagem que o gestor mostrou.`,
   ];
   if (itens.some((i) => !i.ncm)) linhas.unshift('ATENÇÃO: há produto sem NCM neste pedido; confirme o NCM comigo antes de emitir.', '');
   return linhas.join('\n');
