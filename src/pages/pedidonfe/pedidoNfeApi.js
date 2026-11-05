@@ -82,3 +82,42 @@ export function lerNumero(v) {
   if (s.includes(',')) s = s.replace(/\./g, '').replace(',', '.');
   return Number(s);
 }
+
+const centavos = (n) => Math.round(n * 100) / 100;
+
+// Desconto digitado (valor + 'R$' ou '%') → texto que a função entende ("10,00" | "5%"); '' quando vazio.
+export const descontoParaEnvio = (valor, tipo) => (String(valor ?? '').trim() ? `${String(valor).trim()}${tipo === '%' ? '%' : ''}` : '');
+
+function valorDesconto(valor, tipo, base) {
+  const n = lerNumero(valor);
+  if (!Number.isFinite(n) || n <= 0) return 0;
+  return centavos(tipo === '%' ? (base * n) / 100 : n);
+}
+
+// Mesma conta de netlify/functions/lib/pedidoNfe.js (normalizarPedido), para mostrar os valores
+// enquanto o cliente digita: desconto do item + parte do desconto da nota, total = produtos − descontos + frete.
+export function calcularPedido(itens, geral = {}, frete = 0) {
+  const linhas = itens.map((i) => {
+    const q = lerNumero(i.quantidade); const v = lerNumero(i.valor_unitario);
+    const bruto = Number.isFinite(q * v) && q > 0 && v > 0 ? centavos(q * v) : 0;
+    const proprio = valorDesconto(i.desconto, i.desconto_tipo, bruto);
+    return { chave: i.chave, bruto, descontoItem: proprio, desconto: proprio };
+  });
+  const liquido = linhas.reduce((s, l) => s + l.bruto - l.desconto, 0);
+  const descontoGeral = valorDesconto(geral.valor, geral.tipo, liquido);
+  let resto = descontoGeral;
+  const comBruto = linhas.filter((l) => l.bruto > 0);
+  comBruto.forEach((l, n) => {
+    const parte = n === comBruto.length - 1 ? centavos(resto) : (liquido ? centavos((descontoGeral * (l.bruto - l.desconto)) / liquido) : 0);
+    resto -= parte;
+    l.desconto = centavos(l.desconto + parte);
+  });
+  const produtos = centavos(linhas.reduce((s, l) => s + l.bruto, 0));
+  const descontos = centavos(linhas.reduce((s, l) => s + l.desconto, 0));
+  return {
+    porItem: Object.fromEntries(linhas.map((l) => [l.chave, l])),
+    produtos, descontos, descontoGeral, liquidoAntesGeral: centavos(liquido),
+    frete: centavos(frete || 0),
+    total: centavos(produtos - descontos + (frete || 0)),
+  };
+}

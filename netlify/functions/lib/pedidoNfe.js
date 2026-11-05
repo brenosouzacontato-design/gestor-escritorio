@@ -86,8 +86,35 @@ function normalizarProduto(p = {}) {
   return prod
 }
 
-// Itens + frete → valores do pedido. Lança ErroPedido.
-function normalizarPedido({ itens, frete_modalidade, frete_valor, observacao } = {}) {
+// Desconto em R$ ou "%": "10%" de 200 → 20. null quando vazio.
+function lerDesconto(v, base) {
+  if (v == null || v === '') return null
+  if (typeof v === 'string' && v.trim().endsWith('%')) {
+    const pct = numero(v.trim().slice(0, -1))
+    return pct == null ? NaN : centavos(base * pct / 100)
+  }
+  const n = numero(v)
+  return n == null ? NaN : centavos(n)
+}
+
+// Reparte o desconto da nota toda entre os itens, proporcional ao valor de
+// cada um (a NF-e só tem desconto por item: vDesc). O último leva a sobra
+// dos centavos.
+function repartirDesconto(valores, desconto) {
+  const total = valores.reduce((s, v) => s + v, 0)
+  let resto = desconto
+  return valores.map((v, n) => {
+    if (n === valores.length - 1) return centavos(resto)
+    const parte = total ? centavos(desconto * v / total) : 0
+    resto -= parte
+    return parte
+  })
+}
+
+// Itens + desconto + frete → valores do pedido. Lança ErroPedido.
+// Cada item: valor_total = quantidade × valor unitário (vProd) e desconto (vDesc).
+// Total da nota = produtos − descontos + frete (como o vNF).
+function normalizarPedido({ itens, desconto_geral, frete_modalidade, frete_valor, observacao } = {}) {
   if (!Array.isArray(itens) || !itens.length) throw new ErroPedido('Inclua pelo menos um produto.')
   if (itens.length > MAX_ITENS) throw new ErroPedido(`No máximo ${MAX_ITENS} produtos por nota.`)
   const limpos = itens.map((i, n) => {
@@ -95,27 +122,46 @@ function normalizarPedido({ itens, frete_modalidade, frete_valor, observacao } =
     const quantidade = numero(i.quantidade)
     if (!quantidade || quantidade <= 0) throw new ErroPedido(`Quantidade do item ${n + 1} (${prod.descricao}) inválida.`)
     if (!prod.valor_unitario || prod.valor_unitario <= 0) throw new ErroPedido(`Informe o valor do item ${n + 1} (${prod.descricao}).`)
+    const valorTotal = centavos(quantidade * prod.valor_unitario)
+    const desconto = lerDesconto(i.desconto, valorTotal) ?? 0
+    if (!Number.isFinite(desconto) || desconto < 0) throw new ErroPedido(`Desconto do item ${n + 1} (${prod.descricao}) inválido.`)
+    if (desconto >= valorTotal) throw new ErroPedido(`O desconto do item ${n + 1} (${prod.descricao}) é maior que o valor dele.`)
     return {
       produto_id: typeof i.produto_id === 'string' ? i.produto_id : null,
       ...prod,
       quantidade,
-      valor_total: centavos(quantidade * prod.valor_unitario),
+      valor_total: valorTotal,
+      desconto,
     }
   })
+
+  const liquidos = limpos.map((i) => centavos(i.valor_total - i.desconto))
+  const geral = lerDesconto(desconto_geral, liquidos.reduce((s, v) => s + v, 0)) ?? 0
+  if (!Number.isFinite(geral) || geral < 0) throw new ErroPedido('Desconto da nota inválido.')
+  if (geral > 0) {
+    const partes = repartirDesconto(liquidos, geral)
+    limpos.forEach((i, n) => { i.desconto = centavos(i.desconto + partes[n]) })
+    if (limpos.some((i) => i.desconto >= i.valor_total)) throw new ErroPedido('O desconto é maior que o valor dos produtos.')
+  }
+
   const modalidade = FRETES[frete_modalidade] ? frete_modalidade : 'sem_frete'
   const frete = modalidade === 'sem_frete' ? 0 : centavos(numero(frete_valor) || 0)
   if (frete < 0) throw new ErroPedido('Valor do frete inválido.')
   const valorProdutos = centavos(limpos.reduce((s, i) => s + i.valor_total, 0))
+  const descontos = descontoDoPedido({ itens: limpos })
   return {
     itens: limpos,
     valor_produtos: valorProdutos,
     frete_modalidade: modalidade,
     // valor do frete destacado na nota (soma no total, como no vNF da NF-e)
     frete_valor: frete,
-    valor_total: centavos(valorProdutos + frete),
+    valor_total: centavos(valorProdutos - descontos + frete),
     observacao: texto(observacao, 1000),
   }
 }
+
+// Soma dos descontos dos itens (fica dentro de itens: não tem coluna própria)
+const descontoDoPedido = (ped) => centavos((ped?.itens || []).reduce((s, i) => s + (Number(i.desconto) || 0), 0))
 
 const brl = (v) => Number(v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 const qtd = (v) => Number(v).toLocaleString('pt-BR', { maximumFractionDigits: 4 })
@@ -150,10 +196,12 @@ function resumoWhatsapp(empresa, ped) {
     `📍 ${endereco(d)}`,
     '',
     '*Produtos:*',
-    ...ped.itens.map((i, n) => `${n + 1}. ${i.descricao}${i.ncm ? ` (NCM ${i.ncm})` : ''} — ${qtd(i.quantidade)} ${i.unidade} × ${brl(i.valor_unitario)} = ${brl(i.valor_total)}`),
+    ...ped.itens.map((i, n) => `${n + 1}. ${i.descricao}${i.ncm ? ` (NCM ${i.ncm})` : ''} — ${qtd(i.quantidade)} ${i.unidade} × ${brl(i.valor_unitario)} = ${brl(i.valor_total)}${Number(i.desconto) > 0 ? ` (desconto ${brl(i.desconto)})` : ''}`),
     '',
     `Produtos: ${brl(ped.valor_produtos)}`,
   ]
+  const desconto = descontoDoPedido(ped)
+  if (desconto > 0) linhas.push(`Descontos: − ${brl(desconto)}`)
   if (ped.frete_modalidade === 'sem_frete') linhas.push('Frete: sem frete')
   else linhas.push(`Frete: ${brl(ped.frete_valor)} (${FRETES[ped.frete_modalidade].toLowerCase()})`)
   linhas.push(`*Total da nota: ${brl(ped.valor_total)}*`)
@@ -164,5 +212,5 @@ function resumoWhatsapp(empresa, ped) {
 
 module.exports = {
   FRETES, ErroPedido, numero, normalizarDestinatario, normalizarProduto, normalizarPedido,
-  resumoWhatsapp, numeroPedido, fmtDocumento,
+  descontoDoPedido, resumoWhatsapp, numeroPedido, fmtDocumento,
 }
