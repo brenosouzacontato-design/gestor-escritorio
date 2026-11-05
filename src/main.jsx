@@ -12,6 +12,7 @@ import ComprovanteFaturamentoPage from './pages/painel/ComprovanteFaturamentoPag
 import PainelGrupoPage from './pages/painel/PainelGrupoPage.jsx'
 import PainelCarteiraPage from './pages/painel/PainelCarteiraPage.jsx'
 import NotasEmitidasPage from './pages/painel/NotasEmitidasPage.jsx'
+import PedidoNfePage from './pages/pedidonfe/PedidoNfePage.jsx'
 import { registrarVisualizacaoPainel, avisarEventoPainel } from './pages/painel/painelApi.js'
 import './styles.css'
 
@@ -26,6 +27,7 @@ const doc = params.get('doc')
 const painel = params.get('painel')
 const carteira = params.get('carteira')
 const notas = params.get('notas')
+const pedido = params.get('pedido')
 
 // O gestor exige login; os links públicos abaixo, não.
 let raiz = <ComLogin><App /></ComLogin>
@@ -54,6 +56,9 @@ if (share === 'dre' || share === 'balancete') {
   />
 } else if (doc) {
   raiz = <DocumentoCompartilhadoPage documentoId={doc} />
+} else if (pedido) {
+  // app instalável do cliente para pedir NF-e de venda (?pedido=<token do painel>)
+  raiz = <PedidoNfePage token={pedido} />
 } else if (notas) {
   // todas as NFS-e emitidas pela empresa (?notas=<token do painel>), lidas do Ambiente Nacional
   raiz = <NotasEmitidasPage token={notas} />
@@ -96,6 +101,15 @@ if (raiz.type === ComLogin) {
   })
 } else {
   document.getElementById('manifest-gestor')?.remove()
+  if (pedido) {
+    // manifest próprio já no carregamento, pra o Chrome oferecer "Instalar";
+    // sem start_url: o ícone abre o link exato (com o token) daquele cliente
+    const link = document.createElement('link')
+    link.rel = 'manifest'
+    link.href = '/pedido-nfe.webmanifest'
+    document.head.appendChild(link)
+    document.querySelector('meta[name="theme-color"]')?.setAttribute('content', '#249F64')
+  }
 }
 
 ReactDOM.createRoot(document.getElementById('root')).render(
