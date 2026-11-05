@@ -226,8 +226,16 @@ def _login_salvo() -> tuple[str, str] | None:
         return None
 
 
+def checar_bloqueio(page: Page) -> None:
+    """O Cloudflare do Emissor às vezes bloqueia o IP do servidor: avisa em vez de esperar à toa."""
+    if page.get_by_text(re.compile(r"you have been blocked|unable to access", re.I)).count():
+        raise ErroEmissor("O Emissor (Cloudflare) bloqueou o acesso do servidor do robô. "
+                          "Peça ao suporte do Emissor para liberar o IP do servidor.")
+
+
 def garantir_login(page: Page) -> None:
     page.goto(f"{URL}/parceiro/empresas", wait_until="networkidle")
+    checar_bloqueio(page)
     if "/login" not in page.url:
         return
     cred = _login_salvo()
@@ -252,20 +260,34 @@ def entrar_empresa(t: Tela, cnpj: str) -> None:
     # sai da empresa aberta (o Emissor guarda a escolhida no localStorage)
     page.evaluate("() => localStorage.removeItem('empresa')")
     page.goto(f"{URL}/parceiro/empresas", wait_until="networkidle")
+    checar_bloqueio(page)
     alvo = fmt_cnpj(cnpj)
+    # a lista da aba Empresas carrega depois da página: espera o campo e os cartões aparecerem
     procurar = page.locator("input[placeholder='Procurar']").first
-    if procurar.count():
-        procurar.fill(digitos(cnpj))
+    procurar.wait_for(timeout=ESPERA)
+    try:
+        page.locator(".card").first.wait_for(timeout=ESPERA)
+    except Exception:
+        pass
+    # a mesma empresa pode ter cadastro "Ativa" e "Inativa"; só a ativa tem "Acessar"
+    cartoes = page.locator(".card").filter(has_text=alvo)
+    ativo = cartoes.filter(has=page.locator(".badge", has_text=re.compile(r"^\s*Ativ[ao]\s*$")))
+    cartao = None
+    for busca in (digitos(cnpj), alvo):
+        procurar.fill(busca)
         procurar.press("Enter")
-        page.wait_for_timeout(1500)
-    cartao = page.locator(".card").filter(has_text=alvo).first
-    if not cartao.count() and procurar.count():
-        procurar.fill(alvo)
-        procurar.press("Enter")
-        page.wait_for_timeout(1500)
-        cartao = page.locator(".card").filter(has_text=alvo).first
-    if not cartao.count():
-        raise ErroEmissor(f"Empresa {alvo} não está cadastrada no Emissor (painel de parceiro).")
+        try:
+            cartoes.first.wait_for(timeout=15000)
+        except Exception:
+            continue
+        page.wait_for_timeout(1000)  # deixa chegar o resto da lista filtrada
+        cartao = ativo.first if ativo.count() else cartoes.first
+        break
+    if cartao is None:
+        t.print("empresa-nao-achada")
+        raise ErroEmissor(f"Empresa {alvo} não foi achada na aba Empresas do Emissor.")
+    if not ativo.count():
+        raise ErroEmissor(f"Empresa {alvo} está inativa no Emissor (aba Empresas).")
     cartao.locator(".dropdown-toggle").first.click()
     cartao.get_by_text(re.compile(r"Acessar", re.I)).first.click()
     page.wait_for_url(re.compile(r"/app/"), timeout=ESPERA)
