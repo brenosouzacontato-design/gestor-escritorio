@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useMemo } from 'react'
 import {
   LayoutDashboardIcon, SparklesIcon, AppWindowIcon, ClipboardCheckIcon, CheckSquareIcon, CalendarDaysIcon, BellIcon,
   UsersIcon, TargetIcon, SunIcon, PaperclipIcon, MonitorIcon, CircleDollarSignIcon, BanknoteIcon, CalculatorIcon, RefreshCwIcon,
-  ReceiptIcon, FileSignatureIcon, LayersIcon, FileBadgeIcon, ShieldCheckIcon, ChevronDownIcon, SearchIcon, MenuIcon, XIcon, SendIcon,
+  ReceiptIcon, FileSignatureIcon, LayersIcon, FileBadgeIcon, ShieldCheckIcon, ChevronDownIcon, SearchIcon, MenuIcon, XIcon, SendIcon, ReceiptTextIcon,
 }  from 'lucide-react'
 
 // Menu do gestor agrupado por assunto. O id de cada item é o mesmo `page`
@@ -39,6 +39,7 @@ export const GRUPOS = [
   { id: 'fiscal', nome: 'Fiscal', itens: [
     { id: 'notasfiscais', label: 'Notas Fiscais', desc: 'Notas das empresas',         Icon: ReceiptIcon },
     { id: 'nfse',       label: 'Emitir NFS-e', desc: 'Nota de serviço',               Icon: FileSignatureIcon },
+    { id: 'pedidosnfe', label: 'Pedidos de NF-e', desc: 'Notas de venda pedidas pelo app do cliente', Icon: ReceiptTextIcon },
     { id: 'ecac',       label: 'Situação e-CAC', desc: 'Receita e pagamentos (robô)', Icon: ShieldCheckIcon },
   ]},
 ]

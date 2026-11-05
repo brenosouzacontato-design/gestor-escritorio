@@ -7,6 +7,8 @@ Uso (dentro do container):
   python robo.py testar-aviso   # manda uma mensagem de teste no WhatsApp/Telegram
   python robo.py ecac [--situacao] [CNPJ]  # e-CAC agora (situação fiscal + pagamentos); ver ecac.py
   python robo.py ecac-explorar CNPJ        # calibração do e-CAC: prints/HTML em /dados/ecac/explorar
+  python robo.py emissor                   # NF-e de venda: processa a fila agora (ver emissor.py)
+  python robo.py emissor-explorar PEDIDO   # calibração do Emissor: preenche sem cadastrar nem transmitir
 
 Fluxo de uma execução:
   1. lê no Supabase os parcelamentos PGFN ativos com busca_automatica;
@@ -30,6 +32,7 @@ from zoneinfo import ZoneInfo
 from playwright.sync_api import sync_playwright
 
 import ecac
+import emissor
 import gestor_db as db
 import notificador as aviso
 import sispar
@@ -44,6 +47,8 @@ PASTA = Path(os.environ.get("PASTA_DADOS", "/dados"))
 # e-CAC: dias da semana (0 = segunda) e hora; vazio desliga
 ECAC_DIAS = [int(d) for d in os.environ.get("ECAC_DIAS_SEMANA", "0,3").split(",") if d.strip()]
 ECAC_HORA = os.environ.get("ECAC_HORA", "08:00")
+# NF-e de venda (emissor.py): olha a fila a cada minuto; EMISSOR_ATIVO=0 desliga
+EMISSOR_ATIVO = os.environ.get("EMISSOR_ATIVO", "1") == "1"
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 log = logging.getLogger("robo")
@@ -179,6 +184,7 @@ def agendar() -> None:
     log.info("Agenda: dias %s às %s (%s); e-CAC: dias da semana %s às %s", DIAS, HORA, TZ, ECAC_DIAS, ECAC_HORA)
     if ECAC_DIAS and ecac.configurado():
         log.warning("e-CAC desligado até configurar: %s", ecac.configurado())
+    erro_nfe = ""
     while True:
         agora = datetime.now(TZ)
         hoje = agora.date()
@@ -201,6 +207,15 @@ def agendar() -> None:
             except Exception as e:  # noqa: BLE001
                 log.exception("Execução falhou")
                 aviso.texto(f"❌ Robô de parcelamentos falhou: {e}")
+        if EMISSOR_ATIVO:
+            try:
+                emissor.rodar()
+                erro_nfe = ""
+            except Exception as e:  # noqa: BLE001
+                log.exception("Robô de NF-e falhou")
+                if str(e) != erro_nfe:  # roda a cada minuto: avisa só quando o erro muda
+                    aviso.texto(f"❌ Robô de NF-e falhou: {e}")
+                erro_nfe = str(e)
         time.sleep(60)
 
 
@@ -215,6 +230,12 @@ if __name__ == "__main__":
         if len(sys.argv) < 3:
             sys.exit("Uso: python robo.py ecac-explorar CNPJ")
         ecac.explorar(sys.argv[2])
+    elif cmd == "emissor":
+        print(f"{emissor.rodar()} pedido(s) processado(s)")
+    elif cmd == "emissor-explorar":
+        if len(sys.argv) < 3:
+            sys.exit("Uso: python robo.py emissor-explorar ID_DO_PEDIDO")
+        emissor.explorar(sys.argv[2])
     elif cmd == "testar-aviso":
         aviso.texto(f"🤖 Teste do robô de parcelamentos. Tela remota: {LINK_TELA}")
     else:

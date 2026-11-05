@@ -49,6 +49,25 @@ def texto(msg: str) -> None:
     _tg("sendMessage", {"text": msg, "disable_web_page_preview": "true"})
 
 
+def documento_para(numero: str, conteudo: bytes, nome_arquivo: str, legenda: str = "",
+                   mimetype: str = "application/pdf") -> str | None:
+    """Arquivo para um número/grupo qualquer (ex.: a NF-e para o cliente).
+    Devolve None se foi, ou o erro — quem chama decide o que fazer."""
+    if not EVO_KEY:
+        return "EVOLUTION_API_KEY não configurada."
+    try:
+        r = requests.post(f"{EVO_URL}/message/sendMedia/{EVO_INST}", headers={"apikey": EVO_KEY}, timeout=60, json={
+            "number": numero, "mediaMessage": {
+                "mediatype": "document", "mimetype": mimetype, "fileName": nome_arquivo, "caption": legenda,
+                "media": base64.b64encode(conteudo).decode(),
+            }})
+        if r.status_code >= 400:
+            return f"WhatsApp recusou ({r.status_code}): {r.text[:200]}"
+        return None
+    except requests.RequestException as e:
+        return str(e)
+
+
 def documento(conteudo: bytes, nome_arquivo: str, legenda: str = "") -> None:
     _evo("/message/sendMedia", {"mediaMessage": {
         "mediatype": "document", "fileName": nome_arquivo, "caption": legenda,

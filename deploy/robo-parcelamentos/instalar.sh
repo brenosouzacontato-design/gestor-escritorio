@@ -23,9 +23,9 @@ ENV="$PASTA/.env"
 # shellcheck disable=SC1091
 . "$WPP/.env"   # DOMINIO, EVOLUTION_API_KEY, EVOLUTION_INSTANCE
 
-mkdir -p "$PASTA/dados/certificado"
-chmod 700 "$PASTA/dados/certificado"
-cp "$ORIGEM"/{Dockerfile,docker-compose.yml,requirements.txt,supervisord.conf,*.py,configurar-ecac.sh} "$PASTA"/
+mkdir -p "$PASTA/dados/certificado" "$PASTA/dados/emissor"
+chmod 700 "$PASTA/dados/certificado" "$PASTA/dados/emissor"
+cp "$ORIGEM"/{Dockerfile,docker-compose.yml,requirements.txt,supervisord.conf,*.py,configurar-ecac.sh,configurar-emissor.sh} "$PASTA"/
 cd "$PASTA"
 
 # ── 1. Configuração (perguntada uma vez, guardada em .env) ─────────────
@@ -52,6 +52,8 @@ ECAC_HORA=${ECAC_HORA:-08:00}
 ECAC_DIAS_PAGAMENTOS=${ECAC_DIAS_PAGAMENTOS:-90}
 ECAC_SITUACAO_DIAS=${ECAC_SITUACAO_DIAS:-7}
 GESTOR_URL=${GESTOR_URL:-https://gestorcount.netlify.app}
+EMISSOR_ATIVO=${EMISSOR_ATIVO:-1}
+EMISSOR_TRANSMITIR=${EMISSOR_TRANSMITIR:-1}
 
 umask 077
 cat > "$ENV" <<EOF
@@ -72,6 +74,8 @@ ECAC_HORA=$ECAC_HORA
 ECAC_DIAS_PAGAMENTOS=$ECAC_DIAS_PAGAMENTOS
 ECAC_SITUACAO_DIAS=$ECAC_SITUACAO_DIAS
 GESTOR_URL=$GESTOR_URL
+EMISSOR_ATIVO=$EMISSOR_ATIVO
+EMISSOR_TRANSMITIR=$EMISSOR_TRANSMITIR
 ROBO_USUARIO=$ROBO_USUARIO
 ROBO_SENHA=$ROBO_SENHA
 TZ=America/Sao_Paulo
@@ -124,5 +128,6 @@ cat <<EOF
  Ver o que ele faz:  cd $PASTA && docker compose logs -f robo
  Configurações:      $ENV (dias, hora, números, Telegram) — depois: docker compose up -d
  e-CAC (certificado): bash $PASTA/configurar-ecac.sh /caminho/certificado.pfx
+ NF-e de venda (login do Emissor): bash $PASTA/configurar-emissor.sh
 ========================================================================
 EOF
