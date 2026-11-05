@@ -711,12 +711,13 @@ export async function salvarRecadoPainel(clienteId, itemChave, mensagem) {
 // Vai junto o id anônimo do aparelho (aparelho.js) pro relatório de acessos,
 // e `escritorio: true` quando o navegador tem o login do gestor — a function
 // grava como origem "escritorio" e não manda aviso de "cliente abriu".
-export function avisarEventoPainel(clienteId, tipo, { descricao = null, competencia = null } = {}) {
+// `documentoId`: a guia aberta — a Central de Entregas mostra "aberta pelo cliente".
+export function avisarEventoPainel(clienteId, tipo, { descricao = null, competencia = null, documentoId = null } = {}) {
   Promise.all([cabecalhosFunctions(), navegadorDoEscritorio()])
     .then(([headers, escritorio]) => fetch('/.netlify/functions/painel-evento', {
       method: 'POST',
       headers,
-      body: JSON.stringify({ clienteId, tipo, descricao, competencia, aparelhoId: idAparelho(), escritorio }),
+      body: JSON.stringify({ clienteId, tipo, descricao, competencia, documentoId, aparelhoId: idAparelho(), escritorio }),
       keepalive: true, // a requisição termina mesmo se a aba mudar pro arquivo baixado
     }))
     .catch(() => {});
