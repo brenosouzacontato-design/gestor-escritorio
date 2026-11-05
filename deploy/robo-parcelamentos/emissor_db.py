@@ -39,3 +39,40 @@ def guardar_arquivo(pid: str, conteudo: bytes, extensao: str, mime: str) -> str:
     _req("POST", f"/storage/v1/object/{BUCKET}/{caminho}", data=conteudo,
          headers={"Content-Type": mime, "x-upsert": "true"})
     return caminho
+
+
+# ---------------------------------------------------------------- importar do Emissor
+# (emissor_importar.py; colunas em supabase-schema-nfe-importacao.sql)
+def importacoes_na_fila() -> list[dict]:
+    try:
+        return _req("GET", "/rest/v1/clientes", params={
+            "select": "id,nome,cnpj", "emissor_importacao_status": "eq.na_fila",
+            "order": "emissor_importacao_em.asc", "limit": "5",
+        }) or []
+    except RuntimeError as e:
+        if "emissor_importacao" in str(e):  # SQL ainda não rodado: sem fila
+            return []
+        raise
+
+
+def marcar_importacao(cliente_id: str, status: str, msg: str | None = None) -> None:
+    _req("PATCH", "/rest/v1/clientes", params={"id": f"eq.{cliente_id}"}, headers={"Prefer": "return=minimal"},
+         json={"emissor_importacao_status": status, "emissor_importacao_msg": msg, "emissor_importacao_em": agora()})
+
+
+def destinatarios_do_cliente(cliente_id: str) -> list[dict]:
+    return _req("GET", "/rest/v1/nfe_destinatarios", params={"select": "*", "cliente_id": f"eq.{cliente_id}", "limit": "5000"}) or []
+
+
+def produtos_do_cliente(cliente_id: str) -> list[dict]:
+    return _req("GET", "/rest/v1/nfe_produtos", params={"select": "*", "cliente_id": f"eq.{cliente_id}", "limit": "5000"}) or []
+
+
+def criar_cadastro(tabela: str, dados: dict) -> dict:
+    r = _req("POST", f"/rest/v1/{tabela}", json=dados, headers={"Prefer": "return=representation"})
+    return r[0] if isinstance(r, list) else r
+
+
+def atualizar_cadastro(tabela: str, cid: str, patch: dict) -> None:
+    _req("PATCH", f"/rest/v1/{tabela}", params={"id": f"eq.{cid}"},
+         json={**patch, "atualizado_em": agora()}, headers={"Prefer": "return=minimal"})

@@ -184,11 +184,11 @@ function endereco(d) {
 
 const numeroPedido = (id) => String(id || '').slice(0, 8).toUpperCase()
 
-// Texto do WhatsApp com o pedido inteiro
-function resumoWhatsapp(empresa, ped) {
+// Texto do WhatsApp com o pedido inteiro (corrigido: o cliente editou um pedido com pendência)
+function resumoWhatsapp(empresa, ped, { corrigido = false } = {}) {
   const d = ped.destinatario
   const linhas = [
-    `🧾 *Pedido de NF-e de venda* — ${empresa}`,
+    `🧾 *Pedido de NF-e de venda${corrigido ? ' (corrigido)' : ''}* — ${empresa}`,
     `Pedido ${numeroPedido(ped.id)}`,
     '',
     `*Destinatário:* ${d.nome}`,
@@ -210,7 +210,23 @@ function resumoWhatsapp(empresa, ped) {
   return linhas.join('\n')
 }
 
+// Pedido que o cliente ainda pode mudar: antes de ir para emissão, ou devolvido com pendência
+const PODE_EDITAR = ['recebida', 'erro']
+
+// WhatsApp para o cliente quando o escritório devolve o pedido para corrigir
+function avisoPendencia(ped, motivo, link) {
+  return [
+    `⚠️ *Pedido de NF-e ${numeroPedido(ped.id)} precisa de correção*`,
+    `Para ${ped.destinatario?.nome || 'o destinatário'} · ${brl(ped.valor_total)}`,
+    '',
+    `O que falta: ${motivo}`,
+    '',
+    `Abra o app${link ? ` (${link})` : ''}, vá em *Meus pedidos* e toque em *Corrigir*. A nota só é emitida depois da correção.`,
+  ].join('\n')
+}
+
 module.exports = {
+  PODE_EDITAR, avisoPendencia,
   FRETES, ErroPedido, numero, normalizarDestinatario, normalizarProduto, normalizarPedido,
   descontoDoPedido, resumoWhatsapp, numeroPedido, fmtDocumento,
 }

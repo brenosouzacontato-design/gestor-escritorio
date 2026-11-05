@@ -45,6 +45,33 @@ export default function PedidosNfePage() {
   const [busca, setBusca] = useState('');
   const [aberto, setAberto] = useState(null);
   const [empresaLink, setEmpresaLink] = useState('');
+  const [importacao, setImportacao] = useState(null); // situação da importação do Emissor da empresa escolhida
+
+  // importação de clientes/produtos do Emissor (robô: emissor_importar.py; SQL: supabase-schema-nfe-importacao.sql)
+  const lerImportacao = async (id) => {
+    if (!id) { setImportacao(null); return; }
+    const { data, error } = await supabase.from('clientes').select('*').eq('id', id).maybeSingle();
+    if (error) { setImportacao({ erro: error.message }); return; }
+    if (!data || !('emissor_importacao_status' in data)) { setImportacao({ semSql: true }); return; }
+    setImportacao({ status: data.emissor_importacao_status, msg: data.emissor_importacao_msg, em: data.emissor_importacao_em });
+  };
+  useEffect(() => { lerImportacao(empresaLink); }, [empresaLink]);
+  useEffect(() => {
+    if (!['na_fila', 'processando'].includes(importacao?.status)) return undefined;
+    const t = setInterval(() => lerImportacao(empresaLink), 10000);
+    return () => clearInterval(t);
+  }, [importacao?.status, empresaLink]);
+
+  const importarEmissor = async () => {
+    const cli = clientes.find((c) => c.id === empresaLink);
+    if (!cli || !window.confirm(`Copiar os clientes e produtos de ${cli.nome} do Emissor para o app de pedido? Nada é apagado; só cria o que falta e completa campos vazios.`)) return;
+    const { error } = await supabase.from('clientes').update({
+      emissor_importacao_status: 'na_fila', emissor_importacao_msg: null, emissor_importacao_em: new Date().toISOString(),
+    }).eq('id', cli.id);
+    if (error) { show(/emissor_importacao/.test(error.message) ? 'Falta rodar supabase-schema-nfe-importacao.sql no Supabase.' : 'Erro: ' + error.message); return; }
+    show('Na fila: o robô importa em até 1 minuto.');
+    lerImportacao(cli.id);
+  };
 
   const carregar = async () => {
     setErro(null);
@@ -101,6 +128,15 @@ export default function PedidosNfePage() {
     await atualizar(p, { status: 'em_emissao', robo_status: 'na_fila', robo_mensagem: null, robo_em: new Date().toISOString() });
   };
 
+  // volta o pedido para o cliente corrigir no app (status "Com pendência" + WhatsApp com o motivo)
+  const devolver = async (p, motivo) => {
+    try {
+      const { pedido, whatsapp } = await chamarPedidoNfe('devolver', { id: p.id, cliente_id: p.cliente_id, motivo });
+      setPedidos((l) => l.map((x) => (x.id === p.id ? { ...x, ...pedido } : x)));
+      show(whatsapp.ok ? 'Pedido devolvido. O cliente foi avisado pelo WhatsApp.' : `Pedido devolvido, mas o WhatsApp não foi: ${whatsapp.erro}`);
+    } catch (e) { show('Erro: ' + e.message); }
+  };
+
   const copiarLink = async () => {
     const cli = clientes.find((c) => c.id === empresaLink);
     if (!cli) return;
@@ -123,6 +159,18 @@ export default function PedidosNfePage() {
         <span style={{ fontSize: 13, color: 'var(--text2)' }}>Link do app para o cliente:</span>
         <div style={{ flex: 1, minWidth: 220 }}><EmpresaCombobox empresas={clientes} value={empresaLink} onChange={setEmpresaLink} /></div>
         <button type="button" className="btn btn-sm btn-accent" disabled={!empresaLink} onClick={copiarLink}>Copiar link</button>
+        <button type="button" className="btn btn-sm" disabled={!empresaLink || ['na_fila', 'processando'].includes(importacao?.status)} onClick={importarEmissor}
+          title="O robô copia os clientes e produtos desta empresa no Emissor para o app de pedido">
+          <BotIcon size={14} /> Importar do Emissor
+        </button>
+        {empresaLink && importacao && (importacao.status || importacao.semSql || importacao.erro) && (
+          <div style={{ flexBasis: '100%', fontSize: 12, color: importacao.status === 'erro' || importacao.erro ? 'var(--danger)' : 'var(--text3)' }}>
+            {importacao.semSql ? 'Importação do Emissor: falta rodar supabase-schema-nfe-importacao.sql no Supabase.'
+              : importacao.erro ? importacao.erro
+                : <>Importação do Emissor: <b>{{ na_fila: 'na fila do robô', processando: 'robô lendo o Emissor...', ok: 'concluída', erro: 'falhou' }[importacao.status]}</b>
+                  {importacao.msg ? ` — ${importacao.msg}` : ''}{importacao.em ? ` (${fmtQuando(importacao.em)})` : ''}</>}
+          </div>
+        )}
       </div>
 
       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 10 }}>
@@ -141,7 +189,7 @@ export default function PedidosNfePage() {
       <div style={{ display: 'grid', gap: 8 }}>
         {visiveis.map((p) => (
           <LinhaPedido key={p.id} p={p} aberto={aberto === p.id} onAlternar={() => setAberto(aberto === p.id ? null : p.id)}
-            onAtualizar={(m) => atualizar(p, m)} onReenviar={() => reenviar(p)} onRobo={() => mandarRobo(p)}
+            onAtualizar={(m) => atualizar(p, m)} onReenviar={() => reenviar(p)} onRobo={() => mandarRobo(p)} onDevolver={(m) => devolver(p, m)}
             onArquivo={(caminho) => abrirArquivo(caminho, show)} />
         ))}
       </div>
@@ -149,7 +197,11 @@ export default function PedidosNfePage() {
   );
 }
 
-function LinhaPedido({ p, aberto, onAlternar, onAtualizar, onReenviar, onRobo, onArquivo }) {
+function LinhaPedido({ p, aberto, onAlternar, onAtualizar, onReenviar, onRobo, onArquivo, onDevolver }) {
+  const podeDevolver = !['emitida', 'cancelada'].includes(p.status);
+  const [motivo, setMotivo] = useState('');
+  // robô parou por falta de dado: já sugere o motivo (sem o aviso de "pode ter emitido")
+  useEffect(() => { setMotivo(p.robo_status === 'erro' && !/⚠️/.test(p.robo_mensagem || '') ? (p.robo_mensagem || '') : ''); }, [p.robo_status, p.robo_mensagem]);
   const s = STATUS[p.status] || STATUS.recebida;
   const r = p.robo_status ? ROBO[p.robo_status] : null;
   const roboOcupado = ['na_fila', 'processando', 'aguardando_pessoa'].includes(p.robo_status);
@@ -238,6 +290,19 @@ function LinhaPedido({ p, aberto, onAlternar, onAtualizar, onReenviar, onRobo, o
             <label className="form-field"><span className="form-label">Número da NF</span><input value={numero} onChange={(e) => setNumero(e.target.value)} /></label>
             <label className="form-field"><span className="form-label">Chave de acesso</span><input value={chave} onChange={(e) => setChave(e.target.value.replace(/\D/g, '').slice(0, 44))} /></label>
           </div>
+          {podeDevolver && (
+            <div className="card" style={{ padding: 10, display: 'grid', gap: 8, background: 'var(--surface2)' }}>
+              <label className="form-field" style={{ margin: 0 }}><span className="form-label">Devolver ao cliente para corrigir</span>
+                <input value={motivo} onChange={(e) => setMotivo(e.target.value)} placeholder="O que falta ou está errado. Ex.: NCM do produto X, IE do destinatário" />
+              </label>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                <button type="button" className="btn btn-sm" disabled={!motivo.trim()} onClick={() => onDevolver(motivo.trim())}>
+                  <SendIcon size={12} /> Devolver e avisar no WhatsApp
+                </button>
+                <span style={{ fontSize: 11, color: 'var(--text3)' }}>O pedido fica "Com pendência" e o cliente corrige o mesmo pedido no app.</span>
+              </div>
+            </div>
+          )}
           <label className="form-field"><span className="form-label">Recado para o cliente (aparece no app)</span>
             <input value={mensagem} onChange={(e) => setMensagem(e.target.value)} placeholder="Ex.: falta a inscrição estadual do destinatário" />
           </label>

@@ -127,7 +127,13 @@ Configuração (no `.env`, depois `docker compose up -d`):
 bash /opt/gestor-robo/configurar-emissor.sh                       # guarda o login do Emissor
 docker compose exec robo python robo.py emissor-explorar ID_PEDIDO # calibra: preenche sem cadastrar nem transmitir
 docker compose exec robo python robo.py emissor                    # processa a fila agora
+docker compose exec robo python robo.py emissor-importar           # importa agora as empresas na fila
 ```
+
+**Importar cadastros do Emissor** (`emissor_importar.py`, SQL `supabase-schema-nfe-importacao.sql`):
+em Fiscal → Pedidos de NF-e, escolha a empresa e toque em "Importar do Emissor". O robô entra na
+empresa e copia os clientes e produtos (com NCM e unidade) para o app de pedido. Só lê o Emissor;
+no app só cria o que falta e completa campos vazios.
 
 Os prints de cada passo ficam em `/opt/gestor-robo/dados/emissor/<pedido>/`. O Emissor não tem
 API pública: o robô usa as telas, achando os campos pelo nome (legenda) — se o Emissor mudar a

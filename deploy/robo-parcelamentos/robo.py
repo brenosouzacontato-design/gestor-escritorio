@@ -9,6 +9,7 @@ Uso (dentro do container):
   python robo.py ecac-explorar CNPJ        # calibração do e-CAC: prints/HTML em /dados/ecac/explorar
   python robo.py emissor                   # NF-e de venda: processa a fila agora (ver emissor.py)
   python robo.py emissor-explorar PEDIDO   # calibração do Emissor: preenche sem cadastrar nem transmitir
+  python robo.py emissor-importar          # copia clientes/produtos do Emissor das empresas na fila (ver emissor_importar.py)
 
 Fluxo de uma execução:
   1. lê no Supabase os parcelamentos PGFN ativos com busca_automatica;
@@ -33,6 +34,7 @@ from playwright.sync_api import sync_playwright
 
 import ecac
 import emissor
+import emissor_importar
 import gestor_db as db
 import notificador as aviso
 import sispar
@@ -210,6 +212,7 @@ def agendar() -> None:
         if EMISSOR_ATIVO:
             try:
                 emissor.rodar()
+                emissor_importar.rodar()
                 erro_nfe = ""
             except Exception as e:  # noqa: BLE001
                 log.exception("Robô de NF-e falhou")
@@ -236,6 +239,8 @@ if __name__ == "__main__":
         if len(sys.argv) < 3:
             sys.exit("Uso: python robo.py emissor-explorar ID_DO_PEDIDO")
         emissor.explorar(sys.argv[2])
+    elif cmd == "emissor-importar":
+        print(f"{emissor_importar.rodar()} empresa(s) importada(s)")
     elif cmd == "testar-aviso":
         aviso.texto(f"🤖 Teste do robô de parcelamentos. Tela remota: {LINK_TELA}")
     else:

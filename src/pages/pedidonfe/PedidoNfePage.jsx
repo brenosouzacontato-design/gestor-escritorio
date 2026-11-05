@@ -57,6 +57,7 @@ function AppPedido({ sessao }) {
   const [aba, setAba] = useState('novo');
   const [podeInstalar, setPodeInstalar] = useState(!!convite);
   const [enviado, setEnviado] = useState(null);
+  const [corrigindo, setCorrigindo] = useState(null); // pedido com pendência sendo corrigido
 
   const carregar = async () => {
     try { setDados(await chamarPedidoNfe('iniciar')); setErro(null); } catch (e) { setErro(e.message); }
@@ -112,7 +113,7 @@ function AppPedido({ sessao }) {
 
       <div className="tabs" style={{ marginBottom: 14 }}>
         {[['novo', 'Novo pedido'], ['pedidos', 'Meus pedidos'], ['cadastros', 'Cadastros']].map(([id, rotulo]) => (
-          <button key={id} type="button" className={`tab-btn ${aba === id ? 'active' : ''}`} onClick={() => { setAba(id); setEnviado(null); if (id === 'pedidos') carregar(); }}>{rotulo}</button>
+          <button key={id} type="button" className={`tab-btn ${aba === id ? 'active' : ''}`} onClick={() => { setAba(id); setEnviado(null); setCorrigindo(null); if (id === 'pedidos') carregar(); }}>{rotulo}</button>
         ))}
       </div>
 
@@ -121,9 +122,11 @@ function AppPedido({ sessao }) {
 
       {dados && aba === 'novo' && (enviado
         ? <Enviado resultado={enviado} onNovo={() => setEnviado(null)} onVer={() => { setEnviado(null); setAba('pedidos'); carregar(); }} />
-        : <NovoPedido dados={dados} salvarDest={salvarDest} onEnviado={(r) => { setEnviado(r); carregar(); }} />)}
+        : <NovoPedido key={corrigindo?.id || 'novo'} dados={dados} salvarDest={salvarDest} inicial={corrigindo}
+            onCancelar={corrigindo ? () => { setCorrigindo(null); setAba('pedidos'); } : null}
+            onEnviado={(r) => { setEnviado(r); setCorrigindo(null); carregar(); }} />)}
 
-      {dados && aba === 'pedidos' && <MeusPedidos pedidos={dados.pedidos} />}
+      {dados && aba === 'pedidos' && <MeusPedidos pedidos={dados.pedidos} onCorrigir={(p) => { setCorrigindo(p); setEnviado(null); setAba('novo'); window.scrollTo({ top: 0 }); }} />}
 
       {dados && aba === 'cadastros' && (
         <ListaCadastros destinatarios={dados.destinatarios} produtos={dados.produtos}
@@ -186,18 +189,28 @@ function Passos({ atual, maximo, onIr }) {
   );
 }
 
-function NovoPedido({ dados, salvarDest, onEnviado }) {
+// Pedido gravado → itens do formulário (correção). O desconto gravado já inclui a parte do desconto da nota.
+const paraTexto = (v) => (v == null || v === '' ? '' : String(v).replace('.', ','));
+const itensDoPedido = (p) => (p?.itens?.length ? p.itens.map((i) => ({
+  ...itemVazio(), produto_id: i.produto_id || null, descricao: i.descricao || '', unidade: i.unidade || 'UN', ncm: i.ncm || '',
+  quantidade: paraTexto(i.quantidade), valor_unitario: paraTexto(i.valor_unitario), desconto: Number(i.desconto) > 0 ? paraTexto(i.desconto) : '',
+})) : [itemVazio()]);
+
+function NovoPedido({ dados, salvarDest, onEnviado, inicial = null, onCancelar = null }) {
   const celular = useCelular();
   const [etapa, setEtapa] = useState(0);
-  const [maxEtapa, setMaxEtapa] = useState(0);
-  const [destId, setDestId] = useState('');
+  const [maxEtapa, setMaxEtapa] = useState(inicial ? ETAPAS.length - 1 : 0);
+  const [destId, setDestId] = useState(() => {
+    const doc = inicial?.destinatario?.documento;
+    return (doc && dados.destinatarios.find((d) => d.documento === doc)?.id) || '';
+  });
   const [novoDest, setNovoDest] = useState(false);
   const [busca, setBusca] = useState('');
-  const [itens, setItens] = useState([itemVazio()]);
+  const [itens, setItens] = useState(() => itensDoPedido(inicial));
   const [geral, setGeral] = useState({ valor: '', tipo: 'R$' });
-  const [frete, setFrete] = useState('sem_frete');
-  const [freteValor, setFreteValor] = useState('');
-  const [obs, setObs] = useState('');
+  const [frete, setFrete] = useState(inicial?.frete_modalidade || 'sem_frete');
+  const [freteValor, setFreteValor] = useState(Number(inicial?.frete_valor) > 0 ? paraTexto(inicial.frete_valor) : '');
+  const [obs, setObs] = useState(inicial?.observacao || '');
   const [enviando, setEnviando] = useState(false);
   const [aviso, setAviso] = useState(null);
 
@@ -276,6 +289,7 @@ function NovoPedido({ dados, salvarDest, onEnviado }) {
     setEnviando(true);
     try {
       const r = await chamarPedidoNfe('enviar', {
+        ...(inicial ? { id: inicial.id } : {}),
         destinatario: dest,
         itens: preenchidos.map((i) => ({
           produto_id: i.produto_id, descricao: i.descricao, unidade: i.unidade, ncm: i.ncm,
@@ -374,8 +388,16 @@ function NovoPedido({ dados, salvarDest, onEnviado }) {
   const ultima = etapa === ETAPAS.length - 1;
   const botaoEnviar = (
     <button type="button" className="btn btn-accent" style={{ padding: '12px 20px', fontSize: 15 }} disabled={enviando} onClick={enviar}>
-      {enviando ? 'Enviando...' : 'Pedir emissão'}
+      {enviando ? 'Enviando...' : inicial ? 'Enviar correção' : 'Pedir emissão'}
     </button>
+  );
+  // faixa no topo quando está corrigindo um pedido devolvido
+  const faixaCorrecao = inicial && (
+    <div className={`notice ${inicial.status === 'erro' ? 'notice-warn' : 'notice-info'}`} style={{ display: 'grid', gap: 6 }}>
+      <div><b>Corrigindo o pedido {numeroPedido(inicial.id)}</b></div>
+      {inicial.status_mensagem && <div>O que o escritório pediu: <b>{inicial.status_mensagem}</b></div>}
+      {onCancelar && <div><button type="button" className="btn btn-sm" onClick={onCancelar}>Cancelar correção</button></div>}
+    </div>
   );
   const totalRodape = (
     <div style={{ flex: 1, minWidth: 0 }}>
@@ -387,6 +409,7 @@ function NovoPedido({ dados, salvarDest, onEnviado }) {
   if (!celular) {
     return (
       <div style={{ display: 'grid', gap: 18 }}>
+        {faixaCorrecao}
         {ETAPAS.map((e, n) => (
           <section key={e.id}>
             <h3>{n + 1}. {e.titulo}</h3>
@@ -401,6 +424,7 @@ function NovoPedido({ dados, salvarDest, onEnviado }) {
 
   return (
     <div style={{ display: 'grid', gap: 14 }}>
+      {faixaCorrecao}
       <Passos atual={etapa} maximo={maxEtapa} onIr={irPara} />
       <section>
         <div style={{ fontSize: 12, color: 'var(--text3)' }}>Etapa {etapa + 1} de {ETAPAS.length}</div>
@@ -488,11 +512,11 @@ function Resumo({ dest, itens, conta, frete, obs, onEditar }) {
 }
 
 function Enviado({ resultado, onNovo, onVer }) {
-  const { pedido, whatsapp } = resultado;
+  const { pedido, whatsapp, corrigido } = resultado;
   return (
     <div className="card" style={{ padding: 20, textAlign: 'center', display: 'grid', gap: 12 }}>
       <div style={{ fontSize: 40 }}>✅</div>
-      <div style={{ fontSize: 18, fontWeight: 800 }}>Pedido enviado</div>
+      <div style={{ fontSize: 18, fontWeight: 800 }}>{corrigido ? 'Correção enviada' : 'Pedido enviado'}</div>
       <div style={{ color: 'var(--text2)', fontSize: 14 }}>
         Pedido {numeroPedido(pedido.id)} · {fmtMoeda(pedido.valor_total)}<br />para {pedido.destinatario.nome}
       </div>
@@ -507,7 +531,7 @@ function Enviado({ resultado, onNovo, onVer }) {
   );
 }
 
-function MeusPedidos({ pedidos }) {
+function MeusPedidos({ pedidos, onCorrigir }) {
   if (!pedidos.length) return <div style={{ textAlign: 'center', color: 'var(--text3)', padding: 30, fontSize: 13 }}>Nenhum pedido ainda.</div>;
   return (
     <div style={{ display: 'grid', gap: 10 }}>
@@ -523,7 +547,19 @@ function MeusPedidos({ pedidos }) {
               Pedido {numeroPedido(p.id)} · {fmtQuando(p.criado_em)} · <b style={{ color: 'var(--text1)' }}>{fmtMoeda(p.valor_total)}</b>
               {p.nfe_numero ? ` · NF ${p.nfe_numero}` : ''}
             </div>
-            {p.status_mensagem && <div style={{ fontSize: 12, color: 'var(--text2)' }}>{p.status_mensagem}</div>}
+            {p.status === 'erro' ? (
+              <div className="notice notice-warn" style={{ fontSize: 12, marginTop: 4, display: 'grid', gap: 8 }}>
+                <span>{p.status_mensagem ? <>O escritório pediu uma correção: <b>{p.status_mensagem}</b></> : 'Este pedido precisa de correção.'}</span>
+                <button type="button" className="btn btn-accent btn-sm" style={{ justifySelf: 'start' }} onClick={() => onCorrigir(p)}>Corrigir pedido</button>
+              </div>
+            ) : (
+              <>
+                {p.status_mensagem && <div style={{ fontSize: 12, color: 'var(--text2)' }}>{p.status_mensagem}</div>}
+                {p.status === 'recebida' && (
+                  <button type="button" className="btn btn-sm" style={{ justifySelf: 'start', marginTop: 4 }} onClick={() => onCorrigir(p)}>Alterar pedido</button>
+                )}
+              </>
+            )}
           </div>
         );
       })}
