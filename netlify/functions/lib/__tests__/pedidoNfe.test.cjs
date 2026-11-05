@@ -2,7 +2,7 @@
 const test = require('node:test')
 const assert = require('node:assert')
 const {
-  ErroPedido, numero, normalizarDestinatario, normalizarPedido, descontoDoPedido, resumoWhatsapp,
+  ErroPedido, numero, normalizarDestinatario, normalizarPedido, descontoDoPedido, resumoWhatsapp, dadosXmlNfe,
 } = require('../pedidoNfe')
 
 // dados fictícios (CNPJ de exemplo com dígitos válidos)
@@ -92,4 +92,14 @@ test('desconto por item (R$ ou %) e na nota toda, repartido entre os itens', () 
   assert.match(txt, /desconto R\$\s?19,00/)
   assert.match(txt, /Descontos: − R\$\s?33,50/)
   assert.match(txt, /\*Total da nota: R\$\s?176,50\*/)
+})
+
+test('dadosXmlNfe lê número, chave, valor e emitente do XML autorizado', () => {
+  const chave = '31261111222333000181550010000001231000001234'
+  const xml = `<nfeProc><NFe><infNFe Id="NFe${chave}"><ide><nNF>123</nNF></ide>
+    <emit><CNPJ>11222333000181</CNPJ></emit><dest><CNPJ>99888777000166</CNPJ></dest>
+    <total><ICMSTot><vNF>1242.00</vNF></ICMSTot></total></infNFe></NFe>
+    <protNFe><infProt><chNFe>${chave}</chNFe><cStat>100</cStat></infProt></protNFe></nfeProc>`
+  assert.deepStrictEqual(dadosXmlNfe(xml), { numero: '123', chave, valor: 1242, cnpjEmitente: '11222333000181', autorizada: true })
+  assert.strictEqual(dadosXmlNfe('<x/>').numero, null)
 })

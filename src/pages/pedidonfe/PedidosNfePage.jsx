@@ -138,12 +138,27 @@ export default function PedidosNfePage() {
     } catch (e) { show('Erro: ' + e.message); }
   };
 
-  // copia o roteiro da nota para colar no Claude (Cowork); depois o número e a chave são salvos aqui
-  const copiarRoteiro = async (p) => {
+  // copia o roteiro da nota para colar no Claude (Cowork); no fim o Claude anexa o DANFE e o XML aqui
+  const copiarRoteiro = async (p, abrir) => {
+    const texto = roteiroClaude(p);
     try {
-      await navigator.clipboard.writeText(roteiroClaude(p));
-      show('Roteiro copiado. Cole no Claude (Cowork); depois salve aqui o número e a chave da nota.');
+      await navigator.clipboard.writeText(texto);
+      show(abrir ? 'Roteiro copiado e Claude aberto. Se o texto não aparecer lá, cole com Ctrl+V.' : 'Roteiro copiado. Cole no Claude (Cowork).');
     } catch (e) { show('Não consegui copiar: ' + e.message); }
+    if (abrir) window.open(`https://claude.ai/new?q=${encodeURIComponent(texto)}`, '_blank', 'noopener');
+  };
+
+  // DANFE + XML emitidos fora do robô: grava, marca emitida e (se marcado) manda ao cliente no WhatsApp
+  const anexarNota = async (p, { pdf, xml, enviar }) => {
+    try {
+      const { pedido, whatsapp, aviso } = await chamarPedidoNfe('anexar_nota', {
+        id: p.id, cliente_id: p.cliente_id, pdf, xml, enviar_whatsapp: enviar,
+      });
+      setPedidos((l) => l.map((x) => (x.id === p.id ? { ...x, ...pedido } : x)));
+      const zap = !enviar ? '' : whatsapp.ok ? ' DANFE e XML enviados ao cliente no WhatsApp.' : ` WhatsApp não foi: ${whatsapp.erro}`;
+      show(`NF ${pedido.nfe_numero} anexada e pedido marcado como emitido.${zap}${aviso ? ' ' + aviso : ''}`);
+      return true;
+    } catch (e) { show('Erro: ' + e.message); return false; }
   };
 
   const copiarLink = async () => {
@@ -199,14 +214,14 @@ export default function PedidosNfePage() {
         {visiveis.map((p) => (
           <LinhaPedido key={p.id} p={p} aberto={aberto === p.id} onAlternar={() => setAberto(aberto === p.id ? null : p.id)}
             onAtualizar={(m) => atualizar(p, m)} onReenviar={() => reenviar(p)} onRobo={() => mandarRobo(p)} onDevolver={(m) => devolver(p, m)}
-            onArquivo={(caminho) => abrirArquivo(caminho, show)} onClaude={() => copiarRoteiro(p)} />
+            onArquivo={(caminho) => abrirArquivo(caminho, show)} onClaude={(abrir) => copiarRoteiro(p, abrir)} onAnexar={(arq) => anexarNota(p, arq)} />
         ))}
       </div>
     </div>
   );
 }
 
-function LinhaPedido({ p, aberto, onAlternar, onAtualizar, onReenviar, onRobo, onArquivo, onDevolver, onClaude }) {
+function LinhaPedido({ p, aberto, onAlternar, onAtualizar, onReenviar, onRobo, onArquivo, onDevolver, onClaude, onAnexar }) {
   const podeDevolver = !['emitida', 'cancelada'].includes(p.status);
   const [motivo, setMotivo] = useState('');
   // robô parou por falta de dado: já sugere o motivo (sem o aviso de "pode ter emitido")
@@ -281,10 +296,16 @@ function LinhaPedido({ p, aberto, onAlternar, onAtualizar, onReenviar, onRobo, o
               </button>
             )}
             {p.status !== 'emitida' && p.status !== 'cancelada' && (
-              <button type="button" className="btn btn-sm" disabled={roboOcupado} onClick={onClaude}
-                title="Copia o roteiro desta nota para colar no Claude (Cowork), que preenche o Emissor no seu navegador">
-                <SparklesIcon size={14} /> Emitir pelo Claude
-              </button>
+              <>
+                <button type="button" className="btn btn-sm" disabled={roboOcupado} onClick={() => onClaude(false)}
+                  title="Copia o roteiro desta nota para colar no Claude (Cowork), que preenche o Emissor no seu navegador e anexa a nota aqui">
+                  <SparklesIcon size={14} /> Emitir pelo Claude
+                </button>
+                <button type="button" className="btn btn-sm" disabled={roboOcupado} onClick={() => onClaude(true)}
+                  title="Copia o roteiro e abre o Claude (claude.ai) já com ele">
+                  Abrir no Claude
+                </button>
+              </>
             )}
             {r && <span style={{ fontSize: 12, color: r.cor }}><b>{r.label}</b>{p.robo_mensagem ? ` — ${p.robo_mensagem}` : ''}{p.robo_em ? ` (${fmtQuando(p.robo_em)})` : ''}</span>}
             {p.nfe_pdf_path && <button type="button" className="btn btn-sm" onClick={() => onArquivo(p.nfe_pdf_path)}><FileDownIcon size={14} /> DANFE</button>}
@@ -305,6 +326,7 @@ function LinhaPedido({ p, aberto, onAlternar, onAtualizar, onReenviar, onRobo, o
             <label className="form-field"><span className="form-label">Número da NF</span><input value={numero} onChange={(e) => setNumero(e.target.value)} /></label>
             <label className="form-field"><span className="form-label">Chave de acesso</span><input value={chave} onChange={(e) => setChave(e.target.value.replace(/\D/g, '').slice(0, 44))} /></label>
           </div>
+          {p.status !== 'cancelada' && <AnexarNota onAnexar={onAnexar} jaTem={!!p.nfe_pdf_path} />}
           {podeDevolver && (
             <div className="card" style={{ padding: 10, display: 'grid', gap: 8, background: 'var(--surface2)' }}>
               <label className="form-field" style={{ margin: 0 }}><span className="form-label">Devolver ao cliente para corrigir</span>
@@ -328,6 +350,53 @@ function LinhaPedido({ p, aberto, onAlternar, onAtualizar, onReenviar, onRobo, o
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+// lê o arquivo escolhido como base64 (sem o prefixo "data:...;base64,")
+const base64 = (arquivo) => new Promise((ok, falha) => {
+  const r = new FileReader();
+  r.onload = () => ok(String(r.result).split(',')[1] || '');
+  r.onerror = () => falha(r.error);
+  r.readAsDataURL(arquivo);
+});
+
+// Nota emitida fora do robô (à mão ou pelo Claude): DANFE + XML; número e chave saem do XML.
+function AnexarNota({ onAnexar, jaTem }) {
+  const [pdf, setPdf] = useState(null);
+  const [xml, setXml] = useState(null);
+  const [enviar, setEnviar] = useState(true);
+  const [enviando, setEnviando] = useState(false);
+  const grande = [pdf, xml].some((a) => a && a.size > 4 * 1024 * 1024);
+  const anexar = async () => {
+    setEnviando(true);
+    const ok = await onAnexar({ pdf: await base64(pdf), xml: await base64(xml), enviar });
+    setEnviando(false);
+    if (ok) { setPdf(null); setXml(null); }
+  };
+  return (
+    <div className="card" style={{ padding: 10, display: 'grid', gap: 8, background: 'var(--surface2)' }} aria-label="Anexar nota emitida">
+      <span className="form-label" style={{ margin: 0 }}>Anexar nota emitida{jaTem ? ' (substitui a anexada)' : ''}</span>
+      <div style={{ display: 'grid', gap: 8, gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))' }}>
+        <label className="form-field" style={{ margin: 0 }}><span className="form-label">DANFE (PDF)</span>
+          <input type="file" accept="application/pdf,.pdf" aria-label="DANFE (PDF)" onChange={(e) => setPdf(e.target.files?.[0] || null)} />
+        </label>
+        <label className="form-field" style={{ margin: 0 }}><span className="form-label">XML da nota</span>
+          <input type="file" accept=".xml,application/xml,text/xml" aria-label="XML da nota" onChange={(e) => setXml(e.target.files?.[0] || null)} />
+        </label>
+      </div>
+      <label style={{ display: 'flex', gap: 6, alignItems: 'center', fontSize: 12 }}>
+        <input type="checkbox" checked={enviar} onChange={(e) => setEnviar(e.target.checked)} /> Mandar DANFE e XML ao cliente no WhatsApp
+      </label>
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+        <button type="button" className="btn btn-sm btn-accent" disabled={!pdf || !xml || grande || enviando} onClick={anexar}>
+          <FileDownIcon size={12} /> {enviando ? 'Anexando...' : 'Anexar e marcar como emitida'}
+        </button>
+        <span style={{ fontSize: 11, color: grande ? 'var(--danger)' : 'var(--text3)' }}>
+          {grande ? 'Arquivo grande demais (máx. 4 MB).' : 'O número e a chave são lidos do XML.'}
+        </span>
+      </div>
     </div>
   );
 }

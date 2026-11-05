@@ -15,6 +15,9 @@
 //        → { pedido, whatsapp: { ok, erro? } }  (o pedido fica gravado mesmo se o WhatsApp falhar)
 //        com id: corrige o mesmo pedido (só se ainda 'recebida' ou devolvido com pendência — 'erro')
 //   POST { acao: 'reenviar_whatsapp', id }           → { whatsapp }  (só o escritório)
+//   POST { acao: 'anexar_nota', id, pdf, xml, enviar_whatsapp }  (só o escritório: pdf e xml em base64;
+//        lê número/chave do XML, grava em documentos/nfe-vendas/, marca 'emitida' e, se pedido, manda
+//        o DANFE e o XML no WhatsApp de entrega — o mesmo que o robô faz)  → { pedido, whatsapp, aviso? }
 //   POST { acao: 'devolver', id, motivo }            → { pedido, whatsapp }  (só o escritório: volta para
 //        o cliente corrigir, status 'erro' + recado, e avisa pelo WhatsApp com o link do app)
 //
@@ -23,10 +26,10 @@
 
 const { createClient } = require('@supabase/supabase-js')
 const { clienteDoPainel, usuarioEscritorio } = require('./lib/autenticacao')
-const { enviarMensagem, numeroWhatsapp } = require('./lib/whatsapp')
+const { enviarMensagem, enviarDocumento, numeroWhatsapp } = require('./lib/whatsapp')
 const {
   ErroPedido, normalizarDestinatario, normalizarProduto, normalizarPedido, resumoWhatsapp,
-  PODE_EDITAR, avisoPendencia,
+  PODE_EDITAR, avisoPendencia, dadosXmlNfe,
 } = require('./lib/pedidoNfe')
 
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY)
@@ -56,6 +59,10 @@ exports.handler = async (event) => {
         const { data: ped } = await supabase.from('nfe_solicitacoes').select('*').eq('id', corpo.id).eq('cliente_id', clienteId).maybeSingle()
         if (!ped) return json(404, { error: 'Pedido não encontrado.' })
         return json(200, { whatsapp: await mandarResumo(clienteId, ped) })
+      }
+      case 'anexar_nota': {
+        if (!acesso.escritorio) return json(403, { error: 'Só o escritório pode anexar a nota.' })
+        return json(200, await anexarNota(clienteId, corpo))
       }
       case 'devolver': {
         if (!acesso.escritorio) return json(403, { error: 'Só o escritório pode devolver o pedido.' })
@@ -207,6 +214,55 @@ async function devolverPedido(clienteId, { id, motivo }) {
     ? await enviarMensagem(destino, avisoPendencia(ped, texto, link))
     : { sucesso: false, erro: 'Empresa sem WhatsApp de entrega cadastrado (Entregas → Empresas).' }
   return { pedido: ped, whatsapp: envio.sucesso ? { ok: true } : { ok: false, erro: envio.erro } }
+}
+
+// DANFE + XML emitidos fora do robô (à mão ou pelo Claude): grava, marca emitida e entrega ao cliente.
+async function anexarNota(clienteId, { id, pdf, xml, enviar_whatsapp = true }) {
+  if (!UUID.test(id || '')) throw new ErroPedido('Pedido inválido.')
+  const { data: ped } = await supabase.from('nfe_solicitacoes').select('*').eq('id', id).eq('cliente_id', clienteId).maybeSingle()
+  if (!ped) throw new ErroPedido('Pedido não encontrado.')
+  if (ped.status === 'cancelada') throw new ErroPedido('Pedido cancelado.')
+  const bufPdf = Buffer.from(String(pdf || ''), 'base64')
+  const textoXml = Buffer.from(String(xml || ''), 'base64').toString('utf8')
+  if (bufPdf.subarray(0, 4).toString() !== '%PDF') throw new ErroPedido('O DANFE precisa ser um arquivo PDF.')
+  const nota = dadosXmlNfe(textoXml)
+  if (!nota.chave || !nota.numero) throw new ErroPedido('O XML não parece ser de uma NF-e (sem número ou chave).')
+  if (!nota.autorizada) throw new ErroPedido('O XML não é de uma nota autorizada (falta o protocolo de autorização).')
+  const { data: cli } = await supabase.from('clientes').select('*').eq('id', clienteId).maybeSingle()
+  const cnpj = String(cli?.cnpj || '').replace(/\D/g, '')
+  if (cnpj && nota.cnpjEmitente && nota.cnpjEmitente !== cnpj) throw new ErroPedido('O XML é de outra empresa emitente (CNPJ diferente do cadastro).')
+
+  const caminhos = {}
+  for (const [ext, conteudo, mime] of [['pdf', bufPdf, 'application/pdf'], ['xml', Buffer.from(textoXml, 'utf8'), 'application/xml']]) {
+    const caminho = `nfe-vendas/${ped.id}.${ext}`
+    const { error } = await supabase.storage.from('documentos').upload(caminho, conteudo, { contentType: mime, upsert: true })
+    if (error) throw error
+    caminhos[ext] = caminho
+  }
+  const agora = new Date().toISOString()
+  const { data: atualizado, error } = await supabase.from('nfe_solicitacoes').update({
+    status: 'emitida', status_mensagem: null, emitida_em: agora, nfe_numero: nota.numero, nfe_chave: nota.chave,
+    nfe_pdf_path: caminhos.pdf, nfe_xml_path: caminhos.xml, atualizado_em: agora,
+  }).eq('id', ped.id).select('*, clientes(id, nome, cnpj)').single()
+  if (error) throw error
+
+  const aviso = nota.valor != null && Math.abs(nota.valor - Number(ped.valor_total)) > 0.01
+    ? `Atenção: o valor da nota (R$ ${nota.valor.toFixed(2)}) é diferente do pedido (R$ ${Number(ped.valor_total).toFixed(2)}).` : undefined
+  if (!enviar_whatsapp) return { pedido: atualizado, whatsapp: { ok: false, erro: 'não enviado (desmarcado)' }, aviso }
+
+  const destino = numeroWhatsapp(cli?.whatsapp_entrega || cli?.telefone)
+  if (!destino) return { pedido: atualizado, whatsapp: { ok: false, erro: 'Empresa sem WhatsApp de entrega cadastrado (Entregas → Empresas).' }, aviso }
+  const nomeDest = ped.destinatario?.nome || ''
+  const nome = `NF-e ${nota.numero} ${nomeDest.slice(0, 30)}`.trim()
+  const valor = Number(ped.valor_total).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+  let envio = await enviarDocumento(destino, {
+    media: bufPdf.toString('base64'), fileName: `${nome}.pdf`, caption: `✅ NF-e ${nota.numero} emitida — ${nomeDest}
+Valor: R$ ${valor}`,
+  })
+  if (envio.sucesso) {
+    envio = await enviarDocumento(destino, { media: Buffer.from(textoXml, 'utf8').toString('base64'), fileName: `${nome}.xml`, mimetype: 'application/xml' })
+  }
+  return { pedido: atualizado, whatsapp: envio.sucesso ? { ok: true } : { ok: false, erro: envio.erro }, aviso }
 }
 
 async function mandarResumo(clienteId, ped, opcoes = {}) {
