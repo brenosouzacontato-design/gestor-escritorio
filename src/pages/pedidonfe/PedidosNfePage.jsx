@@ -4,7 +4,7 @@
 // emitida, reenvio do resumo pelo WhatsApp e o link do app de cada empresa.
 // Tabelas em supabase-schema-nfe-solicitacoes.sql.
 import { useEffect, useMemo, useState } from 'react';
-import { ReceiptTextIcon, RefreshCwIcon, LinkIcon, SendIcon, ChevronDownIcon, ChevronRightIcon, AlertTriangleIcon } from 'lucide-react';
+import { ReceiptTextIcon, RefreshCwIcon, LinkIcon, SendIcon, ChevronDownIcon, ChevronRightIcon, AlertTriangleIcon, BotIcon, FileDownIcon } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useStore } from '../../store';
 import { useToast } from '../../components/shared';
@@ -18,6 +18,21 @@ const FILTROS = [
 ];
 const ABERTOS = ['recebida', 'em_emissao', 'erro'];
 const qtd = (v) => Number(v).toLocaleString('pt-BR', { maximumFractionDigits: 4 });
+// robô do Emissor (deploy/robo-parcelamentos/emissor.py, supabase-schema-nfe-robo.sql)
+const ROBO = {
+  na_fila: { label: 'Na fila do robô', cor: 'var(--info)' },
+  processando: { label: 'Robô emitindo', cor: 'var(--warn)' },
+  aguardando_pessoa: { label: 'Robô esperando alguém na tela remota', cor: 'var(--warn)' },
+  ok: { label: 'Robô concluiu', cor: 'var(--ok)' },
+  erro: { label: 'Robô parou', cor: 'var(--danger)' },
+};
+
+async function abrirArquivo(caminho, show) {
+  const aba = window.open('', '_blank');
+  const { data, error } = await supabase.storage.from('documentos').createSignedUrl(caminho, 600);
+  if (error) { aba?.close(); show('Erro: ' + error.message); return; }
+  if (aba) aba.location.href = data.signedUrl; else window.open(data.signedUrl, '_blank');
+}
 
 export default function PedidosNfePage() {
   const { show } = useToast();
@@ -76,6 +91,14 @@ export default function PedidosNfePage() {
     } catch (e) { show('Erro: ' + e.message); }
   };
 
+  // aprova o pedido para o robô: ele preenche, transmite no Emissor e manda PDF/XML ao cliente
+  const mandarRobo = async (p) => {
+    if (p.robo_status === 'erro' && /⚠️/.test(p.robo_mensagem || '')
+      && !window.confirm('O robô parou depois de transmitir: a nota pode ter saído. Já conferiu no Emissor que ela NÃO foi emitida?')) return;
+    if (!window.confirm(`Emitir pelo robô a NF-e de ${p.clientes?.nome} para ${p.destinatario?.nome} (${fmtMoeda(p.valor_total)})?`)) return;
+    await atualizar(p, { status: 'em_emissao', robo_status: 'na_fila', robo_mensagem: null, robo_em: new Date().toISOString() });
+  };
+
   const copiarLink = async () => {
     const cli = clientes.find((c) => c.id === empresaLink);
     if (!cli) return;
@@ -116,15 +139,18 @@ export default function PedidosNfePage() {
       <div style={{ display: 'grid', gap: 8 }}>
         {visiveis.map((p) => (
           <LinhaPedido key={p.id} p={p} aberto={aberto === p.id} onAlternar={() => setAberto(aberto === p.id ? null : p.id)}
-            onAtualizar={(m) => atualizar(p, m)} onReenviar={() => reenviar(p)} />
+            onAtualizar={(m) => atualizar(p, m)} onReenviar={() => reenviar(p)} onRobo={() => mandarRobo(p)}
+            onArquivo={(caminho) => abrirArquivo(caminho, show)} />
         ))}
       </div>
     </div>
   );
 }
 
-function LinhaPedido({ p, aberto, onAlternar, onAtualizar, onReenviar }) {
+function LinhaPedido({ p, aberto, onAlternar, onAtualizar, onReenviar, onRobo, onArquivo }) {
   const s = STATUS[p.status] || STATUS.recebida;
+  const r = p.robo_status ? ROBO[p.robo_status] : null;
+  const roboOcupado = ['na_fila', 'processando', 'aguardando_pessoa'].includes(p.robo_status);
   const d = p.destinatario || {};
   const [status, setStatus] = useState(p.status);
   const [mensagem, setMensagem] = useState(p.status_mensagem || '');
@@ -142,6 +168,7 @@ function LinhaPedido({ p, aberto, onAlternar, onAtualizar, onReenviar }) {
             {numeroPedido(p.id)} · {fmtQuando(p.criado_em)} · para {d.nome} · {p.itens?.length || 0} item(ns)
           </div>
         </div>
+        {r && <span title={p.robo_mensagem || r.label}><BotIcon size={15} color={r.cor} /></span>}
         {p.whatsapp_erro && !p.whatsapp_enviado_em && <span title={p.whatsapp_erro}><AlertTriangleIcon size={15} color="var(--warn)" /></span>}
         <b style={{ fontSize: 14 }}>{fmtMoeda(p.valor_total)}</b>
         <span className="badge" style={{ color: s.cor, background: s.fundo }}>{s.label}{p.nfe_numero ? ` · NF ${p.nfe_numero}` : ''}</span>
@@ -181,6 +208,17 @@ function LinhaPedido({ p, aberto, onAlternar, onAtualizar, onReenviar }) {
             <span>Total: <b>{fmtMoeda(p.valor_total)}</b></span>
           </div>
           {p.observacao && <div className="notice notice-info">📝 {p.observacao}</div>}
+
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+            {p.status !== 'emitida' && p.status !== 'cancelada' && (
+              <button type="button" className="btn btn-sm btn-accent" disabled={roboOcupado} onClick={onRobo}>
+                <BotIcon size={14} /> {p.robo_status === 'erro' ? 'Mandar de novo ao robô' : 'Emitir pelo robô'}
+              </button>
+            )}
+            {r && <span style={{ fontSize: 12, color: r.cor }}><b>{r.label}</b>{p.robo_mensagem ? ` — ${p.robo_mensagem}` : ''}{p.robo_em ? ` (${fmtQuando(p.robo_em)})` : ''}</span>}
+            {p.nfe_pdf_path && <button type="button" className="btn btn-sm" onClick={() => onArquivo(p.nfe_pdf_path)}><FileDownIcon size={14} /> DANFE</button>}
+            {p.nfe_xml_path && <button type="button" className="btn btn-sm" onClick={() => onArquivo(p.nfe_xml_path)}><FileDownIcon size={14} /> XML</button>}
+          </div>
 
           <div style={{ fontSize: 12, color: 'var(--text3)' }}>
             WhatsApp: {p.whatsapp_enviado_em ? `resumo enviado em ${fmtQuando(p.whatsapp_enviado_em)} para ${p.whatsapp_destino}` : `não enviado${p.whatsapp_erro ? ` — ${p.whatsapp_erro}` : ''}`}

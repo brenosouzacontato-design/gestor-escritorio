@@ -96,3 +96,39 @@ erros ficam em `/opt/gestor-robo/dados/erros/ecac_*`.
 - PARCMEI (Receita): agora dá pra emitir pela mesma sessão do e-CAC (`ecac.py`).
 - Baixar o PDF do comprovante de cada pagamento achado no e-CAC.
 - Avisar vencimento de certificado A1 dos clientes.
+
+## NF-e de venda no Emissor (`emissor.py`)
+
+Emite no **Emissor** (sistema.emissor.app) as notas que os clientes pedem pelo app do gestor
+(`?pedido=`). Quem decide é o escritório: em **Fiscal → Pedidos de NF-e**, abre o pedido e toca
+**Emitir pelo robô**. O robô olha a fila a cada minuto e, para cada pedido:
+
+1. entra no Emissor com a conta de parceiro (o navegador fica logado em `dados/emissor/perfil`;
+   se a sessão cair, usa o login guardado por `configurar-emissor.sh` ou pede pela tela remota)
+   e abre a empresa pelo CNPJ do cadastro do gestor;
+2. cadastra no Emissor o destinatário e os produtos que faltarem (produto novo vai com o NCM do
+   pedido e o grupo tributário **padrão da empresa** no Emissor);
+3. preenche a nota (destinatário, itens, frete, observação), confere o total com o pedido e
+   clica em **Gerar Nota**;
+4. baixa o DANFE e o XML, grava no pedido (número, chave, arquivos no bucket `documentos`,
+   pasta `nfe-vendas/`) e manda os dois para o WhatsApp de entrega do cliente.
+
+Se algo falhar **antes** de transmitir, o pedido fica com "Robô parou" e pode ser mandado de
+novo. Se falhar **depois** do "Gerar Nota", a mensagem começa com ⚠️: confira no Emissor se a
+nota saiu antes de mandar de novo (o robô nunca repete sozinho, para não sair nota em dobro).
+
+Configuração (no `.env`, depois `docker compose up -d`):
+
+- `EMISSOR_ATIVO=0` desliga a fila;
+- `EMISSOR_TRANSMITIR=0` faz o robô preencher e **esperar alguém clicar em "Gerar Nota"** pela
+  tela remota (avisa no WhatsApp) — bom para as primeiras notas.
+
+```
+bash /opt/gestor-robo/configurar-emissor.sh                       # guarda o login do Emissor
+docker compose exec robo python robo.py emissor-explorar ID_PEDIDO # calibra: preenche sem cadastrar nem transmitir
+docker compose exec robo python robo.py emissor                    # processa a fila agora
+```
+
+Os prints de cada passo ficam em `/opt/gestor-robo/dados/emissor/<pedido>/`. O Emissor não tem
+API pública: o robô usa as telas, achando os campos pelo nome (legenda) — se o Emissor mudar a
+tela, rode o `emissor-explorar` e ajuste os seletores em `emissor.py`.
