@@ -14,6 +14,7 @@ import { supabase, ativarModoPainel, clienteComToken, rpcAusente } from '../../l
 // cai na mensagem de link inválido.
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const sessoes = new Map();
+export const PAINEL_DESLIGADO = 'Painel indisponível. Fale com o escritório para receber suas guias e documentos.';
 
 // Dados do cliente dono do token, sem trocar o token da página.
 export function sessaoDoToken(valor) {
@@ -22,10 +23,17 @@ export function sessaoDoToken(valor) {
     const cliente = clienteComToken(valor);
     sessoes.set(valor, (async () => {
       const { data, error } = await cliente.rpc('painel_sessao');
-      if (!error && data?.length) return data[0];
+      if (!error && data?.length) {
+        // painel desligado pelo escritório (Central de Entregas). RPC ainda
+        // não criada (supabase-schema-central-entregas.sql): segue ligado.
+        const { data: ativo, error: errAtivo } = await cliente.rpc('painel_ativo');
+        if (!errAtivo && ativo === false) throw new Error(PAINEL_DESLIGADO);
+        return data[0];
+      }
       if (error && !rpcAusente(error)) console.warn('painel_sessao:', error.message);
       if (UUID.test(valor)) {
         const { data: legado } = await cliente.from('clientes').select('*').eq('id', valor).maybeSingle();
+        if (legado?.painel_ativo === false) throw new Error(PAINEL_DESLIGADO);
         if (legado) return legado;
       }
       throw new Error('Link inválido ou expirado. Peça um link novo ao escritório.');

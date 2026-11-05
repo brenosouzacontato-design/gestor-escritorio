@@ -89,4 +89,51 @@ async function enviarMensagem(numero, texto) {
   }
 }
 
-module.exports = { enviarMensagem }
+// Manda um arquivo (PDF da guia) com legenda — Central de Entregas
+// (entregas-enviar.js). `media`: URL que a Evolution consegue baixar (link
+// assinado do Storage) ou o conteúdo em base64. Mesmo contrato de
+// enviarMensagem: nunca lança, devolve { sucesso, erro? }.
+async function enviarDocumento(numero, { media, fileName, caption = '', mimetype = 'application/pdf' }) {
+  if (!EVOLUTION_URL || !EVOLUTION_KEY || !EVOLUTION_INSTANCE) {
+    return { sucesso: false, erro: 'EVOLUTION_API_URL/EVOLUTION_API_KEY/EVOLUTION_INSTANCE não configuradas.' }
+  }
+  const url = `${EVOLUTION_URL}/message/sendMedia/${EVOLUTION_INSTANCE}`
+  const controller = new AbortController()
+  // a Evolution baixa o arquivo antes de responder: mais folga que o texto
+  const timer = setTimeout(() => controller.abort(), 20000)
+  try {
+    const resp = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'apikey': EVOLUTION_KEY },
+      // formato da v1.x (mediaMessage aninhado), o mesmo do robô de parcelamentos
+      body: JSON.stringify({ number: numero, mediaMessage: { mediatype: 'document', mimetype, fileName, caption, media } }),
+      signal: controller.signal,
+    })
+    const corpo = await resp.text().catch(() => '')
+    console.log(`Evolution API sendMedia (número ${numero}), status ${resp.status}:`, corpo.slice(0, 300))
+    if (!resp.ok) return { sucesso: false, erro: `WhatsApp recusou o envio (${resp.status})${corpo ? `: ${corpo.slice(0, 200)}` : ''}` }
+    let json = null
+    try { json = JSON.parse(corpo) } catch { /* corpo pode não ser JSON */ }
+    if (json?.error || json?.status === 'ERROR' || json?.status === 'error') {
+      return { sucesso: false, erro: `WhatsApp devolveu erro: ${json.error || json.message || corpo.slice(0, 200)}` }
+    }
+    return { sucesso: true }
+  } catch (e) {
+    return { sucesso: false, erro: e.name === 'AbortError' ? 'O WhatsApp não respondeu em 20s.' : e.message }
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
+// Telefone do cadastro → número da Evolution. Aceita grupo (…@g.us) como está.
+// "(11) 98888-7777" → "5511988887777". Devolve null quando não dá pra usar.
+function numeroWhatsapp(valor) {
+  const v = String(valor || '').trim()
+  if (!v) return null
+  if (/@g\.us$/.test(v)) return v
+  let d = v.replace(/\D/g, '').replace(/^0+/, '')
+  if (d.length === 10 || d.length === 11) d = `55${d}`
+  return d.length >= 12 && d.length <= 13 ? d : null
+}
+
+module.exports = { enviarMensagem, enviarDocumento, numeroWhatsapp }

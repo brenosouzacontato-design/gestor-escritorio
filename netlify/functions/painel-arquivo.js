@@ -66,6 +66,7 @@ exports.handler = async (event) => {
 
     const cliente = await clienteDoPainel(event)
     if (!cliente) return resposta(401, { error: 'Link inválido ou expirado. Peça um link novo ao escritório.' })
+    if (!(await painelAtivo(cliente.id))) return resposta(403, { error: 'Painel indisponível. Fale com o escritório.' })
     if (!(await arquivoDoCliente(storagePath, cliente.id))) {
       return resposta(404, { error: 'Arquivo não encontrado.' })
     }
@@ -74,6 +75,14 @@ exports.handler = async (event) => {
     console.error('painel-arquivo:', e.message)
     return resposta(500, { error: e.message })
   }
+}
+
+// Painel desligado na Central de Entregas (clientes.painel_ativo). Sem a
+// coluna ainda (supabase-schema-central-entregas.sql): ligado.
+async function painelAtivo(clienteId) {
+  const { data, error } = await supabase.from('clientes').select('painel_ativo').eq('id', clienteId).maybeSingle()
+  if (error) return true
+  return data?.painel_ativo !== false
 }
 
 async function arquivoDoCliente(storagePath, clienteId) {

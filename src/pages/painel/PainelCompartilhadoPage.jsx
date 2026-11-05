@@ -373,8 +373,8 @@ function PainelCompartilhado({ clienteId, competencia: competenciaInicial, admin
 
   // `descricao` diz o que é o arquivo no aviso pro escritório — só o link
   // público avisa (o download feito na prévia de dentro do app não conta)
-  const baixar = (storagePath, descricao) => {
-    if (registrar) avisarEventoPainel(clienteId, 'download', { descricao, competencia });
+  const baixar = (storagePath, descricao, documentoId = null) => {
+    if (registrar) avisarEventoPainel(clienteId, 'download', { descricao, competencia, documentoId });
     return abrirLinkAssinado(storagePath).catch(() => null);
   };
 
@@ -1115,7 +1115,7 @@ function BotaoLink({ onClick, children }) {
 
 function BotaoGuia({ anexo, onBaixar, label = 'Guia', descricao }) {
   return (
-    <button type="button" onClick={() => onBaixar(anexo.storage_path, descricao || anexo.nome_arquivo)} title={`Baixar ${anexo.nome_arquivo}`}
+    <button type="button" onClick={() => onBaixar(anexo.storage_path, descricao || anexo.nome_arquivo, anexo.id)} title={`Baixar ${anexo.nome_arquivo}`}
       style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11.5, fontWeight: 700, color: '#fff', background: 'var(--accent)',
         border: 'none', borderRadius: 8, padding: '6px 11px', cursor: 'pointer', whiteSpace: 'nowrap' }}>
       <DownloadIcon size={13} /> {label}

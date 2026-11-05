@@ -39,6 +39,11 @@ export default function PainelGrupoPage({ clienteIds, competencia, versao, empre
       .then((lista) => setEmpresas(lista.filter(Boolean)));
   }, [clienteIds.join(','), admin]);
 
+  // empresa escolhida saiu da barra (painel desligado / token trocado): vai pra primeira que abre
+  useEffect(() => {
+    if (empresas?.length && !empresas.some((e) => e.id === selecionada)) setSelecionada(empresas[0].id);
+  }, [empresas]);
+
   useEffect(() => {
     if (admin) return;
     registrarVisualizacaoPainel(selecionada, competencia, versao === 'completa' ? 'completa' : 'nova').catch(() => {});

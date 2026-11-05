@@ -14,6 +14,7 @@ const { createClient } = require('@supabase/supabase-js')
 const { enviarMensagem } = require('./lib/whatsapp')
 const { clienteDoPainel } = require('./lib/autenticacao')
 const { descreverAparelho } = require('./lib/aparelho')
+const { enviarPushEscritorio } = require('./lib/gestorPush')
 
 const supabase = createClient(
   process.env.SUPABASE_URL,
@@ -25,13 +26,14 @@ const TIPOS = ['visualizacao', 'download']
 // Mesmo evento repetido dentro dessa janela (clique duplo no botão, página
 // recarregada em seguida) não gera um segundo aviso.
 const JANELA_REPETICAO_MS = 60 * 1000
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 exports.handler = async (event) => {
   if (event.httpMethod !== 'POST') {
     return resposta(405, { error: 'Método não permitido, use POST.' })
   }
 
-  let clienteId, tipo, descricao, competencia, aparelhoId, doEscritorio
+  let clienteId, tipo, descricao, competencia, aparelhoId, doEscritorio, documentoId
   try {
     const body = JSON.parse(event.body)
     clienteId = body.clienteId
@@ -42,6 +44,8 @@ exports.handler = async (event) => {
     aparelhoId = /^[a-z0-9]{8,40}$/i.test(body.aparelhoId || '') ? body.aparelhoId : null
     // aberto num navegador com o login do gestor: é o escritório testando o link
     doEscritorio = body.escritorio === true
+    // guia/anexo aberto (Central de Entregas marca "aberta pelo cliente")
+    documentoId = UUID.test(body.documentoId || '') ? body.documentoId : null
   } catch {
     return resposta(400, { error: 'Body inválido: esperado JSON com { clienteId, tipo }.' })
   }
@@ -81,11 +85,27 @@ exports.handler = async (event) => {
     // teste do próprio escritório não vira aviso de "cliente abriu"
     if (doEscritorio) return resposta(200, { ok: true, escritorio: true })
 
+    const guia = tipo === 'download' && documentoId ? await marcarGuiaAberta(documentoId, clienteId) : null
+    if (guia) {
+      const titulo = descricao || guia.nome_arquivo
+      await enviarPushEscritorio(supabase, {
+        titulo: '📄 Cliente abriu a guia',
+        mensagem: `${cliente.nome} · ${titulo}`.slice(0, 300),
+        url: '/?tela=entregas',
+        tag: `guia-aberta-${documentoId}`,
+      }).catch((e) => console.error('painel-evento push:', e.message))
+    }
+
     let whatsapp = { sucesso: false, erro: 'WHATSAPP_GROUP_ID não configurada.' }
     if (GRUPO_ID) {
       const aparelho = descreverAparelho(userAgent)
       const linhaAparelho = aparelho ? `\n📱 ${aparelho}` : ''
-      const texto = tipo === 'download'
+      const texto = guia
+        ? `📄 *Cliente abriu a guia pelo painel*
+👤 ${cliente.nome}${descricao ? `
+📄 ${descricao}` : ''}${guia.aberto_vezes > 1 ? `
+🔁 ${guia.aberto_vezes}ª vez` : ''}${linhaAparelho}`
+        : tipo === 'download'
         ? `⬇️ *Cliente baixou um arquivo do painel*\n👤 ${cliente.nome}${descricao ? `\n📄 ${descricao}` : ''}${linhaAparelho}`
         : `👀 *Cliente abriu o painel*\n👤 ${cliente.nome}${competencia ? `\n📅 Competência ${competencia}` : ''}${linhaAparelho}`
       whatsapp = await enviarMensagem(GRUPO_ID, texto)
@@ -95,6 +115,28 @@ exports.handler = async (event) => {
     console.error('painel-evento:', e.message)
     return resposta(500, { error: e.message })
   }
+}
+
+// Marca a guia como aberta pelo cliente (colunas de
+// supabase-schema-central-entregas.sql) e liga o evento a ela. Só vale pra
+// guia do próprio cliente do token. Sem as colunas ainda: devolve null e o
+// aviso sai como "baixou um arquivo", igual antes.
+async function marcarGuiaAberta(documentoId, clienteId) {
+  const { data: doc, error } = await supabase.from('documentos')
+    .select('id, cliente_id, nome_arquivo, aberto_em, aberto_vezes')
+    .eq('id', documentoId).maybeSingle()
+  if (error || !doc || doc.cliente_id !== clienteId) return null
+  const agora = new Date().toISOString()
+  const vezes = (doc.aberto_vezes || 0) + 1
+  const { error: errMarca } = await supabase.from('documentos')
+    .update({ aberto_em: doc.aberto_em || agora, aberto_ultimo_em: agora, aberto_vezes: vezes })
+    .eq('id', documentoId)
+  if (errMarca) return null
+  // evento mais recente desse cliente (o que acabou de ser gravado)
+  const { data: ev } = await supabase.from('painel_eventos').select('id')
+    .eq('cliente_id', clienteId).eq('tipo', 'download').order('criado_em', { ascending: false }).limit(1).maybeSingle()
+  if (ev) await supabase.from('painel_eventos').update({ documento_id: documentoId }).eq('id', ev.id)
+  return { ...doc, aberto_vezes: vezes }
 }
 
 function cabecalho(event, nome) {

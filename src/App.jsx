@@ -31,6 +31,7 @@ import AssessorPage from './pages/assessor/AssessorPage'
 import AgendaPage from './pages/agenda/AgendaPage'
 import HojePage from './pages/hoje/HojePage'
 import LicenciamentoPage from './pages/licenciamento/LicenciamentoPage'
+import CentralEntregasPage from './pages/entregas/CentralEntregasPage'
 
 // Tela inicial pela URL (?tela=hoje, ?tela=documentos…) — é o que o app
 // instalado no tablet usa (start_url e atalhos do gestor.webmanifest).
@@ -153,6 +154,7 @@ export default function App() {
               onOpenCadastro={(id) => { setSelectedCliente(id); navigate('clientes') }}
               clienteInicialId={clienteAbrirEmpresas} onClienteInicialConsumido={() => setClienteAbrirEmpresas(null)} />}
             {page === 'paineis'    && <PaineisPage />}
+            {page === 'entregas'   && <CentralEntregasPage />}
             {page === 'documentos' && <DocumentosPage arquivosIniciais={arquivosCapturados} onArquivosIniciaisConsumidos={() => setArquivosCapturados(null)} />}
             {page === 'hoje'       && <HojePage onNavigate={navigate} onAddTarefa={openNewTask}
               onCapturar={(arquivos) => { setArquivosCapturados(arquivos); navigate('documentos') }} />}

@@ -2,8 +2,8 @@ import { useState, useEffect, useRef, useMemo } from 'react'
 import {
   LayoutDashboardIcon, SparklesIcon, AppWindowIcon, ClipboardCheckIcon, CheckSquareIcon, CalendarDaysIcon, BellIcon,
   UsersIcon, TargetIcon, SunIcon, PaperclipIcon, MonitorIcon, CircleDollarSignIcon, BanknoteIcon, CalculatorIcon, RefreshCwIcon,
-  ReceiptIcon, FileSignatureIcon, LayersIcon, FileBadgeIcon, ShieldCheckIcon, ChevronDownIcon, SearchIcon, MenuIcon, XIcon,
-} from 'lucide-react'
+  ReceiptIcon, FileSignatureIcon, LayersIcon, FileBadgeIcon, ShieldCheckIcon, ChevronDownIcon, SearchIcon, MenuIcon, XIcon, SendIcon,
+}  from 'lucide-react'
 
 // Menu do gestor agrupado por assunto. O id de cada item é o mesmo `page`
 // usado no App.jsx ('empresas' continua sendo o id da tela Fechamento, pra
@@ -17,6 +17,7 @@ export const GRUPOS = [
   ]},
   { id: 'rotina', nome: 'Rotina', itens: [
     { id: 'empresas',   label: 'Fechamento',   desc: 'Obrigações do mês por empresa', Icon: ClipboardCheckIcon },
+    { id: 'entregas',   label: 'Entregas',     desc: 'Entregar guias e ver se o cliente abriu', Icon: SendIcon },
     { id: 'tarefas',    label: 'Tarefas',      desc: 'Independentes do fechamento',   Icon: CheckSquareIcon },
     { id: 'agenda',     label: 'Agenda',       desc: 'Reuniões e lembretes',          Icon: CalendarDaysIcon },
     { id: 'notificacoes', label: 'Notificações', desc: 'Avisos enviados',             Icon: BellIcon },

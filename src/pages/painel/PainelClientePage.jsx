@@ -249,7 +249,7 @@ function PainelCliente({ clienteId, competencia: competenciaInicial, admin = fal
 
   const baixarAnexo = async (documento) => {
     // download feito pelo cliente (link público) avisa o escritório
-    if (!admin) avisarEventoPainel(clienteId, 'download', { descricao: documento.nome_arquivo, competencia });
+    if (!admin) avisarEventoPainel(clienteId, 'download', { descricao: documento.nome_arquivo, competencia, documentoId: documento.id });
     await abrirLinkAssinado(documento.storage_path).catch(() => null);
   };
 
