@@ -12,7 +12,7 @@
 // carteira_acoes (supabase-schema-carteira-acoes.sql), quando a tabela existe.
 //
 // POST { acao, ... }:
-//   listar            { competencia }                 → empresas, obrigações, tarefas e anexos
+//   listar            { competencia }                 → empresas, obrigações, tarefas, anexos e guias (entrega)
 //   status_obrigacao  { id, status }                  → muda o status (dar baixa = 'concluido')
 //   concluir_tarefa   { id, concluida }               → marca/desmarca a tarefa
 //   criar_tarefa      { clienteId, titulo, departamento, prioridade, vencimento, observacao }
@@ -109,7 +109,7 @@ async function listar(ctx, { competencia }) {
   const empresas = ctx.clientes
     .map((c) => ({ id: c.id, nome: c.nome, cnpj: c.cnpj, regime: c.regime }))
     .sort((a, b) => a.nome.localeCompare(b.nome))
-  if (ids.length === 0) return resposta(200, { carteira: ctx.carteira, empresas, obrigacoes: [], tarefas: [], anexos: [], entregas: [] })
+  if (ids.length === 0) return resposta(200, { carteira: ctx.carteira, empresas, obrigacoes: [], tarefas: [], anexos: [], entregas: [], guias: [] })
 
   const comp = /^\d{2}\/\d{4}$/.test(competencia || '') ? competencia : null
   const desdeConcluidas = new Date(Date.now() - DIAS_CONCLUIDAS * 86400000).toISOString()
@@ -163,7 +163,45 @@ async function listar(ctx, { competencia }) {
     }))
   }
 
-  return resposta(200, { carteira: ctx.carteira, empresas, obrigacoes, tarefas: tarefas || [], anexos, entregas })
+  const guias = comp ? await guiasDaCompetencia(ids, comp, obrigacoes) : []
+
+  return resposta(200, { carteira: ctx.carteira, empresas, obrigacoes, tarefas: tarefas || [], anexos, entregas, guias })
+}
+
+// Guias anexadas da competência e como está a entrega delas (Central de
+// Entregas: supabase-schema-central-entregas.sql) — mesmo recorte da tela
+// Entregas do gestor (src/pages/entregas/entregasApi.js): as das obrigações
+// da competência + as de parcelamento que vencem no mês seguinte. Banco sem
+// as colunas da Central: volta vazio e a página mostra só o resto.
+async function guiasDaCompetencia(ids, comp, obrigacoes) {
+  const colunas = 'id, cliente_id, obrigacao_id, parcelamento_id, nome_arquivo, tipo_documento_sugerido, vencimento_guia, valor_guia, '
+    + 'entregue_em, entrega_canal, entrega_erro, aberto_em, aberto_ultimo_em, aberto_vezes'
+  const daComp = obrigacoes.filter((o) => o.competencia === comp)
+  const tituloObrigacao = new Map(daComp.map((o) => [o.id, o.titulo || o.tipo || 'Guia']))
+  const [m, a] = comp.split('/').map(Number)
+  const ini = new Date(Date.UTC(a, m, 1)).toISOString().slice(0, 10)
+  const fim = new Date(Date.UTC(a, m + 1, 1)).toISOString().slice(0, 10)
+
+  const consultas = [
+    tituloObrigacao.size
+      ? supabase.from('documentos').select(colunas).in('cliente_id', ids).in('obrigacao_id', [...tituloObrigacao.keys()]).eq('status', 'confirmado')
+      : Promise.resolve({ data: [] }),
+    supabase.from('documentos').select(`${colunas}, parcelamentos(origem)`).in('cliente_id', ids)
+      .not('parcelamento_id', 'is', null).gte('vencimento_guia', ini).lt('vencimento_guia', fim),
+  ]
+  const [obrig, parc] = await Promise.all(consultas)
+  if (obrig.error) {
+    console.warn('carteira-acao: guias indisponíveis:', obrig.error.message)
+    return []
+  }
+  const vistas = new Set()
+  return [...(obrig.data || []), ...(parc.error ? [] : parc.data || [])]
+    .filter((d) => (vistas.has(d.id) ? false : vistas.add(d.id)))
+    .map(({ parcelamentos, ...d }) => ({
+      ...d,
+      titulo: tituloObrigacao.get(d.obrigacao_id)
+        || (parcelamentos ? `Parcelamento ${parcelamentos.origem || ''}`.trim() : d.tipo_documento_sugerido || d.nome_arquivo),
+    }))
 }
 
 async function statusObrigacao(ctx, { id, status }) {

@@ -1,13 +1,15 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
   BriefcaseIcon, SearchIcon, ArrowLeftIcon, ChevronLeftIcon, ChevronRightIcon, Share2Icon, CopyIcon, CheckIcon, Building2Icon,
-  MonitorIcon, ClipboardListIcon,
+  MonitorIcon, ClipboardListIcon, ActivityIcon, SendIcon, EyeIcon, FileTextIcon,
 } from 'lucide-react';
 import PainelCompartilhadoPage from './PainelCompartilhadoPage';
-import { listarEmpresasCarteira } from './carteiraApi';
+import { listarEmpresasCarteira, abrirAnexoCarteira } from './carteiraApi';
 import { useTrabalhoCarteira, TrabalhoEmpresaCarteira, QuadroCarteira } from './TrabalhoCarteira';
 import { urlPublica } from '../../lib/linksPublicos';
-import { STATUS_ENTREGA, statusEntregaEmpresa, resumoEntregas } from '../../lib/entregaCarteira';
+import { STATUS_ENTREGA, statusEntregaEmpresa } from '../../lib/entregaCarteira';
+import { trilhaEmpresa, guiasPorEmpresa, situacaoEntregaGuia } from '../../lib/trilhaFechamento';
+import TrilhaProgresso, { COR_ROXO } from '../../components/TrilhaProgresso';
 
 // Página do link da carteira (?carteira=<token>) — pra pessoa responsável
 // pela carteira, sem login: lista as empresas da carteira e abre o painel de
@@ -44,7 +46,8 @@ export default function PainelCarteiraPage({ token, competencia: competenciaDoLi
   const [empresas, setEmpresas] = useState(null);
   const [erro, setErro] = useState(null);
   const [busca, setBusca] = useState('');
-  const [filtroEntrega, setFiltroEntrega] = useState(null); // status de entrega escolhido no resumo
+  const [filtroEtapa, setFiltroEtapa] = useState(null); // etapa do funil escolhida (id de FUNIL)
+  const [visao, setVisao] = useState(() => { try { return localStorage.getItem('carteira-visao') || 'progresso'; } catch { return 'progresso'; } });
   const [competencia, setCompetencia] = useState(competenciaDoLink || competenciaPadrao());
   const [selecionada, setSelecionada] = useState(empresaInicial || null); // chave da empresa aberta
   const [copiado, setCopiado] = useState(false);
@@ -73,16 +76,31 @@ export default function PainelCarteiraPage({ token, competencia: competenciaDoLi
 
   // status de entrega na competência (o mesmo do Fechamento do escritório)
   const entregaDe = (id) => statusEntregaEmpresa(id, competencia, trabalho.dados?.obrigacoes || [], trabalho.dados?.entregas || []);
-  const resumoEntrega = useMemo(
-    () => (trabalho.dados && empresas ? resumoEntregas(empresas, competencia, trabalho.dados.obrigacoes || [], trabalho.dados.entregas || []) : null),
-    [trabalho.dados, empresas, competencia],
-  );
+  // trilha de progresso de cada empresa (mesma do Fechamento do gestor)
+  const trilhas = useMemo(() => {
+    if (!trabalho.dados) return {};
+    const porEmpresa = guiasPorEmpresa(trabalho.dados.guias || []);
+    const mapa = {};
+    for (const e of empresas || []) {
+      const marca = (trabalho.dados.entregas || []).find((x) => x.cliente_id === e.id);
+      mapa[e.id] = trilhaEmpresa({
+        obrigacoes: (trabalho.dados.obrigacoes || []).filter((o) => o.cliente_id === e.id && o.competencia === competencia),
+        guias: porEmpresa[e.id] || [],
+        marcadoConcluido: !!marca?.entregue,
+        aguardando: !!marca?.aguardando_cliente,
+      });
+    }
+    return mapa;
+  }, [trabalho.dados, empresas, competencia]);
 
   const filtradas = useMemo(() => {
     const termo = normalizar(busca.trim());
+    const etapa = FUNIL.find((f) => f.id === filtroEtapa);
     return (empresas || []).filter((e) => (!termo || normalizar(`${e.nome} ${e.cnpj || ''}`).includes(termo))
-      && (!filtroEntrega || statusEntregaEmpresa(e.id, competencia, trabalho.dados?.obrigacoes || [], trabalho.dados?.entregas || []).status === filtroEntrega));
-  }, [empresas, busca, filtroEntrega, competencia, trabalho.dados]);
+      && (!etapa || (trilhas[e.id] && etapa.teste(trilhas[e.id]))));
+  }, [empresas, busca, filtroEtapa, trilhas]);
+
+  const escolherVisao = (v) => { setVisao(v); try { localStorage.setItem('carteira-visao', v); } catch { /* sem storage */ } };
 
   const carteira = empresas?.[0]?.carteira;
   const indice = (empresas || []).findIndex((e) => e.chave === selecionada);
@@ -193,70 +211,43 @@ export default function PainelCarteiraPage({ token, competencia: competenciaDoLi
               {ultimasCompetencias().map((c) => <option key={c} value={c} style={{ color: '#000' }}>Competência {c}</option>)}
             </select>
           </div>
+          {trabalho.dados && <Funil empresas={empresas} trilhas={trilhas} filtro={filtroEtapa} onFiltro={setFiltroEtapa} />}
         </div>
 
-        {resumoEntrega && (
-          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
-            <span style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--text2)', marginRight: 2 }}>Entrega de {competencia}:</span>
-            {['entregue', 'aguardando', 'andamento', 'a_fazer', 'sem_obrigacao'].filter((s) => resumoEntrega[s] > 0).map((s) => {
-              const st = STATUS_ENTREGA[s];
-              const ativo = filtroEntrega === s;
-              return (
-                <button key={s} type="button" onClick={() => setFiltroEntrega(ativo ? null : s)}
-                  title={ativo ? 'Mostrar todas as empresas' : `Mostrar só: ${st.rotulo.toLowerCase()}`}
-                  style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 12, fontWeight: 700, borderRadius: 99, padding: '4px 11px', cursor: 'pointer',
-                    background: st.fundo, color: st.cor, border: `1px solid ${ativo ? st.cor : 'transparent'}` }}>
-                  <b>{resumoEntrega[s]}</b> {st.rotulo.toLowerCase()}
-                </button>
-              );
-            })}
-            {filtroEntrega && <button type="button" onClick={() => setFiltroEntrega(null)} style={{ fontSize: 11.5, border: 'none', background: 'none', color: 'var(--accent)', cursor: 'pointer', fontWeight: 600 }}>limpar filtro</button>}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+          <div style={{ flex: 1, minWidth: 220, display: 'flex', alignItems: 'center', gap: 8, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: '9px 12px' }}>
+            <SearchIcon size={15} color="var(--text3)" />
+            <input value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Buscar empresa por nome ou CNPJ..."
+              style={{ border: 'none', outline: 'none', background: 'none', fontSize: 14, padding: 0, width: '100%', color: 'var(--text1)' }} />
+          </div>
+          <div role="group" aria-label="Visão" style={{ display: 'flex', gap: 6 }}>
+            {[['progresso', 'Progresso', ActivityIcon], ['entregas', 'Entregas', SendIcon]].map(([id, label, Icone]) => (
+              <button key={id} type="button" onClick={() => escolherVisao(id)} aria-pressed={visao === id}
+                style={{ ...botaoBarra, height: 38, padding: '0 14px', background: visao === id ? 'var(--navy)' : 'var(--surface)', color: visao === id ? '#fff' : 'var(--text2)', borderColor: visao === id ? 'var(--navy)' : 'var(--border)' }}>
+                <Icone size={14} /> {label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {!trabalho.dados && !trabalho.erro && <div style={{ textAlign: 'center', color: 'var(--text3)', fontSize: 13, padding: 20 }}>Carregando o andamento...</div>}
+        {trabalho.erro && <div style={{ textAlign: 'center', color: 'var(--danger)', fontSize: 13, padding: 12 }}>{trabalho.erro}</div>}
+
+        {trabalho.dados && visao === 'progresso' && (
+          <div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              {filtradas.map((e) => (
+                <LinhaProgresso key={e.chave} empresa={e} trilha={trilhas[e.id]} guias={(trabalho.dados.guias || []).filter((g) => g.cliente_id === e.id)}
+                  resumo={resumoEmpresa(e.id)} onAbrir={() => setSelecionada(e.chave)} onEnviar={() => enviarAoCliente(e)} />
+              ))}
+            </div>
           </div>
         )}
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: '9px 12px' }}>
-          <SearchIcon size={15} color="var(--text3)" />
-          <input value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Buscar empresa por nome ou CNPJ..."
-            style={{ border: 'none', outline: 'none', background: 'none', fontSize: 14, padding: 0, width: '100%', color: 'var(--text1)' }} />
-        </div>
+        {trabalho.dados && visao === 'entregas' && (
+          <TabelaEntregas empresas={filtradas} guias={trabalho.dados.guias || []} token={token} onAbrir={(e) => setSelecionada(e.chave)} />
+        )}
 
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 8 }}>
-          {filtradas.map((e) => (
-            <div key={e.chave} onClick={() => setSelecionada(e.chave)} role="button" tabIndex={0}
-              onKeyDown={(ev) => { if (ev.key === 'Enter') setSelecionada(e.chave); }}
-              style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: '12px 12px 10px',
-                cursor: 'pointer', display: 'flex', flexDirection: 'column', gap: 8 }}>
-              <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
-                <span style={{ width: 34, height: 34, borderRadius: 9, background: 'var(--accent-dim)', color: 'var(--accent)', flexShrink: 0,
-                  display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                  <Building2Icon size={16} />
-                </span>
-                <div style={{ minWidth: 0 }}>
-                  <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text1)', lineHeight: 1.25 }}>{nomeCurto(e.nome)}</div>
-                  <div style={{ fontSize: 10.5, color: 'var(--text3)', marginTop: 2 }}>{[e.cnpj, e.regime].filter(Boolean).join(' · ')}</div>
-                </div>
-              </div>
-              {trabalho.dados && (() => {
-                const r = resumoEmpresa(e.id);
-                return (
-                  <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
-                    <SeloEntrega info={entregaDe(e.id)} competencia={competencia} />
-                    {r.vencidas > 0 && <span style={{ ...selo, background: 'var(--danger-dim)', color: 'var(--danger)' }}>{r.vencidas} vencida{r.vencidas !== 1 ? 's' : ''}</span>}
-                    {r.aFazer > 0 && <span style={{ ...selo, background: 'var(--warn-dim)', color: 'var(--warn)' }}>{r.aFazer} pendente{r.aFazer !== 1 ? 's' : ''}</span>}
-                  </div>
-                );
-              })()}
-              <div style={{ display: 'flex', gap: 6 }}>
-                <span style={{ ...botaoAcao, flex: 1, background: 'var(--navy)', color: '#fff', border: 'none' }}>Ver painel</span>
-                <button type="button" title="Enviar o link do painel ao cliente pelo WhatsApp"
-                  onClick={(ev) => { ev.stopPropagation(); enviarAoCliente(e); }}
-                  style={{ ...botaoAcao, flex: 'none', padding: '0 10px', background: 'var(--ok-dim)', color: 'var(--ok)', border: 'none' }}>
-                  <Share2Icon size={13} />
-                </button>
-              </div>
-            </div>
-          ))}
-        </div>
         {filtradas.length === 0 && <div style={{ textAlign: 'center', color: 'var(--text3)', fontSize: 13, padding: 20 }}>Nenhuma empresa encontrada.</div>}
       </div>
 
@@ -264,6 +255,156 @@ export default function PainelCarteiraPage({ token, competencia: competenciaDoLi
       <div style={{ maxWidth: LARGURA, margin: '20px auto 0' }}>
         <QuadroCarteira trabalho={trabalho} competencia={competencia} onAbrirEmpresa={abrirEmpresaPorId} />
       </div>
+    </div>
+  );
+}
+
+// Etapas do funil do topo (agrupam as 6 da trilha em 5 baldes)
+const FUNIL = [
+  { id: 'a_fazer', rotulo: 'A fazer', cor: '#A3A3A3', teste: (t) => t.etapa === 0 },
+  { id: 'andamento', rotulo: 'Em andamento', cor: '#F59E0B', teste: (t) => t.etapa === 1 },
+  { id: 'aguardando', rotulo: 'Aguardando cliente', cor: '#A78BFA', teste: (t) => t.etapa === 2 },
+  { id: 'concluido', rotulo: 'Falta entregar', cor: '#4ADE80', teste: (t) => t.etapa === 3 },
+  { id: 'entregue', rotulo: 'Entregue', cor: '#22C55E', teste: (t) => t.etapa >= 4 },
+];
+
+function Funil({ empresas, trilhas, filtro, onFiltro }) {
+  const total = empresas.length || 1;
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: 8, marginTop: 12 }}>
+      {FUNIL.map((f) => {
+        const qtd = empresas.filter((e) => trilhas[e.id] && f.teste(trilhas[e.id])).length;
+        const ativo = filtro === f.id;
+        return (
+          <button key={f.id} type="button" onClick={() => onFiltro(ativo ? null : f.id)} aria-pressed={ativo}
+            title={ativo ? 'Mostrar todas as empresas' : `Mostrar só: ${f.rotulo.toLowerCase()}`}
+            style={{ textAlign: 'left', cursor: 'pointer', borderRadius: 10, padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: 4, color: '#fff',
+              background: ativo ? 'rgba(255,255,255,.14)' : 'rgba(255,255,255,.06)', border: `1px solid ${ativo ? f.cor : 'rgba(255,255,255,.12)'}` }}>
+            <span style={{ fontSize: 22, fontWeight: 800, color: f.cor, fontVariantNumeric: 'tabular-nums' }}>{qtd}</span>
+            <span style={{ fontSize: 11, color: 'var(--navy-text)' }}>{f.rotulo}</span>
+            <span style={{ height: 4, borderRadius: 99, background: 'rgba(255,255,255,.12)', overflow: 'hidden' }}>
+              <span style={{ display: 'block', height: '100%', width: `${(qtd / total) * 100}%`, background: f.cor }} />
+            </span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+const SITUACAO_GUIA = {
+  a_entregar: { rotulo: 'A entregar', cor: 'var(--text2)', fundo: 'var(--surface2)' },
+  entregue: { rotulo: 'Enviada', cor: 'var(--ok)', fundo: 'var(--ok-dim)' },
+  falhou: { rotulo: 'Envio falhou', cor: 'var(--danger)', fundo: 'var(--danger-dim)' },
+  aberta: { rotulo: 'Cliente abriu', cor: '#2563EB', fundo: 'rgba(37,99,235,.12)' },
+};
+
+// Uma empresa na visão Progresso: trilha + guias + atalhos (substitui o card)
+function LinhaProgresso({ empresa, trilha, guias, resumo, onAbrir, onEnviar }) {
+  if (!trilha) return null;
+  const cor = trilha.vencidas > 0 && trilha.etapa < 3 ? 'var(--danger)' : trilha.aguardando ? COR_ROXO
+    : trilha.etapa >= 3 ? 'var(--ok)' : trilha.etapa === 1 ? 'var(--warn)' : 'var(--border2)';
+  return (
+    <div onClick={onAbrir} role="button" tabIndex={0} onKeyDown={(ev) => { if (ev.key === 'Enter') onAbrir(); }}
+      className="linha-progresso-carteira"
+      style={{ cursor: 'pointer',
+        background: 'var(--surface)', border: '1px solid var(--border)', borderLeft: `4px solid ${cor}`, borderRadius: 'var(--r-md)', padding: '10px 12px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
+        <span style={{ width: 32, height: 32, borderRadius: 9, background: 'var(--accent-dim)', color: 'var(--accent)', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <Building2Icon size={15} />
+        </span>
+        <div style={{ minWidth: 0 }}>
+          <div title={empresa.nome} style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--text1)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{nomeCurto(empresa.nome)}</div>
+          <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginTop: 2 }}>
+            {empresa.regime && <span style={{ ...selo, background: 'var(--surface2)', color: 'var(--text3)' }}>{empresa.regime}</span>}
+            {resumo.vencidas > 0 && <span style={{ ...selo, background: 'var(--danger-dim)', color: 'var(--danger)' }}>{resumo.vencidas} vencida{resumo.vencidas !== 1 ? 's' : ''}</span>}
+            {resumo.aFazer > 0 && <span style={{ ...selo, background: 'var(--warn-dim)', color: 'var(--warn)' }}>{resumo.aFazer} pendente{resumo.aFazer !== 1 ? 's' : ''}</span>}
+          </div>
+        </div>
+      </div>
+      <TrilhaProgresso trilha={trilha} />
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 3, minWidth: 0 }}>
+        {guias.length === 0 && <span style={{ fontSize: 11, color: 'var(--text3)' }}>Nenhuma guia anexada ainda</span>}
+        {guias.slice(0, 3).map((g) => {
+          const st = SITUACAO_GUIA[situacaoEntregaGuia(g)];
+          return (
+            <span key={g.id} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, minWidth: 0 }}>
+              <span style={{ ...selo, background: st.fundo, color: st.cor, flexShrink: 0 }}>{st.rotulo}</span>
+              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: 'var(--text2)' }}>{g.titulo}</span>
+            </span>
+          );
+        })}
+        {guias.length > 3 && <span style={{ fontSize: 10.5, color: 'var(--text3)' }}>+{guias.length - 3} guia{guias.length - 3 !== 1 ? 's' : ''}</span>}
+      </div>
+      <div style={{ display: 'flex', gap: 6 }}>
+        <span style={{ ...botaoAcao, padding: '0 12px', background: 'var(--navy)', color: '#fff', border: 'none' }}>Ver painel</span>
+        <button type="button" title="Enviar o link do painel ao cliente pelo WhatsApp"
+          onClick={(ev) => { ev.stopPropagation(); onEnviar(); }}
+          style={{ ...botaoAcao, flex: 'none', padding: '0 10px', background: 'var(--ok-dim)', color: 'var(--ok)', border: 'none' }}>
+          <Share2Icon size={13} />
+        </button>
+      </div>
+    </div>
+  );
+}
+
+const fmtDia = (ts) => (ts ? new Date(ts).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' }) : '');
+const fmtHora = (ts) => (ts ? new Date(ts).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '');
+
+// Visão Entregas: cada guia anexada da competência, como foi entregue pela
+// Central de Entregas e se o cliente abriu pelo painel
+function TabelaEntregas({ empresas, guias, token, onAbrir }) {
+  const porId = new Map(empresas.map((e) => [e.id, e]));
+  const linhas = guias.filter((g) => porId.has(g.cliente_id))
+    .sort((a, b) => (porId.get(a.cliente_id).nome || '').localeCompare(porId.get(b.cliente_id).nome || '') || (a.titulo || '').localeCompare(b.titulo || ''));
+  const th = { textAlign: 'left', fontSize: 10, textTransform: 'uppercase', letterSpacing: '.04em', color: 'var(--text3)', padding: '9px 12px', background: 'var(--surface2)', borderBottom: '1px solid var(--border)', whiteSpace: 'nowrap' };
+  const td = { padding: '9px 12px', borderBottom: '1px solid var(--border)', fontSize: 12, verticalAlign: 'middle' };
+  if (linhas.length === 0) {
+    return <div style={{ textAlign: 'center', color: 'var(--text3)', fontSize: 13, padding: 24, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)' }}>Nenhuma guia anexada nesta competência.</div>;
+  }
+  return (
+    <div style={{ overflowX: 'auto', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)' }}>
+      <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 820 }}>
+        <thead><tr><th style={th}>Empresa</th><th style={th}>Guia</th><th style={th}>Vencimento</th><th style={th}>Entrega</th><th style={th}>Cliente</th><th style={th} /></tr></thead>
+        <tbody>
+          {linhas.map((g) => {
+            const e = porId.get(g.cliente_id);
+            const sit = situacaoEntregaGuia(g);
+            const st = SITUACAO_GUIA[sit === 'aberta' ? 'entregue' : sit];
+            const entrega = sit === 'a_entregar' ? 'A entregar'
+              : sit === 'falhou' ? `Falhou${g.entrega_erro ? ` · ${String(g.entrega_erro).replace(/^\d{4}-\d{2}-\d{2}: /, '')}` : ''}`
+              : `${g.entrega_canal === 'manual' ? 'Entregue por fora' : 'Enviada pelo WhatsApp'}${g.entregue_em ? ` · ${fmtDia(g.entregue_em)}` : ''}`;
+            return (
+              <tr key={g.id}>
+                <td style={td}>
+                  <button type="button" onClick={() => onAbrir(e)}
+                    style={{ border: 'none', background: 'none', padding: 0, cursor: 'pointer', fontWeight: 600, color: 'var(--text1)', fontSize: 12, textAlign: 'left' }}>
+                    {nomeCurto(e.nome)}
+                  </button>
+                </td>
+                <td style={td}>{g.titulo}</td>
+                <td style={{ ...td, fontVariantNumeric: 'tabular-nums' }}>{g.vencimento_guia ? new Date(`${String(g.vencimento_guia).slice(0, 10)}T12:00:00`).toLocaleDateString('pt-BR') : '—'}</td>
+                <td style={td}><span title={g.entrega_erro || ''} style={{ ...selo, background: st.fundo, color: st.cor }}>{entrega}</span></td>
+                <td style={td}>
+                  {g.aberto_em
+                    ? (
+                      <span style={{ ...selo, display: 'inline-flex', alignItems: 'center', gap: 4, background: SITUACAO_GUIA.aberta.fundo, color: SITUACAO_GUIA.aberta.cor }}>
+                        <EyeIcon size={11} /> Abriu{g.aberto_vezes > 1 ? ` ${g.aberto_vezes}×` : ''} · {fmtHora(g.aberto_ultimo_em || g.aberto_em)}
+                      </span>
+                    )
+                    : <span style={{ fontSize: 11, color: 'var(--text3)' }}>ainda não abriu</span>}
+                </td>
+                <td style={{ ...td, textAlign: 'right' }}>
+                  <button type="button" onClick={() => abrirAnexoCarteira(token, g.id).catch((err) => window.alert(err.message))}
+                    style={{ ...botaoAcao, flex: 'none', height: 28, padding: '0 10px', display: 'inline-flex' }}>
+                    <FileTextIcon size={12} /> Ver guia
+                  </button>
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
     </div>
   );
 }

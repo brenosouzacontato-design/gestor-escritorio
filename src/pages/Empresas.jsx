@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect, useRef } from 'react'
-import { PlusIcon, XIcon, CheckCircleIcon, ClockIcon, AlertCircleIcon, MinusCircleIcon, ChevronRightIcon, CalendarIcon, CheckIcon, ZapIcon, RefreshCwIcon, Trash2Icon, ListIcon, LayoutGridIcon, Rows3Icon, ClipboardListIcon, BarChart3Icon, Share2Icon, EyeIcon, CheckSquareIcon, FileIcon, DownloadIcon, PencilIcon, FileTextIcon, GripVerticalIcon, BellIcon, BellRingIcon, UserIcon, UploadCloudIcon, Loader2Icon, SparklesIcon, Building2Icon, AlertTriangleIcon, HourglassIcon, PackageCheckIcon, InboxIcon, CircleDashedIcon, BriefcaseIcon, MessageSquareIcon, SettingsIcon } from 'lucide-react'
+import { PlusIcon, XIcon, CheckCircleIcon, ClockIcon, AlertCircleIcon, MinusCircleIcon, ChevronRightIcon, CalendarIcon, CheckIcon, ZapIcon, RefreshCwIcon, Trash2Icon, ListIcon, LayoutGridIcon, Rows3Icon, ClipboardListIcon, ActivityIcon, BarChart3Icon, Share2Icon, EyeIcon, CheckSquareIcon, FileIcon, DownloadIcon, PencilIcon, FileTextIcon, GripVerticalIcon, BellIcon, BellRingIcon, UserIcon, UploadCloudIcon, Loader2Icon, SparklesIcon, Building2Icon, AlertTriangleIcon, HourglassIcon, PackageCheckIcon, InboxIcon, CircleDashedIcon, BriefcaseIcon, MessageSquareIcon, SettingsIcon } from 'lucide-react'
 import { useStore } from '../store'
 import { DeptChip, PriDot, fmtDate, isOverdue, useToast } from '../components/shared'
 import { supabase } from '../lib/supabase'
@@ -19,6 +19,7 @@ import OpcoesCandidatos from '../components/OpcoesCandidatos'
 import ModalLembrete from '../components/ModalLembrete'
 import SugestoesObrigacoes, { regimeSigla } from './assessor/SugestoesObrigacoes'
 import { listarLembretesPorItens } from './andamento/lembretesApi'
+import TrackerFechamento from './fechamento/TrackerFechamento'
 
 // Casamento histórico tipo-texto → departamento, só pra competências
 // anteriores à adoção do modelo novo (departamento_id em obrigacoes, ver
@@ -879,6 +880,11 @@ export default function Empresas({ onOpenTarefas, onOpenCadastro, clienteInicial
               border:'none', borderRadius:6, padding:'5px 9px', fontSize:11, color:visualizacao==='obrigacoes'?'var(--text1)':'var(--text3)', cursor:'pointer', fontWeight:500 }}>
             <ClipboardListIcon size={12} /> Obrigações
           </button>
+          <button onClick={() => escolherVisualizacao('tracker')} title="Cada empresa numa trilha: obrigações geradas, em andamento, aguardando cliente, concluído, guias entregues e cliente abriu"
+            style={{ display:'flex', alignItems:'center', gap:4, background:visualizacao==='tracker'?'var(--surface)':'none', boxShadow:visualizacao==='tracker'?'var(--shadow-sm)':'none',
+              border:'none', borderRadius:6, padding:'5px 9px', fontSize:11, color:visualizacao==='tracker'?'var(--accent)':'var(--text3)', cursor:'pointer', fontWeight:600 }}>
+            <ActivityIcon size={12} /> Tracker
+          </button>
         </div>
         <div style={{ marginLeft:'auto', display:'flex', alignItems:'center', gap:8 }}>
           <select value={compSel} onChange={e => setCompSel(e.target.value)} title="Competência da tela e da geração de obrigações"
@@ -1494,6 +1500,19 @@ export default function Empresas({ onOpenTarefas, onOpenCadastro, clienteInicial
             numa empresa ali abre o drawer dela direto na aba Obrigações.
             O ícone antes do título é o do departamento dono do tipo, pra
             diferenciar de relance a quem pertence cada linha. */}
+        {/* Progress tracker: a Lista com a trilha de 6 etapas por empresa,
+            incluindo a entrega das guias (Central de Entregas) */}
+        {visualizacao === 'tracker' && (
+          <TrackerFechamento
+            rows={rowsCards} obrigacoes={obrigacoes} tarefas={tarefas} compSel={compSel} departamentos={departamentos}
+            cores={{ S_COLOR, S_BG }} avatarCores={AVATAR_COLORS}
+            statusGeral={statusGeral} faseEmpresa={faseEmpresa}
+            onAbrir={openDrawer} onMudarEntrega={handleMudarEntrega} onMudarStatusGeral={handleMudarStatusGeral}
+            arrastandoId={arrastandoId} setArrastandoId={setArrastandoId}
+            onDropCard={handleDropCard} onDropNaColuna={handleDropNaColuna}
+            renderCadastro={(c) => <BotaoCadastro cliente={c} onOpenCadastro={onOpenCadastro} />} />
+        )}
+
         {visualizacao === 'obrigacoes' && (
           <div style={{ flex:1, overflow:'auto', padding:'16px' }}>
             {obrigacoesAgrupadas.length === 0 && (

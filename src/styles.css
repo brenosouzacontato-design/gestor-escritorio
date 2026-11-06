@@ -278,6 +278,34 @@ input, select, textarea { font-family: var(--font); }
 }
 /* os últimos grupos abrem pra esquerda, pra caixa não sair da tela */
 .menu-grupo:nth-last-child(-n+2) .menu-caixa { left: auto; right: 0; }
+/* telas da Rotina direto na barra; abaixo de 1500px ficam só com o ícone */
+.menu-direto { padding: 0 10px; }
+.menu-aba-qtd {
+  font-size: 10px; font-weight: 800; line-height: 16px; min-width: 16px; padding: 0 5px; border-radius: 99px;
+  background: #F59E0B; color: #111; text-align: center;
+}
+.menu-aba-qtd.err { background: #EF4444; color: #fff; }
+.menu-separador { width: 1px; height: 22px; background: var(--navy-border); margin: 0 6px; align-self: center; }
+@media (max-width: 1499px) {
+  .menu-direto-nome { display: none; }
+  .menu-direto { padding: 0 9px; }
+}
+.menu-caixa-simples { width: 300px; grid-template-columns: minmax(0, 1fr); }
+/* a caixa larga de Documentos abre centrada no botão, pra não sair da tela */
+.menu-caixa-secoes { width: 720px; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px 8px; left: 50%; transform: translateX(-50%); }
+/* linha da visão Progresso do link da carteira (PainelCarteiraPage.jsx) */
+.linha-progresso-carteira { display: grid; grid-template-columns: minmax(200px, 1fr) minmax(300px, 1.7fr) minmax(170px, .8fr) auto; gap: 14px; align-items: center; }
+@media (max-width: 760px) {
+  .linha-progresso-carteira { grid-template-columns: minmax(0, 1fr); gap: 10px; }
+}
+.menu-secao { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.menu-secao-titulo {
+  font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em;
+  color: var(--text3); padding: 6px 10px 4px;
+}
+@media (max-width: 1099px) {
+  .menu-caixa-secoes { width: 540px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
 .menu-item {
   display: flex; align-items: center; gap: 12px; width: 100%; min-height: 48px;
   padding: 8px 10px; border-radius: 12px; border: 0; background: transparent;
@@ -306,7 +334,7 @@ input, select, textarea { font-family: var(--font); }
   border-radius: 6px; padding: 1px 6px;
 }
 .busca-botao-texto, .busca-botao kbd { display: none; }
-@media (min-width: 1100px) {
+@media (min-width: 1200px) {
   .busca-botao { min-width: 220px; }
   .busca-botao-texto { display: inline; flex: 1; text-align: left; }
   .busca-botao kbd { display: inline; }

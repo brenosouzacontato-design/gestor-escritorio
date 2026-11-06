@@ -5,42 +5,44 @@ import {
   ReceiptIcon, FileSignatureIcon, LayersIcon, FileBadgeIcon, ShieldCheckIcon, ChevronDownIcon, SearchIcon, MenuIcon, XIcon, SendIcon, ReceiptTextIcon,
 }  from 'lucide-react'
 
-// Menu do gestor agrupado por assunto. O id de cada item é o mesmo `page`
-// usado no App.jsx ('empresas' continua sendo o id da tela Fechamento, pra
-// não quebrar navegações que já apontam pra ele).
+// Menu do gestor. O grupo "Rotina" (direto: true) aparece com cada tela
+// direto na barra, a um clique: são as mais usadas no dia a dia. Os outros
+// abrem uma caixa; em Documentos os itens vêm em seções (secao). O id de
+// cada item é o mesmo `page` usado no App.jsx ('empresas' continua sendo o
+// id da tela Fechamento, pra não quebrar navegações que já apontam pra ele).
 export const GRUPOS = [
-  { id: 'inicio', nome: 'Início', itens: [
+  { id: 'rotina', nome: 'Rotina', direto: true, itens: [
     { id: 'hoje',       label: 'Hoje',         desc: 'Pendências do dia (tablet)',    Icon: SunIcon },
-    { id: 'overview',   label: 'Painel',       desc: 'Resumo do dia',                 Icon: LayoutDashboardIcon },
-    { id: 'assessor',   label: 'Assessor',     desc: 'Prioridades e notícias',        Icon: SparklesIcon },
-    { id: 'central',    label: 'Central',      desc: 'Atalhos e sistemas',            Icon: AppWindowIcon },
-  ]},
-  { id: 'rotina', nome: 'Rotina', itens: [
     { id: 'empresas',   label: 'Fechamento',   desc: 'Obrigações do mês por empresa', Icon: ClipboardCheckIcon },
     { id: 'entregas',   label: 'Entregas',     desc: 'Entregar guias e ver se o cliente abriu', Icon: SendIcon },
     { id: 'tarefas',    label: 'Tarefas',      desc: 'Independentes do fechamento',   Icon: CheckSquareIcon },
     { id: 'agenda',     label: 'Agenda',       desc: 'Reuniões e lembretes',          Icon: CalendarDaysIcon },
-    { id: 'notificacoes', label: 'Notificações', desc: 'Avisos enviados',             Icon: BellIcon },
+  ]},
+  { id: 'documentos', nome: 'Documentos', itens: [
+    { id: 'documentos', label: 'Documentos',   desc: 'Arquivos recebidos',            Icon: PaperclipIcon,        secao: 'Recebidos e guias' },
+    { id: 'pagamentos', label: 'Pagamentos',   desc: 'Guias e comprovantes',          Icon: CircleDollarSignIcon, secao: 'Recebidos e guias' },
+    { id: 'parcelamentos', label: 'Parcelamentos', desc: 'Guias de PARCMEI e PGFN',   Icon: LayersIcon,           secao: 'Recebidos e guias' },
+    { id: 'notasfiscais', label: 'Notas Fiscais', desc: 'Notas das empresas',         Icon: ReceiptIcon,          secao: 'Notas fiscais' },
+    { id: 'nfse',       label: 'Emitir NFS-e', desc: 'Nota de serviço',               Icon: FileSignatureIcon,    secao: 'Notas fiscais' },
+    { id: 'pedidosnfe', label: 'Pedidos de NF-e', desc: 'Notas de venda pedidas pelo app do cliente', Icon: ReceiptTextIcon, secao: 'Notas fiscais' },
+    { id: 'licenciamento', label: 'Licenciamento', desc: 'Alvarás e licenças a vencer', Icon: FileBadgeIcon,      secao: 'Certidões e licenças' },
+    { id: 'ecac',       label: 'Situação e-CAC', desc: 'Receita e pagamentos (robô)', Icon: ShieldCheckIcon,      secao: 'Certidões e licenças' },
   ]},
   { id: 'clientes', nome: 'Clientes', itens: [
     { id: 'clientes',   label: 'Clientes',     desc: 'Cadastro das empresas',         Icon: UsersIcon },
     { id: 'prospectos', label: 'Prospectos',   desc: 'Novos clientes em negociação',  Icon: TargetIcon },
-    { id: 'documentos', label: 'Documentos',   desc: 'Arquivos recebidos',            Icon: PaperclipIcon },
-    { id: 'licenciamento', label: 'Licenciamento', desc: 'Alvarás e licenças a vencer', Icon: FileBadgeIcon },
     { id: 'paineis',    label: 'Painéis',      desc: 'Painel do cliente',             Icon: MonitorIcon },
   ]},
   { id: 'financeiro', nome: 'Financeiro', itens: [
-    { id: 'pagamentos', label: 'Pagamentos',   desc: 'Guias e comprovantes',          Icon: CircleDollarSignIcon },
-    { id: 'parcelamentos', label: 'Parcelamentos', desc: 'Guias de PARCMEI e PGFN',   Icon: LayersIcon },
     { id: 'honorarios', label: 'Honorários',   desc: 'Cobrança do escritório',        Icon: BanknoteIcon },
     { id: 'contabil',   label: 'Financeiro',   desc: 'Lançamentos e conciliação',     Icon: CalculatorIcon },
     { id: 'erp',        label: 'ERP',          desc: 'Fechamentos do sistema contábil', Icon: RefreshCwIcon },
   ]},
-  { id: 'fiscal', nome: 'Fiscal', itens: [
-    { id: 'notasfiscais', label: 'Notas Fiscais', desc: 'Notas das empresas',         Icon: ReceiptIcon },
-    { id: 'nfse',       label: 'Emitir NFS-e', desc: 'Nota de serviço',               Icon: FileSignatureIcon },
-    { id: 'pedidosnfe', label: 'Pedidos de NF-e', desc: 'Notas de venda pedidas pelo app do cliente', Icon: ReceiptTextIcon },
-    { id: 'ecac',       label: 'Situação e-CAC', desc: 'Receita e pagamentos (robô)', Icon: ShieldCheckIcon },
+  { id: 'mais', nome: 'Mais', itens: [
+    { id: 'overview',   label: 'Painel',       desc: 'Resumo do dia',                 Icon: LayoutDashboardIcon },
+    { id: 'assessor',   label: 'Assessor',     desc: 'Prioridades e notícias',        Icon: SparklesIcon },
+    { id: 'central',    label: 'Central',      desc: 'Atalhos e sistemas',            Icon: AppWindowIcon },
+    { id: 'notificacoes', label: 'Notificações', desc: 'Avisos enviados',             Icon: BellIcon },
   ]},
 ]
 
@@ -66,7 +68,26 @@ function ItemMenu({ item, ativo, badge, onClick, destaque }) {
   )
 }
 
-// Abas do topo (desktop): cada grupo abre uma caixa com as telas dele.
+// Itens da caixa de um grupo, separados por seção quando o grupo tem seções
+function ItensDoGrupo({ grupo, page, badges, onEscolher }) {
+  const secoes = [...new Set(grupo.itens.map(i => i.secao).filter(Boolean))]
+  if (secoes.length === 0) {
+    return grupo.itens.map(i => (
+      <ItemMenu key={i.id} item={i} ativo={page === i.id} badge={badges[i.id]} onClick={() => onEscolher(i.id)} />
+    ))
+  }
+  return secoes.map(sec => (
+    <div key={sec} className="menu-secao">
+      <span className="menu-secao-titulo">{sec}</span>
+      {grupo.itens.filter(i => i.secao === sec).map(i => (
+        <ItemMenu key={i.id} item={i} ativo={page === i.id} badge={badges[i.id]} onClick={() => onEscolher(i.id)} />
+      ))}
+    </div>
+  ))
+}
+
+// Barra do topo (desktop): as telas da Rotina direto na barra; os outros
+// grupos abrem uma caixa com as telas deles.
 export function MenuTopo({ page, onNavigate, badges }) {
   const [aberto, setAberto] = useState(null)
   const ref = useRef(null)
@@ -79,11 +100,29 @@ export function MenuTopo({ page, onNavigate, badges }) {
     return () => { document.removeEventListener('mousedown', fora); document.removeEventListener('keydown', esc) }
   }, [aberto])
 
+  const diretos = GRUPOS.filter(g => g.direto).flatMap(g => g.itens)
+  const caixas = GRUPOS.filter(g => !g.direto)
   return (
     <nav className="menu-topo" aria-label="Menu principal" ref={ref}>
-      {GRUPOS.map(g => {
+      {diretos.map(i => {
+        const { Icon } = i
+        const b = badges[i.id]
+        return (
+          <button key={i.id} type="button" title={`${i.label} · ${i.desc}`}
+            className={`menu-aba menu-direto ${page === i.id ? 'active' : ''}`}
+            aria-current={page === i.id ? 'page' : undefined}
+            onClick={() => { setAberto(null); onNavigate(i.id) }}>
+            <Icon size={15} />
+            <span className="menu-direto-nome">{i.label}</span>
+            {b?.n ? <span className={`menu-aba-qtd ${b.tipo === 'err' ? 'err' : ''}`}>{b.n}</span> : null}
+          </button>
+        )
+      })}
+      <span className="menu-separador" aria-hidden="true" />
+      {caixas.map(g => {
         const ativo = g.itens.some(i => i.id === page)
         const alerta = g.itens.some(i => badges[i.id]?.n)
+        const comSecoes = g.itens.some(i => i.secao)
         return (
           <div key={g.id} className="menu-grupo">
             <button type="button" className={`menu-aba ${ativo ? 'active' : ''} ${aberto === g.id ? 'aberta' : ''}`}
@@ -95,11 +134,8 @@ export function MenuTopo({ page, onNavigate, badges }) {
               <ChevronDownIcon size={14} />
             </button>
             {aberto === g.id && (
-              <div className="menu-caixa" role="menu" aria-label={g.nome}>
-                {g.itens.map(i => (
-                  <ItemMenu key={i.id} item={i} ativo={page === i.id} badge={badges[i.id]}
-                    onClick={() => { setAberto(null); onNavigate(i.id) }} />
-                ))}
+              <div className={`menu-caixa ${comSecoes ? 'menu-caixa-secoes' : 'menu-caixa-simples'}`} role="menu" aria-label={g.nome}>
+                <ItensDoGrupo grupo={g} page={page} badges={badges} onEscolher={(id) => { setAberto(null); onNavigate(id) }} />
               </div>
             )}
           </div>
