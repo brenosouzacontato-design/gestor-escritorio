@@ -36,12 +36,12 @@ const LIMITE_HISTORICO = 60;
 // Sub-contas de fornecedor do Gestor (grupo "Fornecedores", criadas pela aba
 // Notas Fiscais): no OneFlow cada fornecedor tem conta individual criada pelo
 // Fiscal, que a planilha localiza pelo CNPJ.
-//  - Plano Enxuto: filhas de 2.1.01 (menos 2.1.01.001 Fornecedores Diversos);
+//  - Plano Enxuto: filhas de 2.1.01 (Fornecedores Diversos, sem nota, fica em 2.1.05.005);
 //  - plano padrão: filhas do grupo "Fornecedores" 2.1.06.001.NNN (6+ níveis).
 export function ehContaFornecedorIndividual(conta) {
   const codigo = conta?.codigo || '';
   if (conta?.cnpj) return true;
-  if (codigo.startsWith('2.1.01.') && codigo !== '2.1.01.001') return true;
+  if (codigo.startsWith('2.1.01.')) return true;
   return codigo.startsWith('2.1.06.001.') && codigo.split('.').length >= 6;
 }
 

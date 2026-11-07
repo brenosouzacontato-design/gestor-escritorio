@@ -329,15 +329,6 @@
   "nome": "Fornecedores",
   "tipo": "passivo",
   "natureza": "credora",
-  "sintetica": true,
-  "grupo_dre": null
- },
- {
-  "codigo": "2.1.01.001",
-  "codigo_reduzido": "2101001",
-  "nome": "Fornecedores Diversos",
-  "tipo": "passivo",
-  "natureza": "credora",
   "sintetica": false,
   "grupo_dre": null
  },
@@ -516,6 +507,15 @@
   "codigo": "2.1.05.004",
   "codigo_reduzido": "2105004",
   "nome": "Lucros a Distribuir",
+  "tipo": "passivo",
+  "natureza": "credora",
+  "sintetica": false,
+  "grupo_dre": null
+ },
+ {
+  "codigo": "2.1.05.005",
+  "codigo_reduzido": "2105005",
+  "nome": "Fornecedores Diversos",
   "tipo": "passivo",
   "natureza": "credora",
   "sintetica": false,
