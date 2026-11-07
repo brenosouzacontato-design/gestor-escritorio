@@ -153,5 +153,7 @@ export function gerarPlanilhaOneflow(linhas) {
 }
 
 export function baixarPlanilhaOneflow(wb, nomeArquivo) {
-  XLSX.writeFile(wb, nomeArquivo, { compression: true });
+  // bookSST: strings na tabela compartilhada — o importador do OneFlow não lê
+  // células com texto inline (planilha importada vinha vazia)
+  XLSX.writeFile(wb, nomeArquivo, { compression: true, bookSST: true });
 }
