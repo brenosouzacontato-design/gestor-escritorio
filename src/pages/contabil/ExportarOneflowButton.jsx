@@ -1,5 +1,18 @@
 import React, { useState } from 'react';
+import { supabase } from '../../lib/supabase';
 import { montarLinhasOneflow, gerarPlanilhaOneflow, baixarPlanilhaOneflow } from './exportarOneflow';
+
+// lançamentos que nasceram de nota fiscal (aba Notas Fiscais) — o OneFlow já
+// tem essa provisão pelo Fiscal, então não vão na planilha
+async function idsLancamentosDoFiscal(empresaId) {
+  const { data, error } = await supabase
+    .from('documentos_fiscais_erp')
+    .select('lancamento_id')
+    .eq('cliente_id', empresaId)
+    .not('lancamento_id', 'is', null);
+  if (error) throw error;
+  return new Set(data.map((d) => d.lancamento_id));
+}
 
 // Botão "Exportar p/ OneFlow" da aba Lançamentos — gera a planilha de
 // partidas simples do período pra importar no OneFlow (Contábil >
@@ -26,9 +39,24 @@ export default function ExportarOneflowButton({ lancamentos, periodo, empresaId,
   const [modo, setModo] = useState(() => lerModo(empresaId));
   const [aviso, setAviso] = useState(null);
 
-  function exportar() {
+  async function exportar() {
     setAviso(null);
-    const { linhas, semConta, pendentes } = montarLinhasOneflow(lancamentos, modo);
+    let idsFiscal;
+    try {
+      idsFiscal = await idsLancamentosDoFiscal(empresaId);
+    } catch (e) {
+      setAviso({ tipo: 'erro', texto: `Não consegui checar os lançamentos vindos de nota fiscal: ${e.message}` });
+      return;
+    }
+    const { linhas, semConta, fornecedoresSemCnpj, pendentes, ignoradosFiscal } = montarLinhasOneflow(lancamentos, modo, idsFiscal);
+    if (fornecedoresSemCnpj.length) {
+      setAviso({
+        tipo: 'erro',
+        texto: `Não exportei: ${fornecedoresSemCnpj.length} fornecedor(es) sem CNPJ na conta — ${fornecedoresSemCnpj
+          .slice(0, 5).map((c) => c.nome || c.codigo).join('; ')}${fornecedoresSemCnpj.length > 5 ? '…' : ''}. Sem o CNPJ o OneFlow não acha a conta individual do fornecedor.`,
+      });
+      return;
+    }
     if (semConta.length) {
       setAviso({
         tipo: 'erro',
@@ -45,7 +73,7 @@ export default function ExportarOneflowButton({ lancamentos, periodo, empresaId,
     baixarPlanilhaOneflow(wb, `OneFlow_Lancamentos_${slug(empresaNome)}_${periodo.dataInicio}_a_${periodo.dataFim}.xlsx`);
     setAviso({
       tipo: pendentes ? 'alerta' : 'ok',
-      texto: `${linhas.length} linha(s) exportada(s).${pendentes
+      texto: `${linhas.length} linha(s) exportada(s).${ignoradosFiscal ? ` ${ignoradosFiscal} lançamento(s) de nota fiscal ficaram de fora (já vêm do Fiscal do OneFlow).` : ''}${pendentes
         ? ` Atenção: ${pendentes} lançamento(s) ainda em "Valores a Identificar" — no OneFlow essa conta trava o fechamento enquanto tiver saldo.`
         : ''}`,
     });

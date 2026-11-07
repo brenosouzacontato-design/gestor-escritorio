@@ -16,7 +16,7 @@ import ContaCombobox from './ContaCombobox';
 // Contrapartida usada quando a transação é salva sem conta classificada ainda
 // ("Valores a Identificar" — código muda entre o plano padrão e o enxuto,
 // ver planoContasConstantes.js)
-import { acharContaPendente, CODIGOS_CONTA_PENDENTE } from './planoContasConstantes';
+import { acharContaPendente, CODIGOS_CONTA_PENDENTE, PREFIXO_DISPONIVEL } from './planoContasConstantes';
 
 /**
  * Chama a Netlify Function netlify/functions/extrair-extrato.js. Ela manda
@@ -241,7 +241,14 @@ export default function ImportarExtratoTab({ empresaId }) {
     listarContasBanco(empresaId).then(setContasBanco);
     // contas sintéticas (aceita_lancamento=false) não recebem lançamento
     // direto — não fazem sentido como opção nesse seletor.
-    listarContasReceitaDespesa(empresaId).then((c) => setContasClassificacao(c.filter((x) => x.aceita_lancamento)));
+    // Além de receita/despesa entram as contas de baixa: Clientes Diversos
+    // (recebimento de venda — a receita já vem do Fiscal do OneFlow) e as
+    // contas individuais de fornecedor (pagamento de nota — a despesa já
+    // vem do Fiscal), mais tributos, empréstimos etc. Caixa/bancos ficam
+    // de fora (são o outro lado do extrato), assim como a transitória.
+    listarContasReceitaDespesa(empresaId, ['receita', 'despesa', 'custo', 'ativo', 'passivo', 'patrimonio_liquido'])
+      .then((c) => setContasClassificacao(c.filter((x) => x.aceita_lancamento
+        && !x.codigo?.startsWith(PREFIXO_DISPONIVEL))));
   }, [empresaId]);
 
   function onDrop(e) {

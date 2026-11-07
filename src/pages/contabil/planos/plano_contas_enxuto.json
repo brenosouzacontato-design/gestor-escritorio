@@ -110,7 +110,7 @@
  {
   "codigo": "1.1.02.001",
   "codigo_reduzido": "1102001",
-  "nome": "Clientes a Receber",
+  "nome": "Clientes Diversos",
   "tipo": "ativo",
   "natureza": "devedora",
   "sintetica": false,
@@ -335,7 +335,7 @@
  {
   "codigo": "2.1.01.001",
   "codigo_reduzido": "2101001",
-  "nome": "Fornecedores a Pagar",
+  "nome": "Fornecedores Diversos",
   "tipo": "passivo",
   "natureza": "credora",
   "sintetica": false,

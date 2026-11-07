@@ -8,7 +8,18 @@
 //   aba "OneFlow_Lancamento_Contabil", cabeçalho na linha 6, dados a partir
 //   da linha 7, colunas B Data | C Conta Devedora | D Conta Credora |
 //   E Histórico (máx. 60) | F Valor; aba "Config" com nome/versão/range.
-// A conta pode ir como classificação (1.1.01.002) — é o que mandamos.
+// A conta pode ir como classificação (1.1.01.002) — é o que mandamos — ou,
+// pra cliente/fornecedor, como CNPJ.
+//
+// Divisão de trabalho com o OneFlow:
+//  - Fiscal do OneFlow lança as notas: vendas (D Clientes Diversos — conta
+//    agrupada / C Receita) e compras/serviços tomados (D Despesa / C conta
+//    INDIVIDUAL do fornecedor, criada pelo próprio OneFlow).
+//  - Gestor manda o extrato: recebimentos (D Banco / C Clientes Diversos) e
+//    pagamentos — a BAIXA do fornecedor vai com o CNPJ dele, pra cair na
+//    conta individual que o Fiscal criou.
+// Por isso lançamentos gerados no Gestor a partir de nota fiscal (aba Notas
+// Fiscais) NÃO são exportados: o OneFlow já tem a provisão pelo Fiscal.
 import * as XLSX from 'xlsx';
 import PLANO_ENXUTO from './planos/plano_contas_enxuto.json';
 import DEPARA_PADRAO_ENXUTO from './planos/depara_padrao_para_enxuto.json';
@@ -22,20 +33,30 @@ const LIMITE_HISTORICO = 60;
 //    enxuto vai direto; conta do plano padrão antigo passa pelo de-para.
 //  - 'mesmo': OneFlow usa o mesmo plano do Gestor (ex.: padrão OneFlow) —
 //    manda o código como está.
-// Sub-contas de fornecedor criadas pelo Gestor (tela de Notas Fiscais) não
-// existem no OneFlow — lá o plano agrupa todos os fornecedores numa conta só.
-const PREFIXOS_AGRUPADOS = [
-  ['2.1.01.', '2.1.01.001'], // grupo Fornecedores do Plano Enxuto
-  ['2.1.06.001.', '2.1.01.001'], // grupo Fornecedores criado sobre o plano padrão
-];
+// Sub-contas de fornecedor do Gestor (grupo "Fornecedores", criadas pela aba
+// Notas Fiscais): no OneFlow cada fornecedor tem conta individual criada pelo
+// Fiscal, que a planilha localiza pelo CNPJ.
+//  - Plano Enxuto: filhas de 2.1.01 (menos 2.1.01.001 Fornecedores Diversos);
+//  - plano padrão: filhas do grupo "Fornecedores" 2.1.06.001.NNN (6+ níveis).
+export function ehContaFornecedorIndividual(conta) {
+  const codigo = conta?.codigo || '';
+  if (conta?.cnpj) return true;
+  if (codigo.startsWith('2.1.01.') && codigo !== '2.1.01.001') return true;
+  return codigo.startsWith('2.1.06.001.') && codigo.split('.').length >= 6;
+}
 
 export function converterCodigo(codigo, modo) {
   if (!codigo) return null;
   if (modo === 'mesmo') return codigo;
   if (CODIGOS_ENXUTO.has(codigo)) return codigo;
-  if (DEPARA_PADRAO_ENXUTO[codigo]) return DEPARA_PADRAO_ENXUTO[codigo];
-  const agrupado = PREFIXOS_AGRUPADOS.find(([prefixo]) => codigo.startsWith(prefixo));
-  return agrupado ? agrupado[1] : null;
+  return DEPARA_PADRAO_ENXUTO[codigo] ?? null;
+}
+
+// Conta da partida no formato da planilha: CNPJ pra fornecedor individual,
+// senão o código (convertido pelo plano escolhido).
+function contaParaOneflow(conta, modo) {
+  if (ehContaFornecedorIndividual(conta)) return conta.cnpj ? conta.cnpj.replace(/\D/g, '') : null;
+  return converterCodigo(conta?.codigo, modo);
 }
 
 // Quebra um lançamento de N débitos x M créditos em pares débito/crédito
@@ -67,26 +88,35 @@ function historicoOneflow(l) {
 }
 
 // Monta as linhas + o relatório do que não deu pra converter.
-export function montarLinhasOneflow(lancamentos, modo) {
+// idsDoFiscal: ids de lançamentos gerados a partir de nota fiscal — ficam de
+// fora (o OneFlow já recebe a provisão pelo Fiscal).
+export function montarLinhasOneflow(lancamentos, modo, idsDoFiscal = new Set()) {
   const linhas = [];
   const semConta = new Map(); // código Gestor -> nome, contas sem correspondência
+  const fornecedoresSemCnpj = new Map();
   let pendentes = 0;
+  let ignoradosFiscal = 0;
   const ordenados = [...lancamentos].sort((a, b) => (a.data < b.data ? -1 : a.data > b.data ? 1 : 0));
   for (const l of ordenados) {
+    if (idsDoFiscal.has(l.id)) { ignoradosFiscal += 1; continue; }
     const partidas = l.partidas_contabeis ?? [];
     if (partidas.some((p) => ehContaPendente(p.contas_contabeis?.codigo))) pendentes += 1;
     for (const par of quebrarEmPartidasSimples(partidas)) {
-      const cd = par.debito.contas_contabeis?.codigo;
-      const cc = par.credito.contas_contabeis?.codigo;
-      const d = converterCodigo(cd, modo);
-      const c = converterCodigo(cc, modo);
-      if (!d) semConta.set(cd, par.debito.contas_contabeis?.nome);
-      if (!c) semConta.set(cc, par.credito.contas_contabeis?.nome);
+      const contaD = par.debito.contas_contabeis;
+      const contaC = par.credito.contas_contabeis;
+      const d = contaParaOneflow(contaD, modo);
+      const c = contaParaOneflow(contaC, modo);
+      for (const [conta, convertida] of [[contaD, d], [contaC, c]]) {
+        if (convertida) continue;
+        if (ehContaFornecedorIndividual(conta)) fornecedoresSemCnpj.set(conta?.codigo, conta?.nome);
+        else semConta.set(conta?.codigo, conta?.nome);
+      }
       if (!d || !c) continue;
       linhas.push({ data: l.data, debito: d, credito: c, historico: historicoOneflow(l), valor: par.valor });
     }
   }
-  return { linhas, semConta: [...semConta].map(([codigo, nome]) => ({ codigo, nome })), pendentes };
+  const lista = (m) => [...m].map(([codigo, nome]) => ({ codigo, nome }));
+  return { linhas, semConta: lista(semConta), fornecedoresSemCnpj: lista(fornecedoresSemCnpj), pendentes, ignoradosFiscal };
 }
 
 export function gerarPlanilhaOneflow(linhas) {

@@ -479,7 +479,9 @@ export async function excluirRegraClassificacao(id) {
 export async function listarLancamentos(empresaId, { dataInicio, dataFim } = {}) {
   let query = supabase
     .from('lancamentos_contabeis')
-    .select('*, partidas_contabeis(*, contas_contabeis(codigo, nome))')
+    // contas_contabeis(*) em vez de colunas fixas: traz o cnpj (fornecedor)
+    // usado na exportação p/ OneFlow sem quebrar se a coluna ainda não existir
+    .select('*, partidas_contabeis(*, contas_contabeis(*))')
     .eq('empresa_id', empresaId)
     .order('data', { ascending: false });
 
