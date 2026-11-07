@@ -96,7 +96,7 @@ export async function obterEvolucaoMensal(meses = 6) {
 export async function obterOuCriarContaFornecedor(empresaId, nomeFornecedor) {
   const nome = (nomeFornecedor || 'Fornecedor não identificado').trim();
   const contas = await listarContas(empresaId);
-  const grupoFornecedores = contas.find((c) => c.nome === 'Fornecedores' && !c.aceita_lancamento);
+  const grupoFornecedores = contas.find((c) => c.nome.trim().toLowerCase() === 'fornecedores' && !c.aceita_lancamento);
   if (!grupoFornecedores) {
     throw new Error('Grupo "Fornecedores" não encontrado no plano de contas dessa empresa — rode a reformulação do plano de contas primeiro.');
   }

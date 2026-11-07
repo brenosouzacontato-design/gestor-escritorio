@@ -16,15 +16,10 @@ export async function listarContas(empresaId) {
   return data;
 }
 
-// Grupo "Disponibilidades" (caixa, bancos, aplicações) no plano de contas
-// padrão — mesmo prefixo já usado em LancamentosTab.jsx pra inferir a
-// natureza (entrada/saída) de um lançamento.
-const PREFIXO_DISPONIVEL = '1.1.01';
-
-// Conta transitória "Valores a Identificar" — mesmo código usado em
-// LancamentosTab.jsx e ImportarExtratoTab.jsx pra transação ainda não
-// classificada.
-const CODIGO_CONTA_PENDENTE = '1.1.01.001.002';
+// Grupo "Disponível" (caixa, bancos, aplicações) e conta transitória
+// "Valores a Identificar" — ver planoContasConstantes.js (valem pro plano
+// padrão OneFlow e pro Plano Enxuto).
+import { PREFIXO_DISPONIVEL, ehContaPendente } from './planoContasConstantes';
 
 // Lista só as contas de banco/caixa — usada no seletor "conta bancária do
 // extrato" da importação. Não aparece na tela de Plano de Contas (que agora
@@ -554,7 +549,7 @@ export async function listarLancamentosAIdentificar(empresaId, { dataInicio, dat
     const debitoPartidas = l.partidas_contabeis?.filter((p) => p.tipo === 'debito') ?? [];
     const creditoPartidas = l.partidas_contabeis?.filter((p) => p.tipo === 'credito') ?? [];
     const valor = debitoPartidas.reduce((s, p) => s + Number(p.valor), 0);
-    const ehContaDisponivelReal = (codigo) => codigo?.startsWith(PREFIXO_DISPONIVEL) && codigo !== CODIGO_CONTA_PENDENTE;
+    const ehContaDisponivelReal = (codigo) => codigo?.startsWith(PREFIXO_DISPONIVEL) && !ehContaPendente(codigo);
     const tocaDisponivelDebito = debitoPartidas.some((p) => ehContaDisponivelReal(p.contas_contabeis?.codigo));
     const tocaDisponivelCredito = creditoPartidas.some((p) => ehContaDisponivelReal(p.contas_contabeis?.codigo));
     const natureza = tocaDisponivelDebito === tocaDisponivelCredito ? null : (tocaDisponivelDebito ? 'entrada' : 'saida');

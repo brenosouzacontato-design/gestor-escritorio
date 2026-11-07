@@ -14,8 +14,9 @@ import { extrairTransacoesDeExcel } from './excelExtrato';
 import ContaCombobox from './ContaCombobox';
 
 // Contrapartida usada quando a transação é salva sem conta classificada ainda
-// (faz parte do plano de contas padrão importado — ver scripts/plano_contas_oneflow.json)
-const CODIGO_CONTA_PENDENTE = '1.1.01.001.002'; // "Valores a Identificar"
+// ("Valores a Identificar" — código muda entre o plano padrão e o enxuto,
+// ver planoContasConstantes.js)
+import { acharContaPendente, CODIGOS_CONTA_PENDENTE } from './planoContasConstantes';
 
 /**
  * Chama a Netlify Function netlify/functions/extrair-extrato.js. Ela manda
@@ -341,7 +342,7 @@ export default function ImportarExtratoTab({ empresaId }) {
     setErro(null);
     setInfo(null);
     try {
-      const contaPendente = contasBanco.find((c) => c.codigo === CODIGO_CONTA_PENDENTE);
+      const contaPendente = acharContaPendente(contasBanco);
       const validas = transacoes.filter((t) => !t.ignorar);
 
       const ocorrencias = new Map(); // chave base -> quantas vezes já apareceu nesse extrato
@@ -350,7 +351,7 @@ export default function ImportarExtratoTab({ empresaId }) {
         // não perder a transação, e fica pra conciliar depois nos Lançamentos
         const contraId = t.conta_id || contaPendente?.id;
         if (!contraId) {
-          throw new Error(`Não achei a conta "Valores a Identificar" (código ${CODIGO_CONTA_PENDENTE}) no plano dessa empresa, e a transação "${t.descricao}" não tem conta selecionada.`);
+          throw new Error(`Não achei a conta "Valores a Identificar" (código ${CODIGOS_CONTA_PENDENTE.join(' ou ')}) no plano dessa empresa, e a transação "${t.descricao}" não tem conta selecionada.`);
         }
         const valor = Math.abs(Number(t.valor));
         const partidas = t.tipo === 'entrada'

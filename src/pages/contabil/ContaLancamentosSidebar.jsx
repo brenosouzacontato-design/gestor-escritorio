@@ -4,7 +4,7 @@ import { editarContaBasico, contaTemLancamentos, atualizarLancamento, reclassifi
 import { exportarLancamentosPDF, exportarLancamentosExcel } from './exportarRelatorio';
 import ContaCombobox from './ContaCombobox';
 
-const CODIGO_CONTA_PENDENTE = '1.1.01.001.002';
+import { CODIGOS_CONTA_PENDENTE } from './planoContasConstantes';
 
 const TIPO_LABEL = {
   ativo: 'Ativo', passivo: 'Passivo', patrimonio_liquido: 'Patrimônio Líquido',
@@ -245,7 +245,7 @@ function LinhaRazao({ linha, contas, onSalvarHistorico, onSalvarData, onReclassi
         {linha.contrapartida ? (
           <ContaCombobox contas={contas ?? []} value={linha.contrapartida.contaId}
             onChange={(novoId) => onReclassificarContrapartida(linha, novoId)}
-            excluirCodigos={[CODIGO_CONTA_PENDENTE]} style={{ width: '100%' }} />
+            excluirCodigos={CODIGOS_CONTA_PENDENTE} style={{ width: '100%' }} />
         ) : <span style={{ color: 'var(--text3)' }}>—</span>}
       </td>
       <td className="num" style={{ whiteSpace: 'nowrap' }}>

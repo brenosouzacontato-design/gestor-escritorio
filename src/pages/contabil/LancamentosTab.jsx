@@ -8,14 +8,12 @@ import ContaCombobox from './ContaCombobox';
 import NovoLancamentoModal from './NovoLancamentoModal';
 import EnviarIdentificacaoButton from './EnviarIdentificacaoButton';
 
-// mesma conta transitória usada em ImportarExtratoTab.jsx pra transações
-// que chegaram sem classificação (ver CODIGO_CONTA_PENDENTE lá)
-const CODIGO_CONTA_PENDENTE = '1.1.01.001.002'; // "Valores a Identificar"
-
-// grupo "Disponibilidades" (caixa, bancos, aplicações) no plano de contas
-// padrão — usado pra inferir a natureza (entrada/saída) de cada lançamento
-// olhando se é o lado debitado ou creditado, igual já é feito na importação
-const PREFIXO_DISPONIVEL = '1.1.01';
+// conta transitória "Valores a Identificar" e grupo "Disponível" (caixa,
+// bancos, aplicações) — usados pra inferir a natureza (entrada/saída) de cada
+// lançamento olhando se é o lado debitado ou creditado. Ver
+// planoContasConstantes.js (vale pro plano padrão e pro enxuto).
+import { PREFIXO_DISPONIVEL, CODIGOS_CONTA_PENDENTE, ehContaPendente } from './planoContasConstantes';
+import ExportarOneflowButton from './ExportarOneflowButton';
 
 export default function LancamentosTab({ empresaId, periodo, empresaNome }) {
   const [contas, setContas] = useState([]);
@@ -100,7 +98,7 @@ export default function LancamentosTab({ empresaId, periodo, empresaNome }) {
     // "Valores a Identificar" também mora no grupo 1.1.01 mas é só uma conta
     // transitória pra transação ainda não classificada — não conta como
     // banco/caixa de verdade, senão toda transação pendente vira ambígua
-    const ehContaDisponivelReal = (codigo) => codigo?.startsWith(PREFIXO_DISPONIVEL) && codigo !== CODIGO_CONTA_PENDENTE;
+    const ehContaDisponivelReal = (codigo) => codigo?.startsWith(PREFIXO_DISPONIVEL) && !ehContaPendente(codigo);
     const tocaDisponivelDebito = debitoPartidas.some((p) => ehContaDisponivelReal(p.contas_contabeis?.codigo));
     const tocaDisponivelCredito = creditoPartidas.some((p) => ehContaDisponivelReal(p.contas_contabeis?.codigo));
     const natureza = tocaDisponivelDebito === tocaDisponivelCredito ? null : (tocaDisponivelDebito ? 'entrada' : 'saida');
@@ -264,6 +262,7 @@ export default function LancamentosTab({ empresaId, periodo, empresaNome }) {
               do período mesmo com a tabela filtrada */}
           <EnviarIdentificacaoButton empresaId={empresaId} empresaNome={empresaNome} periodo={periodo}
             lancamentoIds={semFiltroAplicado && selecionados.size === 0 ? [] : idsParaIdentificar} />
+          <ExportarOneflowButton lancamentos={lancamentos} periodo={periodo} empresaId={empresaId} empresaNome={empresaNome} />
         </div>
         {erro && <p style={{ color: 'var(--danger)', margin: 0 }}>{erro}</p>}
       </div>
@@ -282,7 +281,7 @@ export default function LancamentosTab({ empresaId, periodo, empresaNome }) {
         <div className="contabil-form" style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12, padding: '10px 16px', flexWrap: 'wrap' }}>
           <strong>{selecionados.size} lançamento{selecionados.size > 1 ? 's' : ''} selecionado{selecionados.size > 1 ? 's' : ''}</strong>
           <ContaCombobox contas={contas} value={contaLote} onChange={setContaLote}
-            excluirCodigos={[CODIGO_CONTA_PENDENTE]} placeholder="Selecione a conta..." style={{ width: 280 }} />
+            excluirCodigos={CODIGOS_CONTA_PENDENTE} placeholder="Selecione a conta..." style={{ width: 280 }} />
           <button type="button" className="btn-navy" onClick={aplicarClassificacaoLote}
             disabled={aplicandoLote || excluindoLote || !contaLote || lancamentosClassificaveis.every((l) => !selecionados.has(l.id))}>
             {aplicandoLote ? 'Aplicando...' : 'Classificar selecionados'}
@@ -450,7 +449,7 @@ function PartidaCell({ partidas, contas, onEditar }) {
         contas={contas}
         value={principal.conta_id}
         onChange={(novoId) => onEditar(principal, novoId)}
-        excluirCodigos={[CODIGO_CONTA_PENDENTE]}
+        excluirCodigos={CODIGOS_CONTA_PENDENTE}
         style={{ flex: 1, minWidth: 160 }}
       />
       {extras.length > 0 && (
