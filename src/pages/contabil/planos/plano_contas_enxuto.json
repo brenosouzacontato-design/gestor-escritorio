@@ -1,0 +1,1181 @@
+[
+ {
+  "codigo": "1",
+  "codigo_reduzido": "1",
+  "nome": "ATIVO",
+  "tipo": "ativo",
+  "natureza": "devedora",
+  "sintetica": true,
+  "grupo_dre": null
+ },
+ {
+  "codigo": "1.1",
+  "codigo_reduzido": "11",
+  "nome": "ATIVO CIRCULANTE",
+  "tipo": "ativo",
+  "natureza": "devedora",
+  "sintetica": true,
+  "grupo_dre": null
+ },
+ {
+  "codigo": "1.1.01",
+  "codigo_reduzido": "1101",
+  "nome": "DISPONIVEL",
+  "tipo": "ativo",
+  "natureza": "devedora",
+  "sintetica": true,
+  "grupo_dre": null
+ },
+ {
+  "codigo": "1.1.01.001",
+  "codigo_reduzido": "1101001",
+  "nome": "Caixa Geral",
+  "tipo": "ativo",
+  "natureza": "devedora",
+  "sintetica": false,
+  "grupo_dre": null
+ },
+ {
+  "codigo": "1.1.01.002",
+  "codigo_reduzido": "1101002",
+  "nome": "Banco Conta Movimento 1",
+  "tipo": "ativo",
+  "natureza": "devedora",
+  "sintetica": false,
+  "grupo_dre": null
+ },
+ {
+  "codigo": "1.1.01.003",
+  "codigo_reduzido": "1101003",
+  "nome": "Banco Conta Movimento 2",
+  "tipo": "ativo",
+  "natureza": "devedora",
+  "sintetica": false,
+  "grupo_dre": null
+ },
+ {
+  "codigo": "1.1.01.004",
+  "codigo_reduzido": "1101004",
+  "nome": "Banco Conta Movimento 3",
+  "tipo": "ativo",
+  "natureza": "devedora",
+  "sintetica": false,
+  "grupo_dre": null
+ },
+ {
+  "codigo": "1.1.01.005",
+  "codigo_reduzido": "1101005",
+  "nome": "Banco Conta Movimento 4",
+  "tipo": "ativo",
+  "natureza": "devedora",
+  "sintetica": false,
+  "grupo_dre": null
+ },
+ {
+  "codigo": "1.1.01.006",
+  "codigo_reduzido": "1101006",
+  "nome": "Banco Conta Movimento 5",
+  "tipo": "ativo",
+  "natureza": "devedora",
+  "sintetica": false,
+  "grupo_dre": null
+ },
+ {
+  "codigo": "1.1.01.010",
+  "codigo_reduzido": "1101010",
+  "nome": "Aplicacoes Financeiras Liquidez Imediata",
+  "tipo": "ativo",
+  "natureza": "devedora",
+  "sintetica": false,
+  "grupo_dre": null
+ },
+ {
+  "codigo": "1.1.01.099",
+  "codigo_reduzido": "1101099",
+  "nome": "Valores a Identificar (Transitoria)",
+  "tipo": "ativo",
+  "natureza": "devedora",
+  "sintetica": false,
+  "grupo_dre": null
+ },
+ {
+  "codigo": "1.1.02",
+  "codigo_reduzido": "1102",
+  "nome": "CLIENTES",
+  "tipo": "ativo",
+  "natureza": "devedora",
+  "sintetica": true,
+  "grupo_dre": null
+ },
+ {
+  "codigo": "1.1.02.001",
+  "codigo_reduzido": "1102001",
+  "nome": "Clientes Diversos",
+  "tipo": "ativo",
+  "natureza": "devedora",
+  "sintetica": false,
+  "grupo_dre": null
+ },
+ {
+  "codigo": "1.1.02.002",
+  "codigo_reduzido": "1102002",
+  "nome": "Cartoes e Pix a Receber (Adquirentes)",
+  "tipo": "ativo",
+  "natureza": "devedora",
+  "sintetica": false,
+  "grupo_dre": null
+ },
+ {
+  "codigo": "1.1.03",
+  "codigo_reduzido": "1103",
+  "nome": "OUTROS CREDITOS",
+  "tipo": "ativo",
+  "natureza": "devedora",
+  "sintetica": true,
+  "grupo_dre": null
+ },
+ {
+  "codigo": "1.1.03.001",
+  "codigo_reduzido": "1103001",
+  "nome": "Adiantamentos a Fornecedores",
+  "tipo": "ativo",
+  "natureza": "devedora",
+  "sintetica": false,
+  "grupo_dre": null
+ },
+ {
+  "codigo": "1.1.03.002",
+  "codigo_reduzido": "1103002",
+  "nome": "Adiantamentos a Funcionarios",
+  "tipo": "ativo",
+  "natureza": "devedora",
+  "sintetica": false,
+  "grupo_dre": null
+ },
+ {
+  "codigo": "1.1.03.003",
+  "codigo_reduzido": "1103003",
+  "nome": "Tributos a Recuperar",
+  "tipo": "ativo",
+  "natureza": "devedora",
+  "sintetica": false,
+  "grupo_dre": null
+ },
+ {
+  "codigo": "1.1.03.004",
+  "codigo_reduzido": "1103004",
+  "nome": "Despesas Antecipadas",
+  "tipo": "ativo",
+  "natureza": "devedora",
+  "sintetica": false,
+  "grupo_dre": null
+ },
+ {
+  "codigo": "1.1.04",
+  "codigo_reduzido": "1104",
+  "nome": "ESTOQUES",
+  "tipo": "ativo",
+  "natureza": "devedora",
+  "sintetica": true,
+  "grupo_dre": null
+ },
+ {
+  "codigo": "1.1.04.001",
+  "codigo_reduzido": "1104001",
+  "nome": "Mercadorias para Revenda",
+  "tipo": "ativo",
+  "natureza": "devedora",
+  "sintetica": false,
+  "grupo_dre": null
+ },
+ {
+  "codigo": "1.1.04.002",
+  "codigo_reduzido": "1104002",
+  "nome": "Materiais e Insumos",
+  "tipo": "ativo",
+  "natureza": "devedora",
+  "sintetica": false,
+  "grupo_dre": null
+ },
+ {
+  "codigo": "1.2",
+  "codigo_reduzido": "12",
+  "nome": "ATIVO NAO CIRCULANTE",
+  "tipo": "ativo",
+  "natureza": "devedora",
+  "sintetica": true,
+  "grupo_dre": null
+ },
+ {
+  "codigo": "1.2.01",
+  "codigo_reduzido": "1201",
+  "nome": "REALIZAVEL A LONGO PRAZO",
+  "tipo": "ativo",
+  "natureza": "devedora",
+  "sintetica": true,
+  "grupo_dre": null
+ },
+ {
+  "codigo": "1.2.01.001",
+  "codigo_reduzido": "1201001",
+  "nome": "Depositos e Caucoes",
+  "tipo": "ativo",
+  "natureza": "devedora",
+  "sintetica": false,
+  "grupo_dre": null
+ },
+ {
+  "codigo": "1.2.02",
+  "codigo_reduzido": "1202",
+  "nome": "IMOBILIZADO",
+  "tipo": "ativo",
+  "natureza": "devedora",
+  "sintetica": true,
+  "grupo_dre": null
+ },
+ {
+  "codigo": "1.2.02.001",
+  "codigo_reduzido": "1202001",
+  "nome": "Maquinas e Equipamentos",
+  "tipo": "ativo",
+  "natureza": "devedora",
+  "sintetica": false,
+  "grupo_dre": null
+ },
+ {
+  "codigo": "1.2.02.002",
+  "codigo_reduzido": "1202002",
+  "nome": "Moveis e Utensilios",
+  "tipo": "ativo",
+  "natureza": "devedora",
+  "sintetica": false,
+  "grupo_dre": null
+ },
+ {
+  "codigo": "1.2.02.003",
+  "codigo_reduzido": "1202003",
+  "nome": "Computadores e Perifericos",
+  "tipo": "ativo",
+  "natureza": "devedora",
+  "sintetica": false,
+  "grupo_dre": null
+ },
+ {
+  "codigo": "1.2.02.004",
+  "codigo_reduzido": "1202004",
+  "nome": "Veiculos",
+  "tipo": "ativo",
+  "natureza": "devedora",
+  "sintetica": false,
+  "grupo_dre": null
+ },
+ {
+  "codigo": "1.2.02.005",
+  "codigo_reduzido": "1202005",
+  "nome": "Instalacoes e Benfeitorias",
+  "tipo": "ativo",
+  "natureza": "devedora",
+  "sintetica": false,
+  "grupo_dre": null
+ },
+ {
+  "codigo": "1.2.02.090",
+  "codigo_reduzido": "1202090",
+  "nome": "(-) Depreciacao Acumulada",
+  "tipo": "ativo",
+  "natureza": "credora",
+  "sintetica": false,
+  "grupo_dre": null
+ },
+ {
+  "codigo": "1.2.03",
+  "codigo_reduzido": "1203",
+  "nome": "INTANGIVEL",
+  "tipo": "ativo",
+  "natureza": "devedora",
+  "sintetica": true,
+  "grupo_dre": null
+ },
+ {
+  "codigo": "1.2.03.001",
+  "codigo_reduzido": "1203001",
+  "nome": "Softwares e Marcas",
+  "tipo": "ativo",
+  "natureza": "devedora",
+  "sintetica": false,
+  "grupo_dre": null
+ },
+ {
+  "codigo": "2",
+  "codigo_reduzido": "2",
+  "nome": "PASSIVO E PATRIMONIO LIQUIDO",
+  "tipo": "passivo",
+  "natureza": "credora",
+  "sintetica": true,
+  "grupo_dre": null
+ },
+ {
+  "codigo": "2.1",
+  "codigo_reduzido": "21",
+  "nome": "PASSIVO CIRCULANTE",
+  "tipo": "passivo",
+  "natureza": "credora",
+  "sintetica": true,
+  "grupo_dre": null
+ },
+ {
+  "codigo": "2.1.01",
+  "codigo_reduzido": "2101",
+  "nome": "Fornecedores",
+  "tipo": "passivo",
+  "natureza": "credora",
+  "sintetica": true,
+  "grupo_dre": null
+ },
+ {
+  "codigo": "2.1.01.001",
+  "codigo_reduzido": "2101001",
+  "nome": "Fornecedores Diversos",
+  "tipo": "passivo",
+  "natureza": "credora",
+  "sintetica": false,
+  "grupo_dre": null
+ },
+ {
+  "codigo": "2.1.02",
+  "codigo_reduzido": "2102",
+  "nome": "OBRIGACOES TRABALHISTAS",
+  "tipo": "passivo",
+  "natureza": "credora",
+  "sintetica": true,
+  "grupo_dre": null
+ },
+ {
+  "codigo": "2.1.02.001",
+  "codigo_reduzido": "2102001",
+  "nome": "Salarios a Pagar",
+  "tipo": "passivo",
+  "natureza": "credora",
+  "sintetica": false,
+  "grupo_dre": null
+ },
+ {
+  "codigo": "2.1.02.002",
+  "codigo_reduzido": "2102002",
+  "nome": "Pro-labore a Pagar",
+  "tipo": "passivo",
+  "natureza": "credora",
+  "sintetica": false,
+  "grupo_dre": null
+ },
+ {
+  "codigo": "2.1.02.003",
+  "codigo_reduzido": "2102003",
+  "nome": "INSS a Recolher",
+  "tipo": "passivo",
+  "natureza": "credora",
+  "sintetica": false,
+  "grupo_dre": null
+ },
+ {
+  "codigo": "2.1.02.004",
+  "codigo_reduzido": "2102004",
+  "nome": "FGTS a Recolher",
+  "tipo": "passivo",
+  "natureza": "credora",
+  "sintetica": false,
+  "grupo_dre": null
+ },
+ {
+  "codigo": "2.1.02.005",
+  "codigo_reduzido": "2102005",
+  "nome": "Provisao de Ferias e 13o Salario",
+  "tipo": "passivo",
+  "natureza": "credora",
+  "sintetica": false,
+  "grupo_dre": null
+ },
+ {
+  "codigo": "2.1.03",
+  "codigo_reduzido": "2103",
+  "nome": "OBRIGACOES TRIBUTARIAS",
+  "tipo": "passivo",
+  "natureza": "credora",
+  "sintetica": true,
+  "grupo_dre": null
+ },
+ {
+  "codigo": "2.1.03.001",
+  "codigo_reduzido": "2103001",
+  "nome": "Simples Nacional a Recolher",
+  "tipo": "passivo",
+  "natureza": "credora",
+  "sintetica": false,
+  "grupo_dre": null
+ },
+ {
+  "codigo": "2.1.03.002",
+  "codigo_reduzido": "2103002",
+  "nome": "ISS Retido a Recolher",
+  "tipo": "passivo",
+  "natureza": "credora",
+  "sintetica": false,
+  "grupo_dre": null
+ },
+ {
+  "codigo": "2.1.03.003",
+  "codigo_reduzido": "2103003",
+  "nome": "IRRF a Recolher",
+  "tipo": "passivo",
+  "natureza": "credora",
+  "sintetica": false,
+  "grupo_dre": null
+ },
+ {
+  "codigo": "2.1.03.004",
+  "codigo_reduzido": "2103004",
+  "nome": "Parcelamentos Tributarios - Curto Prazo",
+  "tipo": "passivo",
+  "natureza": "credora",
+  "sintetica": false,
+  "grupo_dre": null
+ },
+ {
+  "codigo": "2.1.03.005",
+  "codigo_reduzido": "2103005",
+  "nome": "Outros Tributos a Recolher",
+  "tipo": "passivo",
+  "natureza": "credora",
+  "sintetica": false,
+  "grupo_dre": null
+ },
+ {
+  "codigo": "2.1.04",
+  "codigo_reduzido": "2104",
+  "nome": "EMPRESTIMOS E FINANCIAMENTOS",
+  "tipo": "passivo",
+  "natureza": "credora",
+  "sintetica": true,
+  "grupo_dre": null
+ },
+ {
+  "codigo": "2.1.04.001",
+  "codigo_reduzido": "2104001",
+  "nome": "Emprestimos e Financiamentos - Curto Prazo",
+  "tipo": "passivo",
+  "natureza": "credora",
+  "sintetica": false,
+  "grupo_dre": null
+ },
+ {
+  "codigo": "2.1.04.002",
+  "codigo_reduzido": "2104002",
+  "nome": "Cartao de Credito Empresarial a Pagar",
+  "tipo": "passivo",
+  "natureza": "credora",
+  "sintetica": false,
+  "grupo_dre": null
+ },
+ {
+  "codigo": "2.1.05",
+  "codigo_reduzido": "2105",
+  "nome": "OUTRAS OBRIGACOES",
+  "tipo": "passivo",
+  "natureza": "credora",
+  "sintetica": true,
+  "grupo_dre": null
+ },
+ {
+  "codigo": "2.1.05.001",
+  "codigo_reduzido": "2105001",
+  "nome": "Contas a Pagar Diversas",
+  "tipo": "passivo",
+  "natureza": "credora",
+  "sintetica": false,
+  "grupo_dre": null
+ },
+ {
+  "codigo": "2.1.05.002",
+  "codigo_reduzido": "2105002",
+  "nome": "Adiantamentos de Clientes",
+  "tipo": "passivo",
+  "natureza": "credora",
+  "sintetica": false,
+  "grupo_dre": null
+ },
+ {
+  "codigo": "2.1.05.003",
+  "codigo_reduzido": "2105003",
+  "nome": "Conta Corrente Socios",
+  "tipo": "passivo",
+  "natureza": "credora",
+  "sintetica": false,
+  "grupo_dre": null
+ },
+ {
+  "codigo": "2.1.05.004",
+  "codigo_reduzido": "2105004",
+  "nome": "Lucros a Distribuir",
+  "tipo": "passivo",
+  "natureza": "credora",
+  "sintetica": false,
+  "grupo_dre": null
+ },
+ {
+  "codigo": "2.2",
+  "codigo_reduzido": "22",
+  "nome": "PASSIVO NAO CIRCULANTE",
+  "tipo": "passivo",
+  "natureza": "credora",
+  "sintetica": true,
+  "grupo_dre": null
+ },
+ {
+  "codigo": "2.2.01",
+  "codigo_reduzido": "2201",
+  "nome": "EXIGIVEL A LONGO PRAZO",
+  "tipo": "passivo",
+  "natureza": "credora",
+  "sintetica": true,
+  "grupo_dre": null
+ },
+ {
+  "codigo": "2.2.01.001",
+  "codigo_reduzido": "2201001",
+  "nome": "Emprestimos e Financiamentos - Longo Prazo",
+  "tipo": "passivo",
+  "natureza": "credora",
+  "sintetica": false,
+  "grupo_dre": null
+ },
+ {
+  "codigo": "2.2.01.002",
+  "codigo_reduzido": "2201002",
+  "nome": "Parcelamentos Tributarios - Longo Prazo",
+  "tipo": "passivo",
+  "natureza": "credora",
+  "sintetica": false,
+  "grupo_dre": null
+ },
+ {
+  "codigo": "2.3",
+  "codigo_reduzido": "23",
+  "nome": "PATRIMONIO LIQUIDO",
+  "tipo": "patrimonio_liquido",
+  "natureza": "credora",
+  "sintetica": true,
+  "grupo_dre": null
+ },
+ {
+  "codigo": "2.3.01",
+  "codigo_reduzido": "2301",
+  "nome": "CAPITAL SOCIAL",
+  "tipo": "patrimonio_liquido",
+  "natureza": "credora",
+  "sintetica": true,
+  "grupo_dre": null
+ },
+ {
+  "codigo": "2.3.01.001",
+  "codigo_reduzido": "2301001",
+  "nome": "Capital Social Subscrito",
+  "tipo": "patrimonio_liquido",
+  "natureza": "credora",
+  "sintetica": false,
+  "grupo_dre": null
+ },
+ {
+  "codigo": "2.3.01.002",
+  "codigo_reduzido": "2301002",
+  "nome": "(-) Capital a Integralizar",
+  "tipo": "patrimonio_liquido",
+  "natureza": "devedora",
+  "sintetica": false,
+  "grupo_dre": null
+ },
+ {
+  "codigo": "2.3.02",
+  "codigo_reduzido": "2302",
+  "nome": "LUCROS OU PREJUIZOS ACUMULADOS",
+  "tipo": "patrimonio_liquido",
+  "natureza": "credora",
+  "sintetica": true,
+  "grupo_dre": null
+ },
+ {
+  "codigo": "2.3.02.001",
+  "codigo_reduzido": "2302001",
+  "nome": "Lucros Acumulados",
+  "tipo": "patrimonio_liquido",
+  "natureza": "credora",
+  "sintetica": false,
+  "grupo_dre": null
+ },
+ {
+  "codigo": "2.3.02.002",
+  "codigo_reduzido": "2302002",
+  "nome": "(-) Prejuizos Acumulados",
+  "tipo": "patrimonio_liquido",
+  "natureza": "devedora",
+  "sintetica": false,
+  "grupo_dre": null
+ },
+ {
+  "codigo": "2.3.02.003",
+  "codigo_reduzido": "2302003",
+  "nome": "(-) Lucros Distribuidos / Antecipados",
+  "tipo": "patrimonio_liquido",
+  "natureza": "devedora",
+  "sintetica": false,
+  "grupo_dre": null
+ },
+ {
+  "codigo": "3",
+  "codigo_reduzido": "3",
+  "nome": "RECEITAS",
+  "tipo": "receita",
+  "natureza": "credora",
+  "sintetica": true,
+  "grupo_dre": null
+ },
+ {
+  "codigo": "3.1",
+  "codigo_reduzido": "31",
+  "nome": "RECEITA OPERACIONAL",
+  "tipo": "receita",
+  "natureza": "credora",
+  "sintetica": true,
+  "grupo_dre": null
+ },
+ {
+  "codigo": "3.1.01",
+  "codigo_reduzido": "3101",
+  "nome": "RECEITA BRUTA",
+  "tipo": "receita",
+  "natureza": "credora",
+  "sintetica": true,
+  "grupo_dre": null
+ },
+ {
+  "codigo": "3.1.01.001",
+  "codigo_reduzido": "3101001",
+  "nome": "Receita de Prestacao de Servicos",
+  "tipo": "receita",
+  "natureza": "credora",
+  "sintetica": false,
+  "grupo_dre": "receita_bruta"
+ },
+ {
+  "codigo": "3.1.01.002",
+  "codigo_reduzido": "3101002",
+  "nome": "Receita de Venda de Mercadorias",
+  "tipo": "receita",
+  "natureza": "credora",
+  "sintetica": false,
+  "grupo_dre": "receita_bruta"
+ },
+ {
+  "codigo": "3.1.01.003",
+  "codigo_reduzido": "3101003",
+  "nome": "Receita de Venda de Produtos Fabricados",
+  "tipo": "receita",
+  "natureza": "credora",
+  "sintetica": false,
+  "grupo_dre": "receita_bruta"
+ },
+ {
+  "codigo": "3.1.01.004",
+  "codigo_reduzido": "3101004",
+  "nome": "Receita de Locacoes",
+  "tipo": "receita",
+  "natureza": "credora",
+  "sintetica": false,
+  "grupo_dre": "receita_bruta"
+ },
+ {
+  "codigo": "3.1.02",
+  "codigo_reduzido": "3102",
+  "nome": "(-) DEDUCOES DA RECEITA",
+  "tipo": "receita",
+  "natureza": "devedora",
+  "sintetica": true,
+  "grupo_dre": null
+ },
+ {
+  "codigo": "3.1.02.001",
+  "codigo_reduzido": "3102001",
+  "nome": "(-) Simples Nacional sobre Faturamento",
+  "tipo": "receita",
+  "natureza": "devedora",
+  "sintetica": false,
+  "grupo_dre": "deducao"
+ },
+ {
+  "codigo": "3.1.02.002",
+  "codigo_reduzido": "3102002",
+  "nome": "(-) Devolucoes e Cancelamentos",
+  "tipo": "receita",
+  "natureza": "devedora",
+  "sintetica": false,
+  "grupo_dre": "deducao"
+ },
+ {
+  "codigo": "3.1.02.003",
+  "codigo_reduzido": "3102003",
+  "nome": "(-) Descontos Incondicionais",
+  "tipo": "receita",
+  "natureza": "devedora",
+  "sintetica": false,
+  "grupo_dre": "deducao"
+ },
+ {
+  "codigo": "3.2",
+  "codigo_reduzido": "32",
+  "nome": "OUTRAS RECEITAS",
+  "tipo": "receita",
+  "natureza": "credora",
+  "sintetica": true,
+  "grupo_dre": null
+ },
+ {
+  "codigo": "3.2.01",
+  "codigo_reduzido": "3201",
+  "nome": "RECEITAS FINANCEIRAS E NAO OPERACIONAIS",
+  "tipo": "receita",
+  "natureza": "credora",
+  "sintetica": true,
+  "grupo_dre": null
+ },
+ {
+  "codigo": "3.2.01.001",
+  "codigo_reduzido": "3201001",
+  "nome": "Rendimentos de Aplicacoes Financeiras",
+  "tipo": "receita",
+  "natureza": "credora",
+  "sintetica": false,
+  "grupo_dre": "outras_receitas"
+ },
+ {
+  "codigo": "3.2.01.002",
+  "codigo_reduzido": "3201002",
+  "nome": "Juros e Descontos Obtidos",
+  "tipo": "receita",
+  "natureza": "credora",
+  "sintetica": false,
+  "grupo_dre": "outras_receitas"
+ },
+ {
+  "codigo": "3.2.01.003",
+  "codigo_reduzido": "3201003",
+  "nome": "Outras Receitas",
+  "tipo": "receita",
+  "natureza": "credora",
+  "sintetica": false,
+  "grupo_dre": "outras_receitas"
+ },
+ {
+  "codigo": "4",
+  "codigo_reduzido": "4",
+  "nome": "CUSTOS E DESPESAS",
+  "tipo": "despesa",
+  "natureza": "devedora",
+  "sintetica": true,
+  "grupo_dre": null
+ },
+ {
+  "codigo": "4.1",
+  "codigo_reduzido": "41",
+  "nome": "CUSTOS",
+  "tipo": "custo",
+  "natureza": "devedora",
+  "sintetica": true,
+  "grupo_dre": null
+ },
+ {
+  "codigo": "4.1.01",
+  "codigo_reduzido": "4101",
+  "nome": "CUSTOS DAS VENDAS E SERVICOS",
+  "tipo": "custo",
+  "natureza": "devedora",
+  "sintetica": true,
+  "grupo_dre": null
+ },
+ {
+  "codigo": "4.1.01.001",
+  "codigo_reduzido": "4101001",
+  "nome": "Custo das Mercadorias Vendidas",
+  "tipo": "custo",
+  "natureza": "devedora",
+  "sintetica": false,
+  "grupo_dre": "custo"
+ },
+ {
+  "codigo": "4.1.01.002",
+  "codigo_reduzido": "4101002",
+  "nome": "Materiais Aplicados nos Servicos",
+  "tipo": "custo",
+  "natureza": "devedora",
+  "sintetica": false,
+  "grupo_dre": "custo"
+ },
+ {
+  "codigo": "4.1.01.003",
+  "codigo_reduzido": "4101003",
+  "nome": "Servicos de Terceiros Aplicados",
+  "tipo": "custo",
+  "natureza": "devedora",
+  "sintetica": false,
+  "grupo_dre": "custo"
+ },
+ {
+  "codigo": "4.2",
+  "codigo_reduzido": "42",
+  "nome": "DESPESAS OPERACIONAIS",
+  "tipo": "despesa",
+  "natureza": "devedora",
+  "sintetica": true,
+  "grupo_dre": null
+ },
+ {
+  "codigo": "4.2.01",
+  "codigo_reduzido": "4201",
+  "nome": "DESPESAS COM PESSOAL",
+  "tipo": "despesa",
+  "natureza": "devedora",
+  "sintetica": true,
+  "grupo_dre": null
+ },
+ {
+  "codigo": "4.2.01.001",
+  "codigo_reduzido": "4201001",
+  "nome": "Salarios e Ordenados",
+  "tipo": "despesa",
+  "natureza": "devedora",
+  "sintetica": false,
+  "grupo_dre": "despesa_administrativa"
+ },
+ {
+  "codigo": "4.2.01.002",
+  "codigo_reduzido": "4201002",
+  "nome": "Pro-labore",
+  "tipo": "despesa",
+  "natureza": "devedora",
+  "sintetica": false,
+  "grupo_dre": "despesa_administrativa"
+ },
+ {
+  "codigo": "4.2.01.003",
+  "codigo_reduzido": "4201003",
+  "nome": "INSS Patronal",
+  "tipo": "despesa",
+  "natureza": "devedora",
+  "sintetica": false,
+  "grupo_dre": "despesa_administrativa"
+ },
+ {
+  "codigo": "4.2.01.004",
+  "codigo_reduzido": "4201004",
+  "nome": "FGTS",
+  "tipo": "despesa",
+  "natureza": "devedora",
+  "sintetica": false,
+  "grupo_dre": "despesa_administrativa"
+ },
+ {
+  "codigo": "4.2.01.005",
+  "codigo_reduzido": "4201005",
+  "nome": "Ferias, 13o e Rescisoes",
+  "tipo": "despesa",
+  "natureza": "devedora",
+  "sintetica": false,
+  "grupo_dre": "despesa_administrativa"
+ },
+ {
+  "codigo": "4.2.01.006",
+  "codigo_reduzido": "4201006",
+  "nome": "Vale-Transporte, Alimentacao e Beneficios",
+  "tipo": "despesa",
+  "natureza": "devedora",
+  "sintetica": false,
+  "grupo_dre": "despesa_administrativa"
+ },
+ {
+  "codigo": "4.2.02",
+  "codigo_reduzido": "4202",
+  "nome": "DESPESAS ADMINISTRATIVAS",
+  "tipo": "despesa",
+  "natureza": "devedora",
+  "sintetica": true,
+  "grupo_dre": null
+ },
+ {
+  "codigo": "4.2.02.001",
+  "codigo_reduzido": "4202001",
+  "nome": "Aluguel e Condominio",
+  "tipo": "despesa",
+  "natureza": "devedora",
+  "sintetica": false,
+  "grupo_dre": "despesa_administrativa"
+ },
+ {
+  "codigo": "4.2.02.002",
+  "codigo_reduzido": "4202002",
+  "nome": "Energia Eletrica",
+  "tipo": "despesa",
+  "natureza": "devedora",
+  "sintetica": false,
+  "grupo_dre": "despesa_administrativa"
+ },
+ {
+  "codigo": "4.2.02.003",
+  "codigo_reduzido": "4202003",
+  "nome": "Agua e Esgoto",
+  "tipo": "despesa",
+  "natureza": "devedora",
+  "sintetica": false,
+  "grupo_dre": "despesa_administrativa"
+ },
+ {
+  "codigo": "4.2.02.004",
+  "codigo_reduzido": "4202004",
+  "nome": "Telefone e Internet",
+  "tipo": "despesa",
+  "natureza": "devedora",
+  "sintetica": false,
+  "grupo_dre": "despesa_administrativa"
+ },
+ {
+  "codigo": "4.2.02.005",
+  "codigo_reduzido": "4202005",
+  "nome": "Honorarios Contabeis",
+  "tipo": "despesa",
+  "natureza": "devedora",
+  "sintetica": false,
+  "grupo_dre": "despesa_administrativa"
+ },
+ {
+  "codigo": "4.2.02.006",
+  "codigo_reduzido": "4202006",
+  "nome": "Servicos de Terceiros",
+  "tipo": "despesa",
+  "natureza": "devedora",
+  "sintetica": false,
+  "grupo_dre": "despesa_administrativa"
+ },
+ {
+  "codigo": "4.2.02.007",
+  "codigo_reduzido": "4202007",
+  "nome": "Material de Escritorio, Limpeza e Consumo",
+  "tipo": "despesa",
+  "natureza": "devedora",
+  "sintetica": false,
+  "grupo_dre": "despesa_administrativa"
+ },
+ {
+  "codigo": "4.2.02.008",
+  "codigo_reduzido": "4202008",
+  "nome": "Sistemas e Softwares",
+  "tipo": "despesa",
+  "natureza": "devedora",
+  "sintetica": false,
+  "grupo_dre": "despesa_administrativa"
+ },
+ {
+  "codigo": "4.2.02.009",
+  "codigo_reduzido": "4202009",
+  "nome": "Manutencao e Reparos",
+  "tipo": "despesa",
+  "natureza": "devedora",
+  "sintetica": false,
+  "grupo_dre": "despesa_administrativa"
+ },
+ {
+  "codigo": "4.2.02.010",
+  "codigo_reduzido": "4202010",
+  "nome": "Combustiveis, Viagens e Locomocao",
+  "tipo": "despesa",
+  "natureza": "devedora",
+  "sintetica": false,
+  "grupo_dre": "despesa_administrativa"
+ },
+ {
+  "codigo": "4.2.02.011",
+  "codigo_reduzido": "4202011",
+  "nome": "Depreciacao e Amortizacao",
+  "tipo": "despesa",
+  "natureza": "devedora",
+  "sintetica": false,
+  "grupo_dre": "despesa_administrativa"
+ },
+ {
+  "codigo": "4.2.02.012",
+  "codigo_reduzido": "4202012",
+  "nome": "Seguros",
+  "tipo": "despesa",
+  "natureza": "devedora",
+  "sintetica": false,
+  "grupo_dre": "despesa_administrativa"
+ },
+ {
+  "codigo": "4.2.02.099",
+  "codigo_reduzido": "4202099",
+  "nome": "Despesas Diversas",
+  "tipo": "despesa",
+  "natureza": "devedora",
+  "sintetica": false,
+  "grupo_dre": "despesa_administrativa"
+ },
+ {
+  "codigo": "4.2.03",
+  "codigo_reduzido": "4203",
+  "nome": "DESPESAS COMERCIAIS",
+  "tipo": "despesa",
+  "natureza": "devedora",
+  "sintetica": true,
+  "grupo_dre": null
+ },
+ {
+  "codigo": "4.2.03.001",
+  "codigo_reduzido": "4203001",
+  "nome": "Propaganda e Marketing",
+  "tipo": "despesa",
+  "natureza": "devedora",
+  "sintetica": false,
+  "grupo_dre": "despesa_comercial"
+ },
+ {
+  "codigo": "4.2.03.002",
+  "codigo_reduzido": "4203002",
+  "nome": "Fretes e Entregas",
+  "tipo": "despesa",
+  "natureza": "devedora",
+  "sintetica": false,
+  "grupo_dre": "despesa_comercial"
+ },
+ {
+  "codigo": "4.2.03.003",
+  "codigo_reduzido": "4203003",
+  "nome": "Taxas de Cartao, Pix e Plataformas",
+  "tipo": "despesa",
+  "natureza": "devedora",
+  "sintetica": false,
+  "grupo_dre": "despesa_comercial"
+ },
+ {
+  "codigo": "4.2.03.004",
+  "codigo_reduzido": "4203004",
+  "nome": "Comissoes sobre Vendas",
+  "tipo": "despesa",
+  "natureza": "devedora",
+  "sintetica": false,
+  "grupo_dre": "despesa_comercial"
+ },
+ {
+  "codigo": "4.2.04",
+  "codigo_reduzido": "4204",
+  "nome": "DESPESAS TRIBUTARIAS",
+  "tipo": "despesa",
+  "natureza": "devedora",
+  "sintetica": true,
+  "grupo_dre": null
+ },
+ {
+  "codigo": "4.2.04.001",
+  "codigo_reduzido": "4204001",
+  "nome": "Taxas, Licencas, IPTU e IPVA",
+  "tipo": "despesa",
+  "natureza": "devedora",
+  "sintetica": false,
+  "grupo_dre": "despesa_administrativa"
+ },
+ {
+  "codigo": "4.2.04.002",
+  "codigo_reduzido": "4204002",
+  "nome": "Multas e Juros sobre Tributos",
+  "tipo": "despesa",
+  "natureza": "devedora",
+  "sintetica": false,
+  "grupo_dre": "despesa_administrativa"
+ },
+ {
+  "codigo": "4.3",
+  "codigo_reduzido": "43",
+  "nome": "DESPESAS FINANCEIRAS",
+  "tipo": "despesa",
+  "natureza": "devedora",
+  "sintetica": true,
+  "grupo_dre": null
+ },
+ {
+  "codigo": "4.3.01",
+  "codigo_reduzido": "4301",
+  "nome": "DESPESAS BANCARIAS E FINANCEIRAS",
+  "tipo": "despesa",
+  "natureza": "devedora",
+  "sintetica": true,
+  "grupo_dre": null
+ },
+ {
+  "codigo": "4.3.01.001",
+  "codigo_reduzido": "4301001",
+  "nome": "Tarifas Bancarias",
+  "tipo": "despesa",
+  "natureza": "devedora",
+  "sintetica": false,
+  "grupo_dre": "despesa_financeira"
+ },
+ {
+  "codigo": "4.3.01.002",
+  "codigo_reduzido": "4301002",
+  "nome": "Juros e Encargos Pagos",
+  "tipo": "despesa",
+  "natureza": "devedora",
+  "sintetica": false,
+  "grupo_dre": "despesa_financeira"
+ },
+ {
+  "codigo": "4.3.01.003",
+  "codigo_reduzido": "4301003",
+  "nome": "IOF",
+  "tipo": "despesa",
+  "natureza": "devedora",
+  "sintetica": false,
+  "grupo_dre": "despesa_financeira"
+ },
+ {
+  "codigo": "4.4",
+  "codigo_reduzido": "44",
+  "nome": "OUTRAS DESPESAS E PROVISOES",
+  "tipo": "despesa",
+  "natureza": "devedora",
+  "sintetica": true,
+  "grupo_dre": null
+ },
+ {
+  "codigo": "4.4.01",
+  "codigo_reduzido": "4401",
+  "nome": "OUTRAS DESPESAS",
+  "tipo": "despesa",
+  "natureza": "devedora",
+  "sintetica": true,
+  "grupo_dre": null
+ },
+ {
+  "codigo": "4.4.01.001",
+  "codigo_reduzido": "4401001",
+  "nome": "Outras Despesas Nao Operacionais",
+  "tipo": "despesa",
+  "natureza": "devedora",
+  "sintetica": false,
+  "grupo_dre": "outras_despesas"
+ },
+ {
+  "codigo": "4.4.01.002",
+  "codigo_reduzido": "4401002",
+  "nome": "Provisao IRPJ e CSLL (exceto Simples)",
+  "tipo": "despesa",
+  "natureza": "devedora",
+  "sintetica": false,
+  "grupo_dre": "ir_csll"
+ }
+]

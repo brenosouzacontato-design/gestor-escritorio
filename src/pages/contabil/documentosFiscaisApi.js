@@ -93,17 +93,30 @@ export async function obterEvolucaoMensal(meses = 6) {
 // scripts/reformular-plano-contas.cjs) — cria uma nova se ainda não
 // existir uma com esse nome pra essa empresa. Reaproveita criarContaFilha
 // (mesma lógica de numeração/hierarquia da tela Plano de Contas).
-export async function obterOuCriarContaFornecedor(empresaId, nomeFornecedor) {
+//
+// A conta guarda o CNPJ/CPF do fornecedor: é por ele que a exportação p/
+// OneFlow manda a baixa (pagamento) pra conta individual do fornecedor que
+// o Fiscal do OneFlow criou (ver exportarOneflow.js).
+export async function obterOuCriarContaFornecedor(empresaId, nomeFornecedor, cnpjFornecedor) {
   const nome = (nomeFornecedor || 'Fornecedor não identificado').trim();
+  const cnpj = (cnpjFornecedor || '').replace(/\D/g, '') || null;
   const contas = await listarContas(empresaId);
-  const grupoFornecedores = contas.find((c) => c.nome === 'Fornecedores' && !c.aceita_lancamento);
+  const grupoFornecedores = contas.find((c) => c.nome.trim().toLowerCase() === 'fornecedores' && !c.aceita_lancamento);
   if (!grupoFornecedores) {
     throw new Error('Grupo "Fornecedores" não encontrado no plano de contas dessa empresa — rode a reformulação do plano de contas primeiro.');
   }
   const nomeNormalizado = nome.toLowerCase();
-  const existente = contas.find((c) => c.conta_pai_id === grupoFornecedores.id && c.nome.trim().toLowerCase() === nomeNormalizado);
-  if (existente) return existente;
-  return criarContaFilha(empresaId, nome, grupoFornecedores.id, false);
+  const doGrupo = contas.filter((c) => c.conta_pai_id === grupoFornecedores.id);
+  const existente = (cnpj && doGrupo.find((c) => c.cnpj === cnpj))
+    || doGrupo.find((c) => c.nome.trim().toLowerCase() === nomeNormalizado);
+  const conta = existente || await criarContaFilha(empresaId, nome, grupoFornecedores.id, false);
+  if (cnpj && conta.cnpj !== cnpj) {
+    // não trava o lançamento se a coluna ainda não existir
+    // (supabase-schema-contabil-fornecedor-cnpj.sql não rodado)
+    const { error } = await supabase.from('contas_contabeis').update({ cnpj }).eq('id', conta.id);
+    if (!error) conta.cnpj = cnpj;
+  }
+  return conta;
 }
 
 // Sugere a conta de débito com base nas regras de classificação já
@@ -120,7 +133,7 @@ export async function sugerirContaDebito(empresaId, documento) {
 // pro mesmo documento. Também grava/atualiza a regra de classificação
 // pra sugerir sozinho da próxima vez que aparecer esse fornecedor.
 export async function gerarLancamentoDeDocumento(documento, contaDebitoId) {
-  const contaFornecedor = await obterOuCriarContaFornecedor(documento.cliente_id, documento.razao_social_terceiro);
+  const contaFornecedor = await obterOuCriarContaFornecedor(documento.cliente_id, documento.razao_social_terceiro, documento.cnpj_cpf_terceiro);
   const historico = `${documento.razao_social_terceiro || 'Fornecedor'} — ${documento.modelo || 'Documento'} ${documento.numero || ''}`.trim();
 
   const lancamento = await criarLancamento({
