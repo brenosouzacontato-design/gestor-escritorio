@@ -53,7 +53,8 @@ exports.handler = async () => {
 
   const consultar = (comParcelamento) => supabase.from('documentos')
     .select('id, cliente_id, nome_arquivo, obrigacao_id, valor_guia, vencimento_guia, confirmado_em, '
-      + 'clientes(id, nome, telefone, whatsapp_entrega, painel_token, painel_ativo, aviso_guia_painel, ativo), '
+      // clientes(*): painel_token só existe depois de supabase-rls-01 — sem ele o link vai com o id
+      + 'clientes(*), '
       + 'obrigacoes(titulo, tipo, competencia, vencimento, tipos_obrigacao(eh_imposto))'
       + (comParcelamento ? ', parcelamento_id, parcelamentos(origem, descricao)' : ''))
     .eq('status', 'confirmado')
