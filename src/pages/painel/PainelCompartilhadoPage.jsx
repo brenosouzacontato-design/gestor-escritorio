@@ -493,6 +493,9 @@ function PainelCompartilhado({ clienteId, competencia: competenciaInicial, admin
     ...pendenciasAVencer,
   ].sort((a, b) => (a.vencimento || '9999').localeCompare(b.vencimento || '9999'));
   const guiasVencidas = guiasCard.filter(alertaVencida);
+  // Total da lista de impostos: só o que ainda falta pagar, com a mesma regra
+  // dos cards — guia vencida em que o escritório já deu baixa não conta
+  const guiasEmAberto = (guias || []).filter((g) => !g.semMovimento && !g.paga && !(g.concluida && g.dias != null && g.dias < 0));
   // "Vencidos" junta as guias vencidas sem baixa, os honorários atrasados e
   // os débitos do Relatório de Situação Fiscal (que por definição já
   // passaram do prazo)
@@ -695,7 +698,7 @@ function PainelCompartilhado({ clienteId, competencia: competenciaInicial, admin
               {/* ── 3. Impostos (com guia anexada ou aguardando guia) ── */}
               <Ocultavel chave="impostos" {...propsOc}>
               <Secao titulo="Impostos e guias — por vencimento" icone={<CalendarIcon size={14} />}
-                extra={temValor(guias.filter((g) => !g.paga)) && <Total valor={somaValores(guias.filter((g) => !g.paga))} />}>
+                extra={temValor(guiasEmAberto) && <Total valor={somaValores(guiasEmAberto)} />}>
                 {guias.length === 0
                   ? <Vazio>Nenhum imposto em aberto nem com vencimento no período.</Vazio>
                   : <div style={LISTA}>{guias.map((g) => <LinhaGuia key={g.id} g={g} onBaixar={baixar} editando={editando} onSalvarValor={salvarValorGuia} onMarcarPaga={salvarGuiaPaga} />)}</div>}
