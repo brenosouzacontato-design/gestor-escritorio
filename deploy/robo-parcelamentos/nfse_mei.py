@@ -446,14 +446,20 @@ def numero_da_chave(chave: str) -> str:
 
 
 def baixar_arquivos(t: Tela, chave: str, nome: str) -> tuple[bytes | None, bytes]:
-    """PDF (DANFSe) e XML pela lista de notas emitidas. O portal pede um captcha para baixar:
-    quando ele aparece, avisa no WhatsApp e espera alguém resolver pela tela remota (o robô
-    não resolve captcha). Depois do captcha, o portal entrega o arquivo e o robô segue."""
+    """PDF (DANFSe) e XML pela lista de notas emitidas. O portal pede um captcha (hCaptcha) para
+    baixar: o robô avisa no WhatsApp e espera alguém marcar "Sou humano" pela tela remota (o robô
+    não resolve captcha). Com o captcha resolvido pela pessoa, o robô clica em "Confirmar"; se o
+    portal recusar a validação, reabre um captcha novo e avisa de novo."""
     page = t.page
     baixados: list = []
-    page.on("download", lambda d: baixados.append(d))
+
+    def ligar(p: Page) -> None:
+        p.on("download", lambda d: baixados.append(d))
+
+    ligar(page)
+    page.context.on("page", ligar)  # o portal pode abrir o arquivo em outra aba
     achados: dict[str, bytes] = {}
-    avisou = False
+    avisos = 0
     for tipo in ("NFSe", "DANFSe"):
         page.goto(f"{URL}/Notas/Emitidas", wait_until="networkidle")
         link = page.locator(f"a[href*='/Download/{tipo}/{chave}']").first
@@ -462,15 +468,39 @@ def baixar_arquivos(t: Tela, chave: str, nome: str) -> tuple[bytes | None, bytes
             raise ErroPortal(f"A nota {chave} não apareceu na lista de emitidas do portal.")
         antes = len(baixados)
         link.evaluate("a => a.click()")
+        confirmou = False
+        avisou_agora = False
         fim = time.time() + MINUTOS_PESSOA * 60
         while len(baixados) == antes and time.time() < fim:
-            page.wait_for_timeout(2000)
-            captcha = page.locator(".modal.show, iframe[src*='captcha' i], [class*='captcha' i]").locator("visible=true")
-            if not avisou and captcha.count():
+            page.wait_for_timeout(1500)
+            modal = page.locator(".modal.show, .modal.in, .modal[style*='display: block']").locator("visible=true").first
+            if not modal.count():
+                continue
+            if page.get_by_text(re.compile(r"n.o foi poss.vel validar o hcaptcha", re.I)).locator("visible=true").count():
+                # recusado: fecha e pede um captcha novo
+                t.print("captcha-recusado")
+                cancelar = modal.get_by_role("button", name=re.compile(r"cancelar", re.I)).first
+                if cancelar.count():
+                    cancelar.click()
+                page.wait_for_timeout(1000)
+                link.evaluate("a => a.click()")
+                confirmou = False
+                avisou_agora = False
+                continue
+            if not avisou_agora and avisos < 4:
                 t.print("captcha")
-                aviso.texto(f"🔐 NFS-e {numero_da_chave(chave)} de {nome} emitida. O portal pede o captcha para baixar o "
-                            f"PDF/XML: abra {LINK_TELA} e toque em \"Sou humano\"; o robô segue sozinho.")
-                avisou = True
+                aviso.texto(f"🔐 NFS-e {numero_da_chave(chave)} de {nome} emitida. Para baixar o PDF/XML o portal pede o "
+                            f"captcha: abra {LINK_TELA} e marque \"Sou humano\" (o robô clica em Confirmar sozinho).")
+                avisou_agora = True
+                avisos += 1
+            resolvido = page.evaluate("() => [...document.querySelectorAll(\"[name='h-captcha-response'], "
+                                      "[name='g-recaptcha-response']\")].some((e) => e.value)")
+            if resolvido and not confirmou:
+                page.wait_for_timeout(800)
+                botao = modal.get_by_role("button", name=re.compile(r"confirmar", re.I)).first
+                if botao.count():
+                    botao.click()
+                    confirmou = True
         if len(baixados) == antes:
             raise ErroPortal("Ninguém resolveu o captcha a tempo para baixar o PDF/XML.")
         conteudo = Path(baixados[-1].path()).read_bytes()
