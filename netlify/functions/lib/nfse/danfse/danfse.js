@@ -41,7 +41,7 @@ const ALT_SUPRIMIDO = 0.32
 const TP_EMIT = { 1: 'Prestador', 2: 'Tomador', 3: 'Intermediário' }
 const C_STAT = {
   100: 'NFS-e Gerada', 101: 'NFS-e de Substituição Gerada',
-  102: 'NFS-e de Decisão Judicial ou Administrativa', 103: 'NFS-e Avulsa',
+  102: 'NFS-e de Decisão Judicial ou Administrativa', 103: 'NFS-e Avulsa', 107: 'NFS-e MEI',
 }
 const FIN_NFSE = { 0: 'NFS-e regular', 1: 'NFS-e de crédito', 2: 'NFS-e de débito' }
 const AMB_GER = { 1: 'Prefeitura', 2: 'Sistema Nacional NFS-e' }
@@ -388,7 +388,12 @@ function informacoesComplementares(inf, infDPS) {
 // ---------- desenho ----------
 
 async function gerarDanfse(xml, opcoes = {}) {
-  const campos = await extrairCampos(xml, opcoes)
+  return desenharDanfse(await extrairCampos(xml, opcoes), opcoes)
+}
+
+// Desenha o DANFSe a partir dos campos já montados (do XML, por extrairCampos, ou da página de
+// impressão do Emissor Nacional, para a nota de MEI — ver ../meiImpressao.js).
+async function desenharDanfse(campos, opcoes = {}) {
   const pdf = await PDFDocument.create()
   pdf.setTitle(`DANFSe ${campos.identificacao.numero} - ${campos.chave}`)
   pdf.setCreator('Gestor Escritório Contábil')
@@ -667,4 +672,4 @@ function criarDesenho(pagina, normal, negrito) {
   return d
 }
 
-module.exports = { gerarDanfse, extrairCampos, URL_CONSULTA }
+module.exports = { gerarDanfse, desenharDanfse, extrairCampos, URL_CONSULTA, AMB_GER, C_STAT, OP_SIMP_NAC }

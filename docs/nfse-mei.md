@@ -30,9 +30,18 @@ todas com código de tributação 17.02.01:
      Nota com mesmo tomador, valor e mês pede confirmação.
 2. **Robô** (`deploy/robo-parcelamentos/nfse_mei.py`), a cada minuto: entra no portal com o CNPJ e a senha
    (o login com senha **não tem captcha**), preenche Pessoas → Serviço → Valores, clica em **Emitir NFS-e**,
-   baixa PDF (DANFSe) e XML para `documentos/nfse-mei/` e manda os dois no WhatsApp do cliente
-   (`whatsapp_entrega` ou `telefone`). O escritório recebe o aviso no WhatsApp do robô.
-3. Na tela, cada nota mostra o andamento; emitida tem PDF, XML e "mandar de novo no WhatsApp".
+   grava número e chave, guarda a **versão para impressão** da nota (`documentos/nfse-mei/{id}.html`) e pede
+   ao gestor que entregue. O gestor monta o DANFSe (PDF) com essa página (`lib/nfse/meiImpressao.js` +
+   o mesmo desenho do DANFSe da PJ) e manda no WhatsApp do cliente (`whatsapp_entrega` ou `telefone`).
+   O escritório recebe o aviso no WhatsApp do robô.
+3. Na tela, cada nota mostra o andamento; emitida tem o PDF e "mandar de novo no WhatsApp".
+
+**Por que não baixa o PDF/XML do portal:** o Emissor Nacional pede hCaptcha para baixar PDF e XML, e o
+robô não resolve captcha. A versão para impressão (`Notas/Visualizar/Impressao`) abre sem captcha e é o
+XML autorizado passado por XSLT: o PDF montado sai igual ao do portal (teste `meiImpressao.test.cjs`
+compara campo a campo com o XML da mesma nota). Diferença: o cliente recebe só o PDF; o XML fica no
+portal. Se alguém precisar do XML oficial: `python robo.py mei-baixar ID` (captcha pela tela remota).
+Nota emitida que não chegou ao cliente: `python robo.py mei-entregar ID` (sem captcha).
 
 `MEI_TRANSMITIR=1` (padrão): o robô emite sozinho. Com `MEI_TRANSMITIR=0` ele preenche e **espera alguém clicar em
 "Emitir NFS-e" pela tela remota** (avisa no WhatsApp).

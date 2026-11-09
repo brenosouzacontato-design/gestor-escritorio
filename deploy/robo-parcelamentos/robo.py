@@ -11,6 +11,7 @@ Uso (dentro do container):
   python robo.py emissor-explorar PEDIDO   # calibração do Emissor: preenche sem cadastrar nem transmitir
   python robo.py emissor-importar          # copia clientes/produtos do Emissor das empresas na fila (ver emissor_importar.py)
   python robo.py mei                       # NFS-e de MEI no Emissor Nacional: processa a fila agora (ver nfse_mei.py)
+  python robo.py mei-entregar NOTA         # nota já emitida que não chegou ao cliente: o gestor monta o PDF e manda (sem captcha)
   python robo.py mei-baixar NOTA           # nota já emitida: baixa PDF/XML (captcha pela tela remota) e o gestor manda no WhatsApp
   python robo.py mei-explorar NOTA         # calibração do Emissor Nacional: preenche sem emitir, prints/HTML em /dados/nfse-mei
 
@@ -261,6 +262,10 @@ if __name__ == "__main__":
         if len(sys.argv) < 3:
             sys.exit("Uso: python robo.py mei-explorar ID_DA_NOTA")
         nfse_mei.explorar(sys.argv[2])
+    elif cmd == "mei-entregar":
+        if len(sys.argv) < 3:
+            sys.exit("Uso: python robo.py mei-entregar ID_DA_NOTA")
+        nfse_mei.entregar(sys.argv[2])
     elif cmd == "mei-baixar":
         if len(sys.argv) < 3:
             sys.exit("Uso: python robo.py mei-baixar ID_DA_NOTA")
