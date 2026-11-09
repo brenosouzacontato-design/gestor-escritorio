@@ -5,10 +5,11 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 // navegador / do celular volta pra tela anterior em vez de sair do app.
 // O valor fica em history.state[chave] — sobrevive a um F5 na mesma aba.
 // `paramsUrl(valor)` (opcional) devolve { param: valor|null } pra também
-// refletir a tela na URL (link copiado abre no mesmo lugar).
-export function useTelaNoHistorico(chave, inicial, { paramsUrl = null } = {}) {
+// refletir a tela na URL (link copiado abre no mesmo lugar). `ativo: false` =
+// estado comum, sem mexer no histórico (ex.: prévia do painel dentro do gestor).
+export function useTelaNoHistorico(chave, inicial, { paramsUrl = null, ativo = true } = {}) {
   const [valor, setValor] = useState(() => {
-    const salvo = window.history.state?.[chave];
+    const salvo = ativo ? window.history.state?.[chave] : undefined;
     return salvo !== undefined ? salvo : inicial;
   });
   const atual = useRef(valor);
