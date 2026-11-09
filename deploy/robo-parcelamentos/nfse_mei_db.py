@@ -46,15 +46,34 @@ def nota(nid: str) -> dict | None:
     return r[0] if r else None
 
 
+def _gestor(corpo: dict) -> requests.Response:
+    gestor = os.environ.get("GESTOR_URL", "https://gestorcount.netlify.app").rstrip("/")
+    return requests.post(f"{gestor}/.netlify/functions/nfse-mei", json=corpo, timeout=60,
+                         headers={"x-robo-chave": os.environ["SUPABASE_SERVICE_KEY"]})
+
+
+def entregar_pelo_gestor(nid: str) -> str | None:
+    """O gestor manda o PDF/XML da nota no WhatsApp do cliente (mesmo envio do botão da tela;
+    gera o DANFSe se o portal não deu o PDF). Devolve None se foi, ou o erro."""
+    try:
+        r = _gestor({"acao": "entregar", "id": nid})
+    except requests.RequestException as e:
+        return f"gestor não respondeu: {e}"
+    if r.status_code >= 400:
+        try:
+            return r.json().get("erro") or r.text[:200]
+        except ValueError:
+            return r.text[:200]
+    return None
+
+
 def senha(cliente_id: str) -> str | None:
     """Com NFSE_CERT_KEY no .env, decifra aqui; sem ela (é secreta no Netlify), pede ao gestor
     (function nfse-mei), provando que tem a SUPABASE_SERVICE_KEY."""
     if os.environ.get("NFSE_CERT_KEY"):
         r = _req("GET", "/rest/v1/nfse_mei_acessos", params={"select": "senha_cifrada", "cliente_id": f"eq.{cliente_id}"})
         return decifrar(r[0]["senha_cifrada"]) if r else None
-    gestor = os.environ.get("GESTOR_URL", "https://gestorcount.netlify.app").rstrip("/")
-    resp = requests.post(f"{gestor}/.netlify/functions/nfse-mei", json={"cliente_id": cliente_id}, timeout=30,
-                         headers={"x-robo-chave": os.environ["SUPABASE_SERVICE_KEY"]})
+    resp = _gestor({"cliente_id": cliente_id})
     if resp.status_code == 404:
         return None
     if resp.status_code >= 400:
