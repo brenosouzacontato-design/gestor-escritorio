@@ -6,15 +6,23 @@
 #   bash instalar.sh
 # Pode rodar de novo: mantém a chave, o domínio e a sessão do WhatsApp já salvos.
 #
+# Servidor que já rodava a 1.8.7: rodar este script de novo troca para a 2.x.
+# A sessão da 1.x não serve na 2.x, então é preciso ler o QR Code de novo
+# (antes, remova o aparelho antigo em WhatsApp → Aparelhos conectados). A
+# chave e o endereço continuam os mesmos: o Netlify não muda, e o gestor
+# descobre a versão sozinho (netlify/functions/lib/whatsapp.js).
+#
 # O que faz:
 #   1. instala Docker e libera só as portas 22, 80 e 443;
-#   2. cria /opt/gestor-whatsapp com a Evolution API (mesma versão de antes) e o
-#      Caddy na frente, que gera o certificado HTTPS sozinho;
+#   2. cria /opt/gestor-whatsapp com a Evolution API 2.x, o Postgres que ela
+#      exige e o Caddy na frente, que gera o certificado HTTPS sozinho;
 #   3. cria a instância, configura o webhook para o Netlify e os grupos;
 #   4. mostra o que colocar nas variáveis do Netlify.
 set -euo pipefail
 
-VERSAO_EVOLUTION="v1.8.7"   # a mesma do iniciar-gestor.bat; o formato do webhook muda na v2
+# 2.x: biblioteca do WhatsApp atualizada. Com a 1.8.7 o cliente passou a
+# receber "Aguardando mensagem" no lugar do texto.
+VERSAO_EVOLUTION="v2.3.7"
 PASTA=/opt/gestor-whatsapp
 ENV="$PASTA/.env"
 WEBHOOK_BASE="https://gestorcount.netlify.app/.netlify/functions/whatsapp-webhook"
@@ -47,6 +55,7 @@ if [ -z "${WHATSAPP_WEBHOOK_SEGREDO:-}" ]; then
 fi
 EVOLUTION_API_KEY=${EVOLUTION_API_KEY:-$(openssl rand -hex 24)}
 EVOLUTION_INSTANCE=${EVOLUTION_INSTANCE:-gestor-escritorio}
+POSTGRES_SENHA=${POSTGRES_SENHA:-$(openssl rand -hex 24)}
 
 umask 077
 cat > "$ENV" <<EOF
@@ -54,6 +63,7 @@ DOMINIO=$DOMINIO
 EVOLUTION_API_KEY=$EVOLUTION_API_KEY
 EVOLUTION_INSTANCE=$EVOLUTION_INSTANCE
 WHATSAPP_WEBHOOK_SEGREDO=$WHATSAPP_WEBHOOK_SEGREDO
+POSTGRES_SENHA=$POSTGRES_SENHA
 EOF
 umask 022
 
@@ -70,9 +80,23 @@ $EXTRA	handle {
 }
 EOF
 
-# A Evolution não publica porta nenhuma: só o Caddy (HTTPS) fala com ela.
+# A Evolution e o Postgres não publicam porta nenhuma: só o Caddy (HTTPS) fala com a Evolution.
+# Os dados da 2.x ficam em dados-v2/ (os da 1.8.7, em dados/, não são usados mais).
 cat > docker-compose.yml <<EOF
 services:
+  postgres:
+    image: postgres:16-alpine
+    restart: always
+    environment:
+      POSTGRES_USER: evolution
+      POSTGRES_PASSWORD: \${POSTGRES_SENHA}
+      POSTGRES_DB: evolution
+    volumes:
+      - ./dados-v2/postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U evolution -d evolution"]
+      interval: 5s
+      retries: 20
   evolution:
     image: evoapicloud/evolution-api:$VERSAO_EVOLUTION
     restart: always
@@ -80,13 +104,29 @@ services:
       SERVER_URL: https://\${DOMINIO}
       AUTHENTICATION_API_KEY: \${EVOLUTION_API_KEY}
       DEL_INSTANCE: "false"
-      GROUPS_IGNORE: "false"   # o gestor lê os grupos de tarefas, documentos e pagamentos
       CONFIG_SESSION_PHONE_CLIENT: Gestor Escritorio
-    # Pastas do próprio servidor (e não volumes nomeados): a imagem já vem com uma instância de
-    # teste do fabricante em /evolution/store, e um volume vazio copiaria esses dados para cá.
+      CONFIG_SESSION_PHONE_NAME: Chrome
+      DATABASE_ENABLED: "true"
+      DATABASE_PROVIDER: postgresql
+      DATABASE_CONNECTION_URI: postgresql://evolution:\${POSTGRES_SENHA}@postgres:5432/evolution?schema=public
+      DATABASE_CONNECTION_CLIENT_NAME: gestor
+      DATABASE_SAVE_DATA_INSTANCE: "true"
+      # mensagens novas ficam salvas: é de onde sai o arquivo quando o webhook
+      # chega sem o base64 (getBase64FromMediaMessage no whatsapp-webhook.js)
+      DATABASE_SAVE_DATA_NEW_MESSAGE: "true"
+      DATABASE_SAVE_MESSAGE_UPDATE: "false"
+      DATABASE_SAVE_DATA_CONTACTS: "false"
+      DATABASE_SAVE_DATA_CHATS: "false"
+      DATABASE_SAVE_DATA_LABELS: "false"
+      DATABASE_SAVE_DATA_HISTORIC: "false"
+      CACHE_REDIS_ENABLED: "false"
+      CACHE_LOCAL_ENABLED: "true"
+      WEBHOOK_GLOBAL_ENABLED: "false"
     volumes:
-      - ./dados/instances:/evolution/instances
-      - ./dados/store:/evolution/store
+      - ./dados-v2/instances:/evolution/instances
+    depends_on:
+      postgres:
+        condition: service_healthy
   caddy:
     image: caddy:2.8
     restart: always
@@ -104,7 +144,7 @@ volumes:
   caddy_data:
 EOF
 
-mkdir -p dados/instances dados/store
+mkdir -p dados-v2/instances dados-v2/postgres
 echo ">> Subindo os containers..."
 docker compose --env-file "$ENV" up -d
 
@@ -127,12 +167,14 @@ chamar() {
 
 if ! curl -fsS "$API/instance/connectionState/$EVOLUTION_INSTANCE" -H "apikey: $EVOLUTION_API_KEY" >/dev/null 2>&1; then
   echo ">> Criando a instância $EVOLUTION_INSTANCE..."
-  chamar /instance/create "{\"instanceName\":\"$EVOLUTION_INSTANCE\",\"qrcode\":true}" >/dev/null
+  chamar /instance/create "{\"instanceName\":\"$EVOLUTION_INSTANCE\",\"integration\":\"WHATSAPP-BAILEYS\",\"qrcode\":true}" >/dev/null
 fi
 
 echo ">> Configurando o webhook e os grupos..."
-chamar "/webhook/set/$EVOLUTION_INSTANCE" "{\"url\":\"$WEBHOOK_BASE?segredo=$WHATSAPP_WEBHOOK_SEGREDO\",\"enabled\":true,\"webhook_by_events\":false,\"webhook_base64\":true,\"events\":[\"MESSAGES_UPSERT\"]}" >/dev/null
-chamar "/settings/set/$EVOLUTION_INSTANCE" '{"groups_ignore":false,"always_online":false,"read_messages":false,"read_status":false,"reject_call":false,"sync_full_history":false,"wavoipToken":""}' >/dev/null
+# formato da 2.x: webhook dentro de "webhook" e as opções em camelCase
+chamar "/webhook/set/$EVOLUTION_INSTANCE" "{\"webhook\":{\"url\":\"$WEBHOOK_BASE?segredo=$WHATSAPP_WEBHOOK_SEGREDO\",\"enabled\":true,\"byEvents\":false,\"base64\":true,\"events\":[\"MESSAGES_UPSERT\"]}}" >/dev/null
+# groupsIgnore false: o gestor lê os grupos de tarefas, documentos e pagamentos
+chamar "/settings/set/$EVOLUTION_INSTANCE" '{"groupsIgnore":false,"alwaysOnline":false,"readMessages":false,"readStatus":false,"rejectCall":false,"msgCall":"","syncFullHistory":false}' >/dev/null
 
 # ── 4. Resumo ──────────────────────────────────────────────────────────
 cat <<EOF

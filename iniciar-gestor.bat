@@ -1,6 +1,8 @@
 @echo off
 rem Depois de migrar o WhatsApp para o servidor (docs/whatsapp-servidor.md),
 rem este script nao e mais necessario: nao rode os dois ao mesmo tempo.
+rem Este script usa a Evolution 1.8.7. A 2.x (que resolve o "Aguardando mensagem")
+rem roda no servidor: deploy/whatsapp/instalar.sh.
 echo ========================================
 echo   Iniciando Gestor Escritorio Contabil
 echo ========================================
