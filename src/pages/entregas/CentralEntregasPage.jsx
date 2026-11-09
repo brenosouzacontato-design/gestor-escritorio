@@ -6,7 +6,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import {
   SendIcon, RefreshCwIcon, ChevronLeftIcon, ChevronRightIcon, SearchIcon, ExternalLinkIcon,
-  CheckIcon, EyeIcon, AlertTriangleIcon, MonitorOffIcon, MonitorIcon, Undo2Icon,
+  CheckIcon, EyeIcon, AlertTriangleIcon, MonitorOffIcon, MonitorIcon, Undo2Icon, BellIcon, BellOffIcon,
 } from 'lucide-react'
 import { useStore } from '../../store'
 import { useToast } from '../../components/shared'
@@ -69,7 +69,14 @@ export default function CentralEntregasPage() {
   }, [guias])
 
   const visiveis = useMemo(() => {
-    const termo = busca.trim().toLowerCase()
+    // aviso automático: guia anexada vira mensagem com o link curto do painel (guias-aviso-cron.js)
+  const alternarAviso = async (c) => {
+    if (!('aviso_guia_painel' in c)) { show('Falta rodar supabase-schema-aviso-guia-painel.sql no Supabase.'); return }
+    const ligar = c.aviso_guia_painel === false
+    if (await salvar(c, { aviso_guia_painel: ligar })) show(ligar ? 'Aviso automático ligado.' : 'Aviso automático desligado.')
+  }
+
+  const termo = busca.trim().toLowerCase()
     return (guias || []).filter((g) => {
       const s = situacaoGuia(g)
       if (filtro === 'pendentes' && !(s === 'a_entregar' || s === 'falhou')) return false
@@ -266,7 +273,7 @@ function LinhaGuia({ g, marcada, enviando, onMarcar, onEntregar, onAbrir, onManu
         </span>
         {g.entregue_em && (
           <span style={{ fontSize: 10.5, color: 'var(--text3)' }}>
-            entregue {fmtQuando(g.entregue_em)} · {g.entrega_canal === 'manual' ? 'manual' : 'WhatsApp'}
+            entregue {fmtQuando(g.entregue_em)} · {g.entrega_canal === 'manual' ? 'manual' : g.entrega_canal === 'painel' ? 'aviso automático (link do painel)' : 'WhatsApp'}
           </span>
         )}
         {g.aberto_em && (
@@ -339,6 +346,7 @@ function AbaEmpresas({ show, onSalvo }) {
       </div>
       <p style={{ fontSize: 11.5, color: 'var(--text3)', margin: '0 0 10px' }}>
         WhatsApp de entrega: número com DDD ou id de grupo (…@g.us). Em branco, usa o telefone do cadastro.
+        Com o aviso automático ligado, toda guia anexada vai para esse WhatsApp como mensagem com o link curto do painel.
       </p>
       <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
         {lista.map((c) => (
@@ -352,6 +360,12 @@ function AbaEmpresas({ show, onSalvo }) {
               style={{ color: c.painel_ativo === false ? 'var(--text3)' : 'var(--ok)', minWidth: 140 }}
               title={c.painel_ativo === false ? 'Ligar o painel do cliente' : 'Desligar o painel do cliente'}>
               {c.painel_ativo === false ? <><MonitorOffIcon size={13} /> Painel desligado</> : <><MonitorIcon size={13} /> Painel ligado</>}
+            </button>
+            <button className="btn btn-sm btn-ghost" onClick={() => alternarAviso(c)} disabled={c.painel_ativo === false}
+              style={{ color: c.aviso_guia_painel === false || c.painel_ativo === false ? 'var(--text3)' : 'var(--ok)', minWidth: 150 }}
+              title="Avisar o cliente no WhatsApp, com o link do painel, toda vez que uma guia for anexada">
+              {c.aviso_guia_painel === false || c.painel_ativo === false
+                ? <><BellOffIcon size={13} /> Aviso automático off</> : <><BellIcon size={13} /> Aviso automático on</>}
             </button>
           </div>
         ))}
