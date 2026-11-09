@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { LayoutDashboardIcon, CheckSquareIcon, UsersIcon, RefreshCwIcon, SettingsIcon, PlusIcon, TargetIcon, BuildingIcon, AppWindowIcon, CalculatorIcon, ChevronsLeftIcon, ChevronsRightIcon, SunIcon, MoonIcon, PaperclipIcon, BellIcon, BanknoteIcon, CircleDollarSignIcon, MonitorIcon, ReceiptIcon, LogOutIcon, FileSignatureIcon } from 'lucide-react'
 import { useStore } from './store'
+import { useTelaNoHistorico } from './lib/historico'
 import { ToastContainer } from './components/shared'
 import { sair } from './components/ComLogin'
 import NovaTarefaModal from './components/NovaTarefaModal'
@@ -42,8 +43,12 @@ const NAV = [
 ]
 
 export default function App() {
-  const [page, setPage]                       = useState('overview')
-  const [selectedCliente, setSelectedCliente] = useState(null)
+  // tela atual (+ cliente aberto na tela Clientes) no histórico do navegador:
+  // o voltar do navegador/celular retorna à tela anterior
+  const [tela, irPara] = useTelaNoHistorico('tela', { page: 'overview', cliente: null })
+  const page = tela.page
+  const selectedCliente = tela.cliente
+  const setSelectedCliente = (id) => irPara((t) => ({ ...t, cliente: id }))
   const [showNewTask, setShowNewTask]         = useState(false)
   const [newTaskClienteId, setNewTaskClienteId] = useState('')
   const [showConfig, setShowConfig]           = useState(false)
@@ -89,7 +94,7 @@ export default function App() {
   // o Supabase não consegue serializar (estrutura circular). Filtra aqui
   // pra não depender de todo callsite lembrar de embrulhar em arrow fn.
   const openNewTask = (clienteId = '') => { setNewTaskClienteId(typeof clienteId === 'string' ? clienteId : ''); setShowNewTask(true) }
-  const navigate    = (p) => { setPage(p); if (p !== 'clientes') setSelectedCliente(null) }
+  const navigate    = (p, cliente = null) => irPara({ page: p, cliente: p === 'clientes' ? cliente : null })
   const toggleTheme = () => setTheme(t => t === 'dark' ? 'light' : 'dark')
   const toggleCollapsed = () => setCollapsed(c => {
     localStorage.setItem('sidebar-collapsed', c ? '0' : '1')
@@ -146,7 +151,7 @@ export default function App() {
           <div className="center"><div className="spinner" /></div>
         ) : (
           <>
-            {page === 'overview'   && <Overview onAddTarefa={openNewTask} onOpenCliente={(id) => { setSelectedCliente(id); navigate('clientes') }} onOpenEmpresa={(id) => { setClienteAbrirEmpresas(id); navigate('empresas') }} onOpenObrigacoes={() => navigate('empresas')} onOpenTarefas={() => navigate('tarefas')} onOpenContabil={() => navigate('contabil')} />}
+            {page === 'overview'   && <Overview onAddTarefa={openNewTask} onOpenCliente={(id) => navigate('clientes', id)} onOpenEmpresa={(id) => { setClienteAbrirEmpresas(id); navigate('empresas') }} onOpenObrigacoes={() => navigate('empresas')} onOpenTarefas={() => navigate('tarefas')} onOpenContabil={() => navigate('contabil')} />}
             {page === 'empresas'   && <Empresas onOpenTarefas={(clienteId) => { setFiltroClienteTarefas(clienteId ?? null); navigate('tarefas') }}
               clienteInicialId={clienteAbrirEmpresas} onClienteInicialConsumido={() => setClienteAbrirEmpresas(null)} />}
             {page === 'paineis'    && <PaineisPage />}

@@ -7,6 +7,7 @@ import PainelCompartilhadoPage from './PainelCompartilhadoPage';
 import { listarEmpresasCarteira } from './carteiraApi';
 import { useTrabalhoCarteira, TrabalhoEmpresaCarteira, QuadroCarteira } from './TrabalhoCarteira';
 import { urlPublica } from '../../lib/linksPublicos';
+import { useTelaNoHistorico } from '../../lib/historico';
 
 // Página do link da carteira (?carteira=<token>) — pra pessoa responsável
 // pela carteira, sem login: lista as empresas da carteira e abre o painel de
@@ -44,10 +45,16 @@ export default function PainelCarteiraPage({ token, competencia: competenciaDoLi
   const [erro, setErro] = useState(null);
   const [busca, setBusca] = useState('');
   const [competencia, setCompetencia] = useState(competenciaDoLink || competenciaPadrao());
-  const [selecionada, setSelecionada] = useState(empresaInicial || null); // chave da empresa aberta
+  // empresa aberta (chave) e, dentro dela, o painel do cliente ou as
+  // tarefas/obrigações — no histórico do navegador (voltar retorna à tela
+  // anterior) e na URL (&empresa=, F5 mantém a posição)
+  const [tela, irPara] = useTelaNoHistorico('carteira', { empresa: empresaInicial || null, aba: 'painel' },
+    { paramsUrl: (t) => ({ empresa: t.empresa }) });
+  const selecionada = tela.empresa;
+  const abaEmpresa = tela.aba;
+  const setSelecionada = (chave) => irPara({ empresa: chave || null, aba: 'painel' });
+  const setAbaEmpresa = (aba) => irPara((t) => ({ ...t, aba }));
   const [copiado, setCopiado] = useState(false);
-  // dentro de uma empresa: o painel do cliente ou as tarefas/obrigações dela
-  const [abaEmpresa, setAbaEmpresa] = useState('painel');
   // tarefas, obrigações e anexos de todas as empresas da carteira (carteira-acao)
   const trabalho = useTrabalhoCarteira(token, competencia);
 
@@ -60,14 +67,7 @@ export default function PainelCarteiraPage({ token, competencia: competenciaDoLi
       .catch((e) => setErro(e.message));
   }, [token]);
 
-  // empresa aberta fica na URL: F5 / voltar do navegador mantêm a posição
-  useEffect(() => {
-    const url = new URL(window.location.href);
-    if (selecionada) url.searchParams.set('empresa', selecionada); else url.searchParams.delete('empresa');
-    window.history.replaceState(null, '', url);
-    window.scrollTo(0, 0);
-    setCopiado(false);
-  }, [selecionada]);
+  useEffect(() => { setCopiado(false); }, [selecionada]);
 
   const filtradas = useMemo(() => {
     const termo = normalizar(busca.trim());
@@ -161,7 +161,7 @@ export default function PainelCarteiraPage({ token, competencia: competenciaDoLi
   };
   const abrirEmpresaPorId = (empresa) => {
     const e = empresas.find((x) => x.id === empresa.id);
-    if (e) { setAbaEmpresa('trabalho'); setSelecionada(e.chave); }
+    if (e) irPara({ empresa: e.chave, aba: 'trabalho' });
   };
 
   // ── Lista das empresas da carteira ──

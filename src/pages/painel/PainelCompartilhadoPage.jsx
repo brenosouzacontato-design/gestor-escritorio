@@ -13,7 +13,7 @@ import { lerCodigosDaGuia } from './codigosGuia';
 import { GraficoFaturamento, ComparativoDas, NotasEntrada, TarefasDoCliente } from './PainelClientePage';
 import { calcularAliquotaNominal } from '../../lib/simplesNacional';
 import {
-  obterResumoObrigacoes, obterResumoTarefas, obterDadosGerenciais, obterDocumentosPorObrigacao,
+  obterItensConsolidados, obterGerenciaisPorCompetencia, obterDadosGerenciais, obterDocumentosPorObrigacao,
   obterDocumentosPorTarefa, obterSituacaoFiscalMaisRecente, obterCndManual, obterHistoricoFaturamento,
   obterUltimaVisualizacaoPainel, extrairValorGuia, obterHonorariosPainel, obterDocumentosFiscais,
   definirSecoesOcultasPainel, atualizarDadosGerenciais, atualizarValorGuia, obterTarefasDoCliente,
@@ -30,9 +30,12 @@ import {
 //   1. Fiscal: números da Declaração do Simples do mês + evolução do faturamento;
 //   2. cards de impostos em aberto (Relatório de Situação Fiscal), a vencer e
 //      vencidos (guias anexadas);
-//   3. impostos da competência: com guia anexada (valor + download) ou "aguardando
-//      guia" (só o vencimento, sem entrar nos cards) — o DAS de
-//      mês com faturamento zerado aparece como "Sem movimento";
+//   3. impostos consolidados pela data de vencimento, independente da
+//      competência (que aparece em cada linha só como referência): o que vence
+//      no mês da competência selecionada e no seguinte, mais tudo que segue em
+//      aberto de antes. Com guia anexada (valor + download) ou "aguardando
+//      guia" (só o vencimento, sem entrar nos cards) — o DAS de mês com
+//      faturamento zerado aparece como "Sem movimento";
 //   4. pendências do Relatório de Situação Fiscal (RFB/PGFN), com nome legível
 //      do tributo, competência e valor atualizado;
 //   5. demais obrigações/tarefas de Fiscal e Folha — concluídas só aparecem
@@ -278,10 +281,10 @@ function PainelCompartilhado({ clienteId, competencia: competenciaInicial, admin
       setCarregando(true);
       setErro(null);
       try {
-        const [{ data: cliente, error: errCliente }, obs, tarefas, gerenciais, historico, situacaoFiscal, cndManual, honorarios, configPix, notasEntrada, tarefasCliente, recados] = await Promise.all([
+        const [{ data: cliente, error: errCliente }, consolidados, gerenciais, historico, situacaoFiscal, cndManual, honorarios, configPix, notasEntrada, tarefasCliente, recados] = await Promise.all([
           obterClientePagina(clienteId, sessao, 'nome, cnpj, regime, painel_secoes_ocultas'),
-          obterResumoObrigacoes(clienteId, competencia),
-          obterResumoTarefas(clienteId, competencia),
+          // impostos/obrigações/tarefas consolidados pelo vencimento (todas as competências)
+          obterItensConsolidados(clienteId, competencia),
           // tabelas novas toleram ainda não existir no banco, igual ao painel completo
           obterDadosGerenciais(clienteId, competencia).catch(() => null),
           obterHistoricoFaturamento(clienteId).catch(() => []),
@@ -295,14 +298,18 @@ function PainelCompartilhado({ clienteId, competencia: competenciaInicial, admin
           obterRecadosPainel(clienteId).catch(() => ({})),
         ]);
         if (errCliente) throw errCliente;
-        const impostos = obs.itens.filter(ehImposto);
-        const outrasObrigacoes = obs.itens.filter((o) => !ehImposto(o) && areaObrigacao(o));
-        const tarefasArea = tarefas.itens.filter((t) => areaTarefa(t));
-        const [anexos, anexosTarefa] = await Promise.all([
+        const impostos = consolidados.obrigacoes.filter(ehImposto);
+        const outrasObrigacoes = consolidados.obrigacoes.filter((o) => !ehImposto(o) && areaObrigacao(o));
+        const tarefasArea = consolidados.tarefas.filter((t) => areaTarefa(t));
+        // DAS de outras competências usam a Declaração do Simples da própria competência
+        const competenciasDas = [...new Set(impostos.filter(ehDas).map((o) => o.competencia).filter((c) => c && c !== competencia))];
+        const [anexos, anexosTarefa, gerenciaisOutras] = await Promise.all([
           obterDocumentosPorObrigacao([...impostos, ...outrasObrigacoes].map((o) => o.id)).catch(() => ({})),
           obterDocumentosPorTarefa(tarefasArea.map((t) => t.id)).catch(() => ({})),
+          obterGerenciaisPorCompetencia(clienteId, competenciasDas).catch(() => ({})),
         ]);
-        setDados({ cliente, impostos, outrasObrigacoes, tarefasArea, anexos, anexosTarefa, gerenciais, historico, situacaoFiscal, cndManual, honorarios, configPix, notasEntrada, tarefasCliente, recados });
+        const gerenciaisPorComp = { ...gerenciaisOutras, ...(gerenciais ? { [competencia]: gerenciais } : {}) };
+        setDados({ cliente, impostos, outrasObrigacoes, tarefasArea, anexos, anexosTarefa, gerenciais, gerenciaisPorComp, historico, situacaoFiscal, cndManual, honorarios, configPix, notasEntrada, tarefasCliente, recados });
       } catch (e) {
         setErro(e.message);
       } finally {
@@ -583,8 +590,8 @@ function PainelCompartilhado({ clienteId, competencia: competenciaInicial, admin
                   <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '14px 16px', borderRadius: 'var(--r-lg)', background: 'var(--ok)', color: '#fff' }}>
                     <PartyPopperIcon size={26} style={{ flexShrink: 0 }} />
                     <div>
-                      <div style={{ fontSize: 15, fontWeight: 800 }}>Parabéns! Tudo quitado em {competencia}.</div>
-                      <div style={{ fontSize: 12, marginTop: 2, opacity: 0.92 }}>Todas as suas obrigações da competência estão pagas. Obrigado pelo comprometimento!</div>
+                      <div style={{ fontSize: 15, fontWeight: 800 }}>Parabéns! Tudo quitado.</div>
+                      <div style={{ fontSize: 12, marginTop: 2, opacity: 0.92 }}>Todas as suas obrigações com vencimento até agora estão pagas. Obrigado pelo comprometimento!</div>
                     </div>
                   </div>
                 </Ocultavel>
@@ -682,10 +689,10 @@ function PainelCompartilhado({ clienteId, competencia: competenciaInicial, admin
 
               {/* ── 3. Impostos (com guia anexada ou aguardando guia) ── */}
               <Ocultavel chave="impostos" {...propsOc}>
-              <Secao titulo={`Impostos da competência ${competencia}`} icone={<CalendarIcon size={14} />}
-                extra={temValor(guias) && <Total valor={somaValores(guias)} />}>
+              <Secao titulo="Impostos e guias — por vencimento" icone={<CalendarIcon size={14} />}
+                extra={temValor(guias.filter((g) => !g.paga)) && <Total valor={somaValores(guias.filter((g) => !g.paga))} />}>
                 {guias.length === 0
-                  ? <Vazio>Nenhum imposto previsto para essa competência.</Vazio>
+                  ? <Vazio>Nenhum imposto em aberto nem com vencimento no período.</Vazio>
                   : <div style={LISTA}>{guias.map((g) => <LinhaGuia key={g.id} g={g} onBaixar={baixar} editando={editando} onSalvarValor={salvarValorGuia} onMarcarPaga={salvarGuiaPaga} />)}</div>}
               </Secao>
               </Ocultavel>
@@ -740,7 +747,7 @@ function PainelCompartilhado({ clienteId, competencia: competenciaInicial, admin
               {/* ── 5. Obrigações e tarefas (Fiscal/Folha) ── */}
               {itensArea.length > 0 && (
                 <Ocultavel chave="obrigacoes" {...propsOc}>
-                <Secao titulo="Obrigações e tarefas do mês" icone={<ClipboardListIcon size={14} />}>
+                <Secao titulo="Obrigações e tarefas — por vencimento" icone={<ClipboardListIcon size={14} />}>
                   <div style={LISTA}>{itensArea.map((it) => <LinhaObrigacao key={it.id} it={it} onBaixar={baixar} />)}</div>
                 </Secao>
                 </Ocultavel>
@@ -761,14 +768,19 @@ function PainelCompartilhado({ clienteId, competencia: competenciaInicial, admin
 // Impostos da competência: com guia anexada, ou "aguardando guia" se ainda não concluídos. Exceção: o DAS de um mês
 // com faturamento zerado na Declaração do Simples não tem guia (não há o
 // que pagar) — entra como "Sem movimento" pro cliente saber que está ok.
-function montarGuias({ impostos, anexos, gerenciais }, competencia) {
-  const semMovimento = gerenciais != null && gerenciais.faturamento_periodo != null && Number(gerenciais.faturamento_periodo) === 0;
+function montarGuias({ impostos, anexos, gerenciais, gerenciaisPorComp = {} }, competencia) {
+  const zerado = (g) => g != null && g.faturamento_periodo != null && Number(g.faturamento_periodo) === 0;
+  const semMovimento = zerado(gerenciais);
+  // painel consolidado: cada DAS olha a Declaração do Simples da própria competência
+  const gerDe = (o) => (!o.competencia || o.competencia === competencia ? gerenciais : gerenciaisPorComp[o.competencia]) || null;
   const guias = impostos
     // Sem guia anexada ainda: aparece como "aguardando guia" (com o vencimento), a não ser que a
     // obrigação já esteja concluída / não se aplique (ex.: apurado sem valor a pagar).
-    .filter((o) => anexos[o.id] || (semMovimento && ehDas(o)) || !(o.status === 'concluido' || o.status === 'nao_aplica'))
+    .filter((o) => anexos[o.id] || (zerado(gerDe(o)) && ehDas(o)) || !(o.status === 'concluido' || o.status === 'nao_aplica'))
     .map((o) => {
       const das = ehDas(o);
+      const ger = gerDe(o);
+      const semMovimento = zerado(ger);
       const anexo = anexos[o.id] || null;
       const aguardandoGuia = !anexo && !(das && semMovimento);
       // valor lido da própria guia (IA) tem prioridade — já vem com multa/
@@ -793,11 +805,11 @@ function montarGuias({ impostos, anexos, gerenciais }, competencia) {
         semMovimento: das && semMovimento,
         aguardandoGuia,
         valor: (das && semMovimento) || aguardandoGuia ? null
-          : valorGuia ?? (das && gerenciais?.valor_das != null ? Number(gerenciais.valor_das) : null),
+          : valorGuia ?? (das && ger?.valor_das != null ? Number(ger.valor_das) : null),
         anexo,
       };
     });
-  if (semMovimento && !impostos.some(ehDas)) {
+  if (semMovimento && !impostos.some((o) => ehDas(o) && (!o.competencia || o.competencia === competencia))) {
     guias.push({ id: 'das-sem-movimento', titulo: 'DAS — Simples Nacional', competencia, area: 'Fiscal',
       vencimento: null, dias: null, concluida: true, semMovimento: true, valor: null, anexo: null });
   }
@@ -844,12 +856,11 @@ function montarObrigacoesTarefas({ outrasObrigacoes, tarefasArea, anexos, anexos
   const tarefas = tarefasArea
     .filter((t) => !t.concluida || anexosTarefa[t.id])
     .map((t) => ({
-      id: t.id, titulo: t.titulo, area: areaTarefa(t), competencia,
-      status: t.concluida ? 'concluido' : 'pendente', vencimento: t.vencimento, anexo: anexosTarefa[t.id] || null,
+      id: t.id, titulo: t.titulo, area: areaTarefa(t), competencia: t.competencia || competencia,
+      status: t.concluida ? 'concluido' : 'pendente', vencimento: t.vencimento ? String(t.vencimento).slice(0, 10) : null, anexo: anexosTarefa[t.id] || null,
     }));
-  const ordemStatus = { vencido: 0, pendente: 1, concluido: 2, nao_aplica: 3 };
-  return [...obrigacoes, ...tarefas].sort((a, b) => (ordemStatus[a.status] ?? 9) - (ordemStatus[b.status] ?? 9)
-    || (a.vencimento || '9999').localeCompare(b.vencimento || '9999'));
+  // consolidado pela data de vencimento (a competência fica só como referência)
+  return [...obrigacoes, ...tarefas].sort((a, b) => (a.vencimento || '9999').localeCompare(b.vencimento || '9999'));
 }
 
 // Honorário como "obrigação a pagar" — mesmo formato das guias pra entrar
