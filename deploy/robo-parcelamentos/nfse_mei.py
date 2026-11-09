@@ -166,9 +166,33 @@ class Tela:
             return null
         }""", [pedaco_nome, rotulo_rx])
 
+    def pergunta(self, pergunta_rx: str, rotulo_rx: str) -> str | None:
+        """Marca a resposta (rótulo do rádio) de uma pergunta achada pelo texto, ex.:
+        "Preencher as informações IBS/CBS?" → "Não". Entre os rádios com o rótulo certo, fica o
+        mais perto do texto da pergunta (o grupo dela, não outro grupo da mesma seção)."""
+        return self.page.evaluate("""([prx, rrx]) => {
+            const P = new RegExp(prx, 'i'), R = new RegExp(rrx, 'i')
+            let melhor = null, dist = 99
+            for (const r of document.querySelectorAll('input[type=radio]')) {
+                const lab = ((r.labels && r.labels[0] && r.labels[0].innerText)
+                    || (r.closest('label') && r.closest('label').innerText)
+                    || (r.nextSibling && r.nextSibling.textContent) || r.value || '').trim()
+                if (!R.test(lab)) continue
+                let el = r, d = 0
+                while (el && d < 8 && !P.test(el.innerText || '')) { el = el.parentElement; d++ }
+                if (el && d < dist) { melhor = [r, lab]; dist = d }
+            }
+            if (!melhor) return null
+            if (!melhor[0].checked) melhor[0].click()
+            return melhor[1]
+        }""", [pergunta_rx, rotulo_rx])
+
     def preencher(self, loc: Locator, valor: str) -> None:
-        loc.click()
-        loc.fill(str(valor))
+        if loc.is_editable():
+            loc.click()
+            loc.fill(str(valor))
+        else:  # campo com calendário (somente leitura): grava o valor direto
+            loc.evaluate("(el, v) => { el.value = v; el.dispatchEvent(new Event('input', {bubbles: true})) }", str(valor))
         loc.dispatch_event("change")
         loc.press("Tab")
 
@@ -270,8 +294,21 @@ def abrir_dps(t: Tela) -> None:
 
 def passo_pessoas(t: Tela, n: dict) -> None:
     page = t.page
-    t.preencher(t.campo("DataCompetencia"), data_br(n["competencia"]))
+    # Desde a NT 009 o formulário fica bloqueado até responder se vai preencher IBS/CBS.
+    # MEI: não (as notas de 10/2026 saíram sem IBS/CBS).
+    if not t.pergunta(r"preencher as informa..es ibs/cbs", r"^n.o$"):
+        log.warning("Pergunta 'Preencher as informações IBS/CBS?' não achada.")
+    page.wait_for_timeout(1500)
+    data = t.campo("DataCompetencia")
+    try:
+        data.wait_for(state="visible", timeout=ESPERA)
+        page.wait_for_function("el => !el.disabled", arg=data.element_handle(), timeout=ESPERA)
+    except Exception:  # noqa: BLE001
+        t.print("data-bloqueada", html=True)
+        raise ErroPortal("O campo Data de Competência continuou bloqueado (pergunta nova no portal?).")
+    t.preencher(data, data_br(n["competencia"]))
     page.wait_for_timeout(1500)  # o portal recarrega partes da tela depois da data
+    t.pergunta(r"compra governamental", r"^n.o$")
     doc = digitos(n.get("tomador_doc"))
     if doc:
         if not t.radio("Tomador", r"^brasil"):
@@ -292,6 +329,8 @@ def passo_pessoas(t: Tela, n: dict) -> None:
     else:
         t.radio("Tomador", r"n.o informado")
     t.radio("Intermediario", r"n.o informado")
+    # "Para fins de apuração do IBS/CBS, o destinatário é o próprio adquirente?" → Sim
+    t.pergunta(r"destinat.rio . o pr.prio adquirente", r"^sim$")
     t.print("pessoas", html=True)
 
 
@@ -312,13 +351,19 @@ def passo_servico(t: Tela, n: dict) -> None:
     # "Há exportação / imunidade / não incidência?" → Não (quando a pergunta aparece)
     for parte in ("Exportacao", "Imunidade", "NaoIncidencia"):
         t.radio(parte, r"^n.o$")
-    desc = t.campo("Descricao", tipo="textarea")
+    desc = page.locator("#ServicoPrestado_Descricao")
     if not t.tem(desc):
-        desc = t.campo("Descricao", tipo="input")
+        desc = t.campo("Descricao", tipo="textarea")
     if not t.tem(desc):
         t.print("sem-descricao", html=True)
         raise ErroPortal("Campo da descrição do serviço não achado.")
-    t.preencher(desc, n["descricao"])
+    desc.click()
+    desc.fill("")
+    desc.press_sequentially(n["descricao"], delay=15)  # tecla a tecla: o portal conta os caracteres no teclado
+    desc.dispatch_event("change")
+    if desc.input_value().strip() != n["descricao"].strip():
+        t.print("descricao-diferente", html=True)
+        raise ErroPortal("A descrição não ficou igual no portal.")
     t.print("servico", html=True)
 
 
@@ -345,6 +390,9 @@ def passo_valores(t: Tela, n: dict) -> None:
     lido = ler_valor(campo.input_value())
     if abs(lido - alvo) > 0.009:
         raise ErroPortal(f"Valor no portal (R$ {valor_br(lido)}) não bate com a nota (R$ {valor_br(alvo)}).")
+    # "Valor aproximado dos tributos" (obrigatório): as notas dos MEIs saem sem valor estimado
+    if not (t.radio("TipoValorTributos", r"n.o informar") or t.pergunta(r"valor aproximado dos tributos", r"n.o informar")):
+        log.warning("Opção 'Não informar valor estimado dos tributos' não achada.")
     t.print("valores", html=True)
 
 
@@ -518,7 +566,9 @@ def rodar() -> int:
                 log.exception("NFS-e MEI %s", nome)
                 try:
                     PASTA.mkdir(parents=True, exist_ok=True)
-                    page.screenshot(path=str(PASTA / f"erro-{n['id'][:8]}-{datetime.now():%H%M%S}.png"), full_page=True)
+                    base = PASTA / f"erro-{n['id'][:8]}-{datetime.now():%H%M%S}"
+                    page.screenshot(path=f"{base}.png", full_page=True)
+                    Path(f"{base}.html").write_text(page.content(), encoding="utf-8")
                 except Exception:  # noqa: BLE001
                     pass
                 db.marcar(n["id"], "erro", f"Falha antes de emitir: {str(e)[:300]}")
