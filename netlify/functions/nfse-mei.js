@@ -15,13 +15,16 @@
 //   POST { acao: 'cancelar', cliente_id, id }                 → { ok }   (só antes de o robô pegar)
 //   POST { acao: 'arquivo', cliente_id, id, tipo: 'pdf'|'xml' } → { url }  (link assinado, 10 min)
 //   POST { acao: 'reenviar_whatsapp', cliente_id, id }        → { ok }
-//   Robô (cabeçalho x-robo-chave = SUPABASE_SERVICE_KEY): POST { cliente_id } → { senha }
+//   Robô (cabeçalho x-robo-chave = SUPABASE_SERVICE_KEY):
+//     POST { cliente_id }              → { senha }
+//     POST { acao: 'entregar', id }    → { ok, destino }  (manda PDF/XML no WhatsApp do cliente, como o botão da tela)
 
 const { ErroHttp, exigirUsuario, responder, supabaseServico } = require('./lib/nfse/auth')
 const crypto = require('crypto')
 const { cifrar, decifrar } = require('./lib/nfse/cofre')
 const { ErroMei, normalizarModelo, normalizarNota, notaRepetida, senhaDasObservacoes } = require('./lib/nfse/mei')
 const { enviarDocumento, numeroWhatsapp } = require('./lib/whatsapp')
+const { gerarDanfse } = require('./lib/nfse/danfse/danfse')
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const BUCKET = 'documentos'
@@ -54,6 +57,42 @@ async function nota(sb, clienteId, id) {
 
 const brl = (v) => Number(v).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 
+async function baixar(sb, caminho) {
+  const { data, error } = await sb.storage.from(BUCKET).download(caminho)
+  if (error) throw new ErroHttp(500, error.message)
+  return Buffer.from(await data.arrayBuffer())
+}
+
+// Manda o PDF (DANFSe) e o XML da nota no WhatsApp do cliente. Usada pelo botão da tela e pelo robô
+// logo depois de emitir. Se o portal não deu o PDF, o gestor gera o DANFSe a partir do XML e guarda.
+async function entregarNota(sb, c, n) {
+  if (n.status !== 'emitida' || !n.xml_path) throw new ErroHttp(400, 'Nota ainda não emitida.')
+  const destino = numeroWhatsapp(c.whatsapp_entrega || c.telefone)
+  if (!destino) throw new ErroHttp(400, 'Empresa sem WhatsApp no cadastro (WhatsApp de entrega ou telefone).')
+  const xml = await baixar(sb, n.xml_path)
+  let pdf
+  if (n.pdf_path) {
+    pdf = await baixar(sb, n.pdf_path)
+  } else {
+    pdf = Buffer.from(await gerarDanfse(xml.toString('utf8')))
+    const caminho = `nfse-mei/${n.id}.pdf`
+    const { error } = await sb.storage.from(BUCKET).upload(caminho, pdf, { contentType: 'application/pdf', upsert: true })
+    if (!error) await ok(sb.from('nfse_mei_notas').update({ pdf_path: caminho }).eq('id', n.id))
+  }
+  const nome = `NFS-e ${n.numero || ''} ${(n.tomador_nome || '').slice(0, 30)}`.trim()
+  for (const [conteudo, ext, mime, legenda] of [
+    [pdf, 'pdf', 'application/pdf', `✅ NFS-e ${n.numero || ''} emitida${n.tomador_nome ? ` — ${n.tomador_nome}` : ''}
+Valor: ${brl(n.valor)}`],
+    [xml, 'xml', 'application/xml', ''],
+  ]) {
+    const r = await enviarDocumento(destino, { media: conteudo.toString('base64'), fileName: `${nome}.${ext}`, caption: legenda, mimetype: mime })
+    if (!r.sucesso) throw new ErroHttp(502, r.erro)
+  }
+  const agora = new Date().toISOString()
+  await ok(sb.from('nfse_mei_notas').update({ whatsapp_enviado_em: agora, atualizado_em: agora }).eq('id', n.id))
+  return { ok: true, destino }
+}
+
 // O robô do servidor não tem a NFSE_CERT_KEY (é secreta no Netlify): pede a senha decifrada aqui,
 // provando que tem a SUPABASE_SERVICE_KEY (a mesma com que já lê e grava o banco).
 function ehRobo(event) {
@@ -63,9 +102,15 @@ function ehRobo(event) {
   return crypto.timingSafeEqual(Buffer.from(cab), Buffer.from(chave))
 }
 
-async function senhaParaRobo(event) {
+async function acaoDoRobo(event) {
   let p
   try { p = JSON.parse(event.body || '{}') } catch { throw new ErroHttp(400, 'Corpo inválido') }
+  const sb = supabaseServico()
+  if (p.acao === 'entregar') {  // nota recém-emitida: o gestor manda no WhatsApp do cliente
+    const n = await ok(sb.from('nfse_mei_notas').select('*').eq('id', uuid(p.id)).maybeSingle())
+    if (!n) throw new ErroHttp(404, 'Nota não encontrada')
+    return entregarNota(sb, await cliente(sb, n.cliente_id), n)
+  }
   const r = await ok(supabaseServico().from('nfse_mei_acessos').select('senha_cifrada').eq('cliente_id', uuid(p.cliente_id, 'cliente_id')).maybeSingle())
   if (!r) throw new ErroHttp(404, 'Empresa sem senha do Emissor Nacional')
   return { senha: decifrar(r.senha_cifrada).toString('utf8') }
@@ -73,7 +118,7 @@ async function senhaParaRobo(event) {
 
 exports.handler = responder(async (event) => {
   if (event.httpMethod !== 'POST') throw new ErroHttp(405, 'Use POST')
-  if (ehRobo(event)) return senhaParaRobo(event)  // única ação do robô
+  if (ehRobo(event)) return acaoDoRobo(event)  // senha do portal ou entregar a nota
   const usuario = await exigirUsuario(event)
   let p
   try { p = JSON.parse(event.body || '{}') } catch { throw new ErroHttp(400, 'Corpo inválido') }
@@ -197,24 +242,7 @@ exports.handler = responder(async (event) => {
 
       case 'reenviar_whatsapp': {
         const c = await cliente(sb, p.cliente_id)
-        const n = await nota(sb, c.id, p.id)
-        if (n.status !== 'emitida' || !n.pdf_path) throw new ErroHttp(400, 'Nota ainda sem PDF.')
-        const destino = numeroWhatsapp(c.whatsapp_entrega || c.telefone)
-        if (!destino) throw new ErroHttp(400, 'Empresa sem WhatsApp no cadastro (WhatsApp de entrega ou telefone).')
-        const nome = `NFS-e ${n.numero || ''} ${(n.tomador_nome || '').slice(0, 30)}`.trim()
-        for (const [caminho, ext, mime, legenda] of [
-          [n.pdf_path, 'pdf', 'application/pdf', `✅ NFS-e ${n.numero || ''} emitida${n.tomador_nome ? ` — ${n.tomador_nome}` : ''}\nValor: ${brl(n.valor)}`],
-          [n.xml_path, 'xml', 'application/xml', ''],
-        ]) {
-          if (!caminho) continue
-          const { data, error } = await sb.storage.from(BUCKET).download(caminho)
-          if (error) throw new ErroHttp(500, error.message)
-          const media = Buffer.from(await data.arrayBuffer()).toString('base64')
-          const r = await enviarDocumento(destino, { media, fileName: `${nome}.${ext}`, caption: legenda, mimetype: mime })
-          if (!r.sucesso) throw new ErroHttp(502, r.erro)
-        }
-        await ok(sb.from('nfse_mei_notas').update({ whatsapp_enviado_em: new Date().toISOString() }).eq('id', n.id))
-        return { ok: true }
+        return entregarNota(sb, c, await nota(sb, c.id, p.id))
       }
 
       default:

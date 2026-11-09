@@ -476,22 +476,6 @@ def _absoluta(page: Page, href: str) -> str:
 
 
 # ---------------------------------------------------------------- execução
-def entregar(n: dict, pdf: bytes | None, xml: bytes, numero: str | None) -> str | None:
-    cli = n["clientes"]
-    destino = numero_whatsapp(cli.get("whatsapp_entrega") or cli.get("telefone"))
-    if not destino:
-        return "empresa sem WhatsApp no cadastro"
-    tomador = n.get("tomador_nome") or "tomador não identificado"
-    nome = f"NFS-e {numero or ''} {tomador[:30]}".strip()
-    legenda = f"✅ NFS-e {numero or ''} emitida — {tomador}\nValor: R$ {valor_br(n['valor'])}"
-    if pdf:
-        erro = aviso.documento_para(destino, pdf, f"{nome}.pdf", legenda)
-        if erro:
-            return erro
-        legenda = ""
-    return aviso.documento_para(destino, xml, f"{nome}.xml", legenda, mimetype="application/xml")
-
-
 def preencher(t: Tela, n: dict, senha: str) -> None:
     entrar(t, n["clientes"]["cnpj"], senha)
     abrir_dps(t)
@@ -521,16 +505,18 @@ def emitir_nota(page: Page, n: dict) -> None:
     except Exception as e:  # noqa: BLE001 — qualquer falha depois do clique pode ter emitido
         raise TalvezEmitida(f"Falha depois de emitir ({e}). Confira no portal antes de mandar de novo.") from e
     d = dados_xml(xml.decode("utf-8", "ignore"))
-    agora = datetime.now().astimezone().isoformat()
-    db.marcar(nid, "emitida", f"NFS-e {d['numero'] or ''} emitida", numero=d["numero"], chave=d["chave"],
-              xml_path=db.guardar_arquivo(nid, xml, "xml", "application/xml"),
-              pdf_path=db.guardar_arquivo(nid, pdf, "pdf", "application/pdf") if pdf else None)
-    erro = entregar(n, pdf, xml, d["numero"])
+    try:  # a nota já saiu: qualquer falha daqui em diante não pode virar "tentar de novo"
+        db.marcar(nid, "emitida", f"NFS-e {d['numero'] or ''} emitida", numero=d["numero"], chave=d["chave"],
+                  xml_path=db.guardar_arquivo(nid, xml, "xml", "application/xml"),
+                  pdf_path=db.guardar_arquivo(nid, pdf, "pdf", "application/pdf") if pdf else None)
+    except Exception as e:  # noqa: BLE001
+        raise TalvezEmitida(f"NFS-e {d['numero'] or ''} emitida no portal, mas não consegui guardar no gestor ({e}).") from e
+    # a nota já está no gestor; o gestor manda no WhatsApp do cliente
+    erro = db.entregar_pelo_gestor(nid)
     if erro:
-        db.atualizar(nid, {"robo_mensagem": f"NFS-e {d['numero']} emitida; não foi pelo WhatsApp: {erro}"[:500]})
+        db.atualizar(nid, {"robo_mensagem": f"NFS-e {d['numero']} emitida; o gestor não mandou no WhatsApp: {erro}"[:500]})
     else:
-        db.atualizar(nid, {"whatsapp_enviado_em": agora, "robo_mensagem": f"NFS-e {d['numero']} emitida e enviada ao cliente"
-                           + ("" if pdf else " (só o XML: o portal não deu o PDF)")})
+        db.atualizar(nid, {"robo_mensagem": f"NFS-e {d['numero']} emitida e enviada ao cliente pelo gestor"})
     aviso.texto(f"🧾 NFS-e {d['numero']} de {nome} (R$ {valor_br(n['valor'])}) emitida"
                 + (f" — mas não foi ao cliente: {erro}" if erro else " e enviada ao cliente"))
 
