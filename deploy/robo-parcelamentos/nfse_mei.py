@@ -109,7 +109,7 @@ def dados_xml(xml: str) -> dict:
 
 
 def tipo_arquivo(conteudo: bytes) -> str | None:
-    c = conteudo.lstrip()
+    c = conteudo.lstrip(b"\xef\xbb\xbf").lstrip()
     if c.startswith(b"%PDF"):
         return "pdf"
     if c.startswith(b"<") and b"NFSe" in c[:4000] and b"<html" not in c[:500].lower():
@@ -431,48 +431,71 @@ def emitir(t: Tela, n: dict, nome: str) -> None:
     raise TalvezEmitida("Não vi a NFS-e emitida a tempo. Confira no portal antes de mandar de novo.")
 
 
-def baixar_arquivos(t: Tela) -> tuple[bytes | None, bytes]:
-    """PDF (DANFSe) e XML pelos links de download da tela de nota emitida;
-    se não estiverem lá, pela lista de notas emitidas (a mais recente)."""
+def chave_da_tela(page: Page) -> str | None:
+    """Chave de acesso da tela "A NFS-e foi gerada com sucesso"."""
+    try:
+        m = re.search(r"Chave de Acesso:?\s*(\d{50})", page.inner_text("body"))
+    except Exception:  # noqa: BLE001
+        return None
+    return m.group(1) if m else None
+
+
+def numero_da_chave(chave: str) -> str:
+    """Chave da NFS-e: município(7) amb(1) tpInsc(1) inscrição(14) nNFSe(13) AAMM(4) código(9) DV(1)."""
+    return str(int(chave[23:36]))
+
+
+def baixar_arquivos(t: Tela, chave: str, nome: str) -> tuple[bytes | None, bytes]:
+    """PDF (DANFSe) e XML pela lista de notas emitidas. O portal pede um captcha para baixar:
+    quando ele aparece, avisa no WhatsApp e espera alguém resolver pela tela remota (o robô
+    não resolve captcha). Depois do captcha, o portal entrega o arquivo e o robô segue."""
     page = t.page
+    baixados: list = []
+    page.on("download", lambda d: baixados.append(d))
     achados: dict[str, bytes] = {}
-
-    def pelos_links(escopo) -> None:
-        for a in escopo.locator("a[href*='Download' i], a[href*='DANFSe' i], a[href*='/XML' i]").all():
-            href = a.get_attribute("href") or ""
-            if not href or href.startswith("#") or href.startswith("javascript"):
-                continue
-            try:
-                r = page.context.request.get(_absoluta(page, href), timeout=60000)
-            except Exception:  # noqa: BLE001
-                continue
-            tipo = tipo_arquivo(r.body())
-            if tipo and tipo not in achados:
-                achados[tipo] = r.body()
-
-    pelos_links(page)
-    if "xml" not in achados:
+    avisou = False
+    for tipo in ("NFSe", "DANFSe"):
         page.goto(f"{URL}/Notas/Emitidas", wait_until="networkidle")
-        t.print("lista-emitidas", html=True)
-        linha = page.locator("table tbody tr").first
-        if t.tem(linha):
-            menu = linha.locator(".dropdown-toggle, button[data-toggle], button[data-bs-toggle]").first
-            if t.tem(menu):
-                menu.click()
-                page.wait_for_timeout(500)
-            pelos_links(linha)
-            if "xml" not in achados:
-                pelos_links(page.locator(".dropdown-menu.show, .popover, .menu-suspenso").first)
+        link = page.locator(f"a[href*='/Download/{tipo}/{chave}']").first
+        if not link.count():
+            t.print("lista-sem-nota", html=True)
+            raise ErroPortal(f"A nota {chave} não apareceu na lista de emitidas do portal.")
+        antes = len(baixados)
+        link.evaluate("a => a.click()")
+        fim = time.time() + MINUTOS_PESSOA * 60
+        while len(baixados) == antes and time.time() < fim:
+            page.wait_for_timeout(2000)
+            captcha = page.locator(".modal.show, iframe[src*='captcha' i], [class*='captcha' i]").locator("visible=true")
+            if not avisou and captcha.count():
+                t.print("captcha")
+                aviso.texto(f"🔐 NFS-e {numero_da_chave(chave)} de {nome} emitida. O portal pede o captcha para baixar o "
+                            f"PDF/XML: abra {LINK_TELA} e toque em \"Sou humano\"; o robô segue sozinho.")
+                avisou = True
+        if len(baixados) == antes:
+            raise ErroPortal("Ninguém resolveu o captcha a tempo para baixar o PDF/XML.")
+        conteudo = Path(baixados[-1].path()).read_bytes()
+        tipo_ok = tipo_arquivo(conteudo)
+        if tipo_ok:
+            achados[tipo_ok] = conteudo
     if "xml" not in achados:
-        raise TalvezEmitida("A nota parece emitida, mas não consegui baixar o XML. Confira no portal.")
+        raise ErroPortal("O arquivo baixado do portal não é o XML da NFS-e.")
     return achados.get("pdf"), achados["xml"]
 
 
-def _absoluta(page: Page, href: str) -> str:
-    if href.startswith("http"):
-        return href
-    base = re.match(r"https?://[^/]+", page.url).group(0)
-    return base + (href if href.startswith("/") else "/" + href)
+def guardar_e_entregar(n: dict, pdf: bytes | None, xml: bytes, nome: str) -> None:
+    """Leva PDF/XML para o gestor e pede ao gestor que mande no WhatsApp do cliente."""
+    nid = n["id"]
+    d = dados_xml(xml.decode("utf-8", "ignore"))
+    db.marcar(nid, "emitida", f"NFS-e {d['numero'] or ''} emitida", numero=d["numero"], chave=d["chave"],
+              xml_path=db.guardar_arquivo(nid, xml, "xml", "application/xml"),
+              pdf_path=db.guardar_arquivo(nid, pdf, "pdf", "application/pdf") if pdf else None)
+    erro = db.entregar_pelo_gestor(nid)
+    if erro:
+        db.atualizar(nid, {"robo_mensagem": f"NFS-e {d['numero']} emitida; o gestor não mandou no WhatsApp: {erro}"[:500]})
+    else:
+        db.atualizar(nid, {"robo_mensagem": f"NFS-e {d['numero']} emitida e enviada ao cliente pelo gestor"})
+    aviso.texto(f"🧾 NFS-e {d['numero']} de {nome} (R$ {valor_br(n['valor'])}) emitida"
+                + (f" — mas não foi ao cliente: {erro}" if erro else " e enviada ao cliente pelo gestor"))
 
 
 # ---------------------------------------------------------------- execução
@@ -499,26 +522,44 @@ def emitir_nota(page: Page, n: dict) -> None:
     preencher(t, n, senha)
     try:
         emitir(t, n, nome)
-        pdf, xml = baixar_arquivos(t)
     except ErroPortal:
         raise
     except Exception as e:  # noqa: BLE001 — qualquer falha depois do clique pode ter emitido
         raise TalvezEmitida(f"Falha depois de emitir ({e}). Confira no portal antes de mandar de novo.") from e
-    d = dados_xml(xml.decode("utf-8", "ignore"))
-    try:  # a nota já saiu: qualquer falha daqui em diante não pode virar "tentar de novo"
-        db.marcar(nid, "emitida", f"NFS-e {d['numero'] or ''} emitida", numero=d["numero"], chave=d["chave"],
-                  xml_path=db.guardar_arquivo(nid, xml, "xml", "application/xml"),
-                  pdf_path=db.guardar_arquivo(nid, pdf, "pdf", "application/pdf") if pdf else None)
-    except Exception as e:  # noqa: BLE001
-        raise TalvezEmitida(f"NFS-e {d['numero'] or ''} emitida no portal, mas não consegui guardar no gestor ({e}).") from e
-    # a nota já está no gestor; o gestor manda no WhatsApp do cliente
-    erro = db.entregar_pelo_gestor(nid)
-    if erro:
-        db.atualizar(nid, {"robo_mensagem": f"NFS-e {d['numero']} emitida; o gestor não mandou no WhatsApp: {erro}"[:500]})
-    else:
-        db.atualizar(nid, {"robo_mensagem": f"NFS-e {d['numero']} emitida e enviada ao cliente pelo gestor"})
-    aviso.texto(f"🧾 NFS-e {d['numero']} de {nome} (R$ {valor_br(n['valor'])}) emitida"
-                + (f" — mas não foi ao cliente: {erro}" if erro else " e enviada ao cliente"))
+    chave = chave_da_tela(page)
+    if not chave:
+        raise TalvezEmitida("O portal não mostrou a chave da nota. Confira no portal antes de mandar de novo.")
+    # emitida: grava número e chave já, antes de baixar (o download pode pedir captcha)
+    numero = numero_da_chave(chave)
+    db.marcar(nid, "emitida", f"NFS-e {numero} emitida; baixando PDF/XML do portal", numero=numero, chave=chave)
+    try:
+        pdf, xml = baixar_arquivos(t, chave, nome)
+        guardar_e_entregar(n, pdf, xml, nome)
+    except Exception as e:  # noqa: BLE001 — a nota já saiu: nunca volta para a fila
+        log.warning("NFS-e %s emitida, mas não baixou/entregou: %s", numero, e)
+        db.atualizar(nid, {"robo_mensagem": f"NFS-e {numero} emitida, mas falta baixar PDF/XML: {e}"[:500]})
+        aviso.texto(f"⚠️ NFS-e {numero} de {nome} emitida, mas não baixei o PDF/XML ({e}). "
+                    f"Para tentar de novo: python robo.py mei-baixar {nid}")
+
+
+def baixar(nid: str) -> None:
+    """Nota já emitida (tem chave) sem PDF/XML no gestor: entra, baixa (com captcha pela tela
+    remota, se o portal pedir), leva para o gestor e o gestor manda no WhatsApp."""
+    n = db.nota(nid)
+    if not n or not n.get("chave"):
+        raise SystemExit("Nota não encontrada ou sem chave de acesso.")
+    nome = f"{n['clientes']['nome']} → {n.get('tomador_nome') or 'sem tomador'}"
+    with sync_playwright() as pw:
+        nav = _navegador(pw)
+        page = nav.new_context(accept_downloads=True, locale="pt-BR", viewport={"width": 1280, "height": 800}).new_page()
+        t = Tela(page, PASTA / nid[:8])
+        try:
+            entrar(t, n["clientes"]["cnpj"], db.senha(n["clientes"]["id"]))
+            pdf, xml = baixar_arquivos(t, n["chave"], nome)
+            guardar_e_entregar(n, pdf, xml, nome)
+            print("Pronto:", db.nota(nid).get("robo_mensagem"))
+        finally:
+            nav.close()
 
 
 def _navegador(pw):
