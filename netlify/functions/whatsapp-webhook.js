@@ -105,6 +105,13 @@ async function obterArquivoDaMensagem(body, anexo) {
   return { base64, mimeType, nomeArquivo: nomeDoArquivo(midia, tipo, mimeType) }
 }
 
+// Quem mandou no grupo. Na Evolution 2.x, grupo com endereçamento LID manda
+// participant "…@lid" (id interno) e o número em participantAlt.
+const participante = (body) => {
+  const k = body?.data?.key || {}
+  return (String(k.participant || '').endsWith('@lid') && k.participantAlt) || k.participant || null
+}
+
 const dadosMime = (tipo) => (tipo === 'imagem' ? 'image/jpeg' : 'application/octet-stream')
 
 const fmtBRL = (v) => Number(v).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
@@ -131,7 +138,7 @@ async function processarComprovante(body, anexo, remoteJid) {
   try {
     const { base64, mimeType, nomeArquivo } = await obterArquivoDaMensagem(body, anexo)
     const legenda = anexo.legenda
-    const remetente = body?.data?.pushName || body?.data?.key?.participant || null
+    const remetente = body?.data?.pushName || participante(body) || null
     let res
     try {
       res = await registrarComprovante(supabase, { arquivoBase64: base64, filename: nomeArquivo, mimeType, legenda, apiKey: ANTHROPIC_KEY, remetente })
@@ -172,7 +179,7 @@ async function processarDocumento(body, anexo, remoteJid) {
       arquivo = await uploadArquivo({ nomeArquivo, mimeType, base64, folderId: DRIVE_FOLDER_ID })
       console.log('Arquivo salvo no Drive:', arquivo.id, arquivo.name)
 
-      const remetente = body?.data?.key?.participant || body?.data?.pushName || remoteJid
+      const remetente = participante(body) || body?.data?.pushName || remoteJid
       const { error: errLog } = await supabase.from('documentos_whatsapp').insert({
         nome_arquivo: arquivo.name,
         mime_type: mimeType,
@@ -198,7 +205,7 @@ async function processarDocumento(body, anexo, remoteJid) {
       const analise = await analisarComprovante(supabase, { arquivoBase64: base64, filename: nomeArquivo, mimeType, legenda, apiKey: ANTHROPIC_KEY })
       if (analise.ehComprovante) {
         pareceComprovante = true
-        const remetente = body?.data?.pushName || body?.data?.key?.participant || null
+        const remetente = body?.data?.pushName || participante(body) || null
         const res = await registrarComprovante(supabase, { arquivoBase64: base64, filename: nomeArquivo, mimeType, legenda, apiKey: ANTHROPIC_KEY, remetente, analise })
         await enviarMensagem(remoteJid, `${mensagemComprovante(res)}${avisoDrive}`)
         return { statusCode: 200, body: JSON.stringify({ success: true, driveFileId: arquivo?.id || null, comprovanteId: res.comprovanteId, baixaAutomatica: res.baixaAutomatica }) }

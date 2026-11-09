@@ -72,12 +72,30 @@ reiniciar.
 Se o WhatsApp desconectar (por exemplo, o celular ficou muito tempo sem internet ou o aparelho foi
 removido), basta ler o QR Code de novo pelo `/manager`. As configurações continuam salvas.
 
+## Atualizar da 1.8.7 para a 2.x
+
+Com a 1.8.7, parte dos clientes passou a receber "Aguardando mensagem. Essa ação pode levar alguns
+instantes" no lugar do texto: a biblioteca do WhatsApp dessa versão ficou desatualizada. A 2.x
+resolve isso.
+
+1. No servidor, mande o `instalar.sh` novo (passo 2 acima) e rode `bash instalar.sh` de novo. Ele
+   mantém o domínio, a chave e o segredo, troca a Evolution pela 2.x e sobe um Postgres.
+2. No celular do escritório, em WhatsApp → Aparelhos conectados, remova o aparelho antigo do gestor.
+3. Abra `https://SEU-DOMINIO/manager`, entre com a mesma chave, abra a instância e leia o QR Code.
+4. Não precisa mudar nada no Netlify: o endereço e a chave são os mesmos.
+5. Teste: mande uma mensagem no grupo de tarefas e um lembrete para um número da equipe, e confira
+   se chega legível.
+
+Se algo der errado, para voltar à 1.8.7: troque `VERSAO_EVOLUTION` no `instalar.sh` para `v1.8.7`
+e use o `docker-compose.yml` anterior (git), com os dados em `dados/`.
+
 ## Observações
 
 - A Evolution API usa o WhatsApp Web (não é a API oficial da Meta). Funciona com grupos, mas existe
   um risco pequeno de bloqueio se o número mandar muitas mensagens para quem não o tem salvo. A
   API oficial não serve aqui porque não funciona com grupos.
-- A versão continua a 1.8.7, a mesma do computador. A 2.x muda o formato do webhook e exigiria
-  ajustar o `whatsapp-webhook.js`.
+- A versão é a 2.x (com um Postgres junto, que ela exige). O gestor funciona com a 1.x e a 2.x:
+  descobre sozinho qual está rodando (`netlify/functions/lib/whatsapp.js`), ou use a variável
+  `EVOLUTION_API_VERSAO` (`1` ou `2`) no Netlify para fixar.
 - A chave da API deixa de ser `gestor123`: o script gera uma chave aleatória. E a API só responde
   por HTTPS.

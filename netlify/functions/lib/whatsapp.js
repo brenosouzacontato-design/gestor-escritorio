@@ -11,6 +11,45 @@ const EVOLUTION_URL = process.env.EVOLUTION_API_URL
 const EVOLUTION_KEY = process.env.EVOLUTION_API_KEY
 const EVOLUTION_INSTANCE = process.env.EVOLUTION_INSTANCE
 
+// Evolution API 1.x × 2.x: a 2.x (biblioteca do WhatsApp atualizada — a 1.8.7
+// manda mensagens que o celular do cliente não consegue abrir, "Aguardando
+// mensagem") mudou o corpo do envio: texto solto em `text` e mídia sem o
+// `mediaMessage` aninhado. A versão vem de EVOLUTION_API_VERSAO ("1" ou "2")
+// ou, sem ela, do que a própria Evolution informa em GET / — assim a troca
+// do servidor não exige mexer no código nem no Netlify.
+let versaoDetectada = null
+async function versaoEvolution() {
+  const fixa = String(process.env.EVOLUTION_API_VERSAO || '').trim()
+  if (fixa) return fixa.startsWith('1') ? 1 : 2
+  if (versaoDetectada) return versaoDetectada
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), 5000)
+  try {
+    const resp = await fetch(`${EVOLUTION_URL}/`, { headers: { apikey: EVOLUTION_KEY }, signal: controller.signal })
+    const json = await resp.json()
+    const maior = parseInt(String(json?.version || ''), 10)
+    if (maior >= 1) versaoDetectada = maior >= 2 ? 2 : 1
+  } catch (e) {
+    console.warn('Evolution API: não deu pra descobrir a versão, usando o formato da 1.x:', e.message)
+  } finally {
+    clearTimeout(timer)
+  }
+  return versaoDetectada || 1
+}
+
+function corpoTexto(versao, numero, texto) {
+  return versao >= 2
+    ? { number: numero, text: texto }
+    // 1.x exige o texto aninhado: um { number, text } solto volta 400
+    // "instance requires property textMessage"
+    : { number: numero, textMessage: { text: texto } }
+}
+
+function corpoDocumento(versao, numero, { media, fileName, caption = '', mimetype = 'application/pdf' }) {
+  const midia = { mediatype: 'document', mimetype, fileName, caption, media }
+  return versao >= 2 ? { number: numero, ...midia } : { number: numero, mediaMessage: midia }
+}
+
 // Nunca lança exceção (os chamadores antigos — lembretes-cron.js,
 // whatsapp-webhook.js — fazem "fire and forget" sem checar o retorno, e
 // isso continua funcionando igual) mas agora devolve { sucesso, erro? } de
@@ -47,10 +86,7 @@ async function enviarMensagem(numero, texto) {
     const resp = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'apikey': EVOLUTION_KEY },
-      // Evolution API v1.x (a versão rodando aqui — ver iniciar-gestor.bat)
-      // exige o texto aninhado em textMessage.text; um body { number, text }
-      // solto (formato da v2) volta 400 "instance requires property textMessage".
-      body: JSON.stringify({ number: numero, textMessage: { text: texto } }),
+      body: JSON.stringify(corpoTexto(await versaoEvolution(), numero, texto)),
       signal: controller.signal,
     })
     const corpo = await resp.text().catch(() => '')
@@ -105,8 +141,7 @@ async function enviarDocumento(numero, { media, fileName, caption = '', mimetype
     const resp = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'apikey': EVOLUTION_KEY },
-      // formato da v1.x (mediaMessage aninhado), o mesmo do robô de parcelamentos
-      body: JSON.stringify({ number: numero, mediaMessage: { mediatype: 'document', mimetype, fileName, caption, media } }),
+      body: JSON.stringify(corpoDocumento(await versaoEvolution(), numero, { media, fileName, caption, mimetype })),
       signal: controller.signal,
     })
     const corpo = await resp.text().catch(() => '')
@@ -136,4 +171,4 @@ function numeroWhatsapp(valor) {
   return d.length >= 12 && d.length <= 13 ? d : null
 }
 
-module.exports = { enviarMensagem, enviarDocumento, numeroWhatsapp }
+module.exports = { enviarMensagem, enviarDocumento, numeroWhatsapp, versaoEvolution, corpoTexto, corpoDocumento }
