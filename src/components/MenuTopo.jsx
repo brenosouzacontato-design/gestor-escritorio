@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useMemo } from 'react'
 import {
   LayoutDashboardIcon, SparklesIcon, AppWindowIcon, ClipboardCheckIcon, CheckSquareIcon, CalendarDaysIcon, BellIcon,
   UsersIcon, TargetIcon, SunIcon, PaperclipIcon, MonitorIcon, CircleDollarSignIcon, BanknoteIcon, CalculatorIcon, RefreshCwIcon,
-  ReceiptIcon, FileSignatureIcon, LayersIcon, FileBadgeIcon, ShieldCheckIcon, ChevronDownIcon, SearchIcon, MenuIcon, XIcon, SendIcon, ReceiptTextIcon,
+  ReceiptIcon, FileSignatureIcon, LayersIcon, FileBadgeIcon, ShieldCheckIcon, ChevronDownIcon, SearchIcon, MenuIcon, XIcon, SendIcon, ReceiptTextIcon, BadgeCheckIcon,
 }  from 'lucide-react'
 
 // Menu do gestor. O grupo "Rotina" (direto: true) aparece com cada tela
@@ -24,6 +24,7 @@ export const GRUPOS = [
     { id: 'parcelamentos', label: 'Parcelamentos', desc: 'Guias de PARCMEI e PGFN',   Icon: LayersIcon,           secao: 'Recebidos e guias' },
     { id: 'notasfiscais', label: 'Notas Fiscais', desc: 'Notas das empresas',         Icon: ReceiptIcon,          secao: 'Notas fiscais' },
     { id: 'nfse',       label: 'Emitir NFS-e', desc: 'Nota de serviço',               Icon: FileSignatureIcon,    secao: 'Notas fiscais' },
+    { id: 'nfsemei',    label: 'NFS-e MEI',    desc: 'MEI sem certificado: robô no Emissor Nacional', Icon: BadgeCheckIcon, secao: 'Notas fiscais' },
     { id: 'pedidosnfe', label: 'Pedidos de NF-e', desc: 'Notas de venda pedidas pelo app do cliente', Icon: ReceiptTextIcon, secao: 'Notas fiscais' },
     { id: 'licenciamento', label: 'Licenciamento', desc: 'Alvarás e licenças a vencer', Icon: FileBadgeIcon,      secao: 'Certidões e licenças' },
     { id: 'ecac',       label: 'Situação e-CAC', desc: 'Receita e pagamentos (robô)', Icon: ShieldCheckIcon,      secao: 'Certidões e licenças' },
