@@ -5,6 +5,7 @@ import PainelClientePage from './PainelClientePage';
 import PainelCompartilhadoPage from './PainelCompartilhadoPage';
 import { registrarVisualizacaoPainel, avisarEventoPainel } from './painelApi';
 import { sessaoDoToken } from './AcessoPainel';
+import { useTelaNoHistorico } from '../../lib/historico';
 
 // Painel de um GRUPO de empresas num link só (?painel=token1,token2,...) — pra
 // cliente dono de mais de uma empresa não receber um link por empresa. Uma
@@ -19,9 +20,11 @@ import { sessaoDoToken } from './AcessoPainel';
 // uma, e o painel exibido usa o token da empresa escolhida.
 export default function PainelGrupoPage({ clienteIds, competencia, versao, empresaInicial, admin = false }) {
   const [empresas, setEmpresas] = useState(null); // [{ id, nome, cnpj }] na ordem do link
-  const [selecionada, setSelecionada] = useState(
-    clienteIds.includes(empresaInicial) ? empresaInicial : clienteIds[0],
-  );
+  const inicial = clienteIds.includes(empresaInicial) ? empresaInicial : clienteIds[0];
+  // empresa escolhida no histórico do navegador (voltar retorna à anterior);
+  // na prévia de dentro do gestor fica só no estado, sem mexer no histórico
+  const [selecionada, setSelecionada] = useTelaNoHistorico('grupo-empresa', inicial,
+    { paramsUrl: (id) => ({ empresa: id }), ativo: !admin });
 
   useEffect(() => {
     if (admin) {
@@ -48,9 +51,6 @@ export default function PainelGrupoPage({ clienteIds, competencia, versao, empre
     if (admin) return;
     registrarVisualizacaoPainel(selecionada, competencia, versao === 'completa' ? 'completa' : 'nova').catch(() => {});
     avisarEventoPainel(selecionada, 'visualizacao', { competencia });
-    const url = new URL(window.location.href);
-    url.searchParams.set('empresa', selecionada);
-    window.history.replaceState(null, '', url);
   }, [selecionada]);
 
   // Nomes herdados da sincronização com o ERP vêm com o CNPJ na frente
