@@ -380,6 +380,11 @@ function PainelCompartilhado({ clienteId, competencia: competenciaInicial, admin
 
   // `descricao` diz o que é o arquivo no aviso pro escritório — só o link
   // público avisa (o download feito na prévia de dentro do app não conta)
+  // copiar o PIX / código de barras da guia conta como "abriu a guia" na
+  // Central de Entregas (o cliente pode pagar sem baixar o PDF)
+  const copiouCodigo = (anexo, descricao) => {
+    if (registrar) avisarEventoPainel(clienteId, 'download', { descricao, competencia, documentoId: anexo.id });
+  };
   const baixar = (storagePath, descricao, documentoId = null) => {
     if (registrar) avisarEventoPainel(clienteId, 'download', { descricao, competencia, documentoId });
     return abrirLinkAssinado(storagePath).catch(() => null);
@@ -701,7 +706,7 @@ function PainelCompartilhado({ clienteId, competencia: competenciaInicial, admin
                 extra={temValor(guiasEmAberto) && <Total valor={somaValores(guiasEmAberto)} />}>
                 {guias.length === 0
                   ? <Vazio>Nenhum imposto em aberto nem com vencimento no período.</Vazio>
-                  : <div style={LISTA}>{guias.map((g) => <LinhaGuia key={g.id} g={g} onBaixar={baixar} editando={editando} onSalvarValor={salvarValorGuia} onMarcarPaga={salvarGuiaPaga} />)}</div>}
+                  : <div style={LISTA}>{guias.map((g) => <LinhaGuia key={g.id} g={g} onBaixar={baixar} onCopiar={copiouCodigo} editando={editando} onSalvarValor={salvarValorGuia} onMarcarPaga={salvarGuiaPaga} />)}</div>}
               </Secao>
               </Ocultavel>
 
@@ -1203,7 +1208,7 @@ function Linha({ chave, corBorda, titulo, competencia, detalhes, direita }) {
   );
 }
 
-function LinhaGuia({ g, onBaixar, editando, onSalvarValor, onMarcarPaga }) {
+function LinhaGuia({ g, onBaixar, onCopiar, editando, onSalvarValor, onMarcarPaga }) {
   // só dá pra corrigir o valor de guia anexada (é gravado no documento) e
   // com a coluna valor_guia já existente no banco
   const editavel = editando && !g.semMovimento && g.anexo && 'valor_guia' in g.anexo;
@@ -1256,11 +1261,13 @@ function LinhaGuia({ g, onBaixar, editando, onSalvarValor, onMarcarPaga }) {
           {/* pagar sem baixar a guia: código de barras e PIX copia e cola lidos da própria guia */}
           {!g.paga && !g.semMovimento && g.anexo?.linha_digitavel && (
             <BotaoCopiar texto={g.anexo.linha_digitavel} icone={<BarcodeIcon size={13} />} label="Código de barras"
-              title="Copiar a linha digitável pra colar no app do banco" />
+              title="Copiar a linha digitável pra colar no app do banco"
+              onCopiado={() => onCopiar?.(g.anexo, `Copiou o código de barras — ${g.titulo} ${g.competencia || ''}`.trim())} />
           )}
           {!g.paga && !g.semMovimento && g.anexo?.pix_copia_cola && (
             <BotaoCopiar texto={g.anexo.pix_copia_cola} icone={<QrCodeIcon size={13} />} label="PIX copia e cola"
-              title="Copiar o PIX copia e cola da guia pra colar no app do banco" />
+              title="Copiar o PIX copia e cola da guia pra colar no app do banco"
+              onCopiado={() => onCopiar?.(g.anexo, `Copiou o PIX — ${g.titulo} ${g.competencia || ''}`.trim())} />
           )}
           {g.anexo?.comprovante_path && (
             <BotaoGuia anexo={{ storage_path: g.anexo.comprovante_path, nome_arquivo: g.anexo.comprovante_nome || 'comprovante' }} onBaixar={onBaixar}
@@ -1428,10 +1435,11 @@ async function copiarTexto(texto) {
 }
 
 // Botão de copiar um código de pagamento da guia, com confirmação na hora.
-function BotaoCopiar({ texto, icone, label, title }) {
+function BotaoCopiar({ texto, icone, label, title, onCopiado }) {
   const [copiado, setCopiado] = useState(false);
   const copiar = async () => {
     await copiarTexto(texto);
+    onCopiado?.();
     setCopiado(true);
     setTimeout(() => setCopiado(false), 2500);
   };

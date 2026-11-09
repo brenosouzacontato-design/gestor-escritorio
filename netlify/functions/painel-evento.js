@@ -85,6 +85,11 @@ exports.handler = async (event) => {
     // teste do próprio escritório não vira aviso de "cliente abriu"
     if (doEscritorio) return resposta(200, { ok: true, escritorio: true })
 
+    // cliente abriu o painel: as guias já entregues a ele passam a "viu no
+    // painel" na Central de Entregas (documentos.visto_em,
+    // supabase-schema-entrega-visto.sql) — sem a coluna, segue como antes
+    if (tipo === 'visualizacao') await marcarGuiasVistas(clienteId)
+
     const guia = tipo === 'download' && documentoId ? await marcarGuiaAberta(documentoId, clienteId) : null
     if (guia) {
       const titulo = descricao || guia.nome_arquivo
@@ -115,6 +120,13 @@ exports.handler = async (event) => {
     console.error('painel-evento:', e.message)
     return resposta(500, { error: e.message })
   }
+}
+
+async function marcarGuiasVistas(clienteId) {
+  const { error } = await supabase.from('documentos')
+    .update({ visto_em: new Date().toISOString() })
+    .eq('cliente_id', clienteId).not('entregue_em', 'is', null).is('visto_em', null)
+  if (error) console.error('painel-evento visto_em:', error.message)
 }
 
 // Marca a guia como aberta pelo cliente (colunas de

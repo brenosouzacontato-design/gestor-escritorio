@@ -44,7 +44,8 @@ export async function listarGuias(competencia) {
 
 // Situação de entrega de uma guia, na ordem em que interessa ao escritório
 export function situacaoGuia(d) {
-  if (d.aberto_em) return 'aberta'
+  if (d.aberto_em) return 'aberta'          // baixou a guia ou copiou o PIX/código
+  if (d.entregue_em && d.visto_em) return 'vista' // abriu o painel depois da entrega
   if (d.entregue_em) return 'entregue'
   if (d.entrega_erro) return 'falhou'
   return 'a_entregar'

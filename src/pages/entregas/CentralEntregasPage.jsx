@@ -19,6 +19,7 @@ const SITUACOES = {
   a_entregar: { label: 'A entregar', color: 'var(--text2)', bg: 'var(--surface2)' },
   falhou:     { label: 'Falhou', color: 'var(--danger)', bg: 'var(--danger-dim)' },
   entregue:   { label: 'Entregue', color: 'var(--info)', bg: 'var(--info-dim)' },
+  vista:      { label: 'Viu no painel', color: 'var(--accent)', bg: 'var(--accent-dim, var(--surface2))' },
   aberta:     { label: 'Aberta pelo cliente', color: 'var(--ok)', bg: 'var(--ok-dim)' },
 }
 
@@ -63,7 +64,7 @@ export default function CentralEntregasPage() {
   }, [competencia])
 
   const contagem = useMemo(() => {
-    const c = { a_entregar: 0, falhou: 0, entregue: 0, aberta: 0 }
+    const c = { a_entregar: 0, falhou: 0, entregue: 0, vista: 0, aberta: 0 }
     for (const g of guias || []) c[situacaoGuia(g)]++
     return c
   }, [guias])
@@ -80,8 +81,9 @@ export default function CentralEntregasPage() {
     return (guias || []).filter((g) => {
       const s = situacaoGuia(g)
       if (filtro === 'pendentes' && !(s === 'a_entregar' || s === 'falhou')) return false
-      if (filtro === 'entregues' && !(s === 'entregue' || s === 'aberta')) return false
+      if (filtro === 'entregues' && !(s === 'entregue' || s === 'vista' || s === 'aberta')) return false
       if (filtro === 'nao_abertas' && s !== 'entregue') return false
+      if (filtro === 'vistas' && s !== 'vista') return false
       if (filtro === 'abertas' && s !== 'aberta') return false
       return !termo || `${g.clientes.nome} ${g.titulo}`.toLowerCase().includes(termo)
     })
@@ -185,10 +187,11 @@ export default function CentralEntregasPage() {
 
       {aba === 'empresas' ? <AbaEmpresas show={show} onSalvo={() => carregar({ silencioso: true })} /> : (
         <>
-          <div className="metrics-grid" style={{ gridTemplateColumns: 'repeat(4,minmax(0,1fr))', marginBottom: 14 }}>
+          <div className="metrics-grid" style={{ gridTemplateColumns: 'repeat(auto-fit,minmax(140px,1fr))', marginBottom: 14 }}>
             <Metrica label="A entregar" valor={contagem.a_entregar} onClick={() => setFiltro('pendentes')} />
             <Metrica label="Falharam" valor={contagem.falhou} classe={contagem.falhou ? 'danger' : ''} onClick={() => setFiltro('pendentes')} />
-            <Metrica label="Entregues, não abertas" valor={contagem.entregue} onClick={() => setFiltro('nao_abertas')} />
+            <Metrica label="Entregues, sem abrir" valor={contagem.entregue} onClick={() => setFiltro('nao_abertas')} />
+            <Metrica label="Viram no painel" valor={contagem.vista} onClick={() => setFiltro('vistas')} />
             <Metrica label="Abertas pelo cliente" valor={contagem.aberta} classe="ok" onClick={() => setFiltro('abertas')} />
           </div>
 
@@ -196,7 +199,8 @@ export default function CentralEntregasPage() {
             <select className="input" value={filtro} onChange={(e) => setFiltro(e.target.value)} style={{ width: 'auto' }}>
               <option value="pendentes">A entregar</option>
               <option value="entregues">Entregues</option>
-              <option value="nao_abertas">Entregues, não abertas</option>
+              <option value="nao_abertas">Entregues, sem abrir</option>
+              <option value="vistas">Viram no painel</option>
               <option value="abertas">Abertas pelo cliente</option>
               <option value="todas">Todas</option>
             </select>
@@ -269,16 +273,19 @@ function LinhaGuia({ g, marcada, enviando, onMarcar, onEntregar, onAbrir, onManu
       </div>
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 2 }}>
         <span style={{ ...selo, color: cfg.color, background: cfg.bg }}>
-          {s === 'aberta' ? <EyeIcon size={11} /> : s === 'entregue' ? <CheckIcon size={11} /> : null} {cfg.label}
+          {s === 'aberta' || s === 'vista' ? <EyeIcon size={11} /> : s === 'entregue' ? <CheckIcon size={11} /> : null} {cfg.label}
         </span>
         {g.entregue_em && (
           <span style={{ fontSize: 10.5, color: 'var(--text3)' }}>
             entregue {fmtQuando(g.entregue_em)} · {g.entrega_canal === 'manual' ? 'manual' : g.entrega_canal === 'painel' ? 'aviso automático (link do painel)' : 'WhatsApp'}
           </span>
         )}
+        {g.visto_em && g.entregue_em && (
+          <span style={{ fontSize: 10.5, color: 'var(--accent)' }}>viu no painel {fmtQuando(g.visto_em)}</span>
+        )}
         {g.aberto_em && (
           <span style={{ fontSize: 10.5, color: 'var(--ok)' }}>
-            aberta {fmtQuando(g.aberto_ultimo_em || g.aberto_em)}{g.aberto_vezes > 1 ? ` · ${g.aberto_vezes}x` : ''}
+            baixou/copiou {fmtQuando(g.aberto_ultimo_em || g.aberto_em)}{g.aberto_vezes > 1 ? ` · ${g.aberto_vezes}x` : ''}
           </span>
         )}
       </div>
