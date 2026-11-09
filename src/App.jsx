@@ -4,6 +4,7 @@ import { MenuTopo, BuscaRapida, MenuCelular, NAV } from './components/MenuTopo'
 import { temaInicial, salvarTema } from './lib/tema'
 import SeletorTema from './components/SeletorTema'
 import { useStore } from './store'
+import { useTelaNoHistorico } from './lib/historico'
 import { ToastContainer } from './components/shared'
 import { sair } from './components/ComLogin'
 import NovaTarefaModal from './components/NovaTarefaModal'
@@ -44,8 +45,12 @@ const ABRIR_NOVA_TAREFA = paramsIniciais.get('acao') === 'nova-tarefa'
 const TAREFA_URL = /^[0-9a-f-]{36}$/i.test(paramsIniciais.get('tarefa') || '') ? paramsIniciais.get('tarefa') : null
 
 export default function App() {
-  const [page, setPage]                       = useState(TELA_INICIAL)
-  const [selectedCliente, setSelectedCliente] = useState(null)
+  // tela atual (+ cliente aberto na tela Clientes) no histórico do navegador:
+  // o voltar do navegador/celular retorna à tela anterior
+  const [tela, irPara] = useTelaNoHistorico('tela', { page: TELA_INICIAL, cliente: null })
+  const page = tela.page
+  const selectedCliente = tela.cliente
+  const setSelectedCliente = (id) => irPara((t) => ({ ...t, cliente: id }))
   const [showNewTask, setShowNewTask]         = useState(ABRIR_NOVA_TAREFA)
   // fotos/arquivos capturados na tela Hoje, entregues à tela Documentos (IA identifica)
   const [arquivosCapturados, setArquivosCapturados] = useState(null)
@@ -112,7 +117,7 @@ export default function App() {
   // o Supabase não consegue serializar (estrutura circular). Filtra aqui
   // pra não depender de todo callsite lembrar de embrulhar em arrow fn.
   const openNewTask = (clienteId = '') => { setNewTaskClienteId(typeof clienteId === 'string' ? clienteId : ''); setShowNewTask(true) }
-  const navigate    = (p) => { setPage(p); if (p !== 'clientes') setSelectedCliente(null) }
+  const navigate    = (p, cliente = null) => irPara({ page: p, cliente: p === 'clientes' ? cliente : null })
   const badges = {
     tarefas:    { n: pendingCount, tipo: 'warn' },
     pagamentos: { n: comprovantesPendentes, tipo: 'warn' },
@@ -150,9 +155,9 @@ export default function App() {
           <div className="center"><div className="spinner" /></div>
         ) : (
           <Fragment key={versaoPagina}>
-            {page === 'overview'   && <Overview onAddTarefa={openNewTask} onOpenCliente={(id) => { setSelectedCliente(id); navigate('clientes') }} onOpenEmpresa={(id) => { setClienteAbrirEmpresas(id); navigate('empresas') }} onOpenObrigacoes={() => navigate('empresas')} onOpenTarefas={() => navigate('tarefas')} onOpenContabil={() => navigate('contabil')} />}
+            {page === 'overview'   && <Overview onAddTarefa={openNewTask} onOpenCliente={(id) => navigate('clientes', id)} onOpenEmpresa={(id) => { setClienteAbrirEmpresas(id); navigate('empresas') }} onOpenObrigacoes={() => navigate('empresas')} onOpenTarefas={() => navigate('tarefas')} onOpenContabil={() => navigate('contabil')} />}
             {page === 'empresas'   && <Empresas onOpenTarefas={(clienteId) => { setFiltroClienteTarefas(clienteId ?? null); navigate('tarefas') }}
-              onOpenCadastro={(id) => { setSelectedCliente(id); navigate('clientes') }}
+              onOpenCadastro={(id) => navigate('clientes', id)}
               clienteInicialId={clienteAbrirEmpresas} onClienteInicialConsumido={() => setClienteAbrirEmpresas(null)} />}
             {page === 'paineis'    && <PaineisPage />}
             {page === 'entregas'   && <CentralEntregasPage />}

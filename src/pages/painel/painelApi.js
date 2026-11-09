@@ -66,6 +66,82 @@ export async function obterResumoTarefas(clienteId, competencia) {
   return { itens: data, total: data.length, concluidas, pendentes: data.length - concluidas };
 }
 
+// ---------- Painel consolidado (por vencimento, independente da competência) ----------
+
+// Janela de vencimentos da competência de referência do painel: do 1º dia do
+// mês da competência até o fim do mês seguinte (o imposto da competência
+// 10/2026 vence em 11/2026). Datas 'AAAA-MM-DD'; `fimExclusivo` = dia seguinte
+// ao último (tarefas.vencimento pode vir com hora).
+export function janelaVencimentos(competencia) {
+  const [mes, ano] = competencia.split('/').map(Number);
+  const iso = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  return {
+    inicio: iso(new Date(ano, mes - 1, 1)),
+    fim: iso(new Date(ano, mes + 1, 0)),
+    fimExclusivo: iso(new Date(ano, mes + 1, 1)),
+  };
+}
+
+// Entra no painel consolidado: o que vence dentro da janela (aberto ou já
+// resolvido), tudo o que continua em aberto com vencimento anterior
+// (atrasado, de qualquer competência) e o que é da própria competência de
+// referência. Em aberto com vencimento depois da janela (gerado com
+// antecedência) fica de fora. Sem vencimento cai na regra da competência.
+function entraNaJanela({ vencimento, competencia, aberto }, ref, janela) {
+  if (competencia === ref) return true;
+  const venc = vencimento ? String(vencimento).slice(0, 10) : null;
+  if (venc) return (venc >= janela.inicio && venc <= janela.fim) || (aberto && venc < janela.inicio);
+  return aberto && !!competencia && competenciaOrdinal(competencia) < competenciaOrdinal(ref);
+}
+
+// Obrigações e tarefas do painel do cliente, consolidadas pela data de
+// vencimento (a competência de cada item vem junto, como referência).
+export async function obterItensConsolidados(clienteId, competencia) {
+  const janela = janelaVencimentos(competencia);
+  const filtro = (...extras) => [
+    ...extras,
+    `competencia.eq."${competencia}"`,
+    `and(vencimento.gte.${janela.inicio},vencimento.lt.${janela.fimExclusivo})`,
+  ].join(',');
+  const [{ data: obrigacoes, error: errObs }, { data: tarefas, error: errTar }] = await Promise.all([
+    supabase
+      .from('obrigacoes')
+      .select('id, titulo, tipo, status, vencimento, competencia, departamento_id, departamentos(nome, icone), tipos_obrigacao(eh_imposto)')
+      .eq('cliente_id', clienteId)
+      .or(filtro('status.in.(pendente,vencido)')),
+    supabase
+      .from('tarefas')
+      .select('id, titulo, prioridade, vencimento, concluida, concluida_em, created_at, departamento, competencia, observacao')
+      .eq('cliente_id', clienteId)
+      .or(filtro('concluida.eq.false', 'competencia.is.null')),
+  ]);
+  if (errObs) throw errObs;
+  if (errTar) throw errTar;
+  return {
+    obrigacoes: (obrigacoes || []).filter((o) => entraNaJanela(
+      { ...o, aberto: o.status === 'pendente' || o.status === 'vencido' }, competencia, janela)),
+    // tarefa sem competência nem vencimento (a maioria das avulsas) segue a
+    // regra de sempre: pendente entra; concluída, se foi feita no período
+    tarefas: (tarefas || []).filter((t) => (!t.competencia && !t.vencimento
+      ? tarefaDaCompetencia(t, competencia)
+      : entraNaJanela({ ...t, aberto: !t.concluida }, competencia, janela))),
+  };
+}
+
+// Declaração do Simples de várias competências de uma vez (o painel
+// consolidado mostra DAS de mais de uma competência): valor do DAS e
+// faturamento de cada uma, pra "Sem movimento" e valor do DAS sem guia lida.
+export async function obterGerenciaisPorCompetencia(clienteId, competencias) {
+  if (!competencias || competencias.length === 0) return {};
+  const { data, error } = await supabase
+    .from('dados_gerenciais_simples')
+    .select('competencia, valor_das, faturamento_periodo')
+    .eq('cliente_id', clienteId)
+    .in('competencia', competencias);
+  if (error) throw error;
+  return Object.fromEntries((data || []).map((d) => [d.competencia, d]));
+}
+
 // ---------- Financeiro ----------
 
 // ---------- Documentos do mês ----------
@@ -787,10 +863,16 @@ export async function obterHonorariosPainel(clienteId, competencia) {
     .eq('cliente_id', clienteId);
   if (error) throw error;
   const atual = ordinalCompetencia(competencia);
+  // consolidado pelo vencimento (mesma janela das guias): vence no período
+  // da competência de referência ou continua pendente de antes
+  const janela = atual != null ? janelaVencimentos(competencia) : null;
   return (data || [])
     .filter((h) => {
       if (h.competencia === competencia) return true;
+      const venc = h.vencimento ? String(h.vencimento).slice(0, 10) : null;
+      if (janela && venc && venc >= janela.inicio && venc <= janela.fim) return true;
       if (h.status !== 'pendente') return false;
+      if (janela && venc) return venc < janela.inicio;
       const ord = ordinalCompetencia(h.competencia);
       return ord == null || atual == null || ord < atual;
     })
