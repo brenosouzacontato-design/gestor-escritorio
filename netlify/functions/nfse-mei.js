@@ -24,7 +24,8 @@ const crypto = require('crypto')
 const { cifrar, decifrar } = require('./lib/nfse/cofre')
 const { ErroMei, normalizarModelo, normalizarNota, notaRepetida, senhaDasObservacoes } = require('./lib/nfse/mei')
 const { enviarDocumento, numeroWhatsapp } = require('./lib/whatsapp')
-const { gerarDanfse } = require('./lib/nfse/danfse/danfse')
+const { gerarDanfse, desenharDanfse } = require('./lib/nfse/danfse/danfse')
+const { camposDaImpressao } = require('./lib/nfse/meiImpressao')
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const BUCKET = 'documentos'
@@ -63,18 +64,29 @@ async function baixar(sb, caminho) {
   return Buffer.from(await data.arrayBuffer())
 }
 
-// Manda o PDF (DANFSe) e o XML da nota no WhatsApp do cliente. Usada pelo botão da tela e pelo robô
-// logo depois de emitir. Se o portal não deu o PDF, o gestor gera o DANFSe a partir do XML e guarda.
+// Página "versão para impressão" da nota, que o robô guarda logo depois de emitir (sem captcha).
+const caminhoImpressao = (n) => `nfse-mei/${n.id}.html`
+
+// Manda o PDF (DANFSe) e, se tiver, o XML da nota no WhatsApp do cliente. Usada pelo botão da tela
+// e pelo robô logo depois de emitir. Sem o PDF do portal, o gestor monta o DANFSe: do XML, se tiver;
+// senão da versão para impressão que o robô guardou (o portal só dá PDF/XML com captcha).
 async function entregarNota(sb, c, n) {
-  if (n.status !== 'emitida' || !n.xml_path) throw new ErroHttp(400, 'Nota ainda não emitida.')
+  if (n.status !== 'emitida' || !n.chave) throw new ErroHttp(400, 'Nota ainda não emitida.')
   const destino = numeroWhatsapp(c.whatsapp_entrega || c.telefone)
   if (!destino) throw new ErroHttp(400, 'Empresa sem WhatsApp no cadastro (WhatsApp de entrega ou telefone).')
-  const xml = await baixar(sb, n.xml_path)
+  const xml = n.xml_path ? await baixar(sb, n.xml_path) : null
   let pdf
   if (n.pdf_path) {
     pdf = await baixar(sb, n.pdf_path)
   } else {
-    pdf = Buffer.from(await gerarDanfse(xml.toString('utf8')))
+    if (xml) {
+      pdf = Buffer.from(await gerarDanfse(xml.toString('utf8')))
+    } else {
+      const { data, error } = await sb.storage.from(BUCKET).download(caminhoImpressao(n))
+      if (error) throw new ErroHttp(400, 'Nota sem PDF/XML e sem a página de impressão do portal: o robô precisa buscar de novo.')
+      const html = Buffer.from(await data.arrayBuffer()).toString('utf8')
+      pdf = Buffer.from(await desenharDanfse(await camposDaImpressao(html, { competencia: n.competencia })))
+    }
     const caminho = `nfse-mei/${n.id}.pdf`
     const { error } = await sb.storage.from(BUCKET).upload(caminho, pdf, { contentType: 'application/pdf', upsert: true })
     if (!error) await ok(sb.from('nfse_mei_notas').update({ pdf_path: caminho }).eq('id', n.id))
@@ -83,7 +95,7 @@ async function entregarNota(sb, c, n) {
   for (const [conteudo, ext, mime, legenda] of [
     [pdf, 'pdf', 'application/pdf', `✅ NFS-e ${n.numero || ''} emitida${n.tomador_nome ? ` — ${n.tomador_nome}` : ''}
 Valor: ${brl(n.valor)}`],
-    [xml, 'xml', 'application/xml', ''],
+    ...(xml ? [[xml, 'xml', 'application/xml', '']] : []),
   ]) {
     const r = await enviarDocumento(destino, { media: conteudo.toString('base64'), fileName: `${nome}.${ext}`, caption: legenda, mimetype: mime })
     if (!r.sucesso) throw new ErroHttp(502, r.erro)

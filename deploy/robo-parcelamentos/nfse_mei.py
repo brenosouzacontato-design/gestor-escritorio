@@ -529,6 +529,38 @@ def guardar_e_entregar(n: dict, pdf: bytes | None, xml: bytes, nome: str) -> Non
 
 
 # ---------------------------------------------------------------- execução
+def pagina_impressao(t: Tela, chave: str) -> bytes:
+    """Versão para impressão da nota (Notas/Visualizar/Impressao): o XML autorizado passado por
+    XSLT, com todos os dados do DANFSe. Abre sem captcha (o download de PDF/XML pede captcha)."""
+    page = t.page
+    page.goto(f"{URL}/Notas/Visualizar/Index/{chave}", wait_until="networkidle")
+    link = page.locator("a[href*='Visualizar/Impressao']").first
+    if not link.count():
+        t.print("visualizar-sem-impressao", html=True)
+        raise ErroPortal(f"A nota {chave} não abriu no portal (sem o link de impressão).")
+    href = link.get_attribute("href") or ""
+    r = page.context.request.get(href if href.startswith("http") else "https://www.nfse.gov.br" + href)
+    corpo = r.body()
+    if r.status != 200 or chave.encode() not in corpo:
+        raise ErroPortal(f"O portal não devolveu a página de impressão da nota (HTTP {r.status}).")
+    return corpo
+
+
+def entregar_com_impressao(t: Tela, n: dict, chave: str, nome: str) -> None:
+    """Guarda a página de impressão no gestor; o gestor monta o DANFSe (PDF) com ela e manda no
+    WhatsApp do cliente. Sem captcha: o XML fica no portal (python robo.py mei-baixar, se precisar)."""
+    nid = n["id"]
+    numero = numero_da_chave(chave)
+    db.guardar_arquivo(nid, pagina_impressao(t, chave), "html", "text/html; charset=utf-8")
+    erro = db.entregar_pelo_gestor(nid)
+    if erro:
+        db.atualizar(nid, {"robo_mensagem": f"NFS-e {numero} emitida; o gestor não mandou no WhatsApp: {erro}"[:500]})
+    else:
+        db.atualizar(nid, {"robo_mensagem": f"NFS-e {numero} emitida e enviada ao cliente pelo gestor"})
+    aviso.texto(f"🧾 NFS-e {numero} de {nome} (R$ {valor_br(n['valor'])}) emitida"
+                + (f" — mas não foi ao cliente: {erro}" if erro else " e enviada ao cliente pelo gestor"))
+
+
 def preencher(t: Tela, n: dict, senha: str) -> None:
     entrar(t, n["clientes"]["cnpj"], senha)
     abrir_dps(t)
@@ -559,22 +591,41 @@ def emitir_nota(page: Page, n: dict) -> None:
     chave = chave_da_tela(page)
     if not chave:
         raise TalvezEmitida("O portal não mostrou a chave da nota. Confira no portal antes de mandar de novo.")
-    # emitida: grava número e chave já, antes de baixar (o download pode pedir captcha)
+    # emitida: grava número e chave já, antes de qualquer outra coisa
     numero = numero_da_chave(chave)
-    db.marcar(nid, "emitida", f"NFS-e {numero} emitida; baixando PDF/XML do portal", numero=numero, chave=chave)
+    db.marcar(nid, "emitida", f"NFS-e {numero} emitida; montando o PDF", numero=numero, chave=chave)
     try:
-        pdf, xml = baixar_arquivos(t, chave, nome)
-        guardar_e_entregar(n, pdf, xml, nome)
+        entregar_com_impressao(t, n, chave, nome)
     except Exception as e:  # noqa: BLE001 — a nota já saiu: nunca volta para a fila
-        log.warning("NFS-e %s emitida, mas não baixou/entregou: %s", numero, e)
-        db.atualizar(nid, {"robo_mensagem": f"NFS-e {numero} emitida, mas falta baixar PDF/XML: {e}"[:500]})
-        aviso.texto(f"⚠️ NFS-e {numero} de {nome} emitida, mas não baixei o PDF/XML ({e}). "
-                    f"Para tentar de novo: python robo.py mei-baixar {nid}")
+        log.warning("NFS-e %s emitida, mas não foi entregue: %s", numero, e)
+        db.atualizar(nid, {"robo_mensagem": f"NFS-e {numero} emitida, mas não foi ao cliente: {e}"[:500]})
+        aviso.texto(f"⚠️ NFS-e {numero} de {nome} emitida, mas não mandei ao cliente ({e}). "
+                    f"Para tentar de novo: python robo.py mei-entregar {nid}")
+
+
+def entregar(nid: str) -> None:
+    """Nota já emitida (tem chave) que não chegou ao cliente: entra, pega a página de impressão
+    (sem captcha), e o gestor monta o PDF e manda no WhatsApp."""
+    n = db.nota(nid)
+    if not n or not n.get("chave"):
+        raise SystemExit("Nota não encontrada ou sem chave de acesso.")
+    nome = f"{n['clientes']['nome']} → {n.get('tomador_nome') or 'sem tomador'}"
+    with sync_playwright() as pw:
+        nav = _navegador(pw)
+        page = nav.new_context(locale="pt-BR", viewport={"width": 1280, "height": 800}).new_page()
+        t = Tela(page, PASTA / nid[:8])
+        try:
+            entrar(t, n["clientes"]["cnpj"], db.senha(n["clientes"]["id"]))
+            entregar_com_impressao(t, n, n["chave"], nome)
+            print("Pronto:", db.nota(nid).get("robo_mensagem"))
+        finally:
+            nav.close()
 
 
 def baixar(nid: str) -> None:
-    """Nota já emitida (tem chave) sem PDF/XML no gestor: entra, baixa (com captcha pela tela
-    remota, se o portal pedir), leva para o gestor e o gestor manda no WhatsApp."""
+    """PDF e XML oficiais do portal (pede captcha pela tela remota): entra, baixa, leva para o
+    gestor e o gestor manda no WhatsApp. Só quando alguém precisar do XML; o normal é o PDF
+    montado pelo gestor (entregar)."""
     n = db.nota(nid)
     if not n or not n.get("chave"):
         raise SystemExit("Nota não encontrada ou sem chave de acesso.")

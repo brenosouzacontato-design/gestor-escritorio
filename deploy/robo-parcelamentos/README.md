@@ -142,7 +142,7 @@ tela, rode o `emissor-explorar` e ajuste os seletores em `emissor.py`.
 ## NFS-e de MEI no Emissor Nacional (`nfse_mei.py`)
 
 MEI sem certificado: o escritório pede a nota na tela **NFS-e MEI** do gestor e o robô entra no portal
-nacional com o CNPJ e a senha da empresa, emite, e manda PDF e XML no WhatsApp do cliente. Emite sozinho
+nacional com o CNPJ e a senha da empresa, emite, e o gestor monta o PDF (sem o captcha do download) e manda no WhatsApp do cliente. Emite sozinho
 (`MEI_TRANSMITIR=1`; com `0` preenche e espera alguém clicar em "Emitir NFS-e" pela tela remota). Detalhes,
 instalação e calibração em `docs/nfse-mei.md`.
 
