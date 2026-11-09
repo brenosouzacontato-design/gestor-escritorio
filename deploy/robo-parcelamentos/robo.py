@@ -10,6 +10,8 @@ Uso (dentro do container):
   python robo.py emissor                   # NF-e de venda: processa a fila agora (ver emissor.py)
   python robo.py emissor-explorar PEDIDO   # calibração do Emissor: preenche sem cadastrar nem transmitir
   python robo.py emissor-importar          # copia clientes/produtos do Emissor das empresas na fila (ver emissor_importar.py)
+  python robo.py mei                       # NFS-e de MEI no Emissor Nacional: processa a fila agora (ver nfse_mei.py)
+  python robo.py mei-explorar NOTA         # calibração do Emissor Nacional: preenche sem emitir, prints/HTML em /dados/nfse-mei
 
 Fluxo de uma execução:
   1. lê no Supabase os parcelamentos PGFN ativos com busca_automatica;
@@ -35,6 +37,7 @@ from playwright.sync_api import sync_playwright
 import ecac
 import emissor
 import emissor_importar
+import nfse_mei
 import gestor_db as db
 import notificador as aviso
 import sispar
@@ -51,6 +54,8 @@ ECAC_DIAS = [int(d) for d in os.environ.get("ECAC_DIAS_SEMANA", "0,3").split(","
 ECAC_HORA = os.environ.get("ECAC_HORA", "08:00")
 # NF-e de venda (emissor.py): olha a fila a cada minuto; EMISSOR_ATIVO=0 desliga
 EMISSOR_ATIVO = os.environ.get("EMISSOR_ATIVO", "1") == "1"
+# NFS-e de MEI no Emissor Nacional (nfse_mei.py): olha a fila a cada minuto; MEI_ATIVO=0 desliga
+MEI_ATIVO = os.environ.get("MEI_ATIVO", "1") == "1"
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 log = logging.getLogger("robo")
@@ -187,6 +192,7 @@ def agendar() -> None:
     if ECAC_DIAS and ecac.configurado():
         log.warning("e-CAC desligado até configurar: %s", ecac.configurado())
     erro_nfe = ""
+    erro_mei = ""
     while True:
         agora = datetime.now(TZ)
         hoje = agora.date()
@@ -219,6 +225,15 @@ def agendar() -> None:
                 if str(e) != erro_nfe:  # roda a cada minuto: avisa só quando o erro muda
                     aviso.texto(f"❌ Robô de NF-e falhou: {e}")
                 erro_nfe = str(e)
+        if MEI_ATIVO:
+            try:
+                nfse_mei.rodar()
+                erro_mei = ""
+            except Exception as e:  # noqa: BLE001
+                log.exception("Robô de NFS-e MEI falhou")
+                if str(e) != erro_mei:
+                    aviso.texto(f"❌ Robô de NFS-e MEI falhou: {e}")
+                erro_mei = str(e)
         time.sleep(60)
 
 
@@ -239,6 +254,12 @@ if __name__ == "__main__":
         if len(sys.argv) < 3:
             sys.exit("Uso: python robo.py emissor-explorar ID_DO_PEDIDO")
         emissor.explorar(sys.argv[2])
+    elif cmd == "mei":
+        print(f"{nfse_mei.rodar()} nota(s) processada(s)")
+    elif cmd == "mei-explorar":
+        if len(sys.argv) < 3:
+            sys.exit("Uso: python robo.py mei-explorar ID_DA_NOTA")
+        nfse_mei.explorar(sys.argv[2])
     elif cmd == "emissor-importar":
         print(f"{emissor_importar.rodar()} empresa(s) importada(s)")
     elif cmd == "testar-aviso":

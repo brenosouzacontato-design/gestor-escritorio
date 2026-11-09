@@ -38,6 +38,9 @@ fi
 if [ -z "${NOTIFICAR_WHATSAPP:-}" ]; then
   read -rp "WhatsApp que recebe os avisos (só números, com 55 e DDD; vários separados por vírgula): " NOTIFICAR_WHATSAPP
 fi
+if [ -z "${NFSE_CERT_KEY:-}" ]; then
+  read -rsp "NFSE_CERT_KEY (a mesma do Netlify; para a senha do Emissor Nacional dos MEIs; Enter pula): " NFSE_CERT_KEY; echo
+fi
 ROBO_USUARIO=${ROBO_USUARIO:-breno}
 if [ -z "${ROBO_SENHA:-}" ]; then
   ROBO_SENHA=$(openssl rand -base64 12 | tr -d '/+=' | cut -c1-12)
@@ -54,6 +57,8 @@ ECAC_SITUACAO_DIAS=${ECAC_SITUACAO_DIAS:-7}
 GESTOR_URL=${GESTOR_URL:-https://gestorcount.netlify.app}
 EMISSOR_ATIVO=${EMISSOR_ATIVO:-1}
 EMISSOR_TRANSMITIR=${EMISSOR_TRANSMITIR:-1}
+MEI_ATIVO=${MEI_ATIVO:-1}
+MEI_TRANSMITIR=${MEI_TRANSMITIR:-0}
 
 umask 077
 cat > "$ENV" <<EOF
@@ -76,6 +81,9 @@ ECAC_SITUACAO_DIAS=$ECAC_SITUACAO_DIAS
 GESTOR_URL=$GESTOR_URL
 EMISSOR_ATIVO=$EMISSOR_ATIVO
 EMISSOR_TRANSMITIR=$EMISSOR_TRANSMITIR
+NFSE_CERT_KEY=$NFSE_CERT_KEY
+MEI_ATIVO=$MEI_ATIVO
+MEI_TRANSMITIR=$MEI_TRANSMITIR
 ROBO_USUARIO=$ROBO_USUARIO
 ROBO_SENHA=$ROBO_SENHA
 TZ=America/Sao_Paulo

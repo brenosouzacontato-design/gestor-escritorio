@@ -138,3 +138,15 @@ no app só cria o que falta e completa campos vazios.
 Os prints de cada passo ficam em `/opt/gestor-robo/dados/emissor/<pedido>/`. O Emissor não tem
 API pública: o robô usa as telas, achando os campos pelo nome (legenda) — se o Emissor mudar a
 tela, rode o `emissor-explorar` e ajuste os seletores em `emissor.py`.
+
+## NFS-e de MEI no Emissor Nacional (`nfse_mei.py`)
+
+MEI sem certificado: o escritório pede a nota na tela **NFS-e MEI** do gestor e o robô entra no portal
+nacional com o CNPJ e a senha da empresa, emite, e manda PDF e XML no WhatsApp do cliente. Começa com
+`MEI_TRANSMITIR=0` (preenche e espera alguém clicar em "Emitir NFS-e" pela tela remota). Detalhes,
+instalação e calibração em `docs/nfse-mei.md`.
+
+```
+docker compose exec robo python robo.py mei                    # processa a fila agora
+docker compose exec robo python robo.py mei-explorar ID_NOTA   # preenche sem emitir; prints/HTML em dados/nfse-mei/
+```

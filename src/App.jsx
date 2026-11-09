@@ -28,6 +28,7 @@ import HonorariosPage from './pages/honorarios/HonorariosPage'
 import PaineisPage from './pages/painel/PaineisPage'
 import NotasFiscaisPage from './pages/notasfiscais/NotasFiscaisPage'
 import NfseEmissaoPage from './pages/nfse/NfseEmissaoPage'
+import NfseMeiPage from './pages/nfse/NfseMeiPage'
 import AssessorPage from './pages/assessor/AssessorPage'
 import AgendaPage from './pages/agenda/AgendaPage'
 import HojePage from './pages/hoje/HojePage'
@@ -177,6 +178,7 @@ export default function App() {
             {page === 'contabil'   && <ContabilPage />}
             {page === 'notasfiscais' && <NotasFiscaisPage />}
             {page === 'nfse' && <NfseEmissaoPage />}
+            {page === 'nfsemei' && <NfseMeiPage />}
             {page === 'pedidosnfe' && <PedidosNfePage />}
             {page === 'assessor'   && <AssessorPage onNavigate={navigate} />}
             {page === 'agenda'     && <AgendaPage />}
