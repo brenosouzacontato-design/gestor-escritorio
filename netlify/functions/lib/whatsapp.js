@@ -45,8 +45,20 @@ function corpoTexto(versao, numero, texto) {
     : { number: numero, textMessage: { text: texto } }
 }
 
+// Nome de arquivo que abre no celular: "/" (ex.: "LOGISTICA S/A") vira pasta e o anexo não abre;
+// \ : * ? " < > | e controles também são proibidos. Tira espaço/ponto antes da extensão.
+function nomeArquivoSeguro(nome, padrao = 'documento') {
+  const texto = String(nome || '')
+  const ext = (/\.[A-Za-z0-9]{1,5}$/.exec(texto) || [''])[0]
+  const base = texto.slice(0, texto.length - ext.length)
+    .replace(/[\\/:*?"<>|\u0000-\u001f]+/g, '-')
+    .replace(/\s+/g, ' ')
+    .replace(/^[\s.-]+|[\s.-]+$/g, '')
+  return (base || padrao) + ext
+}
+
 function corpoDocumento(versao, numero, { media, fileName, caption = '', mimetype = 'application/pdf' }) {
-  const midia = { mediatype: 'document', mimetype, fileName, caption, media }
+  const midia = { mediatype: 'document', mimetype, fileName: nomeArquivoSeguro(fileName), caption, media }
   return versao >= 2 ? { number: numero, ...midia } : { number: numero, mediaMessage: midia }
 }
 
