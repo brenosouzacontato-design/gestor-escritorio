@@ -15,9 +15,11 @@
 //   POST { acao: 'cancelar', cliente_id, id }                 → { ok }   (só antes de o robô pegar)
 //   POST { acao: 'arquivo', cliente_id, id, tipo: 'pdf'|'xml' } → { url }  (link assinado, 10 min)
 //   POST { acao: 'reenviar_whatsapp', cliente_id, id }        → { ok }
+//   Robô (cabeçalho x-robo-chave = SUPABASE_SERVICE_KEY): POST { cliente_id } → { senha }
 
 const { ErroHttp, exigirUsuario, responder, supabaseServico } = require('./lib/nfse/auth')
-const { cifrar } = require('./lib/nfse/cofre')
+const crypto = require('crypto')
+const { cifrar, decifrar } = require('./lib/nfse/cofre')
 const { ErroMei, normalizarModelo, normalizarNota, notaRepetida, senhaDasObservacoes } = require('./lib/nfse/mei')
 const { enviarDocumento, numeroWhatsapp } = require('./lib/whatsapp')
 
@@ -52,8 +54,26 @@ async function nota(sb, clienteId, id) {
 
 const brl = (v) => Number(v).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 
+// O robô do servidor não tem a NFSE_CERT_KEY (é secreta no Netlify): pede a senha decifrada aqui,
+// provando que tem a SUPABASE_SERVICE_KEY (a mesma com que já lê e grava o banco).
+function ehRobo(event) {
+  const cab = (event.headers && (event.headers['x-robo-chave'] || event.headers['X-Robo-Chave'])) || ''
+  const chave = process.env.SUPABASE_SERVICE_KEY || ''
+  if (!cab || !chave || cab.length !== chave.length) return false
+  return crypto.timingSafeEqual(Buffer.from(cab), Buffer.from(chave))
+}
+
+async function senhaParaRobo(event) {
+  let p
+  try { p = JSON.parse(event.body || '{}') } catch { throw new ErroHttp(400, 'Corpo inválido') }
+  const r = await ok(supabaseServico().from('nfse_mei_acessos').select('senha_cifrada').eq('cliente_id', uuid(p.cliente_id, 'cliente_id')).maybeSingle())
+  if (!r) throw new ErroHttp(404, 'Empresa sem senha do Emissor Nacional')
+  return { senha: decifrar(r.senha_cifrada).toString('utf8') }
+}
+
 exports.handler = responder(async (event) => {
   if (event.httpMethod !== 'POST') throw new ErroHttp(405, 'Use POST')
+  if (ehRobo(event)) return senhaParaRobo(event)  // única ação do robô
   const usuario = await exigirUsuario(event)
   let p
   try { p = JSON.parse(event.body || '{}') } catch { throw new ErroHttp(400, 'Corpo inválido') }

@@ -39,7 +39,7 @@ if [ -z "${NOTIFICAR_WHATSAPP:-}" ]; then
   read -rp "WhatsApp que recebe os avisos (só números, com 55 e DDD; vários separados por vírgula): " NOTIFICAR_WHATSAPP
 fi
 if [ -z "${NFSE_CERT_KEY:-}" ]; then
-  read -rsp "NFSE_CERT_KEY (a mesma do Netlify; para a senha do Emissor Nacional dos MEIs; Enter pula): " NFSE_CERT_KEY; echo
+  read -rsp "NFSE_CERT_KEY (opcional: Enter pula, o robô pede a senha do MEI ao gestor): " NFSE_CERT_KEY; echo
 fi
 ROBO_USUARIO=${ROBO_USUARIO:-breno}
 if [ -z "${ROBO_SENHA:-}" ]; then
