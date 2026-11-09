@@ -10,6 +10,8 @@ from __future__ import annotations
 import base64
 import os
 
+import requests
+
 from gestor_db import BUCKET, _req, agora
 
 
@@ -45,8 +47,19 @@ def nota(nid: str) -> dict | None:
 
 
 def senha(cliente_id: str) -> str | None:
-    r = _req("GET", "/rest/v1/nfse_mei_acessos", params={"select": "senha_cifrada", "cliente_id": f"eq.{cliente_id}"})
-    return decifrar(r[0]["senha_cifrada"]) if r else None
+    """Com NFSE_CERT_KEY no .env, decifra aqui; sem ela (é secreta no Netlify), pede ao gestor
+    (function nfse-mei), provando que tem a SUPABASE_SERVICE_KEY."""
+    if os.environ.get("NFSE_CERT_KEY"):
+        r = _req("GET", "/rest/v1/nfse_mei_acessos", params={"select": "senha_cifrada", "cliente_id": f"eq.{cliente_id}"})
+        return decifrar(r[0]["senha_cifrada"]) if r else None
+    gestor = os.environ.get("GESTOR_URL", "https://gestorcount.netlify.app").rstrip("/")
+    resp = requests.post(f"{gestor}/.netlify/functions/nfse-mei", json={"cliente_id": cliente_id}, timeout=30,
+                         headers={"x-robo-chave": os.environ["SUPABASE_SERVICE_KEY"]})
+    if resp.status_code == 404:
+        return None
+    if resp.status_code >= 400:
+        raise RuntimeError(f"Gestor não entregou a senha do Emissor Nacional ({resp.status_code}): {resp.text[:200]}")
+    return resp.json()["senha"]
 
 
 def atualizar(nid: str, patch: dict) -> None:

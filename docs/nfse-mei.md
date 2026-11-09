@@ -45,8 +45,9 @@ para conferir no portal antes, para não sair nota em dobro.
 1. Supabase: `supabase-schema-nfse-mei.sql` (aplicado em 09/11/2026 pelo `supabase db query --linked`).
 2. Netlify: nada novo (usa `NFSE_CERT_KEY`, `SUPABASE_*` e `EVOLUTION_*`, que já existem). Publicar.
 3. Servidor do robô: copiar a pasta `deploy/robo-parcelamentos` de novo e rodar `bash robo-parcelamentos/instalar.sh`
-   (como na instalação; ele pergunta a `NFSE_CERT_KEY`, a mesma do Netlify, e reconstrói o container).
-   Novas variáveis no `.env`: `NFSE_CERT_KEY`, `MEI_ATIVO=1`, `MEI_TRANSMITIR=0`.
+   (como na instalação; reconstrói o container). Novas variáveis no `.env`: `MEI_ATIVO=1`, `MEI_TRANSMITIR=0`.
+   A `NFSE_CERT_KEY` é opcional (Enter pula): sem ela, o robô pede a senha decifrada à function `nfse-mei`
+   com o cabeçalho `x-robo-chave` = `SUPABASE_SERVICE_KEY` (a chave é secreta no Netlify e não dá para copiar).
 4. Para cada MEI: cadastrar senha e modelo na tela.
 
 ## Calibrar (primeira nota)
