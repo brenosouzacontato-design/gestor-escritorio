@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useMemo } from 'react'
 import {
   LayoutDashboardIcon, SparklesIcon, AppWindowIcon, ClipboardCheckIcon, CheckSquareIcon, CalendarDaysIcon, BellIcon,
   UsersIcon, TargetIcon, SunIcon, PaperclipIcon, MonitorIcon, CircleDollarSignIcon, BanknoteIcon, CalculatorIcon, RefreshCwIcon,
-  ReceiptIcon, FileSignatureIcon, LayersIcon, FileBadgeIcon, ShieldCheckIcon, ChevronDownIcon, SearchIcon, MenuIcon, XIcon, SendIcon, ReceiptTextIcon, BadgeCheckIcon,
+  ReceiptIcon, FileSignatureIcon, LayersIcon, FileBadgeIcon, ShieldCheckIcon, ChevronDownIcon, SearchIcon, MenuIcon, XIcon, SendIcon, ReceiptTextIcon, BadgeCheckIcon, UserPlusIcon,
 }  from 'lucide-react'
 
 // Menu do gestor. O grupo "Rotina" (direto: true) aparece com cada tela
@@ -32,6 +32,7 @@ export const GRUPOS = [
   { id: 'clientes', nome: 'Clientes', itens: [
     { id: 'clientes',   label: 'Clientes',     desc: 'Cadastro das empresas',         Icon: UsersIcon },
     { id: 'prospectos', label: 'Prospectos',   desc: 'Novos clientes em negociação',  Icon: TargetIcon },
+    { id: 'admissoes',  label: 'Admissões',    desc: 'Ficha do funcionário por link e WhatsApp', Icon: UserPlusIcon },
     { id: 'paineis',    label: 'Painéis',      desc: 'Painel do cliente',             Icon: MonitorIcon },
   ]},
   { id: 'financeiro', nome: 'Financeiro', itens: [

@@ -13,6 +13,7 @@ import PainelGrupoPage from './pages/painel/PainelGrupoPage.jsx'
 import PainelCarteiraPage from './pages/painel/PainelCarteiraPage.jsx'
 import NotasEmitidasPage from './pages/painel/NotasEmitidasPage.jsx'
 import PedidoNfePage from './pages/pedidonfe/PedidoNfePage.jsx'
+import FichaAdmissaoPage from './pages/admissao/FichaAdmissaoPage.jsx'
 import { registrarVisualizacaoPainel, avisarEventoPainel } from './pages/painel/painelApi.js'
 import './styles.css'
 
@@ -28,6 +29,7 @@ const painel = params.get('painel')
 const carteira = params.get('carteira')
 const notas = params.get('notas')
 const pedido = params.get('pedido')
+const admissao = params.get('admissao')
 
 // O gestor exige login; os links públicos abaixo, não.
 let raiz = <ComLogin><App /></ComLogin>
@@ -56,6 +58,9 @@ if (share === 'dre' || share === 'balancete') {
   />
 } else if (doc) {
   raiz = <DocumentoCompartilhadoPage documentoId={doc} />
+} else if (admissao) {
+  // ficha de admissão do funcionário (?admissao=<token da admissão>, gerado em Clientes → Admissões)
+  raiz = <FichaAdmissaoPage token={admissao} />
 } else if (pedido) {
   // app instalável do cliente para pedir NF-e de venda (?pedido=<token do painel>)
   raiz = <PedidoNfePage token={pedido} />
