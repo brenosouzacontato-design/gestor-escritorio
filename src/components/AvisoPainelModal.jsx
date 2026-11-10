@@ -135,6 +135,11 @@ export default function AvisoPainelModal({ clienteId, motivo = 'painel', restant
             <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: 0.4, marginBottom: 6 }}>
               {previa.guias.length ? `Guias novas no aviso (${previa.guias.length})` : 'Sem guia nova — o aviso diz que o painel foi atualizado'}
             </div>
+            {previa.generica && (
+              <div style={{ fontSize: 12, color: 'var(--text2)', background: 'var(--surface2)', borderRadius: 8, padding: '6px 10px', marginBottom: 8 }}>
+                Há guia já paga ou de competência anterior ainda não entregue: a mensagem vai sem listar as guias, só avisando que o painel foi atualizado.
+              </div>
+            )}
             {previa.guias.length > 0 && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 12 }}>
                 {previa.guias.map((g) => (

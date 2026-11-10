@@ -8,7 +8,9 @@
 //   POST { clienteId, simular?, forcar? }
 //     simular: só monta a prévia (mensagem, destino, guias) e não envia
 //     forcar:  envia mesmo no horário de silêncio (19h–7h)
-//   → { ok, enviada, destino, guias: [{id, titulo}], mensagem, silencio } | { error }
+//   → { ok, enviada, destino, guias: [{id, titulo}], generica, mensagem, silencio } | { error }
+//     generica: havia guia paga ou de competência anterior pendente de entrega,
+//     então a mensagem não lista guias (só avisa que o painel foi atualizado)
 //
 // Deu certo: as guias da mensagem ficam entregues (entrega_canal 'painel') —
 // a Central de Entregas mostra "entregue" e, quando o cliente abre/baixa pelo
@@ -51,21 +53,21 @@ exports.handler = async (event) => {
     if (cliente.painel_ativo === false) return resposta(400, { error: `${nomeCurto(cliente.nome)}: o painel está desligado (aba Empresas da Central).` })
 
     const destino = numeroWhatsapp(cliente.whatsapp_entrega || cliente.telefone)
-    const guias = await guiasNovas(supabase, clienteId)
+    const { guias, generica } = await guiasNovas(supabase, clienteId)
     const silencio = horarioDeSilencio()
     const previa = {
-      destino, silencio,
+      destino, silencio, generica,
       guias: guias.map((g) => ({ id: g.id, titulo: tituloGuia(g), vencimento: g.vencimento_guia || g.obrigacoes?.vencimento || null, valor: g.valor_guia })),
     }
     if (simular) {
       // o link curto é criado no envio; na prévia vai um marcador
-      return resposta(200, { ok: true, enviada: false, ...previa, mensagem: mensagemAviso(cliente, guias, '(link do painel)') })
+      return resposta(200, { ok: true, enviada: false, ...previa, mensagem: mensagemAviso(cliente, guias, '(link do painel)', { generica }) })
     }
     if (!destino) return resposta(400, { error: `${nomeCurto(cliente.nome)}: sem WhatsApp de entrega. Cadastre o número na aba Empresas da Central.` })
     if (silencio && !forcar) return resposta(409, { error: 'Horário de silêncio (19h às 7h): confirme para enviar mesmo assim.', silencio: true })
 
     const link = await linkCurtoPainel(supabase, cliente)
-    const mensagem = mensagemAviso(cliente, guias, link)
+    const mensagem = mensagemAviso(cliente, guias, link, { generica })
     const envio = await enviarMensagem(destino, mensagem)
     const agora = new Date().toISOString()
     if (guias.length) {
