@@ -314,7 +314,8 @@ function PainelCompartilhado({ clienteId, competencia: competenciaInicial, admin
           obterGerenciaisPorCompetencia(clienteId, competenciasDas).catch(() => ({})),
         ]);
         const gerenciaisPorComp = { ...gerenciaisOutras, ...(gerenciais ? { [competencia]: gerenciais } : {}) };
-        setDados({ cliente, impostos, outrasObrigacoes, tarefasArea, anexos, anexosTarefa, gerenciais, gerenciaisPorComp, historico, situacaoFiscal, cndManual, honorarios, configPix, notasEntrada, tarefasCliente, recados });
+        const visiveis = filtrarOutrasCompetencias({ impostos, outrasObrigacoes, tarefasArea, anexos }, competencia);
+        setDados({ cliente, ...visiveis, anexos, anexosTarefa, gerenciais, gerenciaisPorComp, historico, situacaoFiscal, cndManual, honorarios, configPix, notasEntrada, tarefasCliente, recados });
       } catch (e) {
         setErro(e.message);
       } finally {
@@ -796,6 +797,20 @@ function PainelCompartilhado({ clienteId, competencia: competenciaInicial, admin
     </div>
     </RecadosContext.Provider>
   );
+}
+
+// Itens de outras competências (atrasados ou que vencem no período): só o
+// que ainda pede ação do cliente. Imposto só com a guia anexada e não paga;
+// obrigação e tarefa só se ainda não foram concluídas. Os da competência de
+// referência (e os sem competência) seguem como sempre.
+function filtrarOutrasCompetencias({ impostos, outrasObrigacoes, tarefasArea, anexos }, competencia) {
+  const outra = (item) => !!item.competencia && item.competencia !== competencia;
+  const concluida = (o) => o.status === 'concluido' || o.status === 'nao_aplica';
+  return {
+    impostos: impostos.filter((o) => !outra(o) || (anexos[o.id] && !anexos[o.id].pago_em)),
+    outrasObrigacoes: outrasObrigacoes.filter((o) => !outra(o) || !concluida(o)),
+    tarefasArea: tarefasArea.filter((t) => !outra(t) || !t.concluida),
+  };
 }
 
 // Impostos da competência: com guia anexada, ou "aguardando guia" se ainda não concluídos. Exceção: o DAS de um mês
