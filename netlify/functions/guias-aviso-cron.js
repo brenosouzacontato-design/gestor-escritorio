@@ -16,10 +16,11 @@
 //
 // Variáveis de ambiente: SUPABASE_URL, SUPABASE_SERVICE_KEY,
 // EVOLUTION_API_URL, EVOLUTION_API_KEY, EVOLUTION_INSTANCE (as de sempre) e,
-// opcional, PAINEL_URL_BASE (sem ela vale a URL principal do site).
+// opcional, PAINEL_URL_BASE (sem ela vale a URL principal do site) e
+// WHATSAPP_SILENCIO (padrão "19-7": não envia das 19h às 7h, horário de Brasília).
 
 const { createClient } = require('@supabase/supabase-js')
-const { enviarMensagem, numeroWhatsapp } = require('./lib/whatsapp')
+const { enviarMensagem, numeroWhatsapp, horarioDeSilencio } = require('./lib/whatsapp')
 const { linkCurtoPainel } = require('./lib/linkCurtoPainel')
 
 const supabase = createClient(
@@ -28,8 +29,9 @@ const supabase = createClient(
 )
 
 // Só guias recentes: no 1º deploy não dispara aviso de guia antiga, e uma
-// falha longa do cron não vira enxurrada de mensagens depois.
-const JANELA_HORAS = 6
+// falha longa do cron não vira enxurrada de mensagens depois. Cobre a noite
+// do horário de silêncio (19h–7h): guia anexada às 18h59 ainda sai às 7h.
+const JANELA_HORAS = 14
 // Espera a guia "assentar" antes de avisar: várias anexadas em sequência
 // saem numa mensagem só.
 const ESPERA_MIN = 2
@@ -47,6 +49,8 @@ function ehImposto(o) {
 }
 
 exports.handler = async () => {
+  // à noite não manda nada: as guias ficam esperando e saem juntas às 7h
+  if (horarioDeSilencio()) return { statusCode: 200, body: 'horário de silêncio' }
   const agora = Date.now()
   const desde = new Date(agora - JANELA_HORAS * 60 * 60 * 1000).toISOString()
   const ate = new Date(agora - ESPERA_MIN * 60 * 1000).toISOString()
