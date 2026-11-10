@@ -11,7 +11,7 @@ import {
 import { useStore } from '../../store'
 import { useToast } from '../../components/shared'
 import {
-  listarGuias, situacaoGuia, enviarGuia, marcarEntregaManual, urlGuia,
+  listarGuias, situacaoGuia, enviarGuia, marcarEntregaManual, confirmarAberturaManual, urlGuia,
   listarEmpresasEntrega, salvarEmpresaEntrega,
 } from './entregasApi'
 
@@ -43,7 +43,8 @@ export default function CentralEntregasPage() {
   const [aba, setAba] = useState('guias')
   const [guias, setGuias] = useState(null)
   const [erro, setErro] = useState(null)
-  const [filtro, setFiltro] = useState('pendentes')
+  // controle de entregas: abre com tudo (as entregues pelo aviso automático também)
+  const [filtro, setFiltro] = useState('todas')
   const [busca, setBusca] = useState('')
   const [selecionadas, setSelecionadas] = useState(() => new Set())
   const [enviando, setEnviando] = useState(() => new Set())
@@ -144,6 +145,11 @@ export default function CentralEntregasPage() {
     } catch (e) { show('Erro: ' + e.message) }
   }
 
+  const confirmarAbertura = async (g, confirmada) => {
+    try { atualizarGuia(g.id, await confirmarAberturaManual(g.id, confirmada)) }
+    catch (e) { show('Erro: ' + e.message) }
+  }
+
   const abrir = async (g) => {
     const aba = window.open('', '_blank')
     try { const url = await urlGuia(g.storage_path); if (aba) aba.location.href = url; else window.open(url, '_blank') }
@@ -235,7 +241,8 @@ export default function CentralEntregasPage() {
                 {lista.map((g) => (
                   <LinhaGuia key={g.id} g={g} marcada={selecionadas.has(g.id)} enviando={enviando.has(g.id)}
                     onMarcar={() => alternar(g.id)} onEntregar={() => entregar(g)} onAbrir={() => abrir(g)}
-                    onManual={(v) => marcarManual(g, v)} semDestino={!destinoDe(cliente)} />
+                    onManual={(v) => marcarManual(g, v)} onConfirmarAbertura={(v) => confirmarAbertura(g, v)}
+                    semDestino={!destinoDe(cliente)} />
                 ))}
               </div>
             ))}
@@ -256,7 +263,37 @@ function Metrica({ label, valor, classe = '', onClick }) {
   )
 }
 
-function LinhaGuia({ g, marcada, enviando, onMarcar, onEntregar, onAbrir, onManual, semDestino }) {
+// Coluna "Aberta?": entrega pelo sistema (WhatsApp ou aviso com o link do
+// painel) mostra se o cliente abriu, pelo painel; entrega manual não tem
+// rastreio, então o escritório confirma na mão.
+function ColunaAbertura({ g, onConfirmar }) {
+  const caixa = { flex: '0 0 170px', display: 'flex', flexDirection: 'column', gap: 2, fontSize: 11.5 }
+  const titulo = <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: 0.3 }}>Aberta?</span>
+  if (!g.entregue_em) return <div style={caixa}>{titulo}<span style={{ color: 'var(--text3)' }}>— não entregue</span></div>
+  if (g.entrega_canal === 'manual') {
+    return (
+      <div style={caixa}>
+        {titulo}
+        {g.aberto_em ? (
+          <span style={{ color: 'var(--ok)', display: 'flex', alignItems: 'center', gap: 4 }}>
+            <CheckIcon size={11} /> confirmada à mão {fmtQuando(g.aberto_em)}
+            <button className="btn btn-icon btn-ghost" style={{ padding: 2 }} title="Desfazer a confirmação" onClick={() => onConfirmar(false)}><Undo2Icon size={11} /></button>
+          </span>
+        ) : (
+          <button className="btn btn-ghost btn-sm" style={{ alignSelf: 'flex-start', fontSize: 11 }} onClick={() => onConfirmar(true)}
+            title="Entrega manual: confirme quando o cliente tiver recebido/aberto a guia">
+            <CheckIcon size={11} /> Confirmar abertura
+          </button>
+        )}
+      </div>
+    )
+  }
+  if (g.aberto_em) return <div style={caixa}>{titulo}<span style={{ color: 'var(--ok)', fontWeight: 600 }}>Sim · {fmtQuando(g.aberto_ultimo_em || g.aberto_em)}</span></div>
+  if (g.visto_em) return <div style={caixa}>{titulo}<span style={{ color: 'var(--accent)', fontWeight: 600 }}>Viu o painel · {fmtQuando(g.visto_em)}</span></div>
+  return <div style={caixa}>{titulo}<span style={{ color: 'var(--warn)', fontWeight: 600 }}>Não abriu ainda</span></div>
+}
+
+function LinhaGuia({ g, marcada, enviando, onMarcar, onEntregar, onAbrir, onManual, onConfirmarAbertura, semDestino }) {
   const s = situacaoGuia(g)
   const cfg = SITUACOES[s]
   const detalhes = [
@@ -269,8 +306,10 @@ function LinhaGuia({ g, marcada, enviando, onMarcar, onEntregar, onAbrir, onManu
       <div style={{ flex: '1 1 220px', minWidth: 0 }}>
         <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text1)' }}>{g.titulo}</div>
         <div style={{ fontSize: 11.5, color: 'var(--text3)' }}>{detalhes || g.nome_arquivo}</div>
+        {g.origem && <div style={{ fontSize: 10.5, color: 'var(--text3)', fontStyle: 'italic' }}>{g.origem}</div>}
         {s === 'falhou' && <div style={{ fontSize: 11.5, color: 'var(--danger)', marginTop: 2 }}>{g.entrega_erro}</div>}
       </div>
+      <ColunaAbertura g={g} onConfirmar={onConfirmarAbertura} />
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 2 }}>
         <span style={{ ...selo, color: cfg.color, background: cfg.bg }}>
           {s === 'aberta' || s === 'vista' ? <EyeIcon size={11} /> : s === 'entregue' ? <CheckIcon size={11} /> : null} {cfg.label}
@@ -283,7 +322,7 @@ function LinhaGuia({ g, marcada, enviando, onMarcar, onEntregar, onAbrir, onManu
         {g.visto_em && g.entregue_em && (
           <span style={{ fontSize: 10.5, color: 'var(--accent)' }}>viu no painel {fmtQuando(g.visto_em)}</span>
         )}
-        {g.aberto_em && (
+        {g.aberto_em && g.entrega_canal !== 'manual' && (
           <span style={{ fontSize: 10.5, color: 'var(--ok)' }}>
             baixou/copiou {fmtQuando(g.aberto_ultimo_em || g.aberto_em)}{g.aberto_vezes > 1 ? ` · ${g.aberto_vezes}x` : ''}
           </span>
