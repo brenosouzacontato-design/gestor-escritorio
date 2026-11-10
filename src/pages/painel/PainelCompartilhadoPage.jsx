@@ -478,6 +478,16 @@ function PainelCompartilhado({ clienteId, competencia: competenciaInicial, admin
   };
 
   const guias = dados && montarGuias(dados, competencia).map((g) => ({ ...g, lendo: g.anexo && lendoGuias.has(g.anexo.id) }));
+  // O cliente só vê o que está em aberto, de qualquer competência (as da
+  // competência costumam ser pagas no mês seguinte; o que ficou pra trás e
+  // não foi pago continua aparecendo). Pago/concluído some da lista dele; no
+  // modo de edição o escritório ainda vê, esmaecido. Débito que a Receita
+  // ainda cobra aparece em Pendências pelo Relatório de Situação Fiscal.
+  const guiaResolvida = (g) => g.paga || (g.concluida && g.dias != null && g.dias < 0);
+  const itemResolvido = (it) => (it.status === 'concluido' || it.status === 'nao_aplica')
+    // documento entregue na própria competência (ex: holerite, recibo) continua pra baixar
+    && !(it.anexo && it.competencia === competencia);
+  const aparece = (id, resolvido) => editando || (!resolvido && !itemOculto(id));
   const pendencias = dados && montarPendencias(dados.situacaoFiscal);
   // o que foi atribuído ao cliente já aparece em "Suas tarefas" — não repete na lista geral
   const idsDoCliente = new Set((dados?.tarefasCliente || []).map((t) => t.id));
@@ -488,7 +498,7 @@ function PainelCompartilhado({ clienteId, competencia: competenciaInicial, admin
   // "Aguardando guia" fica só na lista de impostos: sem valor nem guia, não entra nos cards
   // de vencidos / a vencer nem na conta de "tudo quitado".
   const guiasCard = guias && !oculta('impostos') ? guias.filter((g) => !g.aguardandoGuia && !itemOculto(g.id)) : [];
-  const honorariosCard = oculta('honorarios') ? [] : honorarios;
+  const honorariosCard = oculta('honorarios') ? [] : honorarios.filter((h) => !itemOculto(h.id));
   const pendenciasCard = pendencias && !oculta('pendencias') ? pendencias : [];
   const honorariosAVencer = honorariosCard.filter((h) => !h.concluida && !(h.dias != null && h.dias < 0));
   const honorariosVencidos = honorariosCard.filter(alertaVencida);
@@ -728,10 +738,10 @@ function PainelCompartilhado({ clienteId, competencia: competenciaInicial, admin
               <Ocultavel chave="impostos" {...propsOc}>
               <Secao titulo="Impostos e guias — por vencimento" icone={<CalendarIcon size={14} />}
                 extra={temValor(guiasEmAberto) && <Total valor={somaValores(guiasEmAberto)} />}>
-                {guias.filter((g) => editando || !itemOculto(g.id)).length === 0
+                {!guias.some((g) => aparece(g.id, guiaResolvida(g)))
                   ? <Vazio>Nenhum imposto em aberto nem com vencimento no período.</Vazio>
                   : <div style={LISTA}>{guias.map((g) => (
-                    <ItemOcultavel key={g.id} id={g.id}>
+                    <ItemOcultavel key={g.id} id={g.id} resolvido={guiaResolvida(g)}>
                       <LinhaGuia g={g} onBaixar={baixar} onCopiar={copiouCodigo} editando={editando} onSalvarValor={salvarValorGuia} onMarcarPaga={salvarGuiaPaga} />
                     </ItemOcultavel>
                   ))}</div>}
@@ -757,11 +767,13 @@ function PainelCompartilhado({ clienteId, competencia: competenciaInicial, admin
               )}
 
               {/* ── Honorários (módulo Honorários) + chave PIX pra copiar ── */}
-              {honorarios.length > 0 && (
+              {honorarios.some((h) => aparece(h.id, h.concluida)) && (
                 <Ocultavel chave="honorarios" {...propsOc}>
                 <Secao titulo="Honorários" icone={<WalletIcon size={14} />}
-                  extra={honorarios.some((h) => !h.concluida) && <Total valor={somaValores(honorarios.filter((h) => !h.concluida))} />}>
-                  <div style={LISTA}>{honorarios.map((h) => <LinhaHonorario key={h.id} h={h} />)}</div>
+                  extra={honorariosCard.some((h) => !h.concluida) && <Total valor={somaValores(honorariosCard.filter((h) => !h.concluida))} />}>
+                  <div style={LISTA}>{honorarios.map((h) => (
+                    <ItemOcultavel key={h.id} id={h.id} resolvido={h.concluida}><LinhaHonorario h={h} /></ItemOcultavel>
+                  ))}</div>
                   {honorarios.some((h) => !h.concluida) && dados.configPix?.chavePix && (
                     <ChavePix chave={dados.configPix.chavePix} favorecido={dados.configPix.favorecido} />
                   )}
@@ -806,11 +818,11 @@ function PainelCompartilhado({ clienteId, competencia: competenciaInicial, admin
               </Ocultavel>
 
               {/* ── 5. Obrigações e tarefas (Fiscal/Folha) ── */}
-              {itensArea.some((it) => editando || !itemOculto(it.id)) && (
+              {itensArea.some((it) => aparece(it.id, itemResolvido(it))) && (
                 <Ocultavel chave="obrigacoes" {...propsOc}>
                 <Secao titulo="Obrigações e tarefas — por vencimento" icone={<ClipboardListIcon size={14} />}>
                   <div style={LISTA}>{itensArea.map((it) => (
-                    <ItemOcultavel key={it.id} id={it.id}><LinhaObrigacao it={it} onBaixar={baixar} /></ItemOcultavel>
+                    <ItemOcultavel key={it.id} id={it.id} resolvido={itemResolvido(it)}><LinhaObrigacao it={it} onBaixar={baixar} /></ItemOcultavel>
                   ))}</div>
                 </Secao>
                 </Ocultavel>
@@ -1217,10 +1229,22 @@ const RecadosContext = createContext({ recados: {}, editando: false, salvar: () 
 // Uma guia / obrigação / tarefa ocultável pelo escritório. O cliente nunca vê
 // o item oculto; no modo de edição ele continua na lista, esmaecido, com o
 // botão para mostrar de novo.
-function ItemOcultavel({ id, children }) {
+function ItemOcultavel({ id, resolvido = false, children }) {
   const { editando, itemOculto, alternarItem } = useContext(RecadosContext);
   const oculto = itemOculto(id);
-  if (!editando) return oculto ? null : children;
+  if (!editando) return oculto || resolvido ? null : children;
+  if (resolvido) {
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+        <span title="Pago ou concluído: sai sozinho da lista do cliente"
+          style={{ alignSelf: 'flex-end', display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 10.5, fontWeight: 700, borderRadius: 99,
+            padding: '2px 9px', background: 'var(--ok-dim)', color: 'var(--ok)' }}>
+          <CheckIcon size={11} /> Pago/concluído — não aparece pro cliente
+        </span>
+        <div style={{ opacity: 0.4 }}>{children}</div>
+      </div>
+    );
+  }
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
       <button type="button" onClick={() => alternarItem(id)}
