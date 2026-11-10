@@ -892,11 +892,11 @@ export async function obterHonorariosPainel(clienteId, competencia) {
 // Grava o código de barras e o PIX copia e cola lidos da guia no navegador
 // (codigosGuia.js) — netlify/functions/painel-codigos-guia.js confere os
 // dígitos verificadores/CRC antes de gravar e devolve o que ficou valendo.
-export async function salvarCodigosGuia(documentoId, { linhasDigitaveis, pixCopiaCola }) {
+export async function salvarCodigosGuia(documentoId, { linhasDigitaveis, pixCopiaCola }, { releitura = false } = {}) {
   const resp = await fetch('/.netlify/functions/painel-codigos-guia', {
     method: 'POST',
     headers: await cabecalhosFunctions(),
-    body: JSON.stringify({ documentoId, linhasDigitaveis, pixCopiaCola }),
+    body: JSON.stringify({ documentoId, linhasDigitaveis, pixCopiaCola, releitura }),
   });
   if (!resp.ok) {
     const erro = await resp.json().catch(() => ({}));
