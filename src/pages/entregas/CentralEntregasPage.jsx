@@ -7,7 +7,7 @@ import { useEffect, useMemo, useState } from 'react'
 import {
   SendIcon, RefreshCwIcon, ChevronLeftIcon, ChevronRightIcon, SearchIcon, ExternalLinkIcon,
   CheckIcon, EyeIcon, AlertTriangleIcon, MonitorOffIcon, MonitorIcon, Undo2Icon, BellIcon, BellOffIcon,
-  EyeOffIcon, CheckCircle2Icon, UserCheckIcon, ClockIcon, MinusCircleIcon,
+  ClockIcon, XIcon, HandIcon,
 } from 'lucide-react'
 import { useStore } from '../../store'
 import { useToast } from '../../components/shared'
@@ -264,97 +264,121 @@ function Metrica({ label, valor, classe = '', onClick }) {
   )
 }
 
-// Coluna "Aberta?": entrega pelo sistema (WhatsApp ou aviso com o link do
-// painel) mostra se o cliente abriu, pelo painel; entrega manual não tem
-// rastreio, então o escritório confirma na mão. Cada situação é um selo com
-// cor e ícone próprios, numa faixa destacada, pra ler a coluna de relance.
-const ABERTURA = {
-  nao_entregue: { label: 'Não entregue', Icone: MinusCircleIcon, color: 'var(--text3)', bg: 'var(--surface2)', borda: 'var(--border)' },
-  nao_abriu:    { label: 'Não abriu', Icone: EyeOffIcon, color: 'var(--warn)', bg: 'var(--warn-dim)', borda: 'var(--warn)' },
-  viu_painel:   { label: 'Viu o painel', Icone: EyeIcon, color: 'var(--accent)', bg: 'var(--accent-dim, var(--surface2))', borda: 'var(--accent)' },
-  abriu:        { label: 'Abriu a guia', Icone: CheckCircle2Icon, color: 'var(--ok)', bg: 'var(--ok-dim)', borda: 'var(--ok)' },
-  manual_ok:    { label: 'Confirmada', Icone: UserCheckIcon, color: 'var(--ok)', bg: 'var(--ok-dim)', borda: 'var(--ok)' },
-  manual:       { label: 'Aguardando confirmação', Icone: ClockIcon, color: 'var(--info)', bg: 'var(--info-dim)', borda: 'var(--info)' },
+// Trilho da guia: A entregar → Entregue → Aberta, com a data embaixo de
+// cada etapa concluída. Verde = feito, amarelo = etapa atual (esperando),
+// vermelho = envio falhou, cinza = ainda não chegou. Entrega manual não tem
+// rastreio de abertura: a última etapa vira o botão "Confirmar".
+const COR_ETAPA = {
+  feito:    { cor: 'var(--ok)', fundo: 'var(--ok-dim)', linha: 'var(--ok)' },
+  atual:    { cor: 'var(--warn)', fundo: 'var(--warn-dim)', linha: 'var(--border)' },
+  erro:     { cor: 'var(--danger)', fundo: 'var(--danger-dim)', linha: 'var(--danger)' },
+  pendente: { cor: 'var(--text3)', fundo: 'var(--surface)', linha: 'var(--border)' },
 }
 
-function estadoAbertura(g) {
-  if (!g.entregue_em) return 'nao_entregue'
-  if (g.entrega_canal === 'manual') return g.aberto_em ? 'manual_ok' : 'manual'
-  if (g.aberto_em) return 'abriu'
-  if (g.visto_em) return 'viu_painel'
-  return 'nao_abriu'
+function haQuanto(iso) {
+  const min = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 60000))
+  if (min < 60) return `há ${min} min`
+  const h = Math.round(min / 60)
+  return h < 48 ? `há ${h} h` : `há ${Math.round(h / 24)} dias`
 }
 
-function ColunaAbertura({ g, onConfirmar }) {
-  const estado = estadoAbertura(g)
-  const cfg = ABERTURA[estado]
-  const { Icone } = cfg
-  const quando = estado === 'abriu' ? g.aberto_ultimo_em || g.aberto_em
-    : estado === 'manual_ok' ? g.aberto_em
-    : estado === 'viu_painel' ? g.visto_em : null
+const CANAL = { manual: 'manual', painel: 'aviso', whatsapp: 'WhatsApp' }
+// "2026-11-09…" → "09/11" (cabe embaixo da etapa)
+const fmtDiaMes = (iso) => (iso ? `${String(iso).slice(8, 10)}/${String(iso).slice(5, 7)}` : null)
+
+function etapasDaGuia(g) {
+  const s = situacaoGuia(g)
+  const anexada = g.confirmado_em || g.created_at
+  const entregar = {
+    estado: g.entregue_em || s === 'falhou' ? 'feito' : 'atual',
+    label: 'A entregar',
+    data: anexada ? `anexada ${fmtDiaMes(new Date(anexada).toLocaleDateString('sv-SE'))}` : null,
+  }
+  let entregue = { estado: 'pendente', label: 'Entregue' }
+  if (g.entregue_em) {
+    entregue = {
+      estado: 'feito', label: 'Entregue', manual: g.entrega_canal === 'manual',
+      data: `${fmtQuando(g.entregue_em)} · ${CANAL[g.entrega_canal] || 'WhatsApp'}`,
+    }
+  } else if (s === 'falhou') {
+    entregue = { estado: 'erro', label: 'Falhou', data: fmtDiaMes(g.entrega_erro?.slice(0, 10)) }
+  }
+  let aberta = { estado: 'pendente', label: 'Aberta' }
+  if (g.entregue_em) {
+    if (g.aberto_em) {
+      aberta = {
+        estado: 'feito', label: g.entrega_canal === 'manual' ? 'Confirmada' : 'Aberta',
+        desfazer: g.entrega_canal === 'manual',
+        data: `${fmtQuando(g.aberto_ultimo_em || g.aberto_em)}${g.aberto_vezes > 1 ? ` · ${g.aberto_vezes}x` : ''}`,
+      }
+    } else if (g.entrega_canal === 'manual') {
+      aberta = { estado: 'pendente', label: 'Aberta', confirmar: true }
+    } else if (g.visto_em) {
+      aberta = { estado: 'atual', label: 'Viu o painel', data: fmtQuando(g.visto_em) }
+    } else {
+      aberta = { estado: 'atual', label: 'Não abriu', data: haQuanto(g.entregue_em) }
+    }
+  }
+  return [entregar, entregue, aberta]
+}
+
+function IconeEtapa({ etapa }) {
+  if (etapa.estado === 'erro') return <XIcon size={13} />
+  if (etapa.estado === 'atual') return <ClockIcon size={13} />
+  if (etapa.estado === 'feito') return etapa.manual ? <HandIcon size={12} /> : <CheckIcon size={13} />
+  return <span style={{ width: 5, height: 5, borderRadius: 99, background: 'currentColor' }} />
+}
+
+export function TrilhoGuia({ g, onConfirmarAbertura }) {
+  const etapas = etapasDaGuia(g)
   return (
-    <div style={{
-      flex: '0 0 190px', alignSelf: 'stretch', display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 4,
-      padding: '6px 10px', background: 'var(--surface2)', borderRadius: 6,
-      borderLeft: `3px solid ${cfg.borda}`,
-    }}>
-      <span style={{ fontSize: 9.5, fontWeight: 800, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: 0.5 }}>
-        Aberta?{g.entrega_canal === 'manual' && g.entregue_em ? ' · entrega manual' : ''}
-      </span>
-      <span style={{ ...selo, alignSelf: 'flex-start', color: cfg.color, background: cfg.bg, border: `1px solid ${cfg.borda}`, fontSize: 11 }}>
-        <Icone size={12} /> {cfg.label}
-      </span>
-      {quando && <span style={{ fontSize: 10.5, color: 'var(--text2)' }}>{fmtQuando(quando)}{estado === 'abriu' && g.aberto_vezes > 1 ? ` · ${g.aberto_vezes}x` : ''}</span>}
-      {estado === 'manual' && (
-        <button className="btn btn-sm btn-accent" style={{ alignSelf: 'flex-start', fontSize: 11, padding: '3px 8px' }} onClick={() => onConfirmar(true)}
-          title="Entrega manual: confirme quando o cliente tiver recebido/aberto a guia">
-          <CheckIcon size={11} /> Confirmar abertura
-        </button>
-      )}
-      {estado === 'manual_ok' && (
-        <button className="btn btn-ghost btn-sm" style={{ alignSelf: 'flex-start', fontSize: 10.5, padding: '2px 6px' }} onClick={() => onConfirmar(false)} title="Desfazer a confirmação">
-          <Undo2Icon size={11} /> desfazer
-        </button>
-      )}
+    <div style={{ flex: '0 0 330px', display: 'flex', alignItems: 'flex-start' }}>
+      {etapas.map((e, i) => {
+        const c = COR_ETAPA[e.estado]
+        return (
+          <div key={i} style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', position: 'relative' }}>
+            {i > 0 && <span style={{ position: 'absolute', top: 11, right: '50%', width: '100%', height: 2, background: c.linha }} />}
+            <span style={{
+              position: 'relative', zIndex: 1, width: 24, height: 24, borderRadius: 99,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              // tom claro por cima de um fundo sólido: a linha do trilho não aparece através da bolinha
+              color: c.cor, background: `linear-gradient(${c.fundo}, ${c.fundo}), var(--surface)`, border: `2px solid ${e.estado === 'pendente' ? 'var(--border)' : c.cor}`,
+            }}><IconeEtapa etapa={e} /></span>
+            {e.confirmar ? (
+              <button className="btn btn-accent btn-sm" style={{ marginTop: 4, fontSize: 11, padding: '2px 8px' }}
+                onClick={() => onConfirmarAbertura(true)}
+                title="Entrega manual: confirme quando o cliente tiver recebido/aberto a guia">Confirmar</button>
+            ) : (
+              <span style={{ marginTop: 4, fontSize: 11, fontWeight: 600, textAlign: 'center', color: e.estado === 'pendente' ? 'var(--text3)' : c.cor }}>{e.label}</span>
+            )}
+            {e.data && <span style={{ fontSize: 10.5, color: 'var(--text3)', textAlign: 'center', whiteSpace: 'nowrap' }}>{e.data}</span>}
+            {e.desfazer && (
+              <button className="btn btn-ghost" style={{ fontSize: 10, padding: '0 4px', color: 'var(--text3)' }}
+                onClick={() => onConfirmarAbertura(false)} title="Desfazer a confirmação">desfazer</button>
+            )}
+          </div>
+        )
+      })}
     </div>
   )
 }
 
 function LinhaGuia({ g, marcada, enviando, onMarcar, onEntregar, onAbrir, onManual, onConfirmarAbertura, semDestino }) {
   const s = situacaoGuia(g)
-  const cfg = SITUACOES[s]
   const detalhes = [
     g.vencimento && `vence ${fmtData(g.vencimento)}`,
     fmtMoeda(g.valor_guia),
   ].filter(Boolean).join(' · ')
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', borderTop: '1px solid var(--border)', flexWrap: 'wrap' }}>
+    <div style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '12px 14px', borderTop: '1px solid var(--border)', flexWrap: 'wrap' }}>
       <input type="checkbox" checked={marcada} onChange={onMarcar} />
-      <div style={{ flex: '1 1 220px', minWidth: 0 }}>
+      <div style={{ flex: '1 1 200px', minWidth: 0 }}>
         <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text1)' }}>{g.titulo}</div>
         <div style={{ fontSize: 11.5, color: 'var(--text3)' }}>{detalhes || g.nome_arquivo}</div>
         {g.origem && <div style={{ fontSize: 10.5, color: 'var(--text3)', fontStyle: 'italic' }}>{g.origem}</div>}
         {s === 'falhou' && <div style={{ fontSize: 11.5, color: 'var(--danger)', marginTop: 2 }}>{g.entrega_erro}</div>}
       </div>
-      <ColunaAbertura g={g} onConfirmar={onConfirmarAbertura} />
-      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 2 }}>
-        <span style={{ ...selo, color: cfg.color, background: cfg.bg }}>
-          {s === 'aberta' || s === 'vista' ? <EyeIcon size={11} /> : s === 'entregue' ? <CheckIcon size={11} /> : null} {cfg.label}
-        </span>
-        {g.entregue_em && (
-          <span style={{ fontSize: 10.5, color: 'var(--text3)' }}>
-            entregue {fmtQuando(g.entregue_em)} · {g.entrega_canal === 'manual' ? 'manual' : g.entrega_canal === 'painel' ? 'aviso automático (link do painel)' : 'WhatsApp'}
-          </span>
-        )}
-        {g.visto_em && g.entregue_em && (
-          <span style={{ fontSize: 10.5, color: 'var(--accent)' }}>viu no painel {fmtQuando(g.visto_em)}</span>
-        )}
-        {g.aberto_em && g.entrega_canal !== 'manual' && (
-          <span style={{ fontSize: 10.5, color: 'var(--ok)' }}>
-            baixou/copiou {fmtQuando(g.aberto_ultimo_em || g.aberto_em)}{g.aberto_vezes > 1 ? ` · ${g.aberto_vezes}x` : ''}
-          </span>
-        )}
-      </div>
+      <TrilhoGuia g={g} onConfirmarAbertura={onConfirmarAbertura} />
       <div style={{ display: 'flex', gap: 4 }}>
         <button className="btn btn-icon btn-ghost" title="Ver a guia" onClick={onAbrir}><ExternalLinkIcon size={13} /></button>
         {g.entregue_em
@@ -362,7 +386,7 @@ function LinhaGuia({ g, marcada, enviando, onMarcar, onEntregar, onAbrir, onManu
           : <button className="btn btn-icon btn-ghost" title="Marcar entregue (por fora do WhatsApp)" onClick={() => onManual(true)}><CheckIcon size={13} /></button>}
         <button className={`btn btn-sm ${g.entregue_em ? 'btn-ghost' : 'btn-accent'}`} onClick={onEntregar} disabled={enviando || semDestino}
           title={semDestino ? 'Cadastre o WhatsApp da empresa na aba Empresas' : 'Enviar pelo WhatsApp do escritório'}>
-          <SendIcon size={12} /> {enviando ? 'Enviando…' : g.entregue_em ? 'Reenviar' : 'Entregar'}
+          <SendIcon size={12} /> {enviando ? 'Enviando…' : s === 'falhou' ? 'Tentar de novo' : g.entregue_em ? 'Reenviar' : 'Entregar'}
         </button>
       </div>
     </div>
