@@ -35,6 +35,7 @@ import HojePage from './pages/hoje/HojePage'
 import LicenciamentoPage from './pages/licenciamento/LicenciamentoPage'
 import CentralEntregasPage from './pages/entregas/CentralEntregasPage'
 import PedidosNfePage from './pages/pedidonfe/PedidosNfePage'
+import AdmissoesPage from './pages/admissao/AdmissoesPage'
 
 // Tela inicial pela URL (?tela=hoje, ?tela=documentos…) — é o que o app
 // instalado no tablet usa (start_url e atalhos do gestor.webmanifest).
@@ -180,6 +181,7 @@ export default function App() {
             {page === 'nfse' && <NfseEmissaoPage />}
             {page === 'nfsemei' && <NfseMeiPage />}
             {page === 'pedidosnfe' && <PedidosNfePage />}
+            {page === 'admissoes'  && <AdmissoesPage />}
             {page === 'assessor'   && <AssessorPage onNavigate={navigate} />}
             {page === 'agenda'     && <AgendaPage />}
             {page === 'licenciamento' && <LicenciamentoPage />}

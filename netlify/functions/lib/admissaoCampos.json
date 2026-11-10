@@ -1,0 +1,98 @@
+{
+  "_sobre": "Ficha de admissão (link ?admissao=). Fonte única: a página do candidato (src/pages/admissao), a validação (lib/admissao.js) e a planilha para o OneFlow leem daqui. 'coluna' é o cabeçalho na planilha; ajuste para bater com o modelo de importação do OneFlow. 'se': campo só aparece/é exigido quando outro campo tem um dos valores.",
+  "secoes": [
+    {
+      "id": "pessoal",
+      "titulo": "Dados pessoais",
+      "campos": [
+        { "id": "nome", "rotulo": "Nome completo", "tipo": "texto", "obrigatorio": true, "coluna": "Nome" },
+        { "id": "nome_social", "rotulo": "Nome social (se usar)", "tipo": "texto", "coluna": "Nome Social" },
+        { "id": "cpf", "rotulo": "CPF", "tipo": "cpf", "obrigatorio": true, "coluna": "CPF" },
+        { "id": "data_nascimento", "rotulo": "Data de nascimento", "tipo": "data", "obrigatorio": true, "coluna": "Data de Nascimento" },
+        { "id": "sexo", "rotulo": "Sexo", "tipo": "opcao", "obrigatorio": true, "opcoes": ["Masculino", "Feminino"], "coluna": "Sexo" },
+        { "id": "raca_cor", "rotulo": "Raça/cor", "tipo": "opcao", "obrigatorio": true, "opcoes": ["Branca", "Preta", "Parda", "Amarela", "Indígena", "Prefiro não informar"], "coluna": "Raça/Cor" },
+        { "id": "estado_civil", "rotulo": "Estado civil", "tipo": "opcao", "obrigatorio": true, "opcoes": ["Solteiro(a)", "Casado(a)", "União estável", "Divorciado(a)", "Separado(a)", "Viúvo(a)"], "coluna": "Estado Civil" },
+        { "id": "escolaridade", "rotulo": "Escolaridade", "tipo": "opcao", "obrigatorio": true, "opcoes": ["Não alfabetizado", "Fundamental incompleto", "Fundamental completo", "Médio incompleto", "Médio completo", "Superior incompleto", "Superior completo", "Pós-graduação", "Mestrado", "Doutorado"], "coluna": "Grau de Instrução" },
+        { "id": "nacionalidade", "rotulo": "Nacionalidade", "tipo": "texto", "obrigatorio": true, "padrao": "Brasileira", "coluna": "Nacionalidade" },
+        { "id": "municipio_nascimento", "rotulo": "Cidade onde nasceu", "tipo": "texto", "obrigatorio": true, "coluna": "Município de Nascimento" },
+        { "id": "uf_nascimento", "rotulo": "UF onde nasceu", "tipo": "uf", "obrigatorio": true, "coluna": "UF de Nascimento" },
+        { "id": "nome_mae", "rotulo": "Nome da mãe", "tipo": "texto", "obrigatorio": true, "coluna": "Nome da Mãe" },
+        { "id": "nome_pai", "rotulo": "Nome do pai", "tipo": "texto", "coluna": "Nome do Pai" },
+        { "id": "deficiencia", "rotulo": "Possui deficiência?", "tipo": "opcao", "obrigatorio": true, "opcoes": ["Não", "Física", "Auditiva", "Visual", "Intelectual", "Mental", "Múltipla", "Reabilitado"], "padrao": "Não", "coluna": "Deficiência" },
+        { "id": "primeiro_emprego", "rotulo": "É seu primeiro emprego com carteira assinada?", "tipo": "opcao", "obrigatorio": true, "opcoes": ["Não", "Sim"], "coluna": "Primeiro Emprego" }
+      ]
+    },
+    {
+      "id": "documentos",
+      "titulo": "Documentos",
+      "campos": [
+        { "id": "rg_numero", "rotulo": "RG — número", "tipo": "texto", "obrigatorio": true, "coluna": "RG" },
+        { "id": "rg_orgao", "rotulo": "RG — órgão emissor", "tipo": "texto", "obrigatorio": true, "dica": "Ex.: SSP", "coluna": "RG Órgão Emissor" },
+        { "id": "rg_uf", "rotulo": "RG — UF", "tipo": "uf", "obrigatorio": true, "coluna": "RG UF" },
+        { "id": "rg_data_emissao", "rotulo": "RG — data de emissão", "tipo": "data", "coluna": "RG Data de Emissão" },
+        { "id": "pis", "rotulo": "PIS/PASEP/NIS", "tipo": "pis", "dica": "Aparece na carteira de trabalho digital. Deixe vazio se não tiver.", "coluna": "PIS" },
+        { "id": "ctps_numero", "rotulo": "Carteira de trabalho — número", "tipo": "texto", "dica": "Na carteira digital o número é o CPF.", "coluna": "CTPS Número" },
+        { "id": "ctps_serie", "rotulo": "Carteira de trabalho — série", "tipo": "texto", "coluna": "CTPS Série" },
+        { "id": "ctps_uf", "rotulo": "Carteira de trabalho — UF", "tipo": "uf", "coluna": "CTPS UF" },
+        { "id": "titulo_eleitor", "rotulo": "Título de eleitor", "tipo": "texto", "coluna": "Título de Eleitor" },
+        { "id": "titulo_zona", "rotulo": "Título — zona", "tipo": "texto", "coluna": "Título Zona" },
+        { "id": "titulo_secao", "rotulo": "Título — seção", "tipo": "texto", "coluna": "Título Seção" },
+        { "id": "cnh_numero", "rotulo": "CNH — número (se tiver)", "tipo": "texto", "coluna": "CNH" },
+        { "id": "cnh_categoria", "rotulo": "CNH — categoria", "tipo": "texto", "coluna": "CNH Categoria" },
+        { "id": "cnh_validade", "rotulo": "CNH — validade", "tipo": "data", "coluna": "CNH Validade" },
+        { "id": "reservista", "rotulo": "Certificado de reservista — número", "tipo": "texto", "se": { "campo": "sexo", "valores": ["Masculino"] }, "coluna": "Reservista" }
+      ]
+    },
+    {
+      "id": "contato",
+      "titulo": "Contato e endereço",
+      "campos": [
+        { "id": "celular", "rotulo": "Celular (WhatsApp)", "tipo": "telefone", "obrigatorio": true, "dica": "O resumo da ficha chega neste WhatsApp.", "coluna": "Celular" },
+        { "id": "email", "rotulo": "E-mail", "tipo": "email", "coluna": "E-mail" },
+        { "id": "cep", "rotulo": "CEP", "tipo": "cep", "obrigatorio": true, "coluna": "CEP" },
+        { "id": "logradouro", "rotulo": "Rua/Avenida", "tipo": "texto", "obrigatorio": true, "coluna": "Logradouro" },
+        { "id": "numero", "rotulo": "Número", "tipo": "texto", "obrigatorio": true, "coluna": "Número" },
+        { "id": "complemento", "rotulo": "Complemento", "tipo": "texto", "coluna": "Complemento" },
+        { "id": "bairro", "rotulo": "Bairro", "tipo": "texto", "obrigatorio": true, "coluna": "Bairro" },
+        { "id": "municipio", "rotulo": "Cidade", "tipo": "texto", "obrigatorio": true, "coluna": "Município" },
+        { "id": "uf", "rotulo": "UF", "tipo": "uf", "obrigatorio": true, "coluna": "UF" }
+      ]
+    },
+    {
+      "id": "banco",
+      "titulo": "Dados bancários (para o salário)",
+      "campos": [
+        { "id": "banco", "rotulo": "Banco", "tipo": "texto", "dica": "Nome ou código. Ex.: 341 Itaú", "coluna": "Banco" },
+        { "id": "agencia", "rotulo": "Agência", "tipo": "texto", "coluna": "Agência" },
+        { "id": "conta", "rotulo": "Conta com dígito", "tipo": "texto", "coluna": "Conta" },
+        { "id": "tipo_conta", "rotulo": "Tipo de conta", "tipo": "opcao", "opcoes": ["Corrente", "Poupança", "Salário"], "coluna": "Tipo de Conta" },
+        { "id": "pix", "rotulo": "Chave PIX", "tipo": "texto", "coluna": "Chave PIX" }
+      ]
+    },
+    {
+      "id": "beneficios",
+      "titulo": "Vale-transporte e observações",
+      "campos": [
+        { "id": "vale_transporte", "rotulo": "Vai usar vale-transporte?", "tipo": "opcao", "obrigatorio": true, "opcoes": ["Não", "Sim"], "coluna": "Vale-Transporte" },
+        { "id": "vt_detalhe", "rotulo": "Quais ônibus/linhas e quantas passagens por dia?", "tipo": "textarea", "obrigatorio": true, "se": { "campo": "vale_transporte", "valores": ["Sim"] }, "coluna": "Vale-Transporte Detalhe" },
+        { "id": "observacoes", "rotulo": "Alguma observação para o RH?", "tipo": "textarea", "coluna": "Observações do Funcionário" }
+      ]
+    }
+  ],
+  "parentescos": ["Filho(a)", "Enteado(a)", "Cônjuge", "Companheiro(a)", "Pai/Mãe", "Outro"],
+  "anexos": [
+    { "id": "foto", "rotulo": "Foto do rosto (tipo 3x4)", "dica": "Fundo claro, rosto de frente, sem óculos escuros.", "obrigatorio": true, "camera": "user", "max": 1 },
+    { "id": "identidade", "rotulo": "RG ou CNH — frente e verso", "obrigatorio": true, "camera": "environment", "max": 4 },
+    { "id": "cpf", "rotulo": "CPF (se não aparece no RG/CNH)", "camera": "environment", "max": 2 },
+    { "id": "residencia", "rotulo": "Comprovante de residência (últimos 3 meses)", "obrigatorio": true, "camera": "environment", "max": 2 },
+    { "id": "ctps", "rotulo": "Carteira de trabalho (print da digital ou foto da física)", "camera": "environment", "max": 4 },
+    { "id": "titulo", "rotulo": "Título de eleitor", "camera": "environment", "max": 2 },
+    { "id": "reservista", "rotulo": "Certificado de reservista", "camera": "environment", "max": 2, "se": { "campo": "sexo", "valores": ["Masculino"] } },
+    { "id": "escolaridade", "rotulo": "Comprovante de escolaridade", "camera": "environment", "max": 3 },
+    { "id": "certidao", "rotulo": "Certidão de nascimento ou casamento", "camera": "environment", "max": 2, "se": { "campo": "estado_civil", "valores": ["Casado(a)", "União estável", "Divorciado(a)", "Separado(a)", "Viúvo(a)"] } },
+    { "id": "dependentes", "rotulo": "Dependentes: certidão de nascimento/CPF (e cartão de vacina dos filhos até 7 anos)", "camera": "environment", "max": 12, "seDependentes": true },
+    { "id": "banco", "rotulo": "Cartão ou extrato com agência e conta", "camera": "environment", "max": 2 },
+    { "id": "aso", "rotulo": "Exame admissional (ASO), se já fez", "camera": "environment", "max": 3 },
+    { "id": "outros", "rotulo": "Outros documentos", "camera": "environment", "max": 6 }
+  ]
+}
