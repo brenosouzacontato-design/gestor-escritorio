@@ -173,9 +173,19 @@ export async function obterDocumentosPorObrigacao(obrigacaoIds) {
     // quebrar enquanto o schema não foi aplicado
     .select('*')
     .in('obrigacao_id', obrigacaoIds)
-    .eq('status', 'confirmado');
+    .eq('status', 'confirmado')
+    .order('created_at', { ascending: true });
   if (error) throw error;
-  return Object.fromEntries(data.map((d) => [d.obrigacao_id, d]));
+  // Uma obrigação pode ter mais de um anexo (guia recalculada, comprovante,
+  // holerite…). Fica a guia paga, se alguma foi paga — senão a paga
+  // "sumia" atrás de outro anexo e voltava a aparecer em aberto no painel —;
+  // fora isso, o anexo mais recente.
+  const porObrigacao = {};
+  for (const d of data || []) {
+    const atual = porObrigacao[d.obrigacao_id];
+    if (!atual || !atual.pago_em || d.pago_em) porObrigacao[d.obrigacao_id] = d;
+  }
+  return porObrigacao;
 }
 
 export async function obterResumoFinanceiro(clienteId, { dataInicio, dataFim }) {
@@ -882,11 +892,11 @@ export async function obterHonorariosPainel(clienteId, competencia) {
 // Grava o código de barras e o PIX copia e cola lidos da guia no navegador
 // (codigosGuia.js) — netlify/functions/painel-codigos-guia.js confere os
 // dígitos verificadores/CRC antes de gravar e devolve o que ficou valendo.
-export async function salvarCodigosGuia(documentoId, { linhasDigitaveis, pixCopiaCola }) {
+export async function salvarCodigosGuia(documentoId, { linhasDigitaveis, pixCopiaCola }, { releitura = false } = {}) {
   const resp = await fetch('/.netlify/functions/painel-codigos-guia', {
     method: 'POST',
     headers: await cabecalhosFunctions(),
-    body: JSON.stringify({ documentoId, linhasDigitaveis, pixCopiaCola }),
+    body: JSON.stringify({ documentoId, linhasDigitaveis, pixCopiaCola, releitura }),
   });
   if (!resp.ok) {
     const erro = await resp.json().catch(() => ({}));

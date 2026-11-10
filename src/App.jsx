@@ -6,6 +6,7 @@ import SeletorTema from './components/SeletorTema'
 import { useStore } from './store'
 import { useTelaNoHistorico } from './lib/historico'
 import { ToastContainer } from './components/shared'
+import { AvisoPainelHost } from './components/AvisoPainelModal'
 import { sair } from './components/ComLogin'
 import NovaTarefaModal from './components/NovaTarefaModal'
 import OneflowConfigModal from './components/OneflowConfigModal'
@@ -198,6 +199,7 @@ export default function App() {
       {showNotifs  && <NotificacoesPanel onClose={() => setShowNotifs(false)} />}
       <BuscaRapida aberta={buscaAberta} onFechar={() => setBuscaAberta(false)} onNavigate={navigate} badges={badges} />
       <ToastContainer />
+      <AvisoPainelHost />
     </div>
   )
 }

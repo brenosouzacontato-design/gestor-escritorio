@@ -91,7 +91,7 @@ async function entregarNota(sb, c, n) {
     const { error } = await sb.storage.from(BUCKET).upload(caminho, pdf, { contentType: 'application/pdf', upsert: true })
     if (!error) await ok(sb.from('nfse_mei_notas').update({ pdf_path: caminho }).eq('id', n.id))
   }
-  const nome = `NFS-e ${n.numero || ''} ${(n.tomador_nome || '').slice(0, 30)}`.trim()
+  const nome = `NFS-e ${n.numero || ''} ${(n.tomador_nome || '').slice(0, 60)}`.trim()
   for (const [conteudo, ext, mime, legenda] of [
     [pdf, 'pdf', 'application/pdf', `✅ NFS-e ${n.numero || ''} emitida${n.tomador_nome ? ` — ${n.tomador_nome}` : ''}
 Valor: ${brl(n.valor)}`],

@@ -45,8 +45,20 @@ function corpoTexto(versao, numero, texto) {
     : { number: numero, textMessage: { text: texto } }
 }
 
+// Nome de arquivo que abre no celular: "/" (ex.: "LOGISTICA S/A") vira pasta e o anexo não abre;
+// \ : * ? " < > | e controles também são proibidos. Tira espaço/ponto antes da extensão.
+function nomeArquivoSeguro(nome, padrao = 'documento') {
+  const texto = String(nome || '')
+  const ext = (/\.[A-Za-z0-9]{1,5}$/.exec(texto) || [''])[0]
+  const base = texto.slice(0, texto.length - ext.length)
+    .replace(/[\\/:*?"<>|\u0000-\u001f]+/g, '-')
+    .replace(/\s+/g, ' ')
+    .replace(/^[\s.-]+|[\s.-]+$/g, '')
+  return (base || padrao) + ext
+}
+
 function corpoDocumento(versao, numero, { media, fileName, caption = '', mimetype = 'application/pdf' }) {
-  const midia = { mediatype: 'document', mimetype, fileName, caption, media }
+  const midia = { mediatype: 'document', mimetype, fileName: nomeArquivoSeguro(fileName), caption, media }
   return versao >= 2 ? { number: numero, ...midia } : { number: numero, mediaMessage: midia }
 }
 
@@ -171,4 +183,19 @@ function numeroWhatsapp(valor) {
   return d.length >= 12 && d.length <= 13 ? d : null
 }
 
-module.exports = { enviarMensagem, enviarDocumento, numeroWhatsapp, versaoEvolution, corpoTexto, corpoDocumento }
+// Horário de silêncio dos envios automáticos para clientes (aviso de guia):
+// WHATSAPP_SILENCIO no Netlify, "início-fim" em horas de Brasília. Padrão
+// "19-7" = nada sai das 19h às 06h59; o que ficar retido sai a partir das 7h.
+// "0" ou "desligado" desliga. Envio feito na mão (Central) não é afetado.
+function horarioDeSilencio(agora = new Date(), config = process.env.WHATSAPP_SILENCIO) {
+  const cfg = String(config ?? '19-7').trim()
+  const m = /^(\d{1,2})\s*-\s*(\d{1,2})$/.exec(cfg)
+  if (!m) return false
+  const inicio = Number(m[1]) % 24
+  const fim = Number(m[2]) % 24
+  if (inicio === fim) return false
+  const hora = Number(new Intl.DateTimeFormat('en-GB', { timeZone: 'America/Sao_Paulo', hour: '2-digit', hourCycle: 'h23' }).format(agora))
+  return inicio > fim ? (hora >= inicio || hora < fim) : (hora >= inicio && hora < fim)
+}
+
+module.exports = { horarioDeSilencio, enviarMensagem, enviarDocumento, numeroWhatsapp, versaoEvolution, corpoTexto, corpoDocumento }

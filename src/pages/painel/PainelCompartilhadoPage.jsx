@@ -12,6 +12,7 @@ import PixParaIdentificar, { usePixPedidos } from './PixParaIdentificar';
 import { descreverAparelho } from './aparelho';
 import { abrirLinkAssinado, criarLinkAssinado } from '../documentos/documentosApi';
 import { lerCodigosDaGuia } from './codigosGuia';
+import AvisoPainelModal from '../../components/AvisoPainelModal';
 import { GraficoFaturamento, ComparativoDas, NotasEntrada, TarefasDoCliente } from './PainelClientePage';
 import { calcularAliquotaNominal } from '../../lib/simplesNacional';
 import {
@@ -220,6 +221,8 @@ function PainelCompartilhado({ clienteId, competencia: competenciaInicial, admin
   const [carregando, setCarregando] = useState(true);
   const [erro, setErro] = useState(null);
   const [editandoPainel, setEditandoPainel] = useState(false);
+  // aviso no WhatsApp do cliente: 'painel' (botão) ou 'edicao' (ao concluir a edição)
+  const [avisoAberto, setAvisoAberto] = useState(null);
   const [erroEdicao, setErroEdicao] = useState(null);
   const [nfseEmitidas, setNfseEmitidas] = useState([]); // notas de serviço emitidas pelo gestor (módulo NFS-e)
   const [nfsePendentes, setNfsePendentes] = useState([]); // notas a emitir em que falta informação (o cliente completa)
@@ -314,7 +317,8 @@ function PainelCompartilhado({ clienteId, competencia: competenciaInicial, admin
           obterGerenciaisPorCompetencia(clienteId, competenciasDas).catch(() => ({})),
         ]);
         const gerenciaisPorComp = { ...gerenciaisOutras, ...(gerenciais ? { [competencia]: gerenciais } : {}) };
-        setDados({ cliente, impostos, outrasObrigacoes, tarefasArea, anexos, anexosTarefa, gerenciais, gerenciaisPorComp, historico, situacaoFiscal, cndManual, honorarios, configPix, notasEntrada, tarefasCliente, recados });
+        const visiveis = filtrarOutrasCompetencias({ impostos, outrasObrigacoes, tarefasArea, anexos }, competencia);
+        setDados({ cliente, ...visiveis, anexos, anexosTarefa, gerenciais, gerenciaisPorComp, historico, situacaoFiscal, cndManual, honorarios, configPix, notasEntrada, tarefasCliente, recados });
       } catch (e) {
         setErro(e.message);
       } finally {
@@ -352,31 +356,52 @@ function PainelCompartilhado({ clienteId, competencia: competenciaInicial, admin
   // gravados já conferidos (painel-codigos-guia.js). Uma guia por vez, pra
   // não baixar e desenhar vários PDFs ao mesmo tempo no celular do cliente.
   // Só roda quando a coluna codigos_extraidos_em existe (schema aplicado).
+  // No painel aberto pelo escritório (admin), guia já lida que ficou sem
+  // nenhum código ganha uma releitura por sessão; o botão "Ler códigos de
+  // novo" do modo de edição força na hora.
   const codigosEmLeitura = useRef(new Set());
+  const [relendo, setRelendo] = useState(() => new Set()); // ids sendo relidos pelo botão
+  const lerCodigos = async (anexo, releitura) => {
+    const lidos = await lerCodigosDaGuia(await criarLinkAssinado(anexo.storage_path), anexo.tipo_mime);
+    const r = await salvarCodigosGuia(anexo.id, lidos, { releitura });
+    setDados((d) => d && {
+      ...d,
+      anexos: Object.fromEntries(Object.entries(d.anexos).map(([k, a]) => [k, a.id === anexo.id
+        ? { ...a, linha_digitavel: r.linhaDigitavel, pix_copia_cola: r.pixCopiaCola, codigos_extraidos_em: new Date().toISOString() }
+        : a])),
+    });
+    return r;
+  };
+  const semCodigo = (a) => !a.linha_digitavel && !a.pix_copia_cola;
   useEffect(() => {
     if (!dados) return;
     const pendentes = dados.impostos
       .map((o) => dados.anexos[o.id])
-      .filter((a) => a && 'codigos_extraidos_em' in a && !a.codigos_extraidos_em && !a.pago_em && !codigosEmLeitura.current.has(a.id));
+      .filter((a) => a && 'codigos_extraidos_em' in a && !a.pago_em && !codigosEmLeitura.current.has(a.id)
+        && (!a.codigos_extraidos_em || (admin && semCodigo(a))));
     if (pendentes.length === 0) return;
     pendentes.forEach((a) => codigosEmLeitura.current.add(a.id));
     (async () => {
       for (const anexo of pendentes) {
         try {
-          const lidos = await lerCodigosDaGuia(await criarLinkAssinado(anexo.storage_path), anexo.tipo_mime);
-          const r = await salvarCodigosGuia(anexo.id, lidos);
-          setDados((d) => d && {
-            ...d,
-            anexos: Object.fromEntries(Object.entries(d.anexos).map(([k, a]) => [k, a.id === anexo.id
-              ? { ...a, linha_digitavel: r.linhaDigitavel, pix_copia_cola: r.pixCopiaCola, codigos_extraidos_em: new Date().toISOString() }
-              : a])),
-          });
+          await lerCodigos(anexo, !!anexo.codigos_extraidos_em);
         } catch {
           // falha de rede/leitura: tenta de novo na próxima vez que o painel abrir
         }
       }
     })();
   }, [dados]);
+  const relerCodigos = async (anexo) => {
+    setRelendo((s) => new Set(s).add(anexo.id));
+    try {
+      const r = await lerCodigos(anexo, true);
+      setErroEdicao(r.linhaDigitavel || r.pixCopiaCola ? null
+        : 'Não achei código de barras nem QR do PIX nessa guia (PDF só com imagem, ou guia sem PIX). Confira o arquivo anexado.');
+    } catch (e) {
+      setErroEdicao(`Não consegui ler a guia: ${e.message}`);
+    }
+    setRelendo((s) => { const n = new Set(s); n.delete(anexo.id); return n; });
+  };
 
   // `descricao` diz o que é o arquivo no aviso pro escritório — só o link
   // público avisa (o download feito na prévia de dentro do app não conta)
@@ -404,6 +429,10 @@ function PainelCompartilhado({ clienteId, competencia: competenciaInicial, admin
     }
   };
   const propsOc = { secoesOcultas, editando, onToggle: toggleSecao };
+  // Itens ocultos um a um (guia, obrigação, tarefa): mesma coluna das seções,
+  // com a chave "item:<id>" — o id da obrigação/tarefa vale em qualquer competência
+  const itemOculto = (id) => secoesOcultas.includes(`item:${id}`);
+  const alternarItem = (id) => toggleSecao(`item:${id}`);
 
   // Correções do modo de edição: aplica na tela na hora e desfaz se o banco recusar
   const salvarGerencial = async (campo, valor) => {
@@ -470,6 +499,16 @@ function PainelCompartilhado({ clienteId, competencia: competenciaInicial, admin
   };
 
   const guias = dados && montarGuias(dados, competencia).map((g) => ({ ...g, lendo: g.anexo && lendoGuias.has(g.anexo.id) }));
+  // O cliente só vê o que está em aberto, de qualquer competência (as da
+  // competência costumam ser pagas no mês seguinte; o que ficou pra trás e
+  // não foi pago continua aparecendo). Pago/concluído some da lista dele; no
+  // modo de edição o escritório ainda vê, esmaecido. Débito que a Receita
+  // ainda cobra aparece em Pendências pelo Relatório de Situação Fiscal.
+  const guiaResolvida = (g) => g.paga || (g.concluida && g.dias != null && g.dias < 0);
+  const itemResolvido = (it) => (it.status === 'concluido' || it.status === 'nao_aplica')
+    // documento entregue na própria competência (ex: holerite, recibo) continua pra baixar
+    && !(it.anexo && it.competencia === competencia);
+  const aparece = (id, resolvido) => editando || (!resolvido && !itemOculto(id));
   const pendencias = dados && montarPendencias(dados.situacaoFiscal);
   // o que foi atribuído ao cliente já aparece em "Suas tarefas" — não repete na lista geral
   const idsDoCliente = new Set((dados?.tarefasCliente || []).map((t) => t.id));
@@ -479,8 +518,8 @@ function PainelCompartilhado({ clienteId, competencia: competenciaInicial, admin
   // vencer — senão o total mostraria um valor que ele não tem como conferir
   // "Aguardando guia" fica só na lista de impostos: sem valor nem guia, não entra nos cards
   // de vencidos / a vencer nem na conta de "tudo quitado".
-  const guiasCard = guias && !oculta('impostos') ? guias.filter((g) => !g.aguardandoGuia) : [];
-  const honorariosCard = oculta('honorarios') ? [] : honorarios;
+  const guiasCard = guias && !oculta('impostos') ? guias.filter((g) => !g.aguardandoGuia && !itemOculto(g.id)) : [];
+  const honorariosCard = oculta('honorarios') ? [] : honorarios.filter((h) => !itemOculto(h.id));
   const pendenciasCard = pendencias && !oculta('pendencias') ? pendencias : [];
   const honorariosAVencer = honorariosCard.filter((h) => !h.concluida && !(h.dias != null && h.dias < 0));
   const honorariosVencidos = honorariosCard.filter(alertaVencida);
@@ -500,7 +539,7 @@ function PainelCompartilhado({ clienteId, competencia: competenciaInicial, admin
   const guiasVencidas = guiasCard.filter(alertaVencida);
   // Total da lista de impostos: só o que ainda falta pagar, com a mesma regra
   // dos cards — guia vencida em que o escritório já deu baixa não conta
-  const guiasEmAberto = (guias || []).filter((g) => !g.semMovimento && !g.paga && !(g.concluida && g.dias != null && g.dias < 0));
+  const guiasEmAberto = (guias || []).filter((g) => !itemOculto(g.id) && !g.semMovimento && !g.paga && !(g.concluida && g.dias != null && g.dias < 0));
   // "Vencidos" junta as guias vencidas sem baixa, os honorários atrasados e
   // os débitos do Relatório de Situação Fiscal (que por definição já
   // passaram do prazo)
@@ -517,7 +556,7 @@ function PainelCompartilhado({ clienteId, competencia: competenciaInicial, admin
   const semMovimento = dados?.gerenciais?.faturamento_periodo != null && Number(dados.gerenciais.faturamento_periodo) === 0;
 
   return (
-    <RecadosContext.Provider value={{ recados: dados?.recados || {}, editando, salvar: salvarRecado }}>
+    <RecadosContext.Provider value={{ recados: dados?.recados || {}, editando, salvar: salvarRecado, itemOculto, alternarItem }}>
     <div style={{ minHeight: '100vh', background: 'var(--bg)', padding: '24px 12px' }}>
       <div style={{ maxWidth: largura, margin: '0 auto', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--r-xl)', overflow: 'hidden' }}>
 
@@ -544,7 +583,20 @@ function PainelCompartilhado({ clienteId, competencia: competenciaInicial, admin
                 {opcoesComp.map((c) => <option key={c} value={c} style={{ color: '#000' }}>Competência {c}</option>)}
               </select>
               {admin && (
-                <button type="button" onClick={() => setEditandoPainel((v) => !v)}
+                <button type="button" onClick={() => setAvisoAberto('painel')}
+                  title="Avisar o cliente no WhatsApp, com o link do painel e as guias novas"
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: 5, height: 30, borderRadius: 8, padding: '0 10px', flexShrink: 0,
+                    cursor: 'pointer', fontSize: 11, fontWeight: 600, color: '#fff', whiteSpace: 'nowrap',
+                    border: '1px solid rgba(255,255,255,.2)', background: 'rgba(255,255,255,.1)' }}>
+                  <SendIcon size={13} /> Notificar cliente
+                </button>
+              )}
+              {admin && (
+                <button type="button" onClick={() => {
+                  // ao concluir a edição, pergunta se avisa o cliente
+                  if (editandoPainel) setAvisoAberto('edicao');
+                  setEditandoPainel((v) => !v);
+                }}
                   title={editandoPainel ? 'Sair do modo de edição' : 'Ocultar seções e corrigir valores antes de compartilhar'}
                   style={{ display: 'inline-flex', alignItems: 'center', gap: 5, height: 30, borderRadius: 8, padding: '0 10px', flexShrink: 0,
                     cursor: 'pointer', fontSize: 11, fontWeight: 600, color: '#fff', whiteSpace: 'nowrap',
@@ -569,6 +621,9 @@ function PainelCompartilhado({ clienteId, competencia: competenciaInicial, admin
                 ? <span>Última visualização do cliente: <b style={{ color: '#fff' }}>{fmtDataHora(ultimaVisualizacao.visualizado_em)}</b> ({fmtHaQuanto(ultimaVisualizacao.visualizado_em)}){ultimaVisualizacao.competencia ? ` · competência ${ultimaVisualizacao.competencia}` : ''}</span>
                 : <span>O cliente ainda não abriu o link do painel.</span>}
             </div>
+          )}
+          {admin && avisoAberto && (
+            <AvisoPainelModal clienteId={clienteId} motivo={avisoAberto} onClose={() => setAvisoAberto(null)} />
           )}
           {admin ? <EnviarNotificacao clienteId={clienteId} competencia={competencia} /> : registrar && <AtivarNotificacoes clienteId={clienteId} />}
           {admin && eventos.length > 0 && (
@@ -704,9 +759,14 @@ function PainelCompartilhado({ clienteId, competencia: competenciaInicial, admin
               <Ocultavel chave="impostos" {...propsOc}>
               <Secao titulo="Impostos e guias — por vencimento" icone={<CalendarIcon size={14} />}
                 extra={temValor(guiasEmAberto) && <Total valor={somaValores(guiasEmAberto)} />}>
-                {guias.length === 0
+                {!guias.some((g) => aparece(g.id, guiaResolvida(g)))
                   ? <Vazio>Nenhum imposto em aberto nem com vencimento no período.</Vazio>
-                  : <div style={LISTA}>{guias.map((g) => <LinhaGuia key={g.id} g={g} onBaixar={baixar} onCopiar={copiouCodigo} editando={editando} onSalvarValor={salvarValorGuia} onMarcarPaga={salvarGuiaPaga} />)}</div>}
+                  : <div style={LISTA}>{guias.map((g) => (
+                    <ItemOcultavel key={g.id} id={g.id} resolvido={guiaResolvida(g)}>
+                      <LinhaGuia g={g} onBaixar={baixar} onCopiar={copiouCodigo} editando={editando} onSalvarValor={salvarValorGuia} onMarcarPaga={salvarGuiaPaga}
+                        onRelerCodigos={relerCodigos} relendo={!!g.anexo && relendo.has(g.anexo.id)} />
+                    </ItemOcultavel>
+                  ))}</div>}
               </Secao>
               </Ocultavel>
 
@@ -729,11 +789,13 @@ function PainelCompartilhado({ clienteId, competencia: competenciaInicial, admin
               )}
 
               {/* ── Honorários (módulo Honorários) + chave PIX pra copiar ── */}
-              {honorarios.length > 0 && (
+              {honorarios.some((h) => aparece(h.id, h.concluida)) && (
                 <Ocultavel chave="honorarios" {...propsOc}>
                 <Secao titulo="Honorários" icone={<WalletIcon size={14} />}
-                  extra={honorarios.some((h) => !h.concluida) && <Total valor={somaValores(honorarios.filter((h) => !h.concluida))} />}>
-                  <div style={LISTA}>{honorarios.map((h) => <LinhaHonorario key={h.id} h={h} />)}</div>
+                  extra={honorariosCard.some((h) => !h.concluida) && <Total valor={somaValores(honorariosCard.filter((h) => !h.concluida))} />}>
+                  <div style={LISTA}>{honorarios.map((h) => (
+                    <ItemOcultavel key={h.id} id={h.id} resolvido={h.concluida}><LinhaHonorario h={h} /></ItemOcultavel>
+                  ))}</div>
                   {honorarios.some((h) => !h.concluida) && dados.configPix?.chavePix && (
                     <ChavePix chave={dados.configPix.chavePix} favorecido={dados.configPix.favorecido} />
                   )}
@@ -778,10 +840,12 @@ function PainelCompartilhado({ clienteId, competencia: competenciaInicial, admin
               </Ocultavel>
 
               {/* ── 5. Obrigações e tarefas (Fiscal/Folha) ── */}
-              {itensArea.length > 0 && (
+              {itensArea.some((it) => aparece(it.id, itemResolvido(it))) && (
                 <Ocultavel chave="obrigacoes" {...propsOc}>
                 <Secao titulo="Obrigações e tarefas — por vencimento" icone={<ClipboardListIcon size={14} />}>
-                  <div style={LISTA}>{itensArea.map((it) => <LinhaObrigacao key={it.id} it={it} onBaixar={baixar} />)}</div>
+                  <div style={LISTA}>{itensArea.map((it) => (
+                    <ItemOcultavel key={it.id} id={it.id} resolvido={itemResolvido(it)}><LinhaObrigacao it={it} onBaixar={baixar} /></ItemOcultavel>
+                  ))}</div>
                 </Secao>
                 </Ocultavel>
               )}
@@ -796,6 +860,20 @@ function PainelCompartilhado({ clienteId, competencia: competenciaInicial, admin
     </div>
     </RecadosContext.Provider>
   );
+}
+
+// Itens de outras competências (atrasados ou que vencem no período): só o
+// que ainda pede ação do cliente. Imposto só com a guia anexada e não paga;
+// obrigação e tarefa só se ainda não foram concluídas. Os da competência de
+// referência (e os sem competência) seguem como sempre.
+function filtrarOutrasCompetencias({ impostos, outrasObrigacoes, tarefasArea, anexos }, competencia) {
+  const outra = (item) => !!item.competencia && item.competencia !== competencia;
+  const concluida = (o) => o.status === 'concluido' || o.status === 'nao_aplica';
+  return {
+    impostos: impostos.filter((o) => !outra(o) || (anexos[o.id] && !anexos[o.id].pago_em)),
+    outrasObrigacoes: outrasObrigacoes.filter((o) => !outra(o) || !concluida(o)),
+    tarefasArea: tarefasArea.filter((t) => !outra(t) || !t.concluida),
+  };
 }
 
 // Impostos da competência: com guia anexada, ou "aguardando guia" se ainda não concluídos. Exceção: o DAS de um mês
@@ -1168,7 +1246,40 @@ function Indicador({ icone, titulo, valor, sub, s }) {
 // detalhes embaixo, valor/ações à direita.
 // Recados por linha: `recados` = { chave do item: mensagem }; no modo de
 // edição cada linha ganha a caixa pra escrever/apagar o recado dela.
-const RecadosContext = createContext({ recados: {}, editando: false, salvar: () => {} });
+const RecadosContext = createContext({ recados: {}, editando: false, salvar: () => {}, itemOculto: () => false, alternarItem: () => {} });
+
+// Uma guia / obrigação / tarefa ocultável pelo escritório. O cliente nunca vê
+// o item oculto; no modo de edição ele continua na lista, esmaecido, com o
+// botão para mostrar de novo.
+function ItemOcultavel({ id, resolvido = false, children }) {
+  const { editando, itemOculto, alternarItem } = useContext(RecadosContext);
+  const oculto = itemOculto(id);
+  if (!editando) return oculto || resolvido ? null : children;
+  if (resolvido) {
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+        <span title="Pago ou concluído: sai sozinho da lista do cliente"
+          style={{ alignSelf: 'flex-end', display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 10.5, fontWeight: 700, borderRadius: 99,
+            padding: '2px 9px', background: 'var(--ok-dim)', color: 'var(--ok)' }}>
+          <CheckIcon size={11} /> Pago/concluído — não aparece pro cliente
+        </span>
+        <div style={{ opacity: 0.4 }}>{children}</div>
+      </div>
+    );
+  }
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+      <button type="button" onClick={() => alternarItem(id)}
+        title={oculto ? 'O cliente não vê este item — clique para mostrar' : 'Ocultar este item do cliente'}
+        style={{ alignSelf: 'flex-end', display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 10.5, fontWeight: 700, border: 'none', borderRadius: 99,
+          padding: '2px 9px', cursor: 'pointer', background: oculto ? 'var(--surface3)' : 'var(--accent-dim)', color: oculto ? 'var(--text3)' : 'var(--accent)' }}>
+        {oculto ? <EyeOffIcon size={11} /> : <EyeIcon size={11} />}
+        {oculto ? 'Oculto pro cliente — mostrar' : 'Ocultar do cliente'}
+      </button>
+      <div style={{ opacity: oculto ? 0.4 : 1 }}>{children}</div>
+    </div>
+  );
+}
 
 function RecadoLinha({ chave }) {
   const { recados, editando, salvar } = useContext(RecadosContext);
@@ -1208,7 +1319,7 @@ function Linha({ chave, corBorda, titulo, competencia, detalhes, direita }) {
   );
 }
 
-function LinhaGuia({ g, onBaixar, onCopiar, editando, onSalvarValor, onMarcarPaga }) {
+function LinhaGuia({ g, onBaixar, onCopiar, editando, onSalvarValor, onMarcarPaga, onRelerCodigos, relendo = false }) {
   // só dá pra corrigir o valor de guia anexada (é gravado no documento) e
   // com a coluna valor_guia já existente no banco
   const editavel = editando && !g.semMovimento && g.anexo && 'valor_guia' in g.anexo;
@@ -1272,6 +1383,14 @@ function LinhaGuia({ g, onBaixar, onCopiar, editando, onSalvarValor, onMarcarPag
           {g.anexo?.comprovante_path && (
             <BotaoGuia anexo={{ storage_path: g.anexo.comprovante_path, nome_arquivo: g.anexo.comprovante_nome || 'comprovante' }} onBaixar={onBaixar}
               label="Comprovante" descricao={`Comprovante — ${g.titulo} ${g.competencia || ''}`.trim()} />
+          )}
+          {editando && g.anexo && !g.semMovimento && !g.paga && !g.anexo.linha_digitavel && !g.anexo.pix_copia_cola && onRelerCodigos && (
+            <button type="button" onClick={() => onRelerCodigos(g.anexo)} disabled={relendo}
+              title="O painel não achou o código de barras nem o PIX desta guia. Ler o PDF de novo"
+              style={{ fontSize: 11, fontWeight: 600, color: 'var(--accent)', background: 'var(--surface)', border: '1px dashed var(--accent)',
+                borderRadius: 8, padding: '5px 9px', cursor: relendo ? 'wait' : 'pointer', whiteSpace: 'nowrap', opacity: relendo ? 0.6 : 1 }}>
+              {relendo ? 'Lendo a guia…' : 'Ler códigos de novo'}
+            </button>
           )}
           {editando && g.anexo && !g.semMovimento && (
             <button type="button" onClick={() => onMarcarPaga(g.anexo, !g.paga)}

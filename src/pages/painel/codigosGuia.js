@@ -10,6 +10,11 @@
 // 47 do boleto bancário, com os espaços/pontos que o PDF põe entre os blocos
 const RE_ARRECADACAO = /8\d{10}[\s.-]*\d[\s.-]+\d{11}[\s.-]*\d[\s.-]+\d{11}[\s.-]*\d[\s.-]+\d{11}[\s.-]*\d/g;
 const RE_BOLETO = /\d{5}[.\s]?\d{5}\s+\d{5}[.\s]?\d{6}\s+\d{5}[.\s]?\d{6}\s+\d\s+\d{14}/g;
+// alguns PDFs trazem a linha toda emendada, sem espaço entre os blocos
+const RE_EMENDADA = /(?<!\d)(?:8\d{47}|\d{47})(?!\d)/g;
+// guia junto com outros documentos no mesmo PDF (ex: extrato do PGDAS-D + DAS):
+// procura em todas as páginas, até esse limite
+const MAX_PAGINAS = 10;
 
 let pdfjsPronto = null;
 async function carregarPdfjs() {
@@ -50,13 +55,13 @@ export async function lerCodigosDaGuia(url, tipoMime) {
   const pdf = await pdfjs.getDocument({ data: bytes }).promise;
   const linhas = [];
   let pix = null;
-  for (let n = 1; n <= Math.min(pdf.numPages, 2); n++) {
+  for (let n = 1; n <= Math.min(pdf.numPages, MAX_PAGINAS); n++) {
     const pagina = await pdf.getPage(n);
     const texto = (await pagina.getTextContent()).items.map((i) => i.str).join(' ');
-    linhas.push(...(texto.match(RE_ARRECADACAO) || []), ...(texto.match(RE_BOLETO) || []));
+    linhas.push(...(texto.match(RE_ARRECADACAO) || []), ...(texto.match(RE_BOLETO) || []), ...(texto.match(RE_EMENDADA) || []));
     if (!pix) {
-      // escala 2 já basta pro QR das guias da Receita; 3 é a segunda chance
-      for (const escala of [2, 3]) {
+      // escala 2 já basta pro QR das guias da Receita; 3 e 4 são a segunda chance
+      for (const escala of [2, 3, 4]) {
         const viewport = pagina.getViewport({ scale: escala });
         const canvas = document.createElement('canvas');
         canvas.width = Math.ceil(viewport.width);
@@ -69,5 +74,5 @@ export async function lerCodigosDaGuia(url, tipoMime) {
     }
   }
   await pdf.destroy();
-  return { linhasDigitaveis: [...new Set(linhas)].slice(0, 5), pixCopiaCola: pix };
+  return { linhasDigitaveis: [...new Set(linhas)].slice(0, 10), pixCopiaCola: pix };
 }
