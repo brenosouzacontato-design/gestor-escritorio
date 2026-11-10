@@ -3,17 +3,17 @@
 // WhatsApp do escritório (uma, ou várias selecionadas), marcar entregue por
 // fora, e ver quando o cliente abriu a guia pelo painel. Aba Empresas: o
 // WhatsApp de entrega de cada uma e o painel ligado/desligado.
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   SendIcon, RefreshCwIcon, ChevronLeftIcon, ChevronRightIcon, SearchIcon, ExternalLinkIcon,
   CheckIcon, EyeIcon, AlertTriangleIcon, MonitorOffIcon, MonitorIcon, Undo2Icon, BellIcon, BellOffIcon,
-  ClockIcon, XIcon, HandIcon,
+  ClockIcon, XIcon, HandIcon, HistoryIcon,
   ChevronsDownUpIcon, ChevronsUpDownIcon, ClipboardListIcon, CheckSquareIcon, LayersIcon, PaperclipIcon,
 } from 'lucide-react'
 import { useStore } from '../../store'
 import { useToast } from '../../components/shared'
 import {
-  listarGuias, situacaoGuia, enviarGuia, marcarEntregaManual, confirmarAberturaManual, urlGuia,
+  listarGuias, situacaoGuia, enviarGuia, marcarEntregaManual, confirmarAberturaManual, obterLogGuia, urlGuia,
   listarEmpresasEntrega, salvarEmpresaEntrega,
 } from './entregasApi'
 
@@ -243,9 +243,9 @@ export default function CentralEntregasPage() {
                 {porEmpresa.map(({ cliente, guias: lista }) => {
                   const aberta = !!busca.trim() || expandidas.has(cliente.id)
                   return (
-                    <div key={cliente.id} className="card" style={{ marginBottom: 8, padding: 0, overflow: 'hidden' }}>
+                    <div key={cliente.id} className="card" style={{ marginBottom: 8, padding: 0, overflow: 'visible' }}>
                       <div onClick={() => alternarExpandida(cliente.id)}
-                        style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', background: 'var(--surface2)', flexWrap: 'wrap', cursor: 'pointer' }}>
+                        style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', background: 'var(--surface2)', flexWrap: 'wrap', cursor: 'pointer', borderRadius: 'inherit' }}>
                         <input type="checkbox" checked={lista.every((g) => selecionadas.has(g.id))} onClick={(e) => e.stopPropagation()}
                           onChange={() => alternarEmpresa(lista)} title="Selecionar as guias da empresa" />
                         <ChevronRightIcon size={15} style={{ color: 'var(--text3)', transition: 'transform .15s', transform: aberta ? 'rotate(90deg)' : 'none' }} />
@@ -397,27 +397,105 @@ function IconeEtapa({ etapa }) {
   return <span style={{ width: 5, height: 5, borderRadius: 99, background: 'currentColor' }} />
 }
 
+// Histórico de cada etapa: abre ao passar o mouse e fica fixo ao clicar
+// (clicar fora fecha). Carrega na primeira vez que alguém olha a guia.
+const ROTULO_ETAPA = ['A entregar', 'Entregue', 'Aberta']
+
+function BalaoLog({ etapa, log, carregando, fixo, onFechar }) {
+  const itens = log?.[etapa] || []
+  return (
+    <div onClick={(e) => e.stopPropagation()} style={{
+      position: 'absolute', top: 30, left: '50%', transform: 'translateX(-50%)', zIndex: 30, width: 270,
+      background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, boxShadow: '0 6px 20px rgba(0,0,0,.14)',
+      padding: '8px 10px', textAlign: 'left', cursor: 'default',
+    }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
+        <HistoryIcon size={12} style={{ color: 'var(--text3)' }} />
+        <span style={{ fontSize: 10.5, fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: 0.4, flex: 1 }}>
+          Histórico · {ROTULO_ETAPA[etapa]}
+        </span>
+        {fixo && <button className="btn btn-icon btn-ghost" style={{ padding: 2 }} onClick={onFechar} title="Fechar"><XIcon size={12} /></button>}
+      </div>
+      {carregando && !log ? <div style={{ fontSize: 11.5, color: 'var(--text3)' }}>Carregando…</div>
+        : itens.length === 0 ? <div style={{ fontSize: 11.5, color: 'var(--text3)' }}>Nada registrado nessa etapa ainda.</div>
+        : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 220, overflowY: 'auto' }}>
+            {itens.map((it, i) => (
+              <div key={i} style={{ display: 'flex', gap: 8, fontSize: 11.5 }}>
+                <span style={{ flex: '0 0 auto', width: 6, height: 6, borderRadius: 99, marginTop: 5, background: i === 0 ? 'var(--accent)' : 'var(--border)' }} />
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ color: 'var(--text1)', fontWeight: 600 }}>{it.texto}</div>
+                  <div style={{ color: 'var(--text3)', fontSize: 10.5 }}>
+                    {new Date(it.quando).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                    {it.detalhe && <> · <span style={{ wordBreak: 'break-word' }}>{it.detalhe}</span></>}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+    </div>
+  )
+}
+
 export function TrilhoGuia({ g, onConfirmarAbertura }) {
   const etapas = etapasDaGuia(g)
+  const [mostrando, setMostrando] = useState(null) // índice da etapa com o balão aberto
+  const [fixo, setFixo] = useState(false)
+  const [log, setLog] = useState(null)
+  const [carregando, setCarregando] = useState(false)
+  const raiz = useRef(null)
+
+  // a guia mudou (entregou, abriu…): o histórico guardado fica velho
+  const assinatura = `${g.entregue_em}|${g.aberto_em}|${g.aberto_ultimo_em}|${g.visto_em}|${g.entrega_erro}|${g.pago_em}`
+  useEffect(() => { setLog(null) }, [assinatura])
+
+  useEffect(() => {
+    if (!fixo) return undefined
+    const fora = (e) => { if (raiz.current && !raiz.current.contains(e.target)) { setFixo(false); setMostrando(null) } }
+    document.addEventListener('mousedown', fora)
+    return () => document.removeEventListener('mousedown', fora)
+  }, [fixo])
+
+  const carregar = () => {
+    if (log || carregando) return
+    setCarregando(true)
+    obterLogGuia(g).then(setLog).catch(() => setLog([[], [], []])).finally(() => setCarregando(false))
+  }
+  const entrar = (i) => { if (!fixo) { setMostrando(i); carregar() } }
+  const sair = () => { if (!fixo) setMostrando(null) }
+  const clicar = (i) => {
+    if (fixo && mostrando === i) { setFixo(false); setMostrando(null); return }
+    setFixo(true); setMostrando(i); carregar()
+  }
+
   return (
-    <div style={{ flex: '0 0 330px', display: 'flex', alignItems: 'flex-start' }}>
+    <div ref={raiz} style={{ flex: '0 0 330px', display: 'flex', alignItems: 'flex-start' }}>
       {etapas.map((e, i) => {
         const c = COR_ETAPA[e.estado]
         return (
           <div key={i} style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', position: 'relative' }}>
             {i > 0 && <span style={{ position: 'absolute', top: 11, right: '50%', width: '100%', height: 2, background: c.linha }} />}
-            <span style={{
-              position: 'relative', zIndex: 1, width: 24, height: 24, borderRadius: 99,
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              // tom claro por cima de um fundo sólido: a linha do trilho não aparece através da bolinha
-              color: c.cor, background: `linear-gradient(${c.fundo}, ${c.fundo}), var(--surface)`, border: `2px solid ${e.estado === 'pendente' ? 'var(--border)' : c.cor}`,
-            }}><IconeEtapa etapa={e} /></span>
+            <span onMouseEnter={() => entrar(i)} onMouseLeave={sair} onClick={() => clicar(i)}
+              title="Ver o histórico desta etapa"
+              style={{
+                position: 'relative', zIndex: 1, width: 24, height: 24, borderRadius: 99, cursor: 'pointer',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                // tom claro por cima de um fundo sólido: a linha do trilho não aparece através da bolinha
+                color: c.cor, background: `linear-gradient(${c.fundo}, ${c.fundo}), var(--surface)`,
+                border: `2px solid ${e.estado === 'pendente' ? 'var(--border)' : c.cor}`,
+                boxShadow: mostrando === i ? `0 0 0 3px ${c.fundo}` : 'none',
+              }}><IconeEtapa etapa={e} /></span>
+            {mostrando === i && (
+              <BalaoLog etapa={i} log={log} carregando={carregando} fixo={fixo} onFechar={() => { setFixo(false); setMostrando(null) }} />
+            )}
             {e.confirmar ? (
               <button className="btn btn-accent btn-sm" style={{ marginTop: 4, fontSize: 11, padding: '2px 8px' }}
                 onClick={() => onConfirmarAbertura(true)}
                 title="Entrega manual: confirme quando o cliente tiver recebido/aberto a guia">Confirmar</button>
             ) : (
-              <span style={{ marginTop: 4, fontSize: 11, fontWeight: 600, textAlign: 'center', color: e.estado === 'pendente' ? 'var(--text3)' : c.cor }}>{e.label}</span>
+              <span onMouseEnter={() => entrar(i)} onMouseLeave={sair} onClick={() => clicar(i)}
+                style={{ marginTop: 4, fontSize: 11, fontWeight: 600, textAlign: 'center', cursor: 'pointer', color: e.estado === 'pendente' ? 'var(--text3)' : c.cor }}>{e.label}</span>
             )}
             {e.data && <span style={{ fontSize: 10.5, color: 'var(--text3)', textAlign: 'center', whiteSpace: 'nowrap' }}>{e.data}</span>}
             {e.desfazer && (
