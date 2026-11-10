@@ -12,6 +12,7 @@ import PixParaIdentificar, { usePixPedidos } from './PixParaIdentificar';
 import { descreverAparelho } from './aparelho';
 import { abrirLinkAssinado, criarLinkAssinado } from '../documentos/documentosApi';
 import { lerCodigosDaGuia } from './codigosGuia';
+import AvisoPainelModal from '../../components/AvisoPainelModal';
 import { GraficoFaturamento, ComparativoDas, NotasEntrada, TarefasDoCliente } from './PainelClientePage';
 import { calcularAliquotaNominal } from '../../lib/simplesNacional';
 import {
@@ -220,6 +221,8 @@ function PainelCompartilhado({ clienteId, competencia: competenciaInicial, admin
   const [carregando, setCarregando] = useState(true);
   const [erro, setErro] = useState(null);
   const [editandoPainel, setEditandoPainel] = useState(false);
+  // aviso no WhatsApp do cliente: 'painel' (botão) ou 'edicao' (ao concluir a edição)
+  const [avisoAberto, setAvisoAberto] = useState(null);
   const [erroEdicao, setErroEdicao] = useState(null);
   const [nfseEmitidas, setNfseEmitidas] = useState([]); // notas de serviço emitidas pelo gestor (módulo NFS-e)
   const [nfsePendentes, setNfsePendentes] = useState([]); // notas a emitir em que falta informação (o cliente completa)
@@ -545,7 +548,20 @@ function PainelCompartilhado({ clienteId, competencia: competenciaInicial, admin
                 {opcoesComp.map((c) => <option key={c} value={c} style={{ color: '#000' }}>Competência {c}</option>)}
               </select>
               {admin && (
-                <button type="button" onClick={() => setEditandoPainel((v) => !v)}
+                <button type="button" onClick={() => setAvisoAberto('painel')}
+                  title="Avisar o cliente no WhatsApp, com o link do painel e as guias novas"
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: 5, height: 30, borderRadius: 8, padding: '0 10px', flexShrink: 0,
+                    cursor: 'pointer', fontSize: 11, fontWeight: 600, color: '#fff', whiteSpace: 'nowrap',
+                    border: '1px solid rgba(255,255,255,.2)', background: 'rgba(255,255,255,.1)' }}>
+                  <SendIcon size={13} /> Notificar cliente
+                </button>
+              )}
+              {admin && (
+                <button type="button" onClick={() => {
+                  // ao concluir a edição, pergunta se avisa o cliente
+                  if (editandoPainel) setAvisoAberto('edicao');
+                  setEditandoPainel((v) => !v);
+                }}
                   title={editandoPainel ? 'Sair do modo de edição' : 'Ocultar seções e corrigir valores antes de compartilhar'}
                   style={{ display: 'inline-flex', alignItems: 'center', gap: 5, height: 30, borderRadius: 8, padding: '0 10px', flexShrink: 0,
                     cursor: 'pointer', fontSize: 11, fontWeight: 600, color: '#fff', whiteSpace: 'nowrap',
@@ -570,6 +586,9 @@ function PainelCompartilhado({ clienteId, competencia: competenciaInicial, admin
                 ? <span>Última visualização do cliente: <b style={{ color: '#fff' }}>{fmtDataHora(ultimaVisualizacao.visualizado_em)}</b> ({fmtHaQuanto(ultimaVisualizacao.visualizado_em)}){ultimaVisualizacao.competencia ? ` · competência ${ultimaVisualizacao.competencia}` : ''}</span>
                 : <span>O cliente ainda não abriu o link do painel.</span>}
             </div>
+          )}
+          {admin && avisoAberto && (
+            <AvisoPainelModal clienteId={clienteId} motivo={avisoAberto} onClose={() => setAvisoAberto(null)} />
           )}
           {admin ? <EnviarNotificacao clienteId={clienteId} competencia={competencia} /> : registrar && <AtivarNotificacoes clienteId={clienteId} />}
           {admin && eventos.length > 0 && (

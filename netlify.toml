@@ -19,10 +19,6 @@
 [functions."documentos-fiscais-cron"]
   schedule = "0 13 * * *"
 
-# Aviso de guia anexada (WhatsApp do cliente com o link curto do painel)
-[functions."guias-aviso-cron"]
-  schedule = "*/5 * * * *"
-
 # Link curto do painel (/p/<codigo>) — antes do catch-all do app
 [[redirects]]
   from = "/p/:codigo"

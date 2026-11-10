@@ -15,6 +15,7 @@
 // Schema: supabase-schema-parcelamentos-guias.sql.
 import { supabase } from '../../lib/supabase';
 import { lerGuiaParcelamento } from './leitorGuiaParcelamento';
+import { perguntarAvisoPainel } from '../../lib/avisoPainelFila';
 
 const BUCKET = 'documentos';
 const soDigitos = (s) => (s || '').replace(/\D/g, '');
@@ -229,5 +230,7 @@ export async function salvarGuia(item) {
     await supabase.storage.from(BUCKET).remove([path]).catch(() => {});
     throw error;
   }
+  // guia nova: pergunta se avisa o cliente no WhatsApp
+  perguntarAvisoPainel(clienteId);
   return { parcelamentoId: parcelamento.id, ligadaObrigacao: !!obrigacaoId };
 }
