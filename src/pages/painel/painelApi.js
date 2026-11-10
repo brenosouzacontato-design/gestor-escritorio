@@ -173,9 +173,19 @@ export async function obterDocumentosPorObrigacao(obrigacaoIds) {
     // quebrar enquanto o schema não foi aplicado
     .select('*')
     .in('obrigacao_id', obrigacaoIds)
-    .eq('status', 'confirmado');
+    .eq('status', 'confirmado')
+    .order('created_at', { ascending: true });
   if (error) throw error;
-  return Object.fromEntries(data.map((d) => [d.obrigacao_id, d]));
+  // Uma obrigação pode ter mais de um anexo (guia recalculada, comprovante,
+  // holerite…). Fica a guia paga, se alguma foi paga — senão a paga
+  // "sumia" atrás de outro anexo e voltava a aparecer em aberto no painel —;
+  // fora isso, o anexo mais recente.
+  const porObrigacao = {};
+  for (const d of data || []) {
+    const atual = porObrigacao[d.obrigacao_id];
+    if (!atual || !atual.pago_em || d.pago_em) porObrigacao[d.obrigacao_id] = d;
+  }
+  return porObrigacao;
 }
 
 export async function obterResumoFinanceiro(clienteId, { dataInicio, dataFim }) {
