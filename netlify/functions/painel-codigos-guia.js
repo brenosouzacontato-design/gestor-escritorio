@@ -6,10 +6,13 @@
 // guia); aqui só entra o que passar na conferência matemática do próprio
 // código (lib/codigosGuia.js) — leitura errada nunca vira botão de pagar.
 //
-// POST { documentoId, linhasDigitaveis: [string], pixCopiaCola: string|null }
+// POST { documentoId, linhasDigitaveis: [string], pixCopiaCola: string|null, releitura? }
 //   → { documentoId, linhaDigitavel, pixCopiaCola }
 // Cada guia é lida uma vez só: codigos_extraidos_em marca a tentativa, mesmo
-// quando nada válido foi achado (guia sem QR, foto sem texto...).
+// quando nada válido foi achado (guia sem QR, foto sem texto...). Exceção:
+// o escritório logado pode pedir `releitura` (painel aberto pelo Gestor, ou o
+// botão "Ler códigos de novo" do modo de edição): confere de novo e grava o
+// que achar, sem nunca apagar um código já gravado.
 //
 // Quem pode chamar: o escritório logado ou o cliente do painel (x-painel-token),
 // e o cliente só pras guias dele (mesma regra de extrair-valor-guia.js).
@@ -25,11 +28,12 @@ const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SER
 exports.handler = async (event) => {
   if (event.httpMethod !== 'POST') return resposta(405, { error: 'Método não permitido, use POST.' })
 
-  let documentoId, linhas, pix
+  let documentoId, linhas, pix, releitura
   try {
     const body = JSON.parse(event.body)
     documentoId = body.documentoId
-    linhas = Array.isArray(body.linhasDigitaveis) ? body.linhasDigitaveis.slice(0, 5).map(String) : []
+    linhas = Array.isArray(body.linhasDigitaveis) ? body.linhasDigitaveis.slice(0, 10).map(String) : []
+    releitura = !!body.releitura
     pix = body.pixCopiaCola ? String(body.pixCopiaCola) : null
   } catch {
     return resposta(400, { error: 'Body inválido: esperado JSON com { documentoId, linhasDigitaveis, pixCopiaCola }.' })
@@ -55,8 +59,8 @@ exports.handler = async (event) => {
       }
     }
 
-    // já lida antes: devolve o que tem, sem regravar
-    if (doc.codigos_extraidos_em) {
+    // já lida antes: devolve o que tem, sem regravar (o escritório pode pedir releitura)
+    if (doc.codigos_extraidos_em && !(releitura && escritorio)) {
       return resposta(200, { documentoId, linhaDigitavel: doc.linha_digitavel, pixCopiaCola: doc.pix_copia_cola, cache: true })
     }
 

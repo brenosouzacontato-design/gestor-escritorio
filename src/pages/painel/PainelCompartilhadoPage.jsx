@@ -356,31 +356,52 @@ function PainelCompartilhado({ clienteId, competencia: competenciaInicial, admin
   // gravados já conferidos (painel-codigos-guia.js). Uma guia por vez, pra
   // não baixar e desenhar vários PDFs ao mesmo tempo no celular do cliente.
   // Só roda quando a coluna codigos_extraidos_em existe (schema aplicado).
+  // No painel aberto pelo escritório (admin), guia já lida que ficou sem
+  // nenhum código ganha uma releitura por sessão; o botão "Ler códigos de
+  // novo" do modo de edição força na hora.
   const codigosEmLeitura = useRef(new Set());
+  const [relendo, setRelendo] = useState(() => new Set()); // ids sendo relidos pelo botão
+  const lerCodigos = async (anexo, releitura) => {
+    const lidos = await lerCodigosDaGuia(await criarLinkAssinado(anexo.storage_path), anexo.tipo_mime);
+    const r = await salvarCodigosGuia(anexo.id, lidos, { releitura });
+    setDados((d) => d && {
+      ...d,
+      anexos: Object.fromEntries(Object.entries(d.anexos).map(([k, a]) => [k, a.id === anexo.id
+        ? { ...a, linha_digitavel: r.linhaDigitavel, pix_copia_cola: r.pixCopiaCola, codigos_extraidos_em: new Date().toISOString() }
+        : a])),
+    });
+    return r;
+  };
+  const semCodigo = (a) => !a.linha_digitavel && !a.pix_copia_cola;
   useEffect(() => {
     if (!dados) return;
     const pendentes = dados.impostos
       .map((o) => dados.anexos[o.id])
-      .filter((a) => a && 'codigos_extraidos_em' in a && !a.codigos_extraidos_em && !a.pago_em && !codigosEmLeitura.current.has(a.id));
+      .filter((a) => a && 'codigos_extraidos_em' in a && !a.pago_em && !codigosEmLeitura.current.has(a.id)
+        && (!a.codigos_extraidos_em || (admin && semCodigo(a))));
     if (pendentes.length === 0) return;
     pendentes.forEach((a) => codigosEmLeitura.current.add(a.id));
     (async () => {
       for (const anexo of pendentes) {
         try {
-          const lidos = await lerCodigosDaGuia(await criarLinkAssinado(anexo.storage_path), anexo.tipo_mime);
-          const r = await salvarCodigosGuia(anexo.id, lidos);
-          setDados((d) => d && {
-            ...d,
-            anexos: Object.fromEntries(Object.entries(d.anexos).map(([k, a]) => [k, a.id === anexo.id
-              ? { ...a, linha_digitavel: r.linhaDigitavel, pix_copia_cola: r.pixCopiaCola, codigos_extraidos_em: new Date().toISOString() }
-              : a])),
-          });
+          await lerCodigos(anexo, !!anexo.codigos_extraidos_em);
         } catch {
           // falha de rede/leitura: tenta de novo na próxima vez que o painel abrir
         }
       }
     })();
   }, [dados]);
+  const relerCodigos = async (anexo) => {
+    setRelendo((s) => new Set(s).add(anexo.id));
+    try {
+      const r = await lerCodigos(anexo, true);
+      setErroEdicao(r.linhaDigitavel || r.pixCopiaCola ? null
+        : 'Não achei código de barras nem QR do PIX nessa guia (PDF só com imagem, ou guia sem PIX). Confira o arquivo anexado.');
+    } catch (e) {
+      setErroEdicao(`Não consegui ler a guia: ${e.message}`);
+    }
+    setRelendo((s) => { const n = new Set(s); n.delete(anexo.id); return n; });
+  };
 
   // `descricao` diz o que é o arquivo no aviso pro escritório — só o link
   // público avisa (o download feito na prévia de dentro do app não conta)
@@ -742,7 +763,8 @@ function PainelCompartilhado({ clienteId, competencia: competenciaInicial, admin
                   ? <Vazio>Nenhum imposto em aberto nem com vencimento no período.</Vazio>
                   : <div style={LISTA}>{guias.map((g) => (
                     <ItemOcultavel key={g.id} id={g.id} resolvido={guiaResolvida(g)}>
-                      <LinhaGuia g={g} onBaixar={baixar} onCopiar={copiouCodigo} editando={editando} onSalvarValor={salvarValorGuia} onMarcarPaga={salvarGuiaPaga} />
+                      <LinhaGuia g={g} onBaixar={baixar} onCopiar={copiouCodigo} editando={editando} onSalvarValor={salvarValorGuia} onMarcarPaga={salvarGuiaPaga}
+                        onRelerCodigos={relerCodigos} relendo={!!g.anexo && relendo.has(g.anexo.id)} />
                     </ItemOcultavel>
                   ))}</div>}
               </Secao>
@@ -1297,7 +1319,7 @@ function Linha({ chave, corBorda, titulo, competencia, detalhes, direita }) {
   );
 }
 
-function LinhaGuia({ g, onBaixar, onCopiar, editando, onSalvarValor, onMarcarPaga }) {
+function LinhaGuia({ g, onBaixar, onCopiar, editando, onSalvarValor, onMarcarPaga, onRelerCodigos, relendo = false }) {
   // só dá pra corrigir o valor de guia anexada (é gravado no documento) e
   // com a coluna valor_guia já existente no banco
   const editavel = editando && !g.semMovimento && g.anexo && 'valor_guia' in g.anexo;
@@ -1361,6 +1383,14 @@ function LinhaGuia({ g, onBaixar, onCopiar, editando, onSalvarValor, onMarcarPag
           {g.anexo?.comprovante_path && (
             <BotaoGuia anexo={{ storage_path: g.anexo.comprovante_path, nome_arquivo: g.anexo.comprovante_nome || 'comprovante' }} onBaixar={onBaixar}
               label="Comprovante" descricao={`Comprovante — ${g.titulo} ${g.competencia || ''}`.trim()} />
+          )}
+          {editando && g.anexo && !g.semMovimento && !g.paga && !g.anexo.linha_digitavel && !g.anexo.pix_copia_cola && onRelerCodigos && (
+            <button type="button" onClick={() => onRelerCodigos(g.anexo)} disabled={relendo}
+              title="O painel não achou o código de barras nem o PIX desta guia. Ler o PDF de novo"
+              style={{ fontSize: 11, fontWeight: 600, color: 'var(--accent)', background: 'var(--surface)', border: '1px dashed var(--accent)',
+                borderRadius: 8, padding: '5px 9px', cursor: relendo ? 'wait' : 'pointer', whiteSpace: 'nowrap', opacity: relendo ? 0.6 : 1 }}>
+              {relendo ? 'Lendo a guia…' : 'Ler códigos de novo'}
+            </button>
           )}
           {editando && g.anexo && !g.semMovimento && (
             <button type="button" onClick={() => onMarcarPaga(g.anexo, !g.paga)}
