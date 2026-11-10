@@ -25,7 +25,7 @@ export async function chamarAvisoPainel(clienteId, { simular = false, forcar = f
     e.silencio = !!r.silencio
     throw e
   }
-  return r
+  return { ...r, guias: Array.isArray(r.guias) ? r.guias : [] }
 }
 
 // ── Pergunta ao anexar guia (pedidos de lib/avisoPainelFila.js) ──────────────

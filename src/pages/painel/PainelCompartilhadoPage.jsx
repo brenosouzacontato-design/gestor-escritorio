@@ -408,6 +408,10 @@ function PainelCompartilhado({ clienteId, competencia: competenciaInicial, admin
     }
   };
   const propsOc = { secoesOcultas, editando, onToggle: toggleSecao };
+  // Itens ocultos um a um (guia, obrigação, tarefa): mesma coluna das seções,
+  // com a chave "item:<id>" — o id da obrigação/tarefa vale em qualquer competência
+  const itemOculto = (id) => secoesOcultas.includes(`item:${id}`);
+  const alternarItem = (id) => toggleSecao(`item:${id}`);
 
   // Correções do modo de edição: aplica na tela na hora e desfaz se o banco recusar
   const salvarGerencial = async (campo, valor) => {
@@ -483,7 +487,7 @@ function PainelCompartilhado({ clienteId, competencia: competenciaInicial, admin
   // vencer — senão o total mostraria um valor que ele não tem como conferir
   // "Aguardando guia" fica só na lista de impostos: sem valor nem guia, não entra nos cards
   // de vencidos / a vencer nem na conta de "tudo quitado".
-  const guiasCard = guias && !oculta('impostos') ? guias.filter((g) => !g.aguardandoGuia) : [];
+  const guiasCard = guias && !oculta('impostos') ? guias.filter((g) => !g.aguardandoGuia && !itemOculto(g.id)) : [];
   const honorariosCard = oculta('honorarios') ? [] : honorarios;
   const pendenciasCard = pendencias && !oculta('pendencias') ? pendencias : [];
   const honorariosAVencer = honorariosCard.filter((h) => !h.concluida && !(h.dias != null && h.dias < 0));
@@ -504,7 +508,7 @@ function PainelCompartilhado({ clienteId, competencia: competenciaInicial, admin
   const guiasVencidas = guiasCard.filter(alertaVencida);
   // Total da lista de impostos: só o que ainda falta pagar, com a mesma regra
   // dos cards — guia vencida em que o escritório já deu baixa não conta
-  const guiasEmAberto = (guias || []).filter((g) => !g.semMovimento && !g.paga && !(g.concluida && g.dias != null && g.dias < 0));
+  const guiasEmAberto = (guias || []).filter((g) => !itemOculto(g.id) && !g.semMovimento && !g.paga && !(g.concluida && g.dias != null && g.dias < 0));
   // "Vencidos" junta as guias vencidas sem baixa, os honorários atrasados e
   // os débitos do Relatório de Situação Fiscal (que por definição já
   // passaram do prazo)
@@ -521,7 +525,7 @@ function PainelCompartilhado({ clienteId, competencia: competenciaInicial, admin
   const semMovimento = dados?.gerenciais?.faturamento_periodo != null && Number(dados.gerenciais.faturamento_periodo) === 0;
 
   return (
-    <RecadosContext.Provider value={{ recados: dados?.recados || {}, editando, salvar: salvarRecado }}>
+    <RecadosContext.Provider value={{ recados: dados?.recados || {}, editando, salvar: salvarRecado, itemOculto, alternarItem }}>
     <div style={{ minHeight: '100vh', background: 'var(--bg)', padding: '24px 12px' }}>
       <div style={{ maxWidth: largura, margin: '0 auto', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--r-xl)', overflow: 'hidden' }}>
 
@@ -724,9 +728,13 @@ function PainelCompartilhado({ clienteId, competencia: competenciaInicial, admin
               <Ocultavel chave="impostos" {...propsOc}>
               <Secao titulo="Impostos e guias — por vencimento" icone={<CalendarIcon size={14} />}
                 extra={temValor(guiasEmAberto) && <Total valor={somaValores(guiasEmAberto)} />}>
-                {guias.length === 0
+                {guias.filter((g) => editando || !itemOculto(g.id)).length === 0
                   ? <Vazio>Nenhum imposto em aberto nem com vencimento no período.</Vazio>
-                  : <div style={LISTA}>{guias.map((g) => <LinhaGuia key={g.id} g={g} onBaixar={baixar} onCopiar={copiouCodigo} editando={editando} onSalvarValor={salvarValorGuia} onMarcarPaga={salvarGuiaPaga} />)}</div>}
+                  : <div style={LISTA}>{guias.map((g) => (
+                    <ItemOcultavel key={g.id} id={g.id}>
+                      <LinhaGuia g={g} onBaixar={baixar} onCopiar={copiouCodigo} editando={editando} onSalvarValor={salvarValorGuia} onMarcarPaga={salvarGuiaPaga} />
+                    </ItemOcultavel>
+                  ))}</div>}
               </Secao>
               </Ocultavel>
 
@@ -798,10 +806,12 @@ function PainelCompartilhado({ clienteId, competencia: competenciaInicial, admin
               </Ocultavel>
 
               {/* ── 5. Obrigações e tarefas (Fiscal/Folha) ── */}
-              {itensArea.length > 0 && (
+              {itensArea.some((it) => editando || !itemOculto(it.id)) && (
                 <Ocultavel chave="obrigacoes" {...propsOc}>
                 <Secao titulo="Obrigações e tarefas — por vencimento" icone={<ClipboardListIcon size={14} />}>
-                  <div style={LISTA}>{itensArea.map((it) => <LinhaObrigacao key={it.id} it={it} onBaixar={baixar} />)}</div>
+                  <div style={LISTA}>{itensArea.map((it) => (
+                    <ItemOcultavel key={it.id} id={it.id}><LinhaObrigacao it={it} onBaixar={baixar} /></ItemOcultavel>
+                  ))}</div>
                 </Secao>
                 </Ocultavel>
               )}
@@ -1202,7 +1212,28 @@ function Indicador({ icone, titulo, valor, sub, s }) {
 // detalhes embaixo, valor/ações à direita.
 // Recados por linha: `recados` = { chave do item: mensagem }; no modo de
 // edição cada linha ganha a caixa pra escrever/apagar o recado dela.
-const RecadosContext = createContext({ recados: {}, editando: false, salvar: () => {} });
+const RecadosContext = createContext({ recados: {}, editando: false, salvar: () => {}, itemOculto: () => false, alternarItem: () => {} });
+
+// Uma guia / obrigação / tarefa ocultável pelo escritório. O cliente nunca vê
+// o item oculto; no modo de edição ele continua na lista, esmaecido, com o
+// botão para mostrar de novo.
+function ItemOcultavel({ id, children }) {
+  const { editando, itemOculto, alternarItem } = useContext(RecadosContext);
+  const oculto = itemOculto(id);
+  if (!editando) return oculto ? null : children;
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+      <button type="button" onClick={() => alternarItem(id)}
+        title={oculto ? 'O cliente não vê este item — clique para mostrar' : 'Ocultar este item do cliente'}
+        style={{ alignSelf: 'flex-end', display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 10.5, fontWeight: 700, border: 'none', borderRadius: 99,
+          padding: '2px 9px', cursor: 'pointer', background: oculto ? 'var(--surface3)' : 'var(--accent-dim)', color: oculto ? 'var(--text3)' : 'var(--accent)' }}>
+        {oculto ? <EyeOffIcon size={11} /> : <EyeIcon size={11} />}
+        {oculto ? 'Oculto pro cliente — mostrar' : 'Ocultar do cliente'}
+      </button>
+      <div style={{ opacity: oculto ? 0.4 : 1 }}>{children}</div>
+    </div>
+  );
+}
 
 function RecadoLinha({ chave }) {
   const { recados, editando, salvar } = useContext(RecadosContext);
