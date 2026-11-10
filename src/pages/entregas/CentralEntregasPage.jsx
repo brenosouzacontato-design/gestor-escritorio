@@ -7,6 +7,7 @@ import { useEffect, useMemo, useState } from 'react'
 import {
   SendIcon, RefreshCwIcon, ChevronLeftIcon, ChevronRightIcon, SearchIcon, ExternalLinkIcon,
   CheckIcon, EyeIcon, AlertTriangleIcon, MonitorOffIcon, MonitorIcon, Undo2Icon, BellIcon, BellOffIcon,
+  EyeOffIcon, CheckCircle2Icon, UserCheckIcon, ClockIcon, MinusCircleIcon,
 } from 'lucide-react'
 import { useStore } from '../../store'
 import { useToast } from '../../components/shared'
@@ -265,32 +266,58 @@ function Metrica({ label, valor, classe = '', onClick }) {
 
 // Coluna "Aberta?": entrega pelo sistema (WhatsApp ou aviso com o link do
 // painel) mostra se o cliente abriu, pelo painel; entrega manual não tem
-// rastreio, então o escritório confirma na mão.
+// rastreio, então o escritório confirma na mão. Cada situação é um selo com
+// cor e ícone próprios, numa faixa destacada, pra ler a coluna de relance.
+const ABERTURA = {
+  nao_entregue: { label: 'Não entregue', Icone: MinusCircleIcon, color: 'var(--text3)', bg: 'var(--surface2)', borda: 'var(--border)' },
+  nao_abriu:    { label: 'Não abriu', Icone: EyeOffIcon, color: 'var(--warn)', bg: 'var(--warn-dim)', borda: 'var(--warn)' },
+  viu_painel:   { label: 'Viu o painel', Icone: EyeIcon, color: 'var(--accent)', bg: 'var(--accent-dim, var(--surface2))', borda: 'var(--accent)' },
+  abriu:        { label: 'Abriu a guia', Icone: CheckCircle2Icon, color: 'var(--ok)', bg: 'var(--ok-dim)', borda: 'var(--ok)' },
+  manual_ok:    { label: 'Confirmada', Icone: UserCheckIcon, color: 'var(--ok)', bg: 'var(--ok-dim)', borda: 'var(--ok)' },
+  manual:       { label: 'Aguardando confirmação', Icone: ClockIcon, color: 'var(--info)', bg: 'var(--info-dim)', borda: 'var(--info)' },
+}
+
+function estadoAbertura(g) {
+  if (!g.entregue_em) return 'nao_entregue'
+  if (g.entrega_canal === 'manual') return g.aberto_em ? 'manual_ok' : 'manual'
+  if (g.aberto_em) return 'abriu'
+  if (g.visto_em) return 'viu_painel'
+  return 'nao_abriu'
+}
+
 function ColunaAbertura({ g, onConfirmar }) {
-  const caixa = { flex: '0 0 170px', display: 'flex', flexDirection: 'column', gap: 2, fontSize: 11.5 }
-  const titulo = <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: 0.3 }}>Aberta?</span>
-  if (!g.entregue_em) return <div style={caixa}>{titulo}<span style={{ color: 'var(--text3)' }}>— não entregue</span></div>
-  if (g.entrega_canal === 'manual') {
-    return (
-      <div style={caixa}>
-        {titulo}
-        {g.aberto_em ? (
-          <span style={{ color: 'var(--ok)', display: 'flex', alignItems: 'center', gap: 4 }}>
-            <CheckIcon size={11} /> confirmada à mão {fmtQuando(g.aberto_em)}
-            <button className="btn btn-icon btn-ghost" style={{ padding: 2 }} title="Desfazer a confirmação" onClick={() => onConfirmar(false)}><Undo2Icon size={11} /></button>
-          </span>
-        ) : (
-          <button className="btn btn-ghost btn-sm" style={{ alignSelf: 'flex-start', fontSize: 11 }} onClick={() => onConfirmar(true)}
-            title="Entrega manual: confirme quando o cliente tiver recebido/aberto a guia">
-            <CheckIcon size={11} /> Confirmar abertura
-          </button>
-        )}
-      </div>
-    )
-  }
-  if (g.aberto_em) return <div style={caixa}>{titulo}<span style={{ color: 'var(--ok)', fontWeight: 600 }}>Sim · {fmtQuando(g.aberto_ultimo_em || g.aberto_em)}</span></div>
-  if (g.visto_em) return <div style={caixa}>{titulo}<span style={{ color: 'var(--accent)', fontWeight: 600 }}>Viu o painel · {fmtQuando(g.visto_em)}</span></div>
-  return <div style={caixa}>{titulo}<span style={{ color: 'var(--warn)', fontWeight: 600 }}>Não abriu ainda</span></div>
+  const estado = estadoAbertura(g)
+  const cfg = ABERTURA[estado]
+  const { Icone } = cfg
+  const quando = estado === 'abriu' ? g.aberto_ultimo_em || g.aberto_em
+    : estado === 'manual_ok' ? g.aberto_em
+    : estado === 'viu_painel' ? g.visto_em : null
+  return (
+    <div style={{
+      flex: '0 0 190px', alignSelf: 'stretch', display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 4,
+      padding: '6px 10px', background: 'var(--surface2)', borderRadius: 6,
+      borderLeft: `3px solid ${cfg.borda}`,
+    }}>
+      <span style={{ fontSize: 9.5, fontWeight: 800, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: 0.5 }}>
+        Aberta?{g.entrega_canal === 'manual' && g.entregue_em ? ' · entrega manual' : ''}
+      </span>
+      <span style={{ ...selo, alignSelf: 'flex-start', color: cfg.color, background: cfg.bg, border: `1px solid ${cfg.borda}`, fontSize: 11 }}>
+        <Icone size={12} /> {cfg.label}
+      </span>
+      {quando && <span style={{ fontSize: 10.5, color: 'var(--text2)' }}>{fmtQuando(quando)}{estado === 'abriu' && g.aberto_vezes > 1 ? ` · ${g.aberto_vezes}x` : ''}</span>}
+      {estado === 'manual' && (
+        <button className="btn btn-sm btn-accent" style={{ alignSelf: 'flex-start', fontSize: 11, padding: '3px 8px' }} onClick={() => onConfirmar(true)}
+          title="Entrega manual: confirme quando o cliente tiver recebido/aberto a guia">
+          <CheckIcon size={11} /> Confirmar abertura
+        </button>
+      )}
+      {estado === 'manual_ok' && (
+        <button className="btn btn-ghost btn-sm" style={{ alignSelf: 'flex-start', fontSize: 10.5, padding: '2px 6px' }} onClick={() => onConfirmar(false)} title="Desfazer a confirmação">
+          <Undo2Icon size={11} /> desfazer
+        </button>
+      )}
+    </div>
+  )
 }
 
 function LinhaGuia({ g, marcada, enviando, onMarcar, onEntregar, onAbrir, onManual, onConfirmarAbertura, semDestino }) {
