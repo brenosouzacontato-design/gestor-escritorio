@@ -79,6 +79,8 @@ export async function listarGuias(competencia) {
       vencimento: d.vencimento_guia || d.obrigacoes?.vencimento || null,
       // de onde veio a guia, quando não é de uma obrigação/parcelamento
       origem: d.obrigacoes || d.parcelamentos ? null : d.tarefas ? `tarefa: ${d.tarefas.titulo}` : 'anexo avulso',
+      // agrupamento na Central (empresa → obrigações / tarefas / parcelamentos / avulsas)
+      grupo: d.obrigacoes ? 'obrigacao' : d.parcelamentos ? 'parcelamento' : d.tarefas ? 'tarefa' : 'avulsa',
     }))
     .sort((a, b) => (a.clientes.nome || '').localeCompare(b.clientes.nome || '') || a.titulo.localeCompare(b.titulo))
 }

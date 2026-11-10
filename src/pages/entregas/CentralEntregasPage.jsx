@@ -8,6 +8,7 @@ import {
   SendIcon, RefreshCwIcon, ChevronLeftIcon, ChevronRightIcon, SearchIcon, ExternalLinkIcon,
   CheckIcon, EyeIcon, AlertTriangleIcon, MonitorOffIcon, MonitorIcon, Undo2Icon, BellIcon, BellOffIcon,
   ClockIcon, XIcon, HandIcon,
+  ChevronsDownUpIcon, ChevronsUpDownIcon, ClipboardListIcon, CheckSquareIcon, LayersIcon, PaperclipIcon,
 } from 'lucide-react'
 import { useStore } from '../../store'
 import { useToast } from '../../components/shared'
@@ -157,6 +158,11 @@ export default function CentralEntregasPage() {
     catch (e) { aba?.close(); show('Erro: ' + e.message) }
   }
 
+  // empresas abertas na lista (começam recolhidas; com busca, abrem todas)
+  const [expandidas, setExpandidas] = useState(() => new Set())
+  const alternarExpandida = (id) => setExpandidas((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n })
+  const todasAbertas = porEmpresa.length > 0 && porEmpresa.every((e) => expandidas.has(e.cliente.id))
+
   const alternar = (id) => setSelecionadas((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n })
   const alternarEmpresa = (lista) => setSelecionadas((s) => {
     const n = new Set(s)
@@ -227,33 +233,95 @@ export default function CentralEntregasPage() {
               <div className="card" style={{ textAlign: 'center', color: 'var(--text3)', fontSize: 13, padding: 30 }}>
                 {guias.length === 0 ? `Nenhuma guia anexada na competência ${competencia}.` : 'Nada nesse filtro.'}
               </div>
-            ) : porEmpresa.map(({ cliente, guias: lista }) => (
-              <div key={cliente.id} className="card" style={{ marginBottom: 8, padding: 0, overflow: 'hidden' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', background: 'var(--surface2)', flexWrap: 'wrap' }}>
-                  <input type="checkbox" checked={lista.every((g) => selecionadas.has(g.id))} onChange={() => alternarEmpresa(lista)} title="Selecionar as guias da empresa" />
-                  <span style={{ fontWeight: 700, fontSize: 13, color: 'var(--text1)', flex: '1 1 200px' }}>{nomeCurto(cliente.nome)}</span>
-                  {cliente.painel_ativo === false && (
-                    <span style={{ ...selo, color: 'var(--text3)', background: 'var(--surface)' }}><MonitorOffIcon size={11} /> painel desligado</span>
-                  )}
-                  {destinoDe(cliente)
-                    ? <span style={{ fontSize: 11.5, color: 'var(--text3)' }}>📱 {destinoDe(cliente)}</span>
-                    : <span style={{ ...selo, color: 'var(--warn)', background: 'var(--warn-dim)' }}><AlertTriangleIcon size={11} /> sem WhatsApp — cadastre na aba Empresas</span>}
+            ) : (
+              <>
+                <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 6 }}>
+                  <button className="btn btn-ghost btn-sm" onClick={() => setExpandidas(todasAbertas ? new Set() : new Set(porEmpresa.map((e) => e.cliente.id)))}>
+                    {todasAbertas ? <><ChevronsDownUpIcon size={13} /> Recolher todas</> : <><ChevronsUpDownIcon size={13} /> Expandir todas</>}
+                  </button>
                 </div>
-                {lista.map((g) => (
-                  <LinhaGuia key={g.id} g={g} marcada={selecionadas.has(g.id)} enviando={enviando.has(g.id)}
-                    onMarcar={() => alternar(g.id)} onEntregar={() => entregar(g)} onAbrir={() => abrir(g)}
-                    onManual={(v) => marcarManual(g, v)} onConfirmarAbertura={(v) => confirmarAbertura(g, v)}
-                    semDestino={!destinoDe(cliente)} />
-                ))}
-              </div>
-            ))}
+                {porEmpresa.map(({ cliente, guias: lista }) => {
+                  const aberta = !!busca.trim() || expandidas.has(cliente.id)
+                  return (
+                    <div key={cliente.id} className="card" style={{ marginBottom: 8, padding: 0, overflow: 'hidden' }}>
+                      <div onClick={() => alternarExpandida(cliente.id)}
+                        style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', background: 'var(--surface2)', flexWrap: 'wrap', cursor: 'pointer' }}>
+                        <input type="checkbox" checked={lista.every((g) => selecionadas.has(g.id))} onClick={(e) => e.stopPropagation()}
+                          onChange={() => alternarEmpresa(lista)} title="Selecionar as guias da empresa" />
+                        <ChevronRightIcon size={15} style={{ color: 'var(--text3)', transition: 'transform .15s', transform: aberta ? 'rotate(90deg)' : 'none' }} />
+                        <span style={{ fontWeight: 700, fontSize: 13, color: 'var(--text1)', flex: '1 1 200px' }}>{nomeCurto(cliente.nome)}</span>
+                        <ResumoEmpresa lista={lista} />
+                        {cliente.painel_ativo === false && (
+                          <span style={{ ...selo, color: 'var(--text3)', background: 'var(--surface)' }}><MonitorOffIcon size={11} /> painel desligado</span>
+                        )}
+                        {destinoDe(cliente)
+                          ? <span style={{ fontSize: 11.5, color: 'var(--text3)' }}>📱 {destinoDe(cliente)}</span>
+                          : <span style={{ ...selo, color: 'var(--warn)', background: 'var(--warn-dim)' }}><AlertTriangleIcon size={11} /> sem WhatsApp — cadastre na aba Empresas</span>}
+                      </div>
+                      {aberta && GRUPOS.map(({ id, label, Icone }) => {
+                        const doGrupo = lista.filter((g) => (g.grupo || 'obrigacao') === id)
+                        if (!doGrupo.length) return null
+                        return (
+                          <div key={id}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 14px 6px 40px', borderTop: '1px solid var(--border)', background: 'var(--surface)', fontSize: 10.5, fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: 0.4 }}>
+                              <Icone size={12} /> {label} · {doGrupo.length}
+                            </div>
+                            {doGrupo.map((g) => (
+                              <LinhaGuia key={g.id} g={g} marcada={selecionadas.has(g.id)} enviando={enviando.has(g.id)}
+                                onMarcar={() => alternar(g.id)} onEntregar={() => entregar(g)} onAbrir={() => abrir(g)}
+                                onManual={(v) => marcarManual(g, v)} onConfirmarAbertura={(v) => confirmarAbertura(g, v)}
+                                semDestino={!destinoDe(cliente)} />
+                            ))}
+                          </div>
+                        )
+                      })}
+                    </div>
+                  )
+                })}
+              </>
+            )}
         </>
       )}
     </div>
   )
 }
 
-const selo = { display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 10.5, fontWeight: 700, borderRadius: 99, padding: '3px 9px', whiteSpace: 'nowrap' }
+// Grupos dentro da empresa, nessa ordem
+const GRUPOS = [
+  { id: 'obrigacao', label: 'Obrigações', Icone: ClipboardListIcon },
+  { id: 'tarefa', label: 'Tarefas', Icone: CheckSquareIcon },
+  { id: 'parcelamento', label: 'Parcelamentos', Icone: LayersIcon },
+  { id: 'avulsa', label: 'Anexos avulsos', Icone: PaperclipIcon },
+]
+
+// Resumo da empresa recolhida: quantas guias e em que etapa estão, com uma
+// barrinha (verde = aberta, azul = entregue, vermelho = falhou, cinza = a entregar)
+export function ResumoEmpresa({ lista }) {
+  const n = { aberta: 0, entregue: 0, falhou: 0, a_entregar: 0 }
+  for (const g of lista) {
+    const s = situacaoGuia(g)
+    n[s === 'vista' ? 'entregue' : s]++
+  }
+  const partes = [
+    ['aberta', 'var(--ok)'], ['entregue', 'var(--info)'], ['falhou', 'var(--danger)'], ['a_entregar', 'var(--border)'],
+  ]
+  const texto = [
+    n.a_entregar && `${n.a_entregar} a entregar`,
+    n.falhou && `${n.falhou} falhou`,
+    n.entregue && `${n.entregue} entregue${n.entregue > 1 ? 's' : ''}`,
+    n.aberta && `${n.aberta} aberta${n.aberta > 1 ? 's' : ''}`,
+  ].filter(Boolean).join(' · ')
+  return (
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, fontSize: 11.5, color: 'var(--text3)' }}>
+      <span style={{ display: 'inline-flex', width: 70, height: 6, borderRadius: 99, overflow: 'hidden', background: 'var(--border)' }}>
+        {partes.map(([k, cor]) => n[k] > 0 && <span key={k} style={{ width: `${(n[k] / lista.length) * 100}%`, background: cor }} />)}
+      </span>
+      <span><b style={{ color: 'var(--text2)' }}>{lista.length} guia{lista.length > 1 ? 's' : ''}</b>{texto && ` · ${texto}`}</span>
+    </span>
+  )
+}
+
+const selo = { display:'inline-flex', alignItems: 'center', gap: 4, fontSize: 10.5, fontWeight: 700, borderRadius: 99, padding: '3px 9px', whiteSpace: 'nowrap' }
 
 function Metrica({ label, valor, classe = '', onClick }) {
   return (
