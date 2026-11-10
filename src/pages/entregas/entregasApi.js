@@ -124,6 +124,51 @@ export async function confirmarAberturaManual(documentoId, confirmada) {
   return patch
 }
 
+// Histórico da guia, separado pelas etapas do trilho (0 = A entregar,
+// 1 = Entregue, 2 = Aberta). Junta o que está na própria guia (anexada,
+// aviso, entrega, falha, visto, confirmação, pagamento) com os eventos do
+// painel: downloads/cópias ligados à guia e as aberturas do painel pelo
+// cliente depois da entrega (painel_eventos). Mais recente primeiro.
+export async function obterLogGuia(g) {
+  const log = [[], [], []]
+  const add = (etapa, quando, texto, detalhe = null) => { if (quando) log[etapa].push({ quando, texto, detalhe }) }
+  const canal = { manual: 'manual (por fora do WhatsApp)', painel: 'aviso automático com o link do painel', whatsapp: 'PDF pelo WhatsApp' }
+
+  add(0, g.created_at, 'Guia anexada', g.nome_arquivo)
+  if (g.confirmado_em && g.confirmado_em !== g.created_at) add(0, g.confirmado_em, 'Anexo confirmado')
+
+  if (g.aviso_painel_em && g.aviso_painel_em !== g.entregue_em) add(1, g.aviso_painel_em, 'Aviso automático processado (não enviado)')
+  if (g.entregue_em) add(1, g.entregue_em, `Entregue · ${canal[g.entrega_canal] || g.entrega_canal || 'WhatsApp'}`, g.entrega_destino ? `para ${g.entrega_destino}` : null)
+  if (g.entrega_erro) {
+    const quando = /^\d{4}-\d{2}-\d{2}/.test(g.entrega_erro) ? `${g.entrega_erro.slice(0, 10)}T12:00:00` : null
+    add(1, quando || g.entregue_em || g.created_at, 'Falha no envio', g.entrega_erro.replace(/^\d{4}-\d{2}-\d{2}:\s*/, ''))
+  }
+
+  if (g.entrega_canal === 'manual' && g.aberto_em) add(2, g.aberto_em, 'Abertura confirmada à mão pelo escritório')
+  if (g.pago_em) add(2, g.pago_em, g.baixa_manual ? 'Pagamento registrado à mão' : 'Pagamento confirmado pelo comprovante',
+    g.baixa_manual ? [g.baixa_por, g.baixa_justificativa].filter(Boolean).join(' · ') : null)
+
+  if (g.entregue_em || g.aberto_em) {
+    const desde = g.entregue_em || g.created_at
+    const [docs, painel] = await Promise.all([
+      supabase.from('painel_eventos').select('*').eq('documento_id', g.id).order('criado_em', { ascending: false }).limit(30),
+      supabase.from('painel_eventos').select('*').eq('cliente_id', g.cliente_id).eq('tipo', 'visualizacao')
+        .gte('criado_em', desde).order('criado_em', { ascending: false }).limit(15),
+    ])
+    const quem = (e) => (e.origem === 'escritorio' ? ' (acesso do escritório)' : '')
+    for (const e of docs.error ? [] : docs.data || []) {
+      add(2, e.criado_em, `${/c[oó]digo|pix|copi/i.test(e.descricao || '') ? 'Copiou o código' : 'Baixou a guia'}${quem(e)}`, e.descricao)
+    }
+    for (const e of painel.error ? [] : painel.data || []) add(2, e.criado_em, `Abriu o painel${quem(e)}`, e.competencia ? `competência ${e.competencia}` : null)
+    // guia aberta antes de existir o vínculo do evento: fica o registro da própria guia
+    if (g.entrega_canal !== 'manual' && g.aberto_em && !(docs.data || []).length) {
+      add(2, g.aberto_em, 'Baixou a guia ou copiou o código', g.aberto_vezes > 1 ? `${g.aberto_vezes} vezes, a última em ${new Date(g.aberto_ultimo_em).toLocaleString('pt-BR')}` : null)
+    }
+    if (g.visto_em && !(painel.data || []).length) add(2, g.visto_em, 'Viu o painel depois da entrega')
+  }
+  return log.map((l) => l.sort((a, b) => String(b.quando).localeCompare(String(a.quando))))
+}
+
 export async function urlGuia(storagePath) {
   const { data, error } = await supabase.storage.from('documentos').createSignedUrl(storagePath, 60 * 10)
   if (error) throw error
