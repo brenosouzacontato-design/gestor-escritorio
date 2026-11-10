@@ -2,7 +2,7 @@
 -- AVISO DE GUIA NO PAINEL — Gestor Escritório Contábil
 -- Toda guia anexada (documentos confirmados de imposto/parcelamento) vira
 -- uma mensagem no WhatsApp do cliente com o link curto do painel
--- (netlify/functions/guias-aviso-cron.js, a cada 5 min). A guia avisada
+-- (antes guias-aviso-cron.js, a cada 5 min; hoje netlify/functions/painel-aviso-enviar.js, quando o escritório pede). A guia avisada
 -- fica "entregue" na Central de Entregas (canal 'painel') e, quando o
 -- cliente abre/baixa pelo painel, "aberta" — o mesmo monitoramento de
 -- supabase-schema-central-entregas.sql (rode aquele antes deste).

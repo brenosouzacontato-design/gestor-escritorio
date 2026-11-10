@@ -7,6 +7,7 @@
 // jeito que toggleTarefa faz em store/index.js).
 import { supabase, tokenPainelAtivo, cabecalhosFunctions, rpcAusente } from '../../lib/supabase';
 import { concluirEtapa } from '../andamento/andamentoApi';
+import { perguntarAvisoPainel } from '../../lib/avisoPainelFila';
 
 const BUCKET = 'documentos';
 
@@ -179,6 +180,8 @@ export async function anexarDocumentoAoItem({ clienteId, alvo, arquivo, darBaixa
       : await supabase.from('tarefas').update({ concluida: true, concluida_em: agora, updated_at: agora }).eq('id', alvo.id);
     if (errBaixa) throw errBaixa;
   }
+  // guia nova: pergunta se avisa o cliente no WhatsApp (só aparece se for guia de imposto)
+  perguntarAvisoPainel(clienteId);
   return data;
 }
 
@@ -440,6 +443,8 @@ export async function confirmarDocumento(documentoId, { clienteId, candidato }) 
     })
     .eq('id', documentoId);
   if (errDoc) throw errDoc;
+  // guia nova: pergunta se avisa o cliente no WhatsApp (só aparece se for guia de imposto)
+  perguntarAvisoPainel(clienteId);
 }
 
 // Botão "Criar tarefa" da aba "A revisar": a tarefa nova (em aberto) já foi
