@@ -706,7 +706,10 @@ export default function Empresas({ onOpenTarefas, onOpenCadastro, clienteInicial
   const handleVisualizarPainel = (cliente) => {
     const listaAtual = (visualizacao === 'cards' ? rowsCards : rows).map(r => r.c)
     const indiceInicial = listaAtual.findIndex(c => c.id === cliente.id)
-    setPainelViewer({ clientes: listaAtual, indiceInicial: indiceInicial >= 0 ? indiceInicial : 0 })
+    // empresa fora da lista filtrada (ex.: aberta pelo Ctrl K com filtro ativo):
+    // abre nela mesma, seguida da lista — antes caía na primeira da lista
+    if (indiceInicial < 0) setPainelViewer({ clientes: [cliente, ...listaAtual], indiceInicial: 0 })
+    else setPainelViewer({ clientes: listaAtual, indiceInicial })
   }
 
   const handleCompartilharPainel = (cliente) => {
