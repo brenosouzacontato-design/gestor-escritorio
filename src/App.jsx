@@ -1,4 +1,4 @@
-import { useState, useEffect, Fragment } from 'react'
+import { useState, useEffect, useMemo, useRef, useLayoutEffect } from 'react'
 import { RefreshCwIcon, SettingsIcon, PlusIcon, LogOutIcon, SearchIcon } from 'lucide-react'
 import { MenuTopo, BuscaRapida, MenuCelular, NAV } from './components/MenuTopo'
 import { temaInicial, salvarTema } from './lib/tema'
@@ -7,6 +7,7 @@ import { useStore } from './store'
 import { useTelaNoHistorico } from './lib/historico'
 import { ToastContainer } from './components/shared'
 import { AvisoPainelHost } from './components/AvisoPainelModal'
+import { AbasTelas, abasSalvas, salvarAbas, MAX_ABAS } from './components/AbasTelas'
 import { sair } from './components/ComLogin'
 import NovaTarefaModal from './components/NovaTarefaModal'
 import OneflowConfigModal from './components/OneflowConfigModal'
@@ -67,7 +68,38 @@ export default function App() {
   const [theme, setTheme] = useState(temaInicial)
   useEffect(() => { salvarTema(theme) }, [theme])
 
-  // Ctrl K (ou Cmd K) abre a busca rápida de telas
+  // Multi-telas: telas abertas em abas. `montadas` = abas já visitadas nesta
+  // sessão (as que vieram salvas do localStorage só carregam ao clicar).
+  const [abas, setAbas] = useState(() => abasSalvas(TELA_INICIAL))
+  const [montadas, setMontadas] = useState(() => new Set([TELA_INICIAL]))
+  const [versoes, setVersoes] = useState({}) // remonta uma aba (Atualizar, filtro inicial novo)
+  const [clienteDaAba, setClienteDaAba] = useState(null) // cliente aberto na aba Clientes
+  useEffect(() => {
+    setMontadas((m) => m.has(page) ? m : new Set(m).add(page))
+    setAbas((lista) => {
+      if (lista.includes(page)) return lista
+      const nova = [...lista, page]
+      // passou do limite: fecha a aba mais antiga (nunca a atual)
+      while (nova.length > MAX_ABAS) nova.splice(nova.findIndex((id) => id !== page), 1)
+      return nova
+    })
+    if (page === 'clientes') setClienteDaAba(selectedCliente)
+  }, [page, selectedCliente])
+  useEffect(() => { salvarAbas(abas) }, [abas])
+  const remontar = (id) => setVersoes((v) => ({ ...v, [id]: (v[id] || 0) + 1 }))
+  const fecharAba = (id) => {
+    const resto = abas.filter((a) => a !== id)
+    if (!resto.length) return
+    setAbas(resto)
+    setMontadas((m) => { const n = new Set(m); n.delete(id); return n })
+    if (id === page) {
+      const i = abas.indexOf(id)
+      const proxima = resto[Math.min(i, resto.length - 1)]
+      irPara({ page: proxima, cliente: proxima === 'clientes' ? clienteDaAba : null })
+    }
+  }
+
+  // Ctrl K (ou Cmd K) abre a busca rápida de telas e empresas
   useEffect(() => {
     const atalho = (e) => {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); setBuscaAberta(true) }
@@ -79,6 +111,7 @@ export default function App() {
   const init       = useStore(s => s.init)
   const loading    = useStore(s => s.loading)
   const tarefas    = useStore(s => s.tarefas)
+  const clientes   = useStore(s => s.clientes)
   const obrigacoes = useStore(s => s.obrigacoes || [])
 
   useEffect(() => { init() }, [])
@@ -86,7 +119,6 @@ export default function App() {
   // Botão "Atualizar" do topo: busca de novo empresas, tarefas, obrigações e
   // fechamentos e remonta a tela aberta (key), que recarrega os próprios dados
   // (Pagamentos, Documentos, painéis...) — sem recarregar a página inteira.
-  const [versaoPagina, setVersaoPagina] = useState(0)
   const [atualizando, setAtualizando] = useState(false)
   const atualizarDados = async () => {
     if (atualizando) return
@@ -94,7 +126,7 @@ export default function App() {
     const s = useStore.getState()
     await Promise.all([s.fetchClientes(), s.fetchTarefas(), s.fetchObrigacoes(), s.fetchFechamentos(),
       contarComprovantesPendentes().then(setComprovantesPendentes).catch(() => {})]).catch(() => {})
-    setVersaoPagina(v => v + 1)
+    remontar(page)
     setAtualizando(false)
   }
 
@@ -120,11 +152,65 @@ export default function App() {
   // o Supabase não consegue serializar (estrutura circular). Filtra aqui
   // pra não depender de todo callsite lembrar de embrulhar em arrow fn.
   const openNewTask = (clienteId = '') => { setNewTaskClienteId(typeof clienteId === 'string' ? clienteId : ''); setShowNewTask(true) }
-  const navigate    = (p, cliente = null) => irPara({ page: p, cliente: p === 'clientes' ? cliente : null })
+  const navigate    = (p, cliente = null) => {
+    // Clientes sem cliente indicado volta pro que estava aberto na aba
+    const c = p === 'clientes' ? (cliente ?? (abas.includes('clientes') && page !== 'clientes' ? clienteDaAba : null)) : null
+    irPara({ page: p, cliente: c })
+  }
   const badges = {
     tarefas:    { n: pendingCount, tipo: 'warn' },
     pagamentos: { n: comprovantesPendentes, tipo: 'warn' },
     empresas:   { n: obrigVencidas || obrigPendentes, tipo: obrigVencidas > 0 ? 'err' : 'warn' },
+  }
+
+  const rotulosAbas = useMemo(() => {
+    const c = clienteDaAba && clientes.find((x) => x.id === clienteDaAba)
+    return c ? { clientes: `Clientes · ${(c.nome || '').replace(/^[\d./-]+\s+/, '')}` } : {}
+  }, [clienteDaAba, clientes])
+
+  // cada aba guarda a própria rolagem
+  const mainRef = useRef(null)
+  const rolagens = useRef({})
+  useLayoutEffect(() => {
+    if (mainRef.current) mainRef.current.scrollTop = rolagens.current[page] || 0
+  }, [page])
+  const abasNaTela = abas.includes(page) ? abas : [...abas, page]
+
+  // Conteúdo de cada tela (as abas abertas ficam montadas ao mesmo tempo)
+  const renderTela = (id) => {
+    if (loading && (id === 'overview' || id === 'hoje')) return <div className="center"><div className="spinner" /></div>
+    switch (id) {
+      case 'overview': return <Overview onAddTarefa={openNewTask} onOpenCliente={(id) => navigate('clientes', id)} onOpenEmpresa={(id) => { setClienteAbrirEmpresas(id); navigate('empresas') }} onOpenObrigacoes={() => navigate('empresas')} onOpenTarefas={() => navigate('tarefas')} onOpenContabil={() => navigate('contabil')} />
+      case 'empresas': return <Empresas onOpenTarefas={(clienteId) => { setFiltroClienteTarefas(clienteId ?? null); remontar('tarefas'); navigate('tarefas') }}
+        onOpenCadastro={(id) => navigate('clientes', id)}
+        clienteInicialId={clienteAbrirEmpresas} onClienteInicialConsumido={() => setClienteAbrirEmpresas(null)} />
+      case 'paineis': return <PaineisPage />
+      case 'entregas': return <CentralEntregasPage />
+      case 'documentos': return <DocumentosPage arquivosIniciais={arquivosCapturados} onArquivosIniciaisConsumidos={() => setArquivosCapturados(null)} />
+      case 'hoje': return <HojePage onNavigate={navigate} onAddTarefa={openNewTask}
+        onCapturar={(arquivos) => { setArquivosCapturados(arquivos); navigate('documentos') }} />
+      case 'pagamentos': return <PagamentosPage />
+      case 'parcelamentos': return <ParcelamentosPage />
+      case 'ecac': return <EcacPage />
+      case 'notificacoes': return <NotificacoesPage />
+      case 'honorarios': return <HonorariosPage />
+      case 'tarefas': return <Tarefas onAddTarefa={openNewTask} highlightTaskId={highlightTaskId} onHighlightConsumed={() => setHighlightTaskId(null)}
+        clienteFilterInicial={filtroClienteTarefas} onClienteFilterConsumido={() => setFiltroClienteTarefas(null)} />
+      case 'clientes': return <Clientes onAddTarefa={openNewTask} selectedId={id === page ? selectedCliente : clienteDaAba} onSelect={setSelectedCliente} />
+      case 'prospectos': return <Prospectos />
+      case 'erp': return <FechamentosERP onOpenConfig={() => setShowConfig(true)} />
+      case 'contabil': return <ContabilPage />
+      case 'notasfiscais': return <NotasFiscaisPage />
+      case 'nfse': return <NfseEmissaoPage />
+      case 'nfsemei': return <NfseMeiPage />
+      case 'pedidosnfe': return <PedidosNfePage />
+      case 'admissoes': return <AdmissoesPage />
+      case 'assessor': return <AssessorPage onNavigate={navigate} />
+      case 'agenda': return <AgendaPage />
+      case 'licenciamento': return <LicenciamentoPage />
+      case 'central': return <Central />
+      default: return null
+    }
   }
 
   return (
@@ -137,8 +223,8 @@ export default function App() {
         </div>
         <MenuTopo page={page} onNavigate={navigate} badges={badges} />
         <div style={{ flex:1 }} />
-        <button type="button" className="busca-botao" onClick={() => setBuscaAberta(true)} title="Ir para uma tela (Ctrl K)">
-          <SearchIcon size={16} /> <span className="busca-botao-texto">Ir para tela…</span> <kbd>Ctrl K</kbd>
+        <button type="button" className="busca-botao" onClick={() => setBuscaAberta(true)} title="Buscar tela ou empresa (Ctrl K)">
+          <SearchIcon size={16} /> <span className="busca-botao-texto">Buscar tela ou empresa…</span> <kbd>Ctrl K</kbd>
         </button>
         <div style={{ display:'flex', gap:4, alignItems:'center' }}>
           <button className="btn btn-icon btn-ghost" onClick={atualizarDados} disabled={atualizando}
@@ -152,43 +238,15 @@ export default function App() {
         </div>
       </div>
 
+      <AbasTelas abas={abas} ativa={page} rotulos={rotulosAbas} onEscolher={(id) => navigate(id)} onFechar={fecharAba} />
+
       <div className="app-body">
-      <main className="app-main">
-        {loading && (page === 'overview' || page === 'hoje') ? (
-          <div className="center"><div className="spinner" /></div>
-        ) : (
-          <Fragment key={versaoPagina}>
-            {page === 'overview'   && <Overview onAddTarefa={openNewTask} onOpenCliente={(id) => navigate('clientes', id)} onOpenEmpresa={(id) => { setClienteAbrirEmpresas(id); navigate('empresas') }} onOpenObrigacoes={() => navigate('empresas')} onOpenTarefas={() => navigate('tarefas')} onOpenContabil={() => navigate('contabil')} />}
-            {page === 'empresas'   && <Empresas onOpenTarefas={(clienteId) => { setFiltroClienteTarefas(clienteId ?? null); navigate('tarefas') }}
-              onOpenCadastro={(id) => navigate('clientes', id)}
-              clienteInicialId={clienteAbrirEmpresas} onClienteInicialConsumido={() => setClienteAbrirEmpresas(null)} />}
-            {page === 'paineis'    && <PaineisPage />}
-            {page === 'entregas'   && <CentralEntregasPage />}
-            {page === 'documentos' && <DocumentosPage arquivosIniciais={arquivosCapturados} onArquivosIniciaisConsumidos={() => setArquivosCapturados(null)} />}
-            {page === 'hoje'       && <HojePage onNavigate={navigate} onAddTarefa={openNewTask}
-              onCapturar={(arquivos) => { setArquivosCapturados(arquivos); navigate('documentos') }} />}
-            {page === 'pagamentos' && <PagamentosPage />}
-            {page === 'parcelamentos' && <ParcelamentosPage />}
-            {page === 'ecac'       && <EcacPage />}
-            {page === 'notificacoes' && <NotificacoesPage />}
-            {page === 'honorarios' && <HonorariosPage />}
-            {page === 'tarefas'    && <Tarefas onAddTarefa={openNewTask} highlightTaskId={highlightTaskId} onHighlightConsumed={() => setHighlightTaskId(null)}
-              clienteFilterInicial={filtroClienteTarefas} onClienteFilterConsumido={() => setFiltroClienteTarefas(null)} />}
-            {page === 'clientes'   && <Clientes onAddTarefa={openNewTask} selectedId={selectedCliente} onSelect={setSelectedCliente} />}
-            {page === 'prospectos' && <Prospectos />}
-            {page === 'erp'        && <FechamentosERP onOpenConfig={() => setShowConfig(true)} />}
-            {page === 'contabil'   && <ContabilPage />}
-            {page === 'notasfiscais' && <NotasFiscaisPage />}
-            {page === 'nfse' && <NfseEmissaoPage />}
-            {page === 'nfsemei' && <NfseMeiPage />}
-            {page === 'pedidosnfe' && <PedidosNfePage />}
-            {page === 'admissoes'  && <AdmissoesPage />}
-            {page === 'assessor'   && <AssessorPage onNavigate={navigate} />}
-            {page === 'agenda'     && <AgendaPage />}
-            {page === 'licenciamento' && <LicenciamentoPage />}
-            {page === 'central'    && <Central />}
-          </Fragment>
-        )}
+      <main className="app-main" ref={mainRef} onScroll={(e) => { rolagens.current[page] = e.currentTarget.scrollTop }}>
+          {abasNaTela.filter((id) => montadas.has(id) || id === page).map((id) => (
+            <div key={`${id}-${versoes[id] || 0}`} style={{ display: id === page ? 'contents' : 'none' }}>
+              {renderTela(id)}
+            </div>
+          ))}
       </main>
       </div>
 
@@ -197,7 +255,8 @@ export default function App() {
       {showNewTask && <NovaTarefaModal clienteIdInicial={newTaskClienteId} onClose={() => setShowNewTask(false)} />}
       {showConfig  && <OneflowConfigModal onClose={() => setShowConfig(false)} />}
       {showNotifs  && <NotificacoesPanel onClose={() => setShowNotifs(false)} />}
-      <BuscaRapida aberta={buscaAberta} onFechar={() => setBuscaAberta(false)} onNavigate={navigate} badges={badges} />
+      <BuscaRapida aberta={buscaAberta} onFechar={() => setBuscaAberta(false)} onNavigate={navigate} badges={badges}
+        onAbrirEmpresa={(id) => { setClienteAbrirEmpresas(id); navigate('empresas') }} onAbrirCadastro={(id) => navigate('clientes', id)} />
       <ToastContainer />
       <AvisoPainelHost />
     </div>
