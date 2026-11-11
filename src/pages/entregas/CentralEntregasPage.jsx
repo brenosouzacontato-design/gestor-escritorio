@@ -10,10 +10,11 @@ import {
   SendIcon, RefreshCwIcon, ChevronLeftIcon, ChevronRightIcon, SearchIcon, ExternalLinkIcon,
   CheckIcon, EyeIcon, AlertTriangleIcon, MonitorOffIcon, MonitorIcon, Undo2Icon, BellIcon, BellOffIcon,
   ClockIcon, XIcon, HandIcon, HistoryIcon,
-  ClipboardListIcon, CheckSquareIcon, LayersIcon, PaperclipIcon,
+  ClipboardListIcon, CheckSquareIcon, LayersIcon, PaperclipIcon, UsersIcon,
 } from 'lucide-react'
 import { useStore } from '../../store'
 import { useToast } from '../../components/shared'
+import EscolherGrupoModal, { listarGruposWhatsapp, nomeDoGrupo } from '../../components/EscolherGrupoModal'
 import {
   listarGuias, situacaoGuia, enviarGuia, marcarEntregaManual, confirmarAberturaManual, obterLogGuia, urlGuia,
   listarEmpresasEntrega, salvarEmpresaEntrega,
@@ -632,10 +633,22 @@ function AbaEmpresas({ show, onSalvo }) {
   const [empresas, setEmpresas] = useState(null)
   const [busca, setBusca] = useState('')
   const [rascunho, setRascunho] = useState({}) // id → whatsapp digitado
+  const [grupoDe, setGrupoDe] = useState(null) // empresa escolhendo grupo
+  const [, setGruposLidos] = useState(0) // redesenha quando os nomes dos grupos chegam
 
   useEffect(() => {
-    listarEmpresasEntrega().then(setEmpresas).catch((e) => { show('Erro: ' + e.message); setEmpresas([]) })
+    listarEmpresasEntrega().then((l) => {
+      setEmpresas(l)
+      // empresa já com grupo: busca os nomes para mostrar no lugar do id
+      if (l.some((c) => /@g\.us$/.test(c.whatsapp_entrega || ''))) listarGruposWhatsapp().then(() => setGruposLidos((n) => n + 1)).catch(() => {})
+    }).catch((e) => { show('Erro: ' + e.message); setEmpresas([]) })
   }, [])
+
+  const escolherGrupo = async (c, g) => {
+    setGrupoDe(null)
+    setRascunho((r) => { const n = { ...r }; delete n[c.id]; return n })
+    if (await salvar(c, { whatsapp_entrega: g.id })) show(`${nomeCurto(c.nome)}: entregas vão para o grupo "${g.nome}".`)
+  }
 
   const salvar = async (c, patch) => {
     try {
@@ -685,17 +698,27 @@ function AbaEmpresas({ show, onSalvo }) {
         <span style={{ fontSize: 12, color: 'var(--text3)' }}>{empresas.length} empresas · {desligados} com painel desligado</span>
       </div>
       <p style={{ fontSize: 11.5, color: 'var(--text3)', margin: '0 0 10px' }}>
-        WhatsApp de entrega: número com DDD ou id de grupo (…@g.us). Em branco, usa o telefone do cadastro.
+        WhatsApp de entrega: número com DDD ou um grupo ("Escolher grupo" lista os grupos do WhatsApp do escritório). Em branco, usa o telefone do cadastro.
         O aviso com o link do painel vai para esse WhatsApp quando você pede: ao concluir a edição do painel, pelo botão "Notificar cliente" ou na pergunta que aparece ao anexar uma guia (desligue aqui para não perguntar).
       </p>
       <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
         {lista.map((c) => (
           <div key={c.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 14px', borderTop: '1px solid var(--border)', flexWrap: 'wrap' }}>
             <span style={{ flex: '1 1 220px', fontSize: 13, fontWeight: 600, color: 'var(--text1)' }}>{nomeCurto(c.nome)}</span>
-            <input className="input" style={{ width: 220 }} placeholder={c.telefone ? `${c.telefone} (cadastro)` : 'sem telefone no cadastro'}
-              value={rascunho[c.id] ?? c.whatsapp_entrega ?? ''}
-              onChange={(e) => setRascunho((r) => ({ ...r, [c.id]: e.target.value }))}
-              onBlur={() => salvarWhatsapp(c)} onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()} />
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 2, width: 220 }}>
+              <input className="input" style={{ width: '100%' }} placeholder={c.telefone ? `${c.telefone} (cadastro)` : 'sem telefone no cadastro'}
+                value={rascunho[c.id] ?? c.whatsapp_entrega ?? ''}
+                onChange={(e) => setRascunho((r) => ({ ...r, [c.id]: e.target.value }))}
+                onBlur={() => salvarWhatsapp(c)} onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()} />
+              {/@g\.us$/.test(c.whatsapp_entrega || '') && !(c.id in rascunho) && (
+                <span style={{ fontSize: 11, color: 'var(--ok)', display: 'flex', alignItems: 'center', gap: 4 }}>
+                  <UsersIcon size={11} /> {nomeDoGrupo(c.whatsapp_entrega) ? `Grupo: ${nomeDoGrupo(c.whatsapp_entrega)}` : 'Grupo do WhatsApp'}
+                </span>
+              )}
+            </div>
+            <button className="btn btn-sm btn-ghost" onClick={() => setGrupoDe(c)} title="Escolher um grupo do WhatsApp pelo nome">
+              <UsersIcon size={13} /> Escolher grupo
+            </button>
             <button className={`btn btn-sm ${c.painel_ativo === false ? 'btn-ghost' : 'btn-ghost'}`} onClick={() => alternarPainel(c)}
               style={{ color: c.painel_ativo === false ? 'var(--text3)' : 'var(--ok)', minWidth: 140 }}
               title={c.painel_ativo === false ? 'Ligar o painel do cliente' : 'Desligar o painel do cliente'}>
@@ -710,6 +733,10 @@ function AbaEmpresas({ show, onSalvo }) {
           </div>
         ))}
       </div>
+      {grupoDe && (
+        <EscolherGrupoModal empresa={grupoDe.nome} atual={grupoDe.whatsapp_entrega}
+          onEscolher={(g) => escolherGrupo(grupoDe, g)} onClose={() => setGrupoDe(null)} />
+      )}
     </>
   )
 }
