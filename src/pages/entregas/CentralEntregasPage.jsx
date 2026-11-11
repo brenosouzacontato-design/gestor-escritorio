@@ -15,6 +15,7 @@ import {
 import { useStore } from '../../store'
 import { useToast } from '../../components/shared'
 import EscolherGrupoModal, { listarGruposWhatsapp, nomeDoGrupo } from '../../components/EscolherGrupoModal'
+import AvisoPainelModal, { chamarAvisoPainel } from '../../components/AvisoPainelModal'
 import {
   listarGuias, situacaoGuia, enviarGuia, marcarEntregaManual, confirmarAberturaManual, obterLogGuia, urlGuia,
   listarEmpresasEntrega, salvarEmpresaEntrega,
@@ -56,6 +57,8 @@ export default function CentralEntregasPage() {
   const [selecionadas, setSelecionadas] = useState(() => new Set())
   const [enviando, setEnviando] = useState(() => new Set())
   const [progresso, setProgresso] = useState(null) // { feitas, total }
+  const [painelDe, setPainelDe] = useState(null) // empresa com a janela "Enviar painel" aberta
+  const [progressoPainel, setProgressoPainel] = useState(null) // { feitas, total }
 
   const carregar = async ({ silencioso = false } = {}) => {
     if (!silencioso) setGuias(null)
@@ -140,6 +143,46 @@ export default function CentralEntregasPage() {
     show(ok === lista.length ? `${ok} guia(s) enviadas.` : `${ok} de ${lista.length} enviadas — veja as que falharam.`)
   }
 
+  // Painel: em vez de (ou além de) cada guia separada, manda o aviso com o
+  // link do painel da empresa (mesma mensagem do "Notificar cliente" do painel).
+  // As guias novas listadas no aviso ficam como entregues pelo painel.
+  const podeEnviarPainel = (c) => !!c && c.painel_ativo !== false && !!destinoDe(c)
+  const motivoSemPainel = (c) => (c?.painel_ativo === false ? 'O painel desta empresa está desligado (aba Empresas)'
+    : !destinoDe(c) ? 'Empresa sem WhatsApp de entrega' : 'Enviar o link do painel da empresa no WhatsApp')
+  const empresasSelecionadas = useMemo(() => {
+    const mapa = new Map()
+    for (const g of guias || []) if (selecionadas.has(g.id) && podeEnviarPainel(g.clientes)) mapa.set(g.cliente_id, g.clientes)
+    return [...mapa.values()]
+  }, [guias, selecionadas])
+
+  const enviarPainelSelecionadas = async () => {
+    const lista = empresasSelecionadas
+    if (!lista.length) return
+    if (!window.confirm(`Enviar o painel para ${lista.length} empresa(s) pelo WhatsApp do escritório?
+
+${lista.map((c) => '• ' + nomeCurto(c.nome)).join('\n')}`)) return
+    setProgressoPainel({ feitas: 0, total: lista.length })
+    let ok = 0
+    let forcar = false
+    const falhas = []
+    for (const [i, c] of lista.entries()) {
+      try {
+        await chamarAvisoPainel(c.id, { forcar })
+        ok++
+      } catch (e) {
+        if (e.silencio && !forcar && window.confirm('Horário de silêncio (19h às 7h). Enviar mesmo assim?')) {
+          forcar = true
+          try { await chamarAvisoPainel(c.id, { forcar }); ok++ } catch (e2) { falhas.push(`${nomeCurto(c.nome)}: ${e2.message}`) }
+        } else falhas.push(`${nomeCurto(c.nome)}: ${e.message}`)
+      }
+      setProgressoPainel({ feitas: i + 1, total: lista.length })
+    }
+    setProgressoPainel(null)
+    setSelecionadas(new Set())
+    carregar({ silencioso: true })
+    show(falhas.length ? `Painel enviado para ${ok} de ${lista.length}. ${falhas[0]}` : `Painel enviado para ${ok} empresa(s).`)
+  }
+
   const marcarManual = async (g, entregue) => {
     try {
       await marcarEntregaManual(g.id, entregue)
@@ -180,7 +223,7 @@ export default function CentralEntregasPage() {
             <SendIcon size={18} /> Central de Entregas
           </h2>
           <p style={{ fontSize: 12, color: 'var(--text3)', marginTop: 2 }}>
-            Guias anexadas da competência: entregue pelo WhatsApp e acompanhe pelo trilho de cada obrigação e tarefa.
+            Guias anexadas da competência: entregue cada guia ou o painel da empresa pelo WhatsApp e acompanhe pelo trilho de cada obrigação e tarefa.
           </p>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -234,14 +277,21 @@ export default function CentralEntregasPage() {
               <input className="input" placeholder="Buscar obrigação, tarefa ou empresa" value={busca} onChange={(e) => setBusca(e.target.value)} style={{ paddingLeft: 30 }} />
             </div>
             <button className="btn btn-ghost btn-sm" onClick={selecionarPendentes}>Selecionar pendentes</button>
-            <button className="btn btn-accent btn-sm" onClick={entregarSelecionadas} disabled={!selecionadas.size || !!progresso}>
-              <SendIcon size={13} /> {progresso ? `Enviando ${progresso.feitas}/${progresso.total}…` : `Entregar ${selecionadas.size || ''} selecionada(s)`}
+            <button className="btn btn-accent btn-sm" onClick={entregarSelecionadas} disabled={!selecionadas.size || !!progresso || !!progressoPainel}
+              title="Envia cada guia selecionada, em PDF, no WhatsApp da empresa">
+              <SendIcon size={13} /> {progresso ? `Enviando ${progresso.feitas}/${progresso.total}…` : `Entregar ${selecionadas.size || ''} guia(s)`}
+            </button>
+            <button className="btn btn-ghost btn-sm" onClick={enviarPainelSelecionadas} disabled={!empresasSelecionadas.length || !!progresso || !!progressoPainel}
+              title="Envia o link do painel (uma mensagem por empresa) para as empresas das guias selecionadas">
+              <MonitorIcon size={13} /> {progressoPainel ? `Enviando painel ${progressoPainel.feitas}/${progressoPainel.total}…`
+                : `Enviar painel${empresasSelecionadas.length ? ` (${empresasSelecionadas.length} empresa${empresasSelecionadas.length > 1 ? 's' : ''})` : ''}`}
             </button>
           </div>
 
           {empresaAtual && (
             <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', fontSize: 12, color: 'var(--text3)', marginBottom: 10 }}>
               <InfoEmpresa cliente={empresaAtual} />
+              <BotaoPainel cliente={empresaAtual} pode={podeEnviarPainel(empresaAtual)} motivo={motivoSemPainel(empresaAtual)} onClick={() => setPainelDe(empresaAtual)} />
             </div>
           )}
 
@@ -271,6 +321,9 @@ export default function CentralEntregasPage() {
                         </span>
                         <ResumoEmpresa lista={sec.guias} />
                         {sec.cliente && !empresaSel && <InfoEmpresa cliente={sec.cliente} />}
+                        {sec.cliente && !empresaSel && (
+                          <BotaoPainel cliente={sec.cliente} pode={podeEnviarPainel(sec.cliente)} motivo={motivoSemPainel(sec.cliente)} onClick={() => setPainelDe(sec.cliente)} />
+                        )}
                       </div>
                     )}
                     {sec.guias.map((g) => (
@@ -286,7 +339,20 @@ export default function CentralEntregasPage() {
             )}
         </>
       )}
+      {painelDe && (
+        <AvisoPainelModal clienteId={painelDe.id} motivo="painel" onClose={() => setPainelDe(null)}
+          onEnviado={() => carregar({ silencioso: true })} />
+      )}
     </div>
+  )
+}
+
+function BotaoPainel({ pode, motivo, onClick }) {
+  return (
+    <button className="btn btn-ghost btn-sm" onClick={onClick} disabled={!pode} title={motivo}
+      style={{ fontSize: 11.5, padding: '3px 8px', color: pode ? 'var(--accent)' : 'var(--text3)' }}>
+      <MonitorIcon size={12} /> Enviar painel
+    </button>
   )
 }
 
