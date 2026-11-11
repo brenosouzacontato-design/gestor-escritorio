@@ -358,6 +358,41 @@ input, select, textarea { font-family: var(--font); }
 .busca-lista { max-height: 60vh; overflow-y: auto; padding: 6px; display: flex; flex-direction: column; gap: 2px; }
 .busca-vazio { padding: 16px; color: var(--text3); font-size: 13px; }
 
+.busca-secao { font-size: 11px; font-weight: 700; color: var(--text3); text-transform: uppercase; letter-spacing: .4px; padding: 8px 10px 2px; }
+.busca-empresa { cursor: pointer; }
+.busca-acao {
+  font-size: 11px; font-weight: 600; border-radius: 6px; padding: 3px 8px; white-space: nowrap;
+  border: 1px solid var(--border); background: var(--surface); color: var(--text2); cursor: pointer;
+}
+.busca-acao:hover { color: var(--accent); border-color: var(--accent); }
+.busca-acao-principal { display: none; border-color: transparent; background: var(--accent-dim); color: var(--accent); cursor: default; }
+.busca-empresa.destaque .busca-acao-principal { display: inline; }
+.busca-rodape {
+  display: flex; gap: 14px; flex-wrap: wrap; padding: 8px 14px; border-top: 1px solid var(--border);
+  font-size: 11.5px; color: var(--text3);
+}
+.busca-rodape kbd { font-family: var(--font); font-size: 10.5px; border: 1px solid var(--border); border-radius: 5px; padding: 0 5px; margin-right: 2px; }
+
+/* Multi-telas: abas das telas abertas, logo abaixo do topo */
+.abas-telas {
+  display: flex; gap: 4px; padding: 6px 12px 0; overflow-x: auto; flex-shrink: 0;
+  background: var(--navy); border-bottom: 1px solid var(--navy-border); scrollbar-width: thin;
+}
+.aba-tela {
+  display: flex; align-items: center; gap: 6px; max-width: 220px; min-width: 0; flex-shrink: 0;
+  padding: 6px 6px 7px 10px; border-radius: 9px 9px 0 0; cursor: pointer; user-select: none;
+  font-size: 12.5px; font-weight: 600; color: var(--navy-text-dim); border: 1px solid transparent; border-bottom: 0;
+}
+.aba-tela:hover { color: var(--navy-text); background: var(--navy2); }
+.aba-tela.ativa { color: var(--text1); background: var(--bg); border-color: var(--navy-border); margin-bottom: -1px; }
+.aba-tela-nome { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.aba-tela-fechar {
+  display: flex; align-items: center; justify-content: center; width: 18px; height: 18px; border-radius: 5px;
+  border: 0; background: transparent; color: inherit; opacity: .55; cursor: pointer; padding: 0;
+}
+.aba-tela-fechar:hover { opacity: 1; background: var(--navy3); }
+.aba-tela.ativa .aba-tela-fechar:hover { background: var(--surface2); }
+
 /* Seletor de tema (Areia / Cinza médio / Escuro) */
 .tema-seletor { position: relative; }
 .tema-caixa {
