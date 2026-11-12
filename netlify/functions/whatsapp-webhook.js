@@ -12,6 +12,7 @@ const {
 const {
   EXTENSAO_POR_MIME, extrairMidia, extrairTexto, limparBase64, tipoReal, leituraPossivel, nomeDoArquivo,
 } = require('./lib/midiaWhatsapp')
+const decisao = require('./lib/decisaoDocumento')
 
 const supabase = createClient(
   process.env.SUPABASE_URL,
@@ -220,6 +221,7 @@ async function processarDocumento(body, anexo, remoteJid) {
     // Só SUGERE: a baixa de fato só acontece quando alguém confirma no
     // sistema — nunca automático.
     let mensagemIdentificacao = '\n\n⚠️ Não consegui rodar a identificação automática — revise manualmente no sistema.'
+    let perguntarId = null // documento sem identificação: pergunta "tarefa ou arquivar?"
     try {
       const candidatos = await listarCandidatosDocumento(supabase)
       // comprovante sem guia identificada com segurança já foi analisado
@@ -238,7 +240,7 @@ async function processarDocumento(body, anexo, remoteJid) {
         .upload(storagePath, Buffer.from(base64, 'base64'), { contentType: mimeType })
       if (errStorage) throw errStorage
 
-      const { error: errDoc } = await supabase.from('documentos').insert({
+      const { data: docNovo, error: errDoc } = await supabase.from('documentos').insert({
         cliente_id: sugestao.clienteId || null,
         nome_arquivo: nomeArquivo,
         storage_path: storagePath,
@@ -254,8 +256,16 @@ async function processarDocumento(body, anexo, remoteJid) {
         candidato_sugerido_id: candidato?.id || null,
         candidato_sugerido_tipo: candidato?.tipo || null,
         status: sugestao.candidatoId ? 'identificado' : 'sem_match',
-      })
+      }).select('id').single()
       if (errDoc) throw errDoc
+
+      // Sem correspondência (e não é comprovante): o grupo escolhe tarefa ou arquivo.
+      // Só pergunta se a coluna existe (supabase-schema-documentos-decisao-whatsapp.sql).
+      if (!sugestao.candidatoId && !pareceComprovante && docNovo?.id) {
+        const { error: errDecisao } = await supabase.from('documentos').update({ whatsapp_decisao: 'aguardando' }).eq('id', docNovo.id)
+        if (errDecisao) console.error('Pergunta tarefa/arquivo desligada:', errDecisao.message)
+        else perguntarId = docNovo.id
+      }
 
       const avisoLeitura = leitura.ok ? '' : `\n⚠️ Não li o arquivo automaticamente: ${leitura.motivo}.`
       mensagemIdentificacao = `\n\n🔎 ${sugestao.tipoDocumento}${avisoLeitura}` + (
@@ -266,12 +276,14 @@ async function processarDocumento(body, anexo, remoteJid) {
           : sugestao.clienteId
             ? `\n👤 Cliente identificado, mas sem correspondência clara. Revise em Documentos → A revisar.`
             : '\n⚠️ Não identifiquei o cliente. Revise em Documentos → A revisar.'
-      )
+      ) + (perguntarId ? decisao.PERGUNTA : '')
     } catch (eIdent) {
       console.error('Erro ao identificar documento:', eIdent.message)
     }
 
-    await enviarMensagem(remoteJid, `${arquivo ? '✅ *Documento salvo no Drive!*' : '✅ *Documento recebido!*'}\n📄 ${arquivo?.name || nomeArquivo}${mensagemIdentificacao}${avisoDrive}`)
+    const envio = await enviarMensagem(remoteJid, `${arquivo ? '✅ *Documento salvo no Drive!*' : '✅ *Documento recebido!*'}\n📄 ${arquivo?.name || nomeArquivo}${mensagemIdentificacao}${avisoDrive}`)
+    const idPergunta = perguntarId && envio?.sucesso ? decisao.idMensagemEnviada(envio.corpo) : null
+    if (idPergunta) await supabase.from('documentos').update({ whatsapp_pergunta_id: idPergunta }).eq('id', perguntarId)
     return { statusCode: 200, body: JSON.stringify({ success: true, driveFileId: arquivo?.id || null, nome: arquivo?.name || nomeArquivo }) }
   } catch (e) {
     console.error('Erro ao processar documento:', e.message)
@@ -279,6 +291,62 @@ async function processarDocumento(body, anexo, remoteJid) {
     // 200 de propósito: a Evolution API reenvia o mesmo webhook até 10 vezes
     // quando recebe erro, e reprocessar não conserta uma falha dessas — só
     // repete a mesma mensagem de erro no grupo dez vezes
+    return { statusCode: 200, body: JSON.stringify({ success: false, error: e.message }) }
+  }
+}
+
+// Resposta de texto no grupo "Documentos" à pergunta "1 = tarefa / 2 = arquivar".
+// Vale para o documento cuja mensagem foi citada ou, sem citação, para o
+// último que está esperando (até VALIDADE_HORAS). Outro texto é ignorado.
+async function processarDecisaoDocumento(body, mensagem, remoteJid) {
+  const escolha = decisao.lerDecisao(mensagem)
+  if (!escolha) return { statusCode: 200, body: 'No file in docs group message' }
+
+  const citado = decisao.idCitado(body?.data?.message)
+  let consulta = supabase.from('documentos')
+    .select('id, cliente_id, nome_arquivo, tipo_documento_sugerido, observacao_ia, clientes(nome)')
+    .eq('whatsapp_decisao', 'aguardando')
+  consulta = citado
+    ? consulta.eq('whatsapp_pergunta_id', citado)
+    : consulta.gte('created_at', new Date(Date.now() - decisao.VALIDADE_HORAS * 3600e3).toISOString())
+  const { data: docs, error } = await consulta.order('created_at', { ascending: false }).limit(1)
+  if (error) {
+    console.error('Decisão do documento: falha ao buscar pendente:', error.message)
+    return { statusCode: 200, body: 'Decision lookup failed' }
+  }
+  const doc = docs?.[0]
+  if (!doc) return { statusCode: 200, body: 'No document waiting for decision' }
+
+  // trava: só um processamento por documento (a Evolution pode reenviar o webhook)
+  const agora = new Date().toISOString()
+  const { data: travado } = await supabase.from('documentos')
+    .update({ whatsapp_decisao: escolha.acao === 'tarefa' ? 'tarefa' : 'arquivado', whatsapp_decidido_em: agora })
+    .eq('id', doc.id).eq('whatsapp_decisao', 'aguardando').select('id')
+  if (!travado?.length) return { statusCode: 200, body: 'Decision already taken' }
+
+  try {
+    if (escolha.acao === 'arquivar') {
+      const { error: e } = await supabase.from('documentos').update({ status: 'confirmado', confirmado_em: agora }).eq('id', doc.id)
+      if (e) throw new Error(e.message)
+      await enviarMensagem(remoteJid, decisao.respostaArquivado(doc))
+      return { statusCode: 200, body: JSON.stringify({ success: true, arquivado: doc.id }) }
+    }
+    const remetente = body?.data?.pushName || participante(body) || null
+    const tarefa = await criarTarefa(
+      { titulo: decisao.tituloTarefa(doc, escolha.descricao), cliente_id: doc.cliente_id || null },
+      decisao.observacaoTarefa(doc, remetente),
+    )
+    const { error: e } = await supabase.from('documentos')
+      .update({ tarefa_id: tarefa.id, status: 'confirmado', confirmado_em: agora }).eq('id', doc.id)
+    if (e) throw new Error(`a tarefa foi criada, mas não consegui anexar o documento: ${e.message}`)
+    await enviarMensagem(remoteJid, decisao.respostaTarefa(tarefa, doc, doc.clientes?.nome))
+    return { statusCode: 200, body: JSON.stringify({ success: true, tarefa: tarefa.id }) }
+  } catch (e) {
+    console.error('Decisão do documento:', e.message)
+    // libera para tentar de novo (se o documento ainda não saiu da fila)
+    await supabase.from('documentos').update({ whatsapp_decisao: 'aguardando', whatsapp_decidido_em: null })
+      .eq('id', doc.id).neq('status', 'confirmado')
+    await enviarMensagem(remoteJid, `❌ Não consegui ${escolha.acao === 'tarefa' ? 'criar a tarefa' : 'arquivar'}: ${e.message}`)
     return { statusCode: 200, body: JSON.stringify({ success: false, error: e.message }) }
   }
 }
@@ -508,8 +576,9 @@ exports.handler = async (event) => {
   console.log('anexo:', anexo ? `${anexo.tipo} ${midia.mimetype || ''}` : 'nenhum')
 
   // Grupo "Documentos" — qualquer arquivo enviado aqui vai pro Drive, sem
-  // depender de prefixo. Mensagem de texto nesse grupo (sem arquivo) é
-  // ignorada, não cai no fluxo de tarefa abaixo.
+  // depender de prefixo. Texto nesse grupo só conta como resposta "1 = tarefa /
+  // 2 = arquivar" a um documento não identificado; o resto é ignorado e não
+  // cai no fluxo de tarefa abaixo.
   // Grupo "Pagamentos" — todo arquivo é comprovante de pagamento: vai pra
   // fila de baixa (tela Pagamentos do gestor). Texto sem arquivo é ignorado.
   if (PAGAMENTOS_GRUPO_ID && remoteJid === PAGAMENTOS_GRUPO_ID) {
@@ -521,7 +590,7 @@ exports.handler = async (event) => {
 
   if (DOCS_GRUPO_ID && remoteJid === DOCS_GRUPO_ID) {
     if (!midia) {
-      return { statusCode: 200, body: 'No file in docs group message' }
+      return await processarDecisaoDocumento(body, mensagem, remoteJid)
     }
     return await processarDocumento(body, anexo, remoteJid)
   }
