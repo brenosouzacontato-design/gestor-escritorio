@@ -502,7 +502,21 @@ function etapasDaGuia(g) {
     label: 'A entregar', quando: anexada, resumo: 'Anexada em',
     data: anexada ? `anexada ${fmtDiaMes(new Date(anexada).toLocaleDateString('sv-SE'))}` : null,
   }
+  // aberta pelo cliente no painel: aberto_vezes conta os downloads/cópias do painel
+  // (painel-evento.js); a confirmação manual do escritório não mexe nele
+  const abertaNoPainel = !!g.aberto_em && (g.aberto_vezes || 0) > 0
+  const dadosAbertura = {
+    quando: g.aberto_ultimo_em || g.aberto_em,
+    data: `${fmtQuando(g.aberto_ultimo_em || g.aberto_em).replace(',', '')}${g.aberto_vezes > 1 ? ` · ${g.aberto_vezes}x` : ''}`,
+    resumo: g.aberto_vezes > 1 ? `Aberta no painel ${g.aberto_vezes}x, a última em` : 'Aberta no painel em',
+  }
   let entregue = { estado: 'pendente', label: 'Entregue' }
+  if (!g.entregue_em && abertaNoPainel) {
+    // o cliente achou a guia no painel antes de ela ser entregue pela Central
+    entregar.estado = 'feito'
+    entregue = { estado: 'feito', label: 'No painel', quando: g.aberto_em, resumo: 'Encontrada no painel pelo cliente em', data: fmtDiaMes(new Date(g.aberto_em).toLocaleDateString('sv-SE')) }
+    return [entregar, entregue, { estado: 'feito', label: 'Aberta', ...dadosAbertura }]
+  }
   if (g.entregue_em) {
     entregue = {
       estado: 'feito', label: 'Entregue', manual: g.entrega_canal === 'manual', quando: g.entregue_em,
@@ -514,7 +528,9 @@ function etapasDaGuia(g) {
   }
   let aberta = { estado: 'pendente', label: 'Aberta' }
   if (g.entregue_em) {
-    if (g.aberto_em) {
+    if (abertaNoPainel) {
+      aberta = { estado: 'feito', label: 'Aberta', ...dadosAbertura }
+    } else if (g.aberto_em) {
       aberta = {
         estado: 'feito', label: g.entrega_canal === 'manual' ? 'Confirmada' : 'Aberta',
         quando: g.aberto_ultimo_em || g.aberto_em,
@@ -522,10 +538,11 @@ function etapasDaGuia(g) {
         desfazer: g.entrega_canal === 'manual',
         data: `${fmtQuando(g.aberto_ultimo_em || g.aberto_em).replace(',', '')}${g.aberto_vezes > 1 ? ` · ${g.aberto_vezes}x` : ''}`,
       }
-    } else if (g.entrega_canal === 'manual') {
+    } else if (g.entrega_canal === 'manual' && !g.visto_em) {
       aberta = { estado: 'pendente', label: 'Aberta', confirmar: true }
     } else if (g.visto_em) {
-      aberta = { estado: 'atual', label: 'Viu o painel', data: fmtQuando(g.visto_em).replace(',', ''), quando: g.visto_em, resumo: 'Viu o painel em' }
+      // entrega manual: viu o painel conta, e o escritório ainda pode confirmar a abertura
+      aberta = { estado: 'atual', label: 'Viu o painel', data: fmtQuando(g.visto_em).replace(',', ''), quando: g.visto_em, resumo: 'Viu o painel em', confirmarLink: g.entrega_canal === 'manual' }
     } else {
       aberta = { estado: 'atual', label: 'Não abriu', data: haQuanto(g.entregue_em) }
     }
@@ -648,6 +665,10 @@ export function TrilhoGuia({ g, onConfirmarAbertura }) {
                 style={{ marginTop: 4, fontSize: 11, fontWeight: 600, textAlign: 'center', cursor: 'pointer', color: e.estado === 'pendente' ? 'var(--text3)' : c.cor }}>{e.label}</span>
             )}
             {e.data && <span style={{ fontSize: 10.5, color: 'var(--text3)', textAlign: 'center', whiteSpace: 'nowrap' }}>{e.data}</span>}
+            {e.confirmarLink && (
+              <button className="btn btn-ghost" style={{ fontSize: 10, padding: '0 4px', color: 'var(--accent)' }}
+                onClick={() => onConfirmarAbertura(true)} title="Confirmar que o cliente abriu a guia">confirmar</button>
+            )}
             {e.desfazer && (
               <button className="btn btn-ghost" style={{ fontSize: 10, padding: '0 4px', color: 'var(--text3)' }}
                 onClick={() => onConfirmarAbertura(false)} title="Desfazer a confirmação">desfazer</button>
