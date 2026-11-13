@@ -13,11 +13,16 @@
 // Resposta: { sugestoes: [{ chave, conta_codigo, confianca, motivo }], modelo }
 //
 // Variáveis: ANTHROPIC_API_KEY; opcional IDENTIFICAR_MODELO.
+//
+// Modelo padrão: Claude Sonnet 5.5 — equilíbrio entre acerto e custo
+// (escolha do escritório: menos correção manual na revisão). O plano de
+// contas fica em cache entre os lotes. Para economizar ao máximo,
+// IDENTIFICAR_MODELO=claude-haiku-5-5.
 
 const Anthropic = require('@anthropic-ai/sdk');
 const { exigirEscritorio } = require('./lib/autenticacao');
 
-const MODELO = process.env.IDENTIFICAR_MODELO || 'claude-opus-5-5';
+const MODELO = process.env.IDENTIFICAR_MODELO || 'claude-sonnet-5-5';
 const MAX_GRUPOS = 40;
 
 const SYSTEM = `Você é contador de um escritório contábil brasileiro e classifica movimentações bancárias de pequenas empresas (Simples Nacional) no plano de contas da empresa.
@@ -83,13 +88,14 @@ exports.handler = async (event) => {
     ...(g.fornecedorNf ? { fornecedorNf: g.fornecedorNf } : {}),
   }));
 
-  const client = new Anthropic({ timeout: 24_000, maxRetries: 0 });
+  const client = new Anthropic({ timeout: 24_000, maxRetries: 1 });
   try {
+    // Haiku não tem troca automática de modelo quando recusa; os demais têm
+    const comFallback = !MODELO.includes('haiku');
     const r = await client.beta.messages.create({
       model: MODELO,
       max_tokens: 8000,
-      betas: ['server-side-fallback-2026-07-01'],
-      fallbacks: 'default',
+      ...(comFallback ? { betas: ['server-side-fallback-2026-07-01'], fallbacks: 'default' } : {}),
       system: SYSTEM,
       output_config: { effort: 'low', format: { type: 'json_schema', schema: SCHEMA } },
       messages: [{
