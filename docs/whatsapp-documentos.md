@@ -44,6 +44,21 @@ nfse Simple Care                        → lista os cadastrados da empresa
 nfse                                    → lista as empresas que emitem
 ```
 
+### MEI (Emissor Nacional)
+
+MEIs com senha do portal e modelo cadastrados em **Documentos → NFS-e MEI** também entram no comando:
+
+```
+nfse Monica Silva 8.000,00          → usa o modelo da empresa (tomador, código, município, descrição)
+nfse Monica Silva                   → valor sugerido do modelo
+nfse Monica Silva Friocargo 7.500   → escolhe o modelo pelo tomador, se a empresa tiver mais de um
+nfse Monica Silva 8000 31/10        → com a data de competência
+```
+
+A prévia avisa se já existe nota igual no mês (mesmo tomador e valor). Com **sim**, a nota entra na
+fila do robô (`nfse_mei_notas`), como o botão Emitir da tela: ele emite no portal e manda o PDF no
+WhatsApp do cliente. O andamento fica em Documentos → NFS-e MEI.
+
 Também vale `emitir nota ...` ou `nota: ...`. Sem valor, usa o valor padrão do cadastro. O robô
 mostra a **prévia** (empresa, tomador, CPF/CNPJ, valor, data, descrição e se é homologação) e só
 emite depois do **sim** (ou cancela com **não**), até 2 h depois. A emissão segue as mesmas regras

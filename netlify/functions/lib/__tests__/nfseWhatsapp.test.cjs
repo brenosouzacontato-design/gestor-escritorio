@@ -83,3 +83,18 @@ test('prévia', () => {
   assert.match(txt, /Homologação/)
   assert.match(txt, /\*sim\*/)
 })
+
+test('MEI: modelo do Emissor Nacional, pelo tomador ou único da empresa', () => {
+  const emp = [...empresas, { cliente_id: 'c3', nome: 'MONICA SILVA', ambiente: 'producao', mei: true }]
+  const cad = { ...cadastros, c3: { mei: [{ id: 'mm1', tomador_nome: 'FRIOCARGO TRIANGULO LTDA', tomador_doc: '12149289000194', valor: 8000, descricao: 'prestação de serviços em {mes}.', ativo: true }] } }
+  const r = n.interpretarPedido('monica silva', { empresas: emp, cadastros: cad, hoje: HOJE })
+  assert.equal(r.tipo, 'mei')
+  assert.equal(r.item.nome, 'FRIOCARGO TRIANGULO LTDA')
+  assert.equal(r.valor, '8000.00')
+  assert.equal(n.interpretarPedido('monica friocargo 7.500,00', { empresas: emp, cadastros: cad, hoje: HOJE }).valor, '7500.00')
+  const semModelo = n.interpretarPedido('monica', { empresas: emp, cadastros: { c3: { mei: [] } }, hoje: HOJE })
+  assert.match(semModelo.erro, /NFS-e MEI/)
+  const txt = n.previa({ tipo: 'mei', empresa_nome: 'MONICA SILVA', nome: 'FRIOCARGO', cpf: '12149289000194', valor: '8000.00', data: HOJE, descricao: 'x', repetida: { status: 'emitida', numero: '12' } })
+  assert.match(txt, /Emissor Nacional/)
+  assert.match(txt, /Já existe nota igual neste mês\* \(nº 12\)/)
+})

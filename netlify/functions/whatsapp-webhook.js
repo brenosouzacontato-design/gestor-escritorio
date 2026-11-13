@@ -17,6 +17,7 @@ const extratoWpp = require('./lib/extratoWhatsapp')
 const processamento = require('./lib/processamentoDocumento')
 const nfseWpp = require('./lib/nfseWhatsapp')
 const recorrentes = require('./lib/nfse/recorrentes')
+const nfseMei = require('./lib/nfse/mei')
 const { cabecalhoInterno } = require('./lib/autenticacao')
 
 const supabase = createClient(
@@ -502,22 +503,36 @@ async function processarComandoNfse(resto, mensagem, body, remoteJid) {
   try {
     const hoje = hojeSP()
     const { data: linhas, error } = await supabase.from('nfse_empresas').select('cliente_id, ambiente, descricao_padrao, ativo, clientes(nome)')
-    if (error) throw new Error(`não consegui ler as empresas de NFS-e (${error.message}).`)
+    if (error) console.error('NFS-e: empresas com certificado não lidas:', error.message)
     const empresas = (linhas || []).map((e) => ({ ...e, nome: e.clientes?.nome || 'Empresa' }))
+    // MEI pelo Emissor Nacional (docs/nfse-mei.md): com senha cadastrada e modelo ativo
+    const [acessosMei, modelosMei] = await Promise.all([
+      supabase.from('nfse_mei_acessos').select('cliente_id'),
+      supabase.from('nfse_mei_modelos').select('*').eq('ativo', true),
+    ])
+    const comSenha = new Set((acessosMei.data || []).map((a) => a.cliente_id))
+    const idsMei = [...new Set((modelosMei.data || []).map((m) => m.cliente_id))]
+      .filter((id) => comSenha.has(id) && !empresas.some((e) => e.cliente_id === id))
+    if (idsMei.length) {
+      const { data: cliMei } = await supabase.from('clientes').select('id, nome').in('id', idsMei).eq('ativo', true)
+      for (const c of cliMei || []) empresas.push({ cliente_id: c.id, nome: c.nome, ambiente: 'producao', ativo: true, mei: true })
+    }
     if (!resto) {
       const ativas = empresas.filter((e) => e.ativo !== false)
-      await enviarMensagem(remoteJid, `🧾 *Emitir NFS-e pelo grupo*\n${nfseWpp.ajuda()}${nfseWpp.textoLista({ titulo: 'Empresas que emitem pelo gestor', itens: ativas.map((e) => e.nome) })}`)
+      await enviarMensagem(remoteJid, `🧾 *Emitir NFS-e pelo grupo*\n${nfseWpp.ajuda()}${nfseWpp.textoLista({ titulo: 'Empresas que emitem pelo gestor', itens: ativas.map((e) => `${e.nome}${e.mei ? ' (MEI)' : ''}`) })}`)
       return { statusCode: 200, body: 'NFS-e help' }
     }
 
-    const ids = empresas.map((e) => e.cliente_id)
+    const ids = empresas.filter((e) => !e.mei).map((e) => e.cliente_id)
     const [modelos, tomadores] = await Promise.all([
       ids.length ? supabase.from('nfse_recorrentes').select('*').in('cliente_id', ids) : { data: [] },
       ids.length ? supabase.from('nfse_tomadores').select('id, cliente_id, nome, cpf, apelidos, endereco, cep, descricao_padrao, valor_padrao, ativo').in('cliente_id', ids) : { data: [] },
     ])
     const cadastros = {}
-    for (const m of modelos.data || []) (cadastros[m.cliente_id] ||= { modelos: [], tomadores: [] }).modelos.push(m)
-    for (const t of tomadores.data || []) (cadastros[t.cliente_id] ||= { modelos: [], tomadores: [] }).tomadores.push(t)
+    const cad = (id) => (cadastros[id] ||= { modelos: [], tomadores: [], mei: [] })
+    for (const m of modelos.data || []) cad(m.cliente_id).modelos.push(m)
+    for (const t of tomadores.data || []) cad(t.cliente_id).tomadores.push(t)
+    for (const m of modelosMei.data || []) if (empresas.some((e) => e.mei && e.cliente_id === m.cliente_id)) cad(m.cliente_id).mei.push(m)
 
     const r = nfseWpp.interpretarPedido(resto, { empresas, cadastros, hoje })
     if (r.erro) {
@@ -528,7 +543,21 @@ async function processarComandoNfse(resto, mensagem, body, remoteJid) {
     const { empresa, item } = r
     const base = { cliente_id: empresa.cliente_id, ref_id: item.id, ambiente: empresa.ambiente, empresa_nome: empresa.nome, valor: r.valor, texto_original: mensagem.slice(0, 2000) }
     let dados
-    if (r.tipo === 'recorrente') {
+    if (r.tipo === 'mei') {
+      // mesmas conferências da tela NFS-e MEI (lib/nfse/mei.js): valor, tomador, competência, nota repetida
+      const competencia = r.data || hoje
+      let nota
+      try {
+        nota = nfseMei.normalizarNota({ ...item, tomador_nome: item.tomador_nome, tomador_doc: item.tomador_doc, valor: r.valor, competencia })
+      } catch (e) {
+        await enviarMensagem(remoteJid, `⚠️ ${e.message}`)
+        return { statusCode: 200, body: 'NFS-e MEI invalid' }
+      }
+      const { data: existentes } = await supabase.from('nfse_mei_notas').select('id, status, tomador_doc, valor, competencia, numero').eq('cliente_id', empresa.cliente_id)
+      const repetida = nfseMei.notaRepetida(nota, existentes || [])
+      dados = { ...base, tipo: 'mei', nome: item.nome, cpf: item.tomador_doc || '', data: competencia, descricao: nota.descricao,
+        repetida: repetida ? { id: repetida.id, status: repetida.status, numero: repetida.numero || null } : null }
+    } else if (r.tipo === 'recorrente') {
       const { data: notas, error: errNotas } = await supabase.from('nfse_notas').select('id, estado, data, valor, numero_nfse, lote_id')
         .eq('recorrente_id', item.id).eq('ambiente', empresa.ambiente)
       if (errNotas) throw new Error(errNotas.message)
@@ -568,6 +597,31 @@ async function processarComandoNfse(resto, mensagem, body, remoteJid) {
   }
 }
 
+// MEI: a nota entra na fila do robô (nfse_mei_notas, como o botão Emitir da tela NFS-e MEI).
+// O robô emite no Emissor Nacional e manda o PDF no WhatsApp do cliente (docs/nfse-mei.md).
+async function enfileirarNotaMei(pedido, remoteJid) {
+  const d = pedido.dados || {}
+  try {
+    const { data: modelo, error: errModelo } = await supabase.from('nfse_mei_modelos').select('*').eq('id', d.ref_id).maybeSingle()
+    if (errModelo) throw new Error(errModelo.message)
+    if (!modelo || modelo.ativo === false) throw new Error('o modelo da nota foi excluído.')
+    const nota = nfseMei.normalizarNota({ ...modelo, valor: d.valor, competencia: d.data })
+    const { data: nova, error } = await supabase.from('nfse_mei_notas').insert({
+      ...nota, cliente_id: d.cliente_id, modelo_id: modelo.id, status: 'na_fila',
+      criado_por: `WhatsApp${pedido.remetente ? ` (${String(pedido.remetente).slice(0, 60)})` : ''}`,
+    }).select('id').single()
+    if (error) throw new Error(error.message)
+    await supabase.from('nfse_whatsapp_pedidos').update({ estado: nfseWpp.ESTADOS.EMITIDA, mensagem: `Na fila do robô MEI: nfse_mei_notas ${nova.id}` }).eq('id', pedido.id)
+    await enviarMensagem(remoteJid, `✅ *Nota MEI na fila do robô*\n🏢 ${d.empresa_nome}\n👤 ${d.nome} — ${fmtBRL(d.valor)}\nEle emite no Emissor Nacional e manda o PDF no WhatsApp do cliente. Acompanhe em Documentos → NFS-e MEI.`)
+    return { statusCode: 200, body: JSON.stringify({ success: true, notaMei: nova.id }) }
+  } catch (e) {
+    console.error('NFS-e MEI:', e.message)
+    await supabase.from('nfse_whatsapp_pedidos').update({ estado: nfseWpp.ESTADOS.ERRO, mensagem: String(e.message).slice(0, 1000) }).eq('id', pedido.id)
+    await enviarMensagem(remoteJid, `❌ Não mandei a nota MEI para o robô: ${e.message}\nPeça de novo ou use Documentos → NFS-e MEI.`)
+    return { statusCode: 200, body: JSON.stringify({ success: false, error: e.message }) }
+  }
+}
+
 // "sim" → trava o pedido e dispara nfse-whatsapp-background.js (que emite e
 // responde no grupo); "não" → cancela.
 async function processarConfirmacaoNfse(pedido, confirmacao, remoteJid) {
@@ -583,6 +637,7 @@ async function processarConfirmacaoNfse(pedido, confirmacao, remoteJid) {
     await enviarMensagem(remoteJid, `🚫 Ok, não emiti a NFS-e de ${d.nome} (${d.empresa_nome}).`)
     return { statusCode: 200, body: JSON.stringify({ success: true, cancelado: pedido.id }) }
   }
+  if (d.tipo === 'mei') return await enfileirarNotaMei(pedido, remoteJid)
   try {
     await dispararBackground('nfse-whatsapp-background', { pedidoId: pedido.id, remoteJid })
     await enviarMensagem(remoteJid, `⏳ *Emitindo a NFS-e…*\n👤 ${d.nome} — ${fmtBRL(d.valor)}\nAviso aqui quando a Sefin responder.`)

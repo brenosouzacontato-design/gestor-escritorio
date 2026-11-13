@@ -145,15 +145,24 @@ function interpretarPedido(texto, { empresas, cadastros, hoje }) {
   const cad = (cadastros || {})[empresa.cliente_id] || {}
   const modelos = (cad.modelos || []).filter((m) => m.ativo !== false && m.periodicidade === 'semanal')
   const tomadores = (cad.tomadores || []).filter((t) => t.ativo !== false)
+  // MEI (Emissor Nacional, nfse_mei_modelos): o "tomador" é o do modelo
+  const modelosMei = (cad.mei || []).filter((m) => m.ativo !== false)
+    .map((m) => ({ ...m, nome: m.tomador_nome || 'Tomador não identificado', cpf: m.tomador_doc || '' }))
   const todos = [
     ...modelos.map((m) => ({ tipo: 'recorrente', item: m, nomes: [m.nome] })),
     ...tomadores.map((t) => ({ tipo: 'tomador', item: t, nomes: [t.nome, ...(Array.isArray(t.apelidos) ? t.apelidos : [])] })),
+    ...modelosMei.map((m) => ({ tipo: 'mei', item: m, nomes: [m.nome] })),
   ]
   const nomesListados = [
     ...modelos.map((m) => `${m.nome} (recorrente semanal)`),
     ...tomadores.map((t) => t.nome),
+    ...modelosMei.map((m) => `${m.nome} (modelo MEI${m.valor != null ? ` — ${brl(m.valor)}` : ''})`),
   ].slice(0, 30)
-  if (!todos.length) return { erro: `${empresa.nome} não tem tomador cadastrado nem nota recorrente. Cadastre em Emitir NFS-e.` }
+  if (!todos.length) {
+    return { erro: empresa.mei
+      ? `${empresa.nome} (MEI) não tem modelo de nota. Cadastre em Documentos → NFS-e MEI.`
+      : `${empresa.nome} não tem tomador cadastrado nem nota recorrente. Cadastre em Emitir NFS-e.` }
+  }
 
   // tira o nome da empresa do texto antes de procurar o tomador
   const palavrasEmpresa = new Set(palavras(empresa.nome))
@@ -183,6 +192,7 @@ const dataBR = (iso) => (iso ? iso.split('-').reverse().join('/') : '')
 
 // Prévia enviada no grupo. dados: o que vai em nfse_whatsapp_pedidos.dados.
 function previa(dados) {
+  if (dados.tipo === 'mei') return previaMei(dados)
   const amb = dados.ambiente === 'producao' ? '' : '\n🧪 *Homologação (teste)* — a nota não tem validade.'
   const doc = dados.cpf ? `\n🪪 ${dados.cpf.length === 14 ? 'CNPJ' : 'CPF'} ${dados.cpf}` : '\n⚠️ Tomador sem CPF/CNPJ no cadastro.'
   const semana = dados.semana ? `\n🗓️ Semana de ${dataBR(dados.semana)} a ${dataBR(dados.semana_fim)}` : ''
@@ -191,13 +201,25 @@ function previa(dados) {
     + '\n\nResponda *sim* para emitir ou *não* para cancelar.'
 }
 
+// MEI: a nota vai para a fila do robô, que emite no Emissor Nacional (docs/nfse-mei.md).
+// dados.repetida: nota igual (mesmo tomador, valor e mês) já pedida.
+function previaMei(dados) {
+  const doc = dados.cpf ? `\n🪪 ${dados.cpf.length === 14 ? 'CNPJ' : 'CPF'} ${dados.cpf}` : ''
+  const rep = dados.repetida
+    ? `\n\n⚠️ *Já existe nota igual neste mês* (${dados.repetida.numero ? `nº ${dados.repetida.numero}` : dados.repetida.status}). Com *sim*, sai outra mesmo assim.`
+    : ''
+  return `🧾 *Emitir NFS-e MEI?* (Emissor Nacional)\n🏢 ${dados.empresa_nome}\n👤 ${dados.nome}${doc}\n💰 ${brl(dados.valor)}\n📅 Competência ${dataBR(dados.data)}`
+    + `\n📝 ${String(dados.descricao || '').slice(0, 300)}${rep}`
+    + '\n\nResponda *sim* para mandar ao robô (ele emite no portal e manda o PDF no WhatsApp do cliente) ou *não* para cancelar.'
+}
+
 function textoLista(lista) {
   if (!lista?.itens?.length) return ''
   return `\n\n*${lista.titulo}:*\n${lista.itens.map((i) => `• ${i}`).join('\n')}`
 }
 
 function ajuda() {
-  return 'Exemplos:\n• *nfse Simple Care Shopee 1.250,00* (nota recorrente da semana)\n• *nfse Simple Care Maria Souza 150,00* (tomador cadastrado, data de hoje)\n• *nfse Simple Care Maria 150 10/11* (com a data do atendimento)'
+  return 'Exemplos:\n• *nfse Simple Care Shopee 1.250,00* (nota recorrente da semana)\n• *nfse Simple Care Maria Souza 150,00* (tomador cadastrado, data de hoje)\n• *nfse Simple Care Maria 150 10/11* (com a data do atendimento)\n• *nfse Monica Silva 8.000,00* (MEI: usa o modelo da empresa)'
 }
 
 module.exports = {
