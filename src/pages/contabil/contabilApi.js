@@ -20,6 +20,12 @@ export async function listarContas(empresaId) {
 // "Valores a Identificar" — ver planoContasConstantes.js (valem pro plano
 // padrão OneFlow e pro Plano Enxuto).
 import { PREFIXO_DISPONIVEL, ehContaPendente } from './planoContasConstantes';
+// Regras da importação de extrato compartilhadas com o servidor (extrato
+// enviado pelo grupo Documentos do WhatsApp) — ver src/lib/contabilExtrato.js.
+import {
+  extrairPadraoClassificacao, encontrarRegraAplicavel, inserirLancamentosEmLote, calcularDREPorContaCom,
+} from '../../lib/contabilExtrato';
+export { extrairPadraoClassificacao, encontrarRegraAplicavel };
 
 // Lista só as contas de banco/caixa — usada no seletor "conta bancária do
 // extrato" da importação. Não aparece na tela de Plano de Contas (que agora
@@ -323,54 +329,7 @@ export async function criarLancamento({ empresaId, data, historico, numeroDocume
 // (ON CONFLICT DO NOTHING) em vez de duplicar.
 // itens: [{ data, historico, numeroDocumento, origem, extratoReferencia, conciliado, partidas }]
 export async function criarLancamentosEmLote(empresaId, itens) {
-  for (const item of itens) {
-    const totalDebito = item.partidas.filter(p => p.tipo === 'debito').reduce((s, p) => s + Number(p.valor), 0);
-    const totalCredito = item.partidas.filter(p => p.tipo === 'credito').reduce((s, p) => s + Number(p.valor), 0);
-    if (Math.abs(totalDebito - totalCredito) > 0.005) {
-      throw new Error(`Lançamento "${item.historico}" não bate: débito R$ ${totalDebito.toFixed(2)} x crédito R$ ${totalCredito.toFixed(2)}`);
-    }
-  }
-
-  const itensPorRef = new Map(itens.map((it) => [it.extratoReferencia, it]));
-  const linhas = itens.map((item) => ({
-    empresa_id: empresaId,
-    data: item.data,
-    historico: item.historico,
-    numero_documento: item.numeroDocumento ?? null,
-    origem: item.origem ?? 'importacao_extrato',
-    extrato_referencia: item.extratoReferencia,
-    conciliado: item.conciliado ?? true,
-  }));
-
-  const BATCH = 200;
-  const lancamentosCriados = [];
-  for (let i = 0; i < linhas.length; i += BATCH) {
-    const lote = linhas.slice(i, i + BATCH);
-    const { data, error } = await supabase
-      .from('lancamentos_contabeis')
-      .upsert(lote, { onConflict: 'empresa_id,extrato_referencia', ignoreDuplicates: true })
-      .select();
-    if (error) throw error;
-    lancamentosCriados.push(...data);
-  }
-
-  const partidas = lancamentosCriados.flatMap((lancamento) => {
-    const item = itensPorRef.get(lancamento.extrato_referencia);
-    return item.partidas.map((p) => ({
-      lancamento_id: lancamento.id,
-      conta_id: p.conta_id,
-      tipo: p.tipo,
-      valor: p.valor,
-    }));
-  });
-
-  for (let i = 0; i < partidas.length; i += BATCH) {
-    const lote = partidas.slice(i, i + BATCH);
-    const { error } = await supabase.from('partidas_contabeis').insert(lote);
-    if (error) throw error;
-  }
-
-  return { criados: lancamentosCriados.length, pulados: itens.length - lancamentosCriados.length };
+  return inserirLancamentosEmLote(supabase, empresaId, itens);
 }
 
 // Reclassifica um lançamento importado que caiu em "Valores a Identificar":
@@ -410,15 +369,8 @@ export async function reclassificarLancamentosEmLote(partidaIds, lancamentoIds, 
 
 // ---------- REGRAS DE CLASSIFICAÇÃO AUTOMÁTICA ----------
 
-// Extrai a "contraparte" do histórico pra usar como padrão da regra.
-// Nosso histórico de extrato vem como "Tipo - Contraparte" (ver
-// netlify/functions/extrair-extrato.js), então pega o que vem depois do
-// primeiro " - "; se não achar esse formato, usa o histórico inteiro.
-export function extrairPadraoClassificacao(historico) {
-  const partes = (historico ?? '').split(' - ');
-  const base = partes.length > 1 ? partes.slice(1).join(' - ') : historico ?? '';
-  return base.trim().toUpperCase();
-}
+// extrairPadraoClassificacao / encontrarRegraAplicavel: em
+// src/lib/contabilExtrato.js (reexportadas no topo deste arquivo).
 
 export async function listarRegrasClassificacao(empresaId) {
   const { data, error } = await supabase
@@ -428,20 +380,6 @@ export async function listarRegrasClassificacao(empresaId) {
     .order('updated_at', { ascending: false });
   if (error) throw error;
   return data;
-}
-
-// Acha a regra mais específica (padrão mais longo) cujo trecho aparece no
-// histórico da transação — permite cadastrar regras a partir de qualquer
-// trecho do texto, não só da contraparte inteira.
-export function encontrarRegraAplicavel(descricao, regras) {
-  const alvo = normalizarTexto(descricao);
-  let melhor = null;
-  for (const r of regras) {
-    if (r.padrao && alvo.includes(r.padrao) && (!melhor || r.padrao.length > melhor.padrao.length)) {
-      melhor = r;
-    }
-  }
-  return melhor;
 }
 
 function normalizarTexto(texto) {
@@ -785,40 +723,8 @@ export async function calcularDRE(empresaId, { dataInicio, dataFim }) {
 // aqui igual despesa (natureza devedora, reduz o resultado) — sem isso,
 // contas de custo (ex: Telecomunicações, Energia Elétrica) ficam de fora da
 // DRE mesmo tendo movimento, já que só apareciam no Balancete.
-export async function calcularDREPorConta(empresaId, { dataInicio, dataFim }) {
-  const [contas, { data: movimento, error: errMov }] = await Promise.all([
-    listarContasReceitaDespesa(empresaId, ['receita', 'despesa', 'custo']),
-    supabase.from('vw_movimento_contas').select('*').eq('empresa_id', empresaId).gte('data', dataInicio).lte('data', dataFim),
-  ]);
-  if (errMov) throw errMov;
-
-  const movPorConta = {};
-  for (const m of movimento) {
-    if (!movPorConta[m.conta_id]) movPorConta[m.conta_id] = { debito: 0, credito: 0 };
-    movPorConta[m.conta_id].debito += Number(m.total_debito);
-    movPorConta[m.conta_id].credito += Number(m.total_credito);
-  }
-
-  // Não filtra valor!==0 aqui: uma conta-pai (sintética) pode não ter
-  // movimento próprio mas ter filhas com movimento — quem decide o que
-  // exibir é a agregação por hierarquia (comSomasDeFilhas), no chamador.
-  const linhas = contas.map((c) => {
-    const mov = movPorConta[c.id] || { debito: 0, credito: 0 };
-    const valor = c.natureza === 'credora' ? mov.credito - mov.debito : mov.debito - mov.credito;
-    return { conta: c, valor };
-  });
-
-  const receitas = linhas.filter((l) => l.conta.tipo === 'receita');
-  const despesas = linhas.filter((l) => l.conta.tipo === 'despesa');
-  const custos = linhas.filter((l) => l.conta.tipo === 'custo');
-  const totalReceitas = receitas.reduce((s, l) => s + l.valor, 0);
-  const totalDespesas = despesas.reduce((s, l) => s + l.valor, 0);
-  const totalCustos = custos.reduce((s, l) => s + l.valor, 0);
-
-  return {
-    receitas, despesas, custos, totalReceitas, totalDespesas, totalCustos,
-    resultado: totalReceitas - totalDespesas - totalCustos,
-  };
+export async function calcularDREPorConta(empresaId, periodo) {
+  return calcularDREPorContaCom(supabase, empresaId, periodo);
 }
 
 // Lançamentos individuais que compõem o total de uma conta num período —
