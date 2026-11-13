@@ -47,7 +47,8 @@ function Selo({ origem }) {
   )
 }
 
-export default function ParcelamentosPage() {
+// clienteFixo: aberta dentro da aba da empresa (EmpresaAbaPage), só com os parcelamentos dela
+export default function ParcelamentosPage({ clienteFixo = null } = {}) {
   const clientes = useStore((s) => s.clientes)
   const { show } = useToast()
 
@@ -112,12 +113,13 @@ export default function ParcelamentosPage() {
   const filtrados = useMemo(() => {
     const t = busca.trim().toLowerCase()
     return parcelamentos.filter((p) => {
+      if (clienteFixo && p.cliente_id !== clienteFixo) return false
       if (filtroOrigem === 'avulso') { if (p.cliente_id) return false }
       else if (filtroOrigem !== 'todos' && (p.origem || 'manual') !== filtroOrigem) return false
       if (!t) return true
       return [p.clientes?.nome, p.nome_devedor, p.conta, p.documento_devedor].some((v) => (v || '').toLowerCase().includes(t))
     })
-  }, [parcelamentos, busca, filtroOrigem])
+  }, [parcelamentos, busca, filtroOrigem, clienteFixo])
 
   const stats = useMemo(() => {
     const ativos = parcelamentos.filter((p) => p.status === 'ativo')

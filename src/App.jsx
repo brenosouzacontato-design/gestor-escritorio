@@ -7,7 +7,7 @@ import { useStore } from './store'
 import { useTelaNoHistorico } from './lib/historico'
 import { ToastContainer } from './components/shared'
 import { AvisoPainelHost } from './components/AvisoPainelModal'
-import { AbasTelas, abasSalvas, salvarAbas, MAX_ABAS } from './components/AbasTelas'
+import { AbasTelas, abasSalvas, salvarAbas, MAX_ABAS, ehAbaEmpresa, abaDaEmpresa, empresaDaAba } from './components/AbasTelas'
 import { sair } from './components/ComLogin'
 import NovaTarefaModal from './components/NovaTarefaModal'
 import OneflowConfigModal from './components/OneflowConfigModal'
@@ -38,6 +38,7 @@ import LicenciamentoPage from './pages/licenciamento/LicenciamentoPage'
 import CentralEntregasPage from './pages/entregas/CentralEntregasPage'
 import PedidosNfePage from './pages/pedidonfe/PedidosNfePage'
 import AdmissoesPage from './pages/admissao/AdmissoesPage'
+import EmpresaAbaPage from './pages/empresa/EmpresaAbaPage'
 
 // Tela inicial pela URL (?tela=hoje, ?tela=documentos…) — é o que o app
 // instalado no tablet usa (start_url e atalhos do gestor.webmanifest).
@@ -79,8 +80,13 @@ export default function App() {
     setAbas((lista) => {
       if (lista.includes(page)) return lista
       const nova = [...lista, page]
-      // passou do limite: fecha a aba mais antiga (nunca a atual)
-      while (nova.length > MAX_ABAS) nova.splice(nova.findIndex((id) => id !== page), 1)
+      // passou do limite: fecha a aba de tela mais antiga (nunca a atual);
+      // abas de empresa são lembretes, só saem se não houver tela comum
+      while (nova.length > MAX_ABAS) {
+        let i = nova.findIndex((id) => id !== page && !ehAbaEmpresa(id))
+        if (i < 0) i = nova.findIndex((id) => id !== page)
+        nova.splice(i, 1)
+      }
       return nova
     })
     if (page === 'clientes') setClienteDaAba(selectedCliente)
@@ -157,6 +163,8 @@ export default function App() {
     const c = p === 'clientes' ? (cliente ?? (abas.includes('clientes') && page !== 'clientes' ? clienteDaAba : null)) : null
     irPara({ page: p, cliente: c })
   }
+  const abrirEmpresaEmAba = (clienteId) => { if (clienteId) irPara({ page: abaDaEmpresa(clienteId), cliente: null }) }
+  const abrirNoFechamento = (clienteId) => { setClienteAbrirEmpresas(clienteId); navigate('empresas') }
   const badges = {
     tarefas:    { n: pendingCount, tipo: 'warn' },
     pagamentos: { n: comprovantesPendentes, tipo: 'warn' },
@@ -164,9 +172,17 @@ export default function App() {
   }
 
   const rotulosAbas = useMemo(() => {
+    const curto = (nome) => (nome || '').replace(/^[\d./-]+\s+/, '')
+    const rot = {}
     const c = clienteDaAba && clientes.find((x) => x.id === clienteDaAba)
-    return c ? { clientes: `Clientes · ${(c.nome || '').replace(/^[\d./-]+\s+/, '')}` } : {}
-  }, [clienteDaAba, clientes])
+    if (c) rot.clientes = `Clientes · ${curto(c.nome)}`
+    for (const id of abas) {
+      if (!ehAbaEmpresa(id)) continue
+      const e = clientes.find((x) => x.id === empresaDaAba(id))
+      rot[id] = e ? curto(e.nome) : 'Empresa'
+    }
+    return rot
+  }, [clienteDaAba, clientes, abas])
 
   // cada aba guarda a própria rolagem
   const mainRef = useRef(null)
@@ -179,10 +195,13 @@ export default function App() {
   // Conteúdo de cada tela (as abas abertas ficam montadas ao mesmo tempo)
   const renderTela = (id) => {
     if (loading && (id === 'overview' || id === 'hoje')) return <div className="center"><div className="spinner" /></div>
+    if (ehAbaEmpresa(id)) return <EmpresaAbaPage clienteId={empresaDaAba(id)} onNavigate={navigate} onAddTarefa={openNewTask}
+      onAbrirFechamento={abrirNoFechamento} onFecharAba={() => fecharAba(id)}
+      onAbrirTarefas={(clienteId) => { setFiltroClienteTarefas(clienteId); remontar('tarefas'); navigate('tarefas') }} />
     switch (id) {
       case 'overview': return <Overview onAddTarefa={openNewTask} onOpenCliente={(id) => navigate('clientes', id)} onOpenEmpresa={(id) => { setClienteAbrirEmpresas(id); navigate('empresas') }} onOpenObrigacoes={() => navigate('empresas')} onOpenTarefas={() => navigate('tarefas')} onOpenContabil={() => navigate('contabil')} />
       case 'empresas': return <Empresas onOpenTarefas={(clienteId) => { setFiltroClienteTarefas(clienteId ?? null); remontar('tarefas'); navigate('tarefas') }}
-        onOpenCadastro={(id) => navigate('clientes', id)}
+        onOpenCadastro={(id) => navigate('clientes', id)} onAbrirAba={abrirEmpresaEmAba}
         clienteInicialId={clienteAbrirEmpresas} onClienteInicialConsumido={() => setClienteAbrirEmpresas(null)} />
       case 'paineis': return <PaineisPage />
       case 'entregas': return <CentralEntregasPage />
@@ -196,7 +215,7 @@ export default function App() {
       case 'honorarios': return <HonorariosPage />
       case 'tarefas': return <Tarefas onAddTarefa={openNewTask} highlightTaskId={highlightTaskId} onHighlightConsumed={() => setHighlightTaskId(null)}
         clienteFilterInicial={filtroClienteTarefas} onClienteFilterConsumido={() => setFiltroClienteTarefas(null)} />
-      case 'clientes': return <Clientes onAddTarefa={openNewTask} selectedId={id === page ? selectedCliente : clienteDaAba} onSelect={setSelectedCliente} />
+      case 'clientes': return <Clientes onAddTarefa={openNewTask} selectedId={id === page ? selectedCliente : clienteDaAba} onSelect={setSelectedCliente} onAbrirAba={abrirEmpresaEmAba} />
       case 'prospectos': return <Prospectos />
       case 'erp': return <FechamentosERP onOpenConfig={() => setShowConfig(true)} />
       case 'contabil': return <ContabilPage />
@@ -256,7 +275,7 @@ export default function App() {
       {showConfig  && <OneflowConfigModal onClose={() => setShowConfig(false)} />}
       {showNotifs  && <NotificacoesPanel onClose={() => setShowNotifs(false)} />}
       <BuscaRapida aberta={buscaAberta} onFechar={() => setBuscaAberta(false)} onNavigate={navigate} badges={badges}
-        onAbrirEmpresa={(id) => { setClienteAbrirEmpresas(id); navigate('empresas') }} onAbrirCadastro={(id) => navigate('clientes', id)} />
+        onAbrirEmpresa={abrirNoFechamento} onAbrirCadastro={(id) => navigate('clientes', id)} onAbrirAba={abrirEmpresaEmAba} />
       <ToastContainer />
       <AvisoPainelHost />
     </div>

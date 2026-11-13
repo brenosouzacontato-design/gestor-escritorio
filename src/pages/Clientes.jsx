@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect } from 'react'
-import { ArrowLeftIcon, PlusIcon, CheckIcon, Trash2Icon, PencilIcon, RefreshCwIcon, CheckSquareIcon, ClipboardListIcon, ZapIcon, CalendarClockIcon } from 'lucide-react'
+import { ArrowLeftIcon, PlusIcon, CheckIcon, Trash2Icon, PencilIcon, RefreshCwIcon, CheckSquareIcon, ClipboardListIcon, ZapIcon, CalendarClockIcon, PanelTopOpenIcon } from 'lucide-react'
 import { useStore } from '../store'
 import { Avatar, StatusDots, DeptChip, ErpBadge, PriDot, fmtDate, isOverdue, clientTaskStatus, useToast } from '../components/shared'
 import ClienteFormModal from '../components/ClienteFormModal'
@@ -27,7 +27,7 @@ function competenciaAnterior() {
   return String(d.getMonth()+1).padStart(2,'0') + '/' + d.getFullYear()
 }
 
-export default function Clientes({ onAddTarefa, selectedId, onSelect }) {
+export default function Clientes({ onAddTarefa, selectedId, onSelect, onAbrirAba }) {
   const clientes = useStore(s => s.clientes)
   const tarefas = useStore(s => s.tarefas)
   const fechamentos = useStore(s => s.fechamentos)
@@ -60,6 +60,7 @@ export default function Clientes({ onAddTarefa, selectedId, onSelect }) {
         fechamentos={fechamentos.filter(f => f.cliente_id === selectedId)}
         onBack={() => onSelect(null)}
         onAddTarefa={() => onAddTarefa(selectedId)}
+        onAbrirAba={onAbrirAba ? () => onAbrirAba(selectedId) : null}
       />
     )
   }
@@ -116,6 +117,12 @@ export default function Clientes({ onAddTarefa, selectedId, onSelect }) {
               <StatusDots folha={folha} fiscal={fiscal} tarefas={status} />
               {pendentes > 0 && <span style={{ fontSize:10, color:'var(--warn)', fontWeight:600 }}>{pendentes} pend.</span>}
             </div>
+            {onAbrirAba && (
+              <button type="button" className="btn btn-icon btn-ghost" title="Abrir a empresa numa aba (todos os módulos dela)"
+                onClick={(e) => { e.stopPropagation(); onAbrirAba(c.id) }}>
+                <PanelTopOpenIcon size={16} />
+              </button>
+            )}
           </div>
         )
       })}
@@ -125,7 +132,8 @@ export default function Clientes({ onAddTarefa, selectedId, onSelect }) {
   )
 }
 
-function ClienteDetalhe({ cliente, tarefas, fechamentos, onBack, onAddTarefa }) {
+// Exportado: também aparece dentro da aba da empresa (EmpresaAbaPage), sem o voltar.
+export function ClienteDetalhe({ cliente, tarefas, fechamentos, onBack, onAddTarefa, onAbrirAba }) {
   const toggleTarefa = useStore(s => s.toggleTarefa)
   const deleteTarefa = useStore(s => s.deleteTarefa)
   const fetchTarefas = useStore(s => s.fetchTarefas)
@@ -172,15 +180,22 @@ function ClienteDetalhe({ cliente, tarefas, fechamentos, onBack, onAddTarefa }) 
     <div className="page">
       {/* Header */}
       <div style={{ display:'flex', alignItems:'center', gap:12, marginBottom:16 }}>
-        <button className="btn btn-icon btn-ghost" onClick={onBack}>
-          <ArrowLeftIcon size={18} />
-        </button>
+        {onBack && (
+          <button className="btn btn-icon btn-ghost" onClick={onBack}>
+            <ArrowLeftIcon size={18} />
+          </button>
+        )}
         <Avatar name={cliente.nome} size={40} idx={0} />
         <div style={{ flex:1, minWidth:0 }}>
           <div style={{ fontSize:14, fontWeight:600, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{cliente.nome}</div>
           <div style={{ fontSize:11, color:'var(--text2)' }}>{cliente.cnpj} · {cliente.regime}</div>
           {cliente.oneflow_token && <div style={{ fontSize:10, color:'var(--accent)' }}>● Vinculado ao OneFlow</div>}
         </div>
+        {onAbrirAba && (
+          <button className="btn btn-sm" title="Abrir a empresa numa aba (todos os módulos dela)" onClick={onAbrirAba}>
+            <PanelTopOpenIcon size={14} /> Abrir em aba
+          </button>
+        )}
         <button className="btn btn-icon btn-ghost" title="Obrigações que essa empresa tem" onClick={() => setShowObrigacoesAplicaveis(true)}>
           <ClipboardListIcon size={16} />
         </button>

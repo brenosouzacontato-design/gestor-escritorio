@@ -392,6 +392,31 @@ input, select, textarea { font-family: var(--font); }
 }
 .aba-tela-fechar:hover { opacity: 1; background: var(--navy3); }
 .aba-tela.ativa .aba-tela-fechar:hover { background: var(--surface2); }
+/* aba de empresa: marca colorida pra destacar das telas comuns */
+.aba-tela.aba-empresa { box-shadow: inset 0 2px 0 var(--accent); }
+.aba-tela.aba-empresa svg:first-child { color: var(--accent); }
+
+/* Aba da empresa (EmpresaAbaPage) */
+/* telas embutidas na aba da empresa: sem o recuo/largura de página própria */
+.empresa-aba-conteudo .page { padding: 0; max-width: none; margin: 0; }
+.empresa-aba-modulos { display: flex; gap: 4px; flex-wrap: wrap; border-bottom: 1px solid var(--border); margin-bottom: 14px; }
+.empresa-aba-modulo {
+  display: inline-flex; align-items: center; gap: 6px; padding: 7px 11px; border: 0; background: transparent; cursor: pointer;
+  font-size: 13px; font-weight: 600; color: var(--text2); border-bottom: 2px solid transparent; margin-bottom: -1px; font-family: inherit;
+}
+.empresa-aba-modulo:hover { color: var(--text1); }
+.empresa-aba-modulo[data-ativo="true"] { color: var(--accent); border-bottom-color: var(--accent); }
+.empresa-aba-qtd { font-size: 10.5px; font-weight: 700; border-radius: 99px; padding: 0 6px; background: var(--warn-dim); color: var(--warn); }
+.empresa-aba-qtd.err { background: var(--danger-dim); color: var(--danger); }
+.empresa-aba-falta { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 12px; }
+.empresa-aba-bloco { border: 1px solid var(--border); border-radius: var(--r-sm, 10px); background: var(--surface); padding: 12px 14px; }
+.empresa-aba-bloco h4 { margin: 0 0 8px; font-size: 13px; display: flex; align-items: center; gap: 6px; }
+.empresa-aba-linha {
+  display: flex; align-items: center; gap: 8px; padding: 6px 0; font-size: 12.5px; border-top: 1px solid var(--border);
+  background: none; border-left: 0; border-right: 0; border-bottom: 0; width: 100%; text-align: left; color: var(--text1); font-family: inherit; cursor: pointer;
+}
+.empresa-aba-linha:first-of-type { border-top: 0; }
+.empresa-aba-linha:hover { color: var(--accent); }
 
 /* Seletor de tema (Areia / Cinza médio / Escuro) */
 .tema-seletor { position: relative; }

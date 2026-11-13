@@ -42,7 +42,8 @@ function deslocarCompetencia(comp, delta) {
 
 const destinoDe = (c) => (c?.whatsapp_entrega || c?.telefone || '').trim()
 
-export default function CentralEntregasPage() {
+// clienteFixo: aberta dentro da aba da empresa (EmpresaAbaPage), só com as guias dela
+export default function CentralEntregasPage({ clienteFixo = null } = {}) {
   const { show } = useToast()
   const competencia = useStore((s) => s.competenciaSelecionada)
   const setCompetencia = useStore((s) => s.setCompetenciaSelecionada)
@@ -51,7 +52,7 @@ export default function CentralEntregasPage() {
   const [erro, setErro] = useState(null)
   // controle de entregas: abre com tudo (as entregues pelo aviso do painel também)
   const [filtro, setFiltro] = useState('todas')
-  const [empresaSel, setEmpresaSel] = useState('') // '' = todas as empresas
+  const [empresaSel, setEmpresaSel] = useState(clienteFixo || '') // '' = todas as empresas
   const [ordem, setOrdem] = useState('empresa')
   const [busca, setBusca] = useState('')
   const [selecionadas, setSelecionadas] = useState(() => new Set())
@@ -80,7 +81,7 @@ export default function CentralEntregasPage() {
     for (const g of guias || []) if (!mapa.has(g.cliente_id)) mapa.set(g.cliente_id, g.clientes)
     return [...mapa.values()].sort((a, b) => nomeCurto(a.nome).localeCompare(nomeCurto(b.nome)))
   }, [guias])
-  useEffect(() => { if (empresaSel && guias && !empresas.some((c) => c.id === empresaSel)) setEmpresaSel('') }, [empresas])
+  useEffect(() => { if (!clienteFixo && empresaSel && guias && !empresas.some((c) => c.id === empresaSel)) setEmpresaSel('') }, [empresas])
 
   const daEmpresa = useMemo(() => (guias || []).filter((g) => !empresaSel || g.cliente_id === empresaSel), [guias, empresaSel])
 
@@ -251,12 +252,12 @@ ${lista.map((c) => '• ' + nomeCurto(c.nome)).join('\n')}`)) return
           </div>
 
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'flex-end', marginBottom: 12 }}>
-            <Campo label="Empresa">
+            {!clienteFixo && <Campo label="Empresa">
               <select className="input" value={empresaSel} onChange={(e) => setEmpresaSel(e.target.value)} style={{ width: 240 }}>
                 <option value="">Todas as empresas ({empresas.length})</option>
                 {empresas.map((c) => <option key={c.id} value={c.id}>{nomeCurto(c.nome)}</option>)}
               </select>
-            </Campo>
+            </Campo>}
             <Campo label="Situação">
               <select className="input" value={filtro} onChange={(e) => setFiltro(e.target.value)} style={{ width: 'auto' }}>
                 <option value="todas">Todas</option>

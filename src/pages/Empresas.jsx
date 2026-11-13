@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect, useRef } from 'react'
-import { PlusIcon, XIcon, CheckCircleIcon, ClockIcon, AlertCircleIcon, MinusCircleIcon, ChevronRightIcon, CalendarIcon, CheckIcon, ZapIcon, RefreshCwIcon, Trash2Icon, ListIcon, LayoutGridIcon, Rows3Icon, ClipboardListIcon, ActivityIcon, BarChart3Icon, Share2Icon, EyeIcon, CheckSquareIcon, FileIcon, DownloadIcon, PencilIcon, FileTextIcon, GripVerticalIcon, BellIcon, BellRingIcon, UserIcon, UploadCloudIcon, Loader2Icon, SparklesIcon, Building2Icon, AlertTriangleIcon, HourglassIcon, PackageCheckIcon, InboxIcon, CircleDashedIcon, BriefcaseIcon, MessageSquareIcon, SettingsIcon } from 'lucide-react'
+import { PlusIcon, XIcon, CheckCircleIcon, ClockIcon, AlertCircleIcon, MinusCircleIcon, ChevronRightIcon, CalendarIcon, CheckIcon, ZapIcon, RefreshCwIcon, Trash2Icon, ListIcon, LayoutGridIcon, Rows3Icon, ClipboardListIcon, ActivityIcon, BarChart3Icon, Share2Icon, EyeIcon, CheckSquareIcon, FileIcon, DownloadIcon, PencilIcon, FileTextIcon, GripVerticalIcon, BellIcon, BellRingIcon, UserIcon, UploadCloudIcon, Loader2Icon, SparklesIcon, Building2Icon, AlertTriangleIcon, HourglassIcon, PackageCheckIcon, InboxIcon, CircleDashedIcon, BriefcaseIcon, MessageSquareIcon, SettingsIcon, PanelTopOpenIcon } from 'lucide-react'
 import { useStore } from '../store'
 import { DeptChip, PriDot, fmtDate, isOverdue, useToast } from '../components/shared'
 import { supabase } from '../lib/supabase'
@@ -224,7 +224,7 @@ function BotaoCadastro({ cliente, onOpenCadastro, size = 12, style }) {
   )
 }
 
-export default function Empresas({ onOpenTarefas, onOpenCadastro, clienteInicialId, onClienteInicialConsumido }) {
+export default function Empresas({ onOpenTarefas, onOpenCadastro, onAbrirAba, clienteInicialId, onClienteInicialConsumido }) {
   const clientes        = useStore(s => s.clientes)
   const obrigacoes      = useStore(s => s.obrigacoes || [])
   const tarefas         = useStore(s => s.tarefas)
@@ -1667,6 +1667,13 @@ export default function Empresas({ onOpenTarefas, onOpenCadastro, clienteInicial
                     style={{ background:'rgba(255,255,255,.1)', border:'1px solid rgba(255,255,255,.15)', borderRadius:6, height:24, padding:'0 8px', gap:4,
                       display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer', color:'var(--navy-text)', flexShrink:0, fontSize:11 }}>
                     <SettingsIcon size={13} /> Cadastro
+                  </button>
+                )}
+                {onAbrirAba && (
+                  <button onClick={() => { const id = drawer.c.id; setDrawer(null); onAbrirAba(id) }} title="Abrir a empresa numa aba (todos os módulos dela)"
+                    style={{ background:'rgba(255,255,255,.1)', border:'1px solid rgba(255,255,255,.15)', borderRadius:6, height:24, padding:'0 8px', gap:4,
+                      display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer', color:'var(--navy-text)', flexShrink:0, fontSize:11 }}>
+                    <PanelTopOpenIcon size={13} /> Abrir em aba
                   </button>
                 )}
                 <button onClick={() => handleDeleteCliente(drawer.c)} title="Excluir empresa"

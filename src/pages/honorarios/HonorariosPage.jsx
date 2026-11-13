@@ -50,7 +50,8 @@ const cabecalho = { textAlign: 'left', padding: '9px 12px', fontSize: 10.5, colo
 // pendente — só quando o telefone bate com o formato de celular (ver
 // netlify/functions/lib/telefone.js); sem isso, fica pra revisão manual
 // (botão "Lembrete" nesta tela).
-export default function HonorariosPage() {
+// clienteFixo: aberta dentro da aba da empresa (EmpresaAbaPage), só com os honorários dela
+export default function HonorariosPage({ clienteFixo = null } = {}) {
   const [aba, setAba] = useState('cobrancas') // cobrancas | carteiras | config
   const [competencia, setCompetencia] = useState(competenciaAtual())
   const [honorarios, setHonorarios] = useState(null)
@@ -82,9 +83,10 @@ export default function HonorariosPage() {
   // Base dos totais: só o filtro de carteira (status/busca não mexem no "A receber"/"Recebido")
   const daCarteira = useMemo(() => {
     if (!honorarios) return []
-    if (carteira === 'todas') return honorarios
-    return honorarios.filter((h) => carteiraDe(h) === carteira)
-  }, [honorarios, carteira])
+    const daEmpresa = clienteFixo ? honorarios.filter((h) => h.cliente_id === clienteFixo) : honorarios
+    if (carteira === 'todas') return daEmpresa
+    return daEmpresa.filter((h) => carteiraDe(h) === carteira)
+  }, [honorarios, carteira, clienteFixo])
 
   const filtrados = useMemo(() => {
     let lista = daCarteira
