@@ -3,7 +3,7 @@ import { FileSignatureIcon, LandmarkIcon, UploadIcon, ShieldCheckIcon, SendIcon,
 import { useStore } from '../../store'
 import EmpresaCombobox from '../../components/EmpresaCombobox'
 import { Modal, useToast } from '../../components/shared'
-import { chamarNfse, listarLotes, listarNotas, baixarXml, arquivoParaBase64, totais } from './nfseApi'
+import { chamarNfse, listarLotes, listarNotas, baixarXml, arquivoParaBase64, totais, enviarNfseWhatsapp } from './nfseApi'
 import { baixarNfse } from '../painel/nfsePainelApi'
 import TomadoresPanel from './TomadoresPanel'
 import ExtratoPanel from './ExtratoPanel'
@@ -174,10 +174,10 @@ function Configuracao({ clienteId, status, onAtualizado }) {
   return (
     <div style={card}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-        <h3 style={{ ...titulo, margin: 0 }}><SettingsIcon size={16} /> Configuração</h3>
         {tudoCerto
-          ? <span style={{ color: 'var(--ok)', fontWeight: 700, fontSize: 12, display: 'flex', alignItems: 'center', gap: 4 }}><CheckCircleIcon size={14} /> Tudo certo para emitir</span>
-          : <span style={{ color: 'var(--danger)', fontWeight: 700, fontSize: 12, display: 'flex', alignItems: 'center', gap: 4 }}><AlertTriangleIcon size={14} /> {status.configurada ? 'Falta ajustar — veja abaixo' : 'Empresa ainda não configurada'}</span>}
+          ? <span style={{ color: 'var(--ok)', fontWeight: 700, fontSize: 13, display: 'flex', alignItems: 'center', gap: 6 }}><CheckCircleIcon size={15} /> Pronta para emitir
+            <span style={{ ...suave, fontWeight: 400 }}>· certificado válido até {dataBR(cert.valido_ate)}</span></span>
+          : <span style={{ color: 'var(--danger)', fontWeight: 700, fontSize: 13, display: 'flex', alignItems: 'center', gap: 6 }}><AlertTriangleIcon size={15} /> {status.configurada ? 'Falta ajustar a configuração' : 'Empresa ainda não configurada'}</span>}
         {status.configurada && aberto && (
           <span style={{ ...suave, flexBasis: '100%' }}>
             CNPJ {emp.cnpj} · município {emp.codigo_municipio} · serviço {emp.servico_padrao?.cTribNac} · série DPS {emp.serie_dps}
@@ -195,16 +195,16 @@ function Configuracao({ clienteId, status, onAtualizado }) {
             Falta informar o regime de IBS/CBS e a atividade do Simples Nacional (obrigatórios no leiaute novo da NFS-e). Clique em Editar.
           </div>
         )}
-        <button className="btn" style={{ marginLeft: 'auto' }} onClick={() => setAberto((a) => !a)}>{aberto ? 'Fechar' : 'Ver / editar'}</button>
+        <button className="btn btn-ghost" style={{ marginLeft: 'auto' }} onClick={() => setAberto((a) => !a)}><SettingsIcon size={14} /> {aberto ? 'Fechar' : 'Configuração'}</button>
       </div>
 
-      <div style={{ marginTop: 10, fontSize: 13 }}>
+      {(aberto || !tudoCerto || cert?.alertas.length > 0) && <div style={{ marginTop: 10, fontSize: 13 }}>
         <ShieldCheckIcon size={14} style={{ verticalAlign: -2, marginRight: 6, color: cert && !cert.bloqueios.length ? 'var(--ok)' : 'var(--danger)' }} />
         {cert
           ? <>Certificado: <b>{cert.titular}</b> · válido até {dataBR(cert.valido_ate)} ({cert.dias_restantes} dias)</>
           : <span style={{ color: 'var(--danger)' }}>Sem certificado A1 cadastrado</span>}
         {cert && [...cert.bloqueios, ...cert.alertas].map((m) => <div key={m} style={{ color: cert.bloqueios.includes(m) ? 'var(--danger)' : 'var(--warn)' }}>{m}</div>)}
-      </div>
+      </div>}
 
       {aberto && (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 16, marginTop: 14 }}>
@@ -388,7 +388,7 @@ export default function NfseEmissaoPage() {
   async function emitirSelecionadas() {
     setConfirmar(false)
     const fila = alvoEmissao.map((n) => n.id)
-    const conta = { autorizada: 0, rejeitada: 0, indeterminada: 0, pulada: 0 }
+    const conta = { autorizada: 0, rejeitada: 0, indeterminada: 0, pulada: 0, whatsapp: 0, semWhatsapp: '' }
     setOcupado(true)
     try {
       for (const [i, id] of fila.entries()) {
@@ -404,6 +404,11 @@ export default function NfseEmissaoPage() {
             r = await chamarNfse('emitir', { nota_id: id, ambiente, confirmar_repetida: true })
           }
           conta[r.resultado.estado] = (conta[r.resultado.estado] || 0) + 1
+          if (r.resultado.estado === 'autorizada' && ambiente === 'producao') {
+            const entrega = await enviarNfseWhatsapp(id)
+            if (entrega.ok) conta.whatsapp++
+            else conta.semWhatsapp = entrega.texto
+          }
         } catch (e) {
           show(`Emissão interrompida: ${e.message}`)
           break
@@ -413,7 +418,7 @@ export default function NfseEmissaoPage() {
       }
     } finally {
       setOcupado(false)
-      setProgresso(`Concluído: ${conta.autorizada} autorizada(s), ${conta.rejeitada} rejeitada(s), ${conta.indeterminada} indeterminada(s)${conta.pulada ? `, ${conta.pulada} pulada(s) por parecer repetida` : ''}`)
+      setProgresso(`Concluído: ${conta.autorizada} autorizada(s)${conta.rejeitada ? `, ${conta.rejeitada} rejeitada(s)` : ''}${conta.indeterminada ? `, ${conta.indeterminada} sem resposta` : ''}${conta.pulada ? `, ${conta.pulada} pulada(s) por parecer repetida` : ''}${conta.whatsapp ? ` · ${conta.whatsapp} enviada(s) no WhatsApp da empresa` : ''}${conta.semWhatsapp ? ` · ${conta.semWhatsapp}` : ''}`)
       setSelecionadas(new Set())
       await carregarNotas()
     }
@@ -424,6 +429,11 @@ export default function NfseEmissaoPage() {
     if (!motivo || !motivo.trim()) return
     await acao(() => chamarNfse('marcar_cancelada', { nota_id: nota.id, motivo }), 'Nota marcada como cancelada')
     await carregarNotas()
+  }
+
+  async function mandarWhatsapp(nota) {
+    setOcupado(true)
+    try { show(`NFS-e nº ${nota.numero_nfse || ''} ${(await enviarNfseWhatsapp(nota.id)).texto}`) } finally { setOcupado(false) }
   }
 
   async function reconsultar(nota) {
@@ -480,7 +490,7 @@ export default function NfseEmissaoPage() {
           <h2 style={{ fontSize: 16, fontWeight: 700, color: 'var(--text1)', display: 'flex', alignItems: 'center', gap: 8 }}>
             <FileSignatureIcon size={18} /> Emitir NFS-e
           </h2>
-          <p style={suave}>Escolha a empresa, importe os atendimentos e confira antes de emitir. A nota sai pela Sefin Nacional com o certificado A1 da empresa.</p>
+          <p style={suave}>Escolha a empresa, importe os atendimentos, confira e emita.</p>
         </div>
       </div>
 
@@ -508,13 +518,13 @@ export default function NfseEmissaoPage() {
 
       {status?.configurada && (
         <div style={card}>
-          <h3 style={titulo}><UploadIcon size={16} /> 1. Importar atendimentos</h3>
-          <textarea value={texto} onChange={(e) => setTexto(e.target.value)} rows={5}
+          <h3 style={titulo}><UploadIcon size={16} /> Importar atendimentos</h3>
+          <textarea value={texto} onChange={(e) => setTexto(e.target.value)} rows={texto ? 5 : 2}
             placeholder={'Cole aqui as mensagens do WhatsApp…\n\n[10:03, 13/10/2026] Fulana: Nome do Paciente\n123.456.789-09\nRua Tal 150\n22/01/26\nValor: 900,00\nDescrição do serviço'}
             style={{ fontFamily: 'ui-monospace, Consolas, monospace', fontSize: 12 }} />
           <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginTop: 10, flexWrap: 'wrap' }}>
             <button className="btn btn-accent" disabled={ocupado || !texto.trim()} onClick={importarTexto}>Ler mensagens</button>
-            <span style={suave}>ou envie uma planilha (colunas: data, nome, cpf, endereco, cep, descricao, valor):</span>
+            <span style={suave} title="Colunas: data, nome, cpf, endereco, cep, descricao, valor">ou planilha:</span>
             <input type="file" accept=".xlsx,.xls,.csv" style={{ width: 'auto' }} disabled={ocupado}
               onChange={(e) => { importarPlanilha(e.target.files[0]); e.target.value = '' }} />
             {!extratoAberto && (
@@ -535,23 +545,21 @@ export default function NfseEmissaoPage() {
       {status?.configurada && lotes.length > 0 && (
         <div style={card}>
           <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', marginBottom: 12 }}>
-            <h3 style={{ ...titulo, margin: 0 }}><SendIcon size={16} /> 2. Conferir e emitir</h3>
+            <h3 style={{ ...titulo, margin: 0 }}><SendIcon size={16} /> Conferir e emitir</h3>
             <select value={loteId} onChange={(e) => setLoteId(e.target.value)} style={{ width: 'auto', minWidth: 260, marginLeft: 'auto' }} title="Lote (cada importação vira um lote)">
-              {lotes.map((l) => <option key={l.id} value={l.id}>Lote de {new Date(l.criado_em).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })} · {l.origem}{l.descricao ? ` · ${l.descricao}` : ''}</option>)}
+              {lotes.map((l) => <option key={l.id} value={l.id}>{new Date(l.criado_em).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })} · {l.descricao || l.origem}</option>)}
             </select>
             <button className="btn btn-icon btn-ghost" title="Atualizar" onClick={() => carregarNotas()}><RefreshCwIcon size={16} /></button>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 10, marginBottom: 14 }}>
-            {[['Total do lote', brl(t.servico), 'var(--text1)'], ['Já emitido', brl(t.emitido), 'var(--ok)'], ['Falta emitir', brl(t.faltando), 'var(--warn)']].map(([r, v, cor]) => (
-              <div key={r} style={{ background: 'var(--surface2)', borderRadius: 8, padding: '8px 12px' }}>
-                <div style={suave}>{r}</div><div style={{ fontSize: 18, fontWeight: 800, color: cor }}>{v}</div>
-              </div>
+          <div style={{ display: 'flex', gap: 18, flexWrap: 'wrap', alignItems: 'baseline', marginBottom: 12, fontSize: 13 }}>
+            {[['Lote', brl(t.servico), 'var(--text1)'], ['Emitido', brl(t.emitido), 'var(--ok)'], ['Falta', brl(t.faltando), t.faltando > 0 ? 'var(--warn)' : 'var(--text3)']].map(([r, v, cor]) => (
+              <span key={r}><span style={suave}>{r} </span><b style={{ color: cor, fontSize: 15 }}>{v}</b></span>
             ))}
           </div>
 
           {/* Abas: o que fazer com cada nota */}
-          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 8 }}>
+          {ABAS.filter(([id, , f]) => id && conta(f)).length > 1 && <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 8 }}>
             {ABAS.map(([id, rotulo, f]) => {
               const q = conta(f)
               if (id && !q) return null
@@ -566,11 +574,11 @@ export default function NfseEmissaoPage() {
                 </button>
               )
             })}
-          </div>
+          </div>}
           {DICA_ABA[filtro] && <div style={{ ...suave, marginBottom: 10 }}>{DICA_ABA[filtro]}</div>}
 
-          {/* Barra de emissão */}
-          <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', margin: '10px 0', padding: '10px 12px', background: 'var(--surface2)', borderRadius: 8 }}>
+          {/* Barra de emissão: só quando há o que emitir */}
+          {editaveis.length > 0 && <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', margin: '10px 0', padding: '10px 12px', background: 'var(--surface2)', borderRadius: 8 }}>
             <button className="btn btn-accent" disabled={ocupado || !alvoEmissao.length || !podeEmitir}
               title={podeEmitir ? '' : 'Configure o certificado A1 antes'} onClick={() => setConfirmar(true)}
               style={{ fontSize: 13, padding: '8px 16px' }}>
@@ -578,10 +586,10 @@ export default function NfseEmissaoPage() {
             </button>
             <span style={suave}>{sel.length ? 'Só as marcadas que estão prontas.' : 'Marque na caixinha para emitir só algumas.'}</span>
             {marcadas.length > 0 && <button className="btn btn-ghost" onClick={() => setSelecionadas(new Set())}>Desmarcar ({marcadas.length})</button>}
-            <span style={{ fontWeight: 600, fontSize: 12, marginLeft: 'auto' }}>{progresso}</span>
-          </div>
+          </div>}
+          {progresso && <div style={{ fontWeight: 600, fontSize: 12, margin: '6px 0' }}>{progresso}</div>}
 
-          <details style={{ marginBottom: 10 }}>
+          {editaveis.length > 0 && <details style={{ marginBottom: 10 }}>
             <summary style={{ ...suave, cursor: 'pointer' }}>Mudar a competência das notas marcadas</summary>
             <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginTop: 8 }}>
               <input value={compMassa} onChange={(e) => setCompMassa(e.target.value)} placeholder="mm/aaaa ou dd/mm/aaaa" style={{ width: 160 }} />
@@ -589,7 +597,7 @@ export default function NfseEmissaoPage() {
               <button className="btn" disabled={ocupado} onClick={() => aplicarCompetencia('')}>Voltar ao padrão</button>
               <span style={suave}>Padrão: {status.empresa.regra_competencia === 'mes_da_emissao' ? 'data da emissão' : 'data do atendimento'}</span>
             </div>
-          </details>
+          </details>}
 
           <div className="tabela-rolagem">
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
@@ -637,7 +645,7 @@ export default function NfseEmissaoPage() {
                           <a href="#" onClick={(e) => { e.preventDefault(); baixarNfse(clienteId, { id: n.id, numero: n.numero_nfse, chave: n.chave_acesso }, 'pdf', { incluirHomologacao: true }).catch((x) => show(x.message)) }}
                             title="DANFSe (NT 008/2026) gerado a partir do XML autorizado">PDF</a>{' · '}
                           <a href="#" onClick={(e) => { e.preventDefault(); baixarXml(n.id, 'xml_retorno').catch((x) => show(x.message)) }}>XML</a>{' · '}
-                          <a href="#" onClick={(e) => { e.preventDefault(); baixarXml(n.id, 'xml_enviado').catch((x) => show(x.message)) }} title="DPS assinada enviada à Sefin">DPS</a>{' · '}
+                          {ambiente === 'producao' && <><a href="#" onClick={(e) => { e.preventDefault(); if (!ocupado) mandarWhatsapp(n) }} title="Manda o PDF e o XML no WhatsApp da empresa">WhatsApp</a>{' · '}</>}
                           <a href="#" style={{ color: 'var(--text3)' }} onClick={(e) => { e.preventDefault(); if (!ocupado) marcarCancelada(n) }}
                             title="Use depois de cancelar a nota no portal nacional (www.nfse.gov.br)">cancelada no portal?</a>
                           {n.chave_acesso && <div><a href="#" style={{ ...suave, fontSize: 11 }} title={n.chave_acesso}

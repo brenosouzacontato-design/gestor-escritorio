@@ -4,7 +4,7 @@
 // Usado na tela Hoje e no painel de recorrentes da tela Emitir NFS-e.
 import { useState } from 'react'
 import { SendIcon, PencilIcon } from 'lucide-react'
-import { chamarNfse } from './nfseApi'
+import { chamarNfse, enviarNfseWhatsapp } from './nfseApi'
 import ConfirmarEmissao from './ConfirmarEmissao'
 
 const brl = (v) => Number(v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
@@ -60,7 +60,8 @@ export default function NotaRecorrenteCard({ clienteId, empresa, ambiente, model
     try {
       const r = await chamarNfse('recorrente_emitir', { cliente_id: clienteId, id: modelo.id, semana: s.inicio, valor, ambiente, ...ajustes })
       if (r.resultado?.estado === 'autorizada') {
-        onPronto?.({ ok: true, texto: `NFS-e nº ${r.nota?.numero_nfse || ''} emitida${empresa ? ` · ${empresa}` : ''} · ${brl(r.nota?.valor)}` })
+        const entrega = ambiente === 'producao' && r.nota?.id ? await enviarNfseWhatsapp(r.nota.id) : null
+        onPronto?.({ ok: true, texto: `NFS-e nº ${r.nota?.numero_nfse || ''} emitida${empresa ? ` · ${empresa}` : ''} · ${brl(r.nota?.valor)}${entrega ? ` · ${entrega.texto}` : ''}` })
         return
       }
       const texto = r.resultado?.mensagem || `Situação: ${r.resultado?.estado}. Confira na tela Emitir NFS-e.`

@@ -13,8 +13,9 @@ async function chamar(corpo) {
 }
 
 // [{ id, numero, chave, competencia, emitidaEm, tomador, valor, descricao, ambiente }]
-export async function listarNfseEmitidas(clienteId, competencia, { incluirHomologacao = false } = {}) {
-  const resp = await chamar({ acao: 'listar', cliente_id: clienteId, competencia, incluir_homologacao: incluirHomologacao });
+// recentes: também as emitidas nos últimos dias, de outra competência (ver painel-nfse.js)
+export async function listarNfseEmitidas(clienteId, competencia, { incluirHomologacao = false, recentes = false } = {}) {
+  const resp = await chamar({ acao: 'listar', cliente_id: clienteId, competencia, recentes, incluir_homologacao: incluirHomologacao });
   const dados = await resp.json().catch(() => ({}));
   if (!resp.ok) throw new Error(dados.error || 'Não foi possível carregar as notas emitidas.');
   return dados.notas || [];
