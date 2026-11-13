@@ -238,3 +238,16 @@
 .dre-g-ponto p { margin: 4px 0; }
 .dre-g-sev { font-size: 0.68rem; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; }
 .dre-g-atalhos { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+
+/* Financeiro como ponte com o OneFlow (ResumoTab / LancarOneflowTab) */
+.fin-ponte { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; }
+.fin-ponte-etapa { display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px; }
+.fin-ponte-etapa[data-ok="true"] { border-color: var(--ok); background: var(--ok-dim); }
+.fin-ponte-num { flex: none; width: 24px; height: 24px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center;
+  font-size: 0.75rem; font-weight: 700; background: var(--border); color: var(--text1); }
+.fin-ponte-etapa[data-ok="true"] .fin-ponte-num { background: var(--ok); color: #fff; }
+.fin-ponte-rotulo { font-size: 0.72rem; color: var(--text3); text-transform: uppercase; letter-spacing: .03em; font-weight: 600; }
+.fin-ponte-valor { font-size: 1rem; font-weight: 700; color: var(--text1); font-variant-numeric: tabular-nums; }
+.fin-barra { height: 4px; background: var(--border); border-radius: 2px; margin-top: 4px; overflow: hidden; }
+.fin-barra i { display: block; height: 100%; border-radius: 2px; }
+.fin-passos { margin: 0; padding-left: 18px; font-size: 0.82rem; color: var(--text2); line-height: 1.6; }

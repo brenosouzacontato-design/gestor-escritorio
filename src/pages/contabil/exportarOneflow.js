@@ -157,3 +157,19 @@ export function baixarPlanilhaOneflow(wb, nomeArquivo) {
   // células com texto inline (planilha importada vinha vazia)
   XLSX.writeFile(wb, nomeArquivo, { compression: true, bookSST: true });
 }
+
+// Plano que a empresa usa no OneFlow, lembrado por empresa neste navegador:
+// "enxuto" (padrão; contas do plano padrão antigo passam pelo de-para) ou
+// "mesmo" (manda o código do Gestor como está).
+const chaveModo = (empresaId) => `oneflow_plano_${empresaId}`;
+export function lerModoOneflow(empresaId) {
+  try { return localStorage.getItem(chaveModo(empresaId)) || 'enxuto'; } catch { return 'enxuto'; }
+}
+export function gravarModoOneflow(empresaId, modo) {
+  try { localStorage.setItem(chaveModo(empresaId), modo); } catch { /* sem storage: só não lembra */ }
+}
+
+export function nomeArquivoOneflow(empresaNome, dataInicio, dataFim) {
+  const slug = (empresaNome || 'empresa').normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^A-Za-z0-9]+/g, '_').slice(0, 40);
+  return `OneFlow_Lancamentos_${slug}_${dataInicio}_a_${dataFim}.xlsx`;
+}

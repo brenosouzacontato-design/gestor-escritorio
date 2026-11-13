@@ -3,8 +3,9 @@
 // Importa na contabilidade o extrato bancário que chegou no grupo
 // "Documentos" do WhatsApp, depois que alguém respondeu "sim" à pergunta do
 // robô (whatsapp-webhook.js → processarRespostaExtrato). Lê o PDF guardado
-// em Storage, gera os lançamentos no padrão OneFlow, calcula a DRE do
-// período e responde no grupo com o resumo e o link da DRE.
+// em Storage, gera os lançamentos no padrão OneFlow e responde no grupo com
+// o resumo do extrato. O envio pro OneFlow (onde ficam DRE e demonstrações)
+// é feito em Financeiro → Lançar no OneFlow.
 //
 // Background Function (sufixo -background): o Netlify responde 202 pra quem
 // chamou e deixa esta rodar até 15 minutos — ler um extrato de várias
@@ -24,14 +25,6 @@ const { enviarMensagem } = whatsapp
 const { AGUARDANDO, IMPORTANDO, IMPORTADO, resultadoImportacao } = extratoWhatsapp
 
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY)
-
-// Link público da DRE (mesmo do botão "Compartilhar via WhatsApp" da aba DRE).
-function linkDre(cliente, periodo) {
-  const base = (process.env.PAINEL_URL_BASE || process.env.URL || '').replace(/\/+$/, '')
-  if (!base || !periodo) return null
-  const busca = new URLSearchParams({ share: 'dre', empresa: cliente.painel_token || cliente.id, inicio: periodo.dataInicio, fim: periodo.dataFim })
-  return `${base}/?${busca.toString()}`
-}
 
 export const handler = async (event) => {
   if (await exigirEscritorio(event, 'importar-extrato-background')) return
@@ -72,7 +65,7 @@ export const handler = async (event) => {
       banco: doc.whatsapp_extrato?.banco || null,
       apiKey: process.env.ANTHROPIC_API_KEY,
     })
-    console.log('importar-extrato-background: importado', JSON.stringify({ documentoId, empresa: cliente.id, ...res, dre: undefined }))
+    console.log('importar-extrato-background: importado', JSON.stringify({ documentoId, empresa: cliente.id, ...res }))
 
     const agora = new Date().toISOString()
     const { error: errDoc } = await supabase.from('documentos').update({
@@ -84,7 +77,7 @@ export const handler = async (event) => {
     }).eq('id', doc.id)
     if (errDoc) console.error('importar-extrato-background: falha ao marcar o documento:', errDoc.message)
 
-    if (remoteJid) await enviarMensagem(remoteJid, resultadoImportacao(cliente, { ...res, linkDre: linkDre(cliente, res.periodo) }))
+    if (remoteJid) await enviarMensagem(remoteJid, resultadoImportacao(cliente, res))
   } catch (e) {
     console.error('importar-extrato-background:', e.message)
     // volta a esperar resposta: dá pra mandar "sim" de novo depois de corrigir

@@ -59,18 +59,17 @@ test('pergunta com e sem empresa identificada', () => {
   assert.match(sem, /sim Amanda Lima/)
 })
 
-test('resumo da importação traz lançamentos, pendentes e DRE', () => {
+test('resumo da importação traz lançamentos, pendentes, saldo e o envio ao OneFlow', () => {
   const msg = x.resultadoImportacao(clientes[0], {
     contaBanco: { codigo: '1.1.01.003.001', nome: 'Nubank' }, contaBancoCriada: false,
     periodo: { dataInicio: '2026-09-01', dataFim: '2026-09-30' },
     criados: 118, pulados: 1, classificadas: 50, pendentes: 69, totalEntradas: 1000, totalSaidas: 400.5,
     planoCriado: false, avisos: [],
-    dre: { totalReceitas: 900, totalCustos: 0, totalDespesas: 0, resultado: 900 },
-    linkDre: 'https://x/?share=dre',
   })
   assert.match(msg, /118 lançamentos gerados \(1 já tinha sido importado\)/)
   assert.match(msg, /50 classificados pelas regras · ⏳ 69 em Valores a Identificar/)
-  assert.match(msg, /\*Resultado: R\$\s900,00\*/)
-  assert.match(msg, /https:\/\/x\/\?share=dre/)
-  assert.doesNotMatch(msg, /Custos/)
+  assert.match(msg, /\*Saldo do período: R\$\s599,50\*/)
+  assert.match(msg, /Identifique os 69 pendentes/)
+  assert.match(msg, /2\. Lance no OneFlow/)
+  assert.doesNotMatch(msg, /DRE do período/)
 })

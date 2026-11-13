@@ -13,7 +13,6 @@ import EnviarIdentificacaoButton from './EnviarIdentificacaoButton';
 // lançamento olhando se é o lado debitado ou creditado. Ver
 // planoContasConstantes.js (vale pro plano padrão e pro enxuto).
 import { PREFIXO_DISPONIVEL, CODIGOS_CONTA_PENDENTE, ehContaPendente } from './planoContasConstantes';
-import ExportarOneflowButton from './ExportarOneflowButton';
 import IdentificarIAModal from './IdentificarIAModal';
 
 export default function LancamentosTab({ empresaId, periodo, empresaNome }) {
@@ -264,7 +263,6 @@ export default function LancamentosTab({ empresaId, periodo, empresaNome }) {
               do período mesmo com a tabela filtrada */}
           <EnviarIdentificacaoButton empresaId={empresaId} empresaNome={empresaNome} periodo={periodo}
             lancamentoIds={semFiltroAplicado && selecionados.size === 0 ? [] : idsParaIdentificar} />
-          <ExportarOneflowButton lancamentos={lancamentos} periodo={periodo} empresaId={empresaId} empresaNome={empresaNome} />
           <button className="btn-ghost" onClick={() => setIdentificarAberto(true)} title="Cruza as saídas com as NFs de entrada e usa IA para sugerir a conta do restante">
             ✨ Identificar com NFs e IA
           </button>
@@ -422,6 +420,10 @@ export default function LancamentosTab({ empresaId, periodo, empresaNome }) {
                       <span className="badge-origem" style={{ background: 'var(--ok-dim)', color: 'var(--ok)' }}>Conciliado</span>
                     ) : (
                       <span className="badge-origem" style={{ background: 'var(--warn-dim)', color: 'var(--warn)' }}>A conciliar</span>
+                    )}
+                    {l.oneflow_envio_id && (
+                      <span className="badge-origem" title={`Já lançado no OneFlow em ${new Date(l.oneflow_enviado_em).toLocaleDateString('pt-BR')} — alterar aqui não muda lá`}
+                        style={{ marginLeft: 4, background: 'var(--accent-dim, #e0e7ff)', color: 'var(--accent, #4338ca)' }}>OneFlow ✓</span>
                     )}
                   </td>
                   <td style={{ whiteSpace: 'nowrap' }}>

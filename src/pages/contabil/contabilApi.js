@@ -791,3 +791,86 @@ export async function atualizarLancamento(id, patch) {
   if (error) throw error;
   return data;
 }
+
+// ---- Ponte com o OneFlow (aba "Lançar no OneFlow") ----------------------
+// O OneFlow não tem API pra receber lançamentos: o Gestor gera a planilha
+// oficial e registra o envio, marcando os lançamentos que foram nela
+// (supabase-schema-contabil-oneflow-envios.sql) — assim o próximo arquivo
+// leva só o que ainda não foi.
+
+// lançamentos que nasceram de nota fiscal — o OneFlow já tem pelo Fiscal
+export async function idsLancamentosDoFiscal(empresaId) {
+  const { data, error } = await supabase
+    .from('documentos_fiscais_erp')
+    .select('lancamento_id')
+    .eq('cliente_id', empresaId)
+    .not('lancamento_id', 'is', null);
+  if (error) throw error;
+  return new Set((data ?? []).map((d) => d.lancamento_id));
+}
+
+export async function listarEnviosOneflow(empresaId) {
+  const { data, error } = await supabase
+    .from('oneflow_envios')
+    .select('*')
+    .eq('empresa_id', empresaId)
+    .order('created_at', { ascending: false })
+    .limit(30);
+  if (error) throw error;
+  return data ?? [];
+}
+
+// cria o envio e marca os lançamentos (em lotes, pra URL não estourar)
+export async function registrarEnvioOneflow(empresaId, { lancamentoIds, dataInicio, dataFim, qtdLinhas, total, modo, arquivo, criadoPor }) {
+  const { data: envio, error } = await supabase
+    .from('oneflow_envios')
+    .insert({
+      empresa_id: empresaId, data_inicio: dataInicio, data_fim: dataFim,
+      qtd_lancamentos: lancamentoIds.length, qtd_linhas: qtdLinhas, total, modo, arquivo, criado_por: criadoPor ?? null,
+    })
+    .select('*')
+    .single();
+  if (error) throw error;
+  const agora = new Date().toISOString();
+  try {
+    for (let i = 0; i < lancamentoIds.length; i += 150) {
+      const { error: e2 } = await supabase
+        .from('lancamentos_contabeis')
+        .update({ oneflow_envio_id: envio.id, oneflow_enviado_em: agora })
+        .in('id', lancamentoIds.slice(i, i + 150));
+      if (e2) throw e2;
+    }
+  } catch (e) {
+    await desfazerEnvioOneflow(envio.id).catch(() => {});
+    throw e;
+  }
+  return envio;
+}
+
+// volta os lançamentos do envio para "a enviar" e apaga o registro
+export async function desfazerEnvioOneflow(envioId) {
+  const { error } = await supabase
+    .from('lancamentos_contabeis')
+    .update({ oneflow_envio_id: null, oneflow_enviado_em: null })
+    .eq('oneflow_envio_id', envioId);
+  if (error) throw error;
+  const { error: e2 } = await supabase.from('oneflow_envios').delete().eq('id', envioId);
+  if (e2) throw e2;
+}
+
+export async function listarLancamentosDoEnvio(envioId) {
+  const todos = [];
+  for (let de = 0; ; de += 1000) {
+    const { data, error } = await supabase
+      .from('lancamentos_contabeis')
+      .select('*, partidas_contabeis(*, contas_contabeis(*))')
+      .eq('oneflow_envio_id', envioId)
+      .order('data')
+      .order('id')
+      .range(de, de + 999);
+    if (error) throw error;
+    todos.push(...(data ?? []));
+    if (!data || data.length < 1000) break;
+  }
+  return todos;
+}

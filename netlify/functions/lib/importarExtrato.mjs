@@ -12,7 +12,7 @@
 //   4. classifica pelas regras aprendidas da empresa; o que não tem regra vai
 //      pra "Valores a Identificar" (não conciliado) pra classificar depois;
 //   5. grava os lançamentos sem duplicar (mesma extrato_referencia da tela);
-//   6. calcula a DRE do período do extrato.
+//   6. devolve o resumo do extrato (DRE fica no OneFlow).
 // Diferente da tela, aqui ninguém confere antes de gravar: por isso só regra
 // cadastrada/aprendida classifica (a sugestão "por palavras parecidas" da
 // tela fica de fora) e nenhuma regra nova é aprendida.
@@ -24,7 +24,7 @@ import extrairExtratoIA from './extrairExtratoIA.js'
 import {
   corrigirTipoPelaDescricao, transacaoValida, encontrarRegraAplicavel, montarItensExtrato,
   inserirLancamentosEmLote, identificarBanco, acharContaBanco, proximoCodigoBanco, PREFIXO_BANCOS,
-  acharContaPendente, periodoDoExtrato, calcularDREPorContaCom,
+  acharContaPendente, periodoDoExtrato,
 } from '../../../src/lib/contabilExtrato.js'
 import { agruparEmLinhas, pareceExtratoNubank, interpretarExtratoNubank } from '../../../src/lib/extratoNubankRegras.js'
 
@@ -237,13 +237,8 @@ export async function importarExtrato({ supabase, empresaId, pdfBytes, nomeArqui
   const itens = montarItensExtrato(classificadas, { contaBancoId: contaBanco.id, contaPendenteId: contaPendente.id })
   const { criados, pulados } = await inserirLancamentosEmLote(supabase, empresaId, itens)
 
+  // DRE e demais demonstrações ficam no OneFlow: aqui só o resumo do extrato
   const periodo = periodoDoExtrato(transacoes)
-  let dre = null
-  try {
-    dre = await calcularDREPorContaCom(supabase, empresaId, periodo)
-  } catch (e) {
-    console.error('importarExtrato: falha ao calcular a DRE:', e.message)
-  }
 
   const soma = (tipo) => transacoes.filter((t) => t.tipo === tipo).reduce((s, t) => s + t.valor, 0)
   const avisos = [...lido.avisos]
@@ -261,7 +256,6 @@ export async function importarExtrato({ supabase, empresaId, pdfBytes, nomeArqui
     contaBancoCriada,
     planoCriado,
     periodo,
-    dre: dre && { totalReceitas: dre.totalReceitas, totalCustos: dre.totalCustos, totalDespesas: dre.totalDespesas, resultado: dre.resultado },
     avisos,
   }
 }
