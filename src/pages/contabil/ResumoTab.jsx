@@ -65,7 +65,7 @@ export default function ResumoTab({ empresaId, periodo, onPeriodo, onIrPara }) {
       {carregando && !r && <p>Carregando resumo...</p>}
       {erro && <p style={{ color: 'var(--danger)' }}>{erro}</p>}
       {r && r.totais.qtd === 0 && !carregando && (
-        <div className="dre-g-card">
+        <div className="dre-g-card fin-card">
           <p style={{ margin: 0, color: 'var(--text2)' }}>
             Nenhum lançamento no período. Importe o extrato pela aba <b>Importar Extrato</b> ou mande o arquivo no grupo
             <b> Documentos</b> do WhatsApp.
@@ -85,10 +85,10 @@ export default function ResumoTab({ empresaId, periodo, onPeriodo, onIrPara }) {
 
           <Ponte r={r} onIrPara={onIrPara} />
 
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(380px, 1fr))', gap: 16 }}>
-            <div className="dre-g-card">
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(420px, 1fr))', gap: 16 }}>
+            <div className="dre-g-card fin-card">
               <h3>Por mês</h3>
-              <table className="dre-g-tabela">
+              <table className="dre-g-tabela fin-tabela">
                 <thead><tr><th style={{ textAlign: 'left' }}>Mês</th><th className="num">Entradas</th><th className="num">Saídas</th><th className="num">Saldo</th></tr></thead>
                 <tbody>
                   {r.porMes.map((m) => (
@@ -102,9 +102,9 @@ export default function ResumoTab({ empresaId, periodo, onPeriodo, onIrPara }) {
                 </tbody>
               </table>
             </div>
-            <div className="dre-g-card">
+            <div className="dre-g-card fin-card">
               <h3>Por conta bancária</h3>
-              <table className="dre-g-tabela">
+              <table className="dre-g-tabela fin-tabela">
                 <thead><tr><th style={{ textAlign: 'left' }}>Conta</th><th className="num">Entradas</th><th className="num">Saídas</th><th className="num">Saldo</th></tr></thead>
                 <tbody>
                   {r.porBanco.map((b) => (
@@ -149,7 +149,7 @@ function Ponte({ r, onIrPara }) {
       acao: o.qtdProntos ? { rotulo: `Lançar ${o.qtdProntos} no OneFlow`, aba: 'oneflow' } : null },
   ];
   return (
-    <div className="dre-g-card">
+    <div className="dre-g-card fin-card">
       <h3>Ponte com o OneFlow</h3>
       <div className="fin-ponte">
         {etapas.map((e, i) => (
@@ -180,10 +180,10 @@ function PorConta({ titulo, itens, total, cor }) {
   const [todos, setTodos] = useState(false);
   const lista = todos ? itens : itens.slice(0, 8);
   return (
-    <div className="dre-g-card">
+    <div className="dre-g-card fin-card">
       <h3>{titulo}</h3>
       {itens.length === 0 ? <p style={{ fontSize: '0.8rem', color: 'var(--text3)', margin: 0 }}>Nada no período.</p> : (
-        <table className="dre-g-tabela">
+        <table className="dre-g-tabela fin-tabela">
           <tbody>
             {lista.map((c) => {
               const pct = total ? (c.total / total) * 100 : 0;
