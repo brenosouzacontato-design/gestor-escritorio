@@ -920,3 +920,51 @@ export async function extrairValorGuia(documentoId) {
   }
   return resp.json(); // { documentoId, valor, vencimento }
 }
+
+// ── Documentos avulsos do painel (seção "Documentos") ──────────────────────
+// Arquivos sem obrigação nem tarefa, marcados para o painel
+// (supabase-schema-painel-documentos.sql). painel_competencia null = fixo,
+// aparece em qualquer competência. Sem as colunas no banco, a consulta falha
+// e o painel trata como "falta rodar o SQL".
+export async function obterDocumentosPainel(clienteId, competencia) {
+  const { data, error } = await supabase
+    .from('documentos')
+    .select('*')
+    .eq('cliente_id', clienteId)
+    .eq('painel_visivel', true)
+    .or(`painel_competencia.is.null,painel_competencia.eq.${competencia}`)
+    .order('created_at', { ascending: false });
+  if (error) throw error;
+  return data || [];
+}
+
+export async function anexarDocumentoPainel(clienteId, arquivo, { titulo, competencia }) {
+  const path = chaveStorage(arquivo);
+  const { error: errUpload } = await supabase.storage.from(BUCKET).upload(path, arquivo, { contentType: arquivo.type || 'application/octet-stream' });
+  if (errUpload) throw errUpload;
+  const { data, error } = await supabase.from('documentos').insert({
+    cliente_id: clienteId,
+    nome_arquivo: arquivo.name,
+    storage_path: path,
+    tipo_mime: arquivo.type || null,
+    tamanho_bytes: arquivo.size,
+    tipo_documento_sugerido: titulo || null,
+    status: 'confirmado',
+    confirmado_em: new Date().toISOString(),
+    painel_visivel: true,
+    painel_competencia: competencia || null,
+    painel_titulo: titulo || null,
+  }).select().single();
+  if (error) {
+    await supabase.storage.from(BUCKET).remove([path]).catch(() => {});
+    throw error;
+  }
+  return data;
+}
+
+// patch: { painel_visivel?, painel_competencia?, painel_titulo? }
+export async function definirDocumentoPainel(documentoId, patch) {
+  const { data, error } = await supabase.from('documentos').update(patch).eq('id', documentoId).select().single();
+  if (error) throw error;
+  return data;
+}

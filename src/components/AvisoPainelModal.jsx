@@ -25,7 +25,7 @@ export async function chamarAvisoPainel(clienteId, { simular = false, forcar = f
     e.silencio = !!r.silencio
     throw e
   }
-  return { ...r, guias: Array.isArray(r.guias) ? r.guias : [] }
+  return { ...r, guias: Array.isArray(r.guias) ? r.guias : [], documentos: Array.isArray(r.documentos) ? r.documentos : [] }
 }
 
 // ── Pergunta ao anexar guia (pedidos de lib/avisoPainelFila.js) ──────────────
@@ -126,14 +126,14 @@ export default function AvisoPainelModal({ clienteId, motivo = 'painel', restant
 
         {feito ? (
           <div style={{ fontSize: 13, color: 'var(--ok)', background: 'var(--ok-dim)', borderRadius: 8, padding: '10px 12px' }}>
-            Aviso enviado para {feito.destino}.{feito.guias.length ? ` ${feito.guias.length} guia(s) ficaram como entregues na Central de Entregas.` : ''}
+            Aviso enviado para {feito.destino}.{feito.guias.length + feito.documentos.length ? ` ${feito.guias.length + feito.documentos.length} item(ns) ficaram como entregues na Central de Entregas.` : ''}
           </div>
         ) : !previa && !erro ? (
           <div className="center" style={{ padding: 24 }}><div className="spinner" /></div>
         ) : previa && (
           <>
             <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: 0.4, marginBottom: 6 }}>
-              {previa.guias.length ? `Guias novas no aviso (${previa.guias.length})` : 'Sem guia nova — o aviso diz que o painel foi atualizado'}
+              {previa.guias.length ? `Guias novas no aviso (${previa.guias.length})` : previa.documentos.length ? 'Sem guia nova' : 'Sem guia nova — o aviso diz que o painel foi atualizado'}
             </div>
             {previa.generica && (
               <div style={{ fontSize: 12, color: 'var(--text2)', background: 'var(--surface2)', borderRadius: 8, padding: '6px 10px', marginBottom: 8 }}>
@@ -149,6 +149,16 @@ export default function AvisoPainelModal({ clienteId, motivo = 'painel', restant
                   </div>
                 ))}
               </div>
+            )}
+            {previa.documentos.length > 0 && (
+              <>
+                <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: 0.4, marginBottom: 6 }}>
+                  Documentos novos no aviso ({previa.documentos.length})
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 12 }}>
+                  {previa.documentos.map((d) => <div key={d.id} style={{ fontSize: 12.5, color: 'var(--text1)' }}><b>{d.titulo}</b></div>)}
+                </div>
+              </>
             )}
             <div style={{ fontSize: 12, color: 'var(--text3)', marginBottom: 4 }}>
               {semDestino ? '' : <>Vai para o WhatsApp <b style={{ color: 'var(--text1)' }}>{previa.destino}</b>:</>}

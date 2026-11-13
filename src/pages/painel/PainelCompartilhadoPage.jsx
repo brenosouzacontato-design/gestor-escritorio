@@ -1,7 +1,7 @@
 import { createContext, useContext, useEffect, useRef, useState } from 'react';
 import {
   CalendarIcon, ChevronDownIcon, DownloadIcon, CheckCircleIcon, AlertTriangleIcon, ClockIcon, TrendingUpIcon,
-  ClipboardListIcon, EyeIcon, EyeOffIcon, WalletIcon, CopyIcon, FileTextIcon, SettingsIcon, UserIcon, MessageSquareIcon, PartyPopperIcon, BellIcon, SendIcon, BarcodeIcon, QrCodeIcon, CheckSquareIcon, CheckIcon,
+  ClipboardListIcon, EyeIcon, EyeOffIcon, WalletIcon, CopyIcon, FileTextIcon, FolderOpenIcon, PaperclipIcon, PinIcon, XIcon, SettingsIcon, UserIcon, MessageSquareIcon, PartyPopperIcon, BellIcon, SendIcon, BarcodeIcon, QrCodeIcon, CheckSquareIcon, CheckIcon,
 } from 'lucide-react';
 import { chavePainelPorId, urlPublica } from '../../lib/linksPublicos';
 import { supabase } from '../../lib/supabase';
@@ -21,6 +21,7 @@ import {
   obterUltimaVisualizacaoPainel, extrairValorGuia, obterHonorariosPainel, obterDocumentosFiscais,
   definirSecoesOcultasPainel, atualizarDadosGerenciais, atualizarValorGuia, obterTarefasDoCliente,
   avisarEventoPainel, obterEventosPainel, obterRecadosPainel, salvarRecadoPainel, marcarGuiaPaga, salvarCodigosGuia,
+  obterDocumentosPainel, anexarDocumentoPainel, definirDocumentoPainel,
 } from './painelApi';
 import { obterConfigPix } from '../honorarios/honorariosApi';
 import {
@@ -288,7 +289,7 @@ function PainelCompartilhado({ clienteId, competencia: competenciaInicial, admin
       setCarregando(true);
       setErro(null);
       try {
-        const [{ data: cliente, error: errCliente }, consolidados, gerenciais, historico, situacaoFiscal, cndManual, honorarios, configPix, notasEntrada, tarefasCliente, recados] = await Promise.all([
+        const [{ data: cliente, error: errCliente }, consolidados, gerenciais, historico, situacaoFiscal, cndManual, honorarios, configPix, notasEntrada, tarefasCliente, recados, documentosPainel] = await Promise.all([
           obterClientePagina(clienteId, sessao, 'nome, cnpj, regime, painel_secoes_ocultas'),
           // impostos/obrigações/tarefas consolidados pelo vencimento (todas as competências)
           obterItensConsolidados(clienteId, competencia),
@@ -304,6 +305,8 @@ function PainelCompartilhado({ clienteId, competencia: competenciaInicial, admin
           obterTarefasDoCliente(clienteId).catch(() => []),
           // tabela nova (supabase-schema-painel-recados.sql) — tolera ainda não existir
           obterRecadosPainel(clienteId).catch(() => ({})),
+          // null = colunas novas ainda não criadas (supabase-schema-painel-documentos.sql)
+          obterDocumentosPainel(clienteId, competencia).catch(() => null),
         ]);
         if (errCliente) throw errCliente;
         const impostos = consolidados.obrigacoes.filter(ehImposto);
@@ -318,7 +321,7 @@ function PainelCompartilhado({ clienteId, competencia: competenciaInicial, admin
         ]);
         const gerenciaisPorComp = { ...gerenciaisOutras, ...(gerenciais ? { [competencia]: gerenciais } : {}) };
         const visiveis = filtrarOutrasCompetencias({ impostos, outrasObrigacoes, tarefasArea, anexos }, competencia);
-        setDados({ cliente, ...visiveis, anexos, anexosTarefa, gerenciais, gerenciaisPorComp, historico, situacaoFiscal, cndManual, honorarios, configPix, notasEntrada, tarefasCliente, recados });
+        setDados({ cliente, ...visiveis, anexos, anexosTarefa, gerenciais, gerenciaisPorComp, historico, situacaoFiscal, cndManual, honorarios, configPix, notasEntrada, tarefasCliente, recados, documentosPainel });
       } catch (e) {
         setErro(e.message);
       } finally {
@@ -800,6 +803,15 @@ function PainelCompartilhado({ clienteId, competencia: competenciaInicial, admin
                     <ChavePix chave={dados.configPix.chavePix} favorecido={dados.configPix.favorecido} />
                   )}
                 </Secao>
+                </Ocultavel>
+              )}
+
+              {/* ── Documentos avulsos (sem obrigação/tarefa) enviados pelo escritório ── */}
+              {(editando || (dados.documentosPainel || []).some((d) => !itemOculto(d.id))) && (
+                <Ocultavel chave="documentos" {...propsOc}>
+                <SecaoDocumentos docs={dados.documentosPainel} editando={editando} competencia={competencia}
+                  clienteId={clienteId} onBaixar={baixar} onErro={setErroEdicao}
+                  onMudou={(lista) => setDados((d) => ({ ...d, documentosPainel: lista }))} />
                 </Ocultavel>
               )}
 
@@ -1622,6 +1634,136 @@ function LinhaPendencia({ p }) {
 }
 
 const CERTIDOES = [['federal', 'CND Federal (Receita e PGFN)'], ['estadual', 'CND Estadual'], ['municipal', 'CND Municipal']];
+
+// ── Seção "Documentos": arquivos avulsos do escritório para o cliente ──────
+// (contrato social, alvará, recibos...). No modo edição: anexar (desta
+// competência ou fixo), renomear e tirar do painel; o olho de cada item oculta
+// sem tirar. docs === null: falta rodar supabase-schema-painel-documentos.sql.
+const nomeDocPainel = (d) => d.painel_titulo || d.tipo_documento_sugerido || d.nome_arquivo;
+
+function SecaoDocumentos({ docs, editando, competencia, clienteId, onBaixar, onErro, onMudou }) {
+  const [form, setForm] = useState(null); // { arquivo, titulo, fixo }
+  const [salvando, setSalvando] = useState(false);
+  const inputRef = useRef(null);
+  const lista = docs || [];
+
+  const escolherArquivo = (e) => {
+    const arquivo = e.target.files?.[0];
+    e.target.value = '';
+    if (!arquivo) return;
+    setForm({ arquivo, titulo: arquivo.name.replace(/\.[^.]+$/, '').replace(/[_-]+/g, ' ').trim(), fixo: false });
+  };
+
+  const salvar = async () => {
+    if (!form?.arquivo) return;
+    setSalvando(true);
+    try {
+      const novo = await anexarDocumentoPainel(clienteId, form.arquivo, { titulo: form.titulo.trim(), competencia: form.fixo ? null : competencia });
+      onMudou([novo, ...lista]);
+      setForm(null);
+      onErro(null);
+    } catch (e) {
+      onErro(`Não foi possível anexar o documento: ${e.message}`);
+    }
+    setSalvando(false);
+  };
+
+  const atualizar = async (d, patch) => {
+    try {
+      const salvo = await definirDocumentoPainel(d.id, patch);
+      onMudou(patch.painel_visivel === false ? lista.filter((x) => x.id !== d.id) : lista.map((x) => (x.id === d.id ? salvo : x)));
+      onErro(null);
+    } catch (e) {
+      onErro(`Não foi possível salvar: ${e.message}`);
+    }
+  };
+
+  const renomear = (d) => {
+    const nome = window.prompt('Nome do documento para o cliente:', nomeDocPainel(d));
+    if (nome && nome.trim() && nome.trim() !== nomeDocPainel(d)) atualizar(d, { painel_titulo: nome.trim() });
+  };
+
+  return (
+    <Secao titulo="Documentos" icone={<FolderOpenIcon size={14} />}
+      extra={editando && docs !== null && (
+        <button type="button" onClick={() => inputRef.current?.click()} disabled={salvando}
+          style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11.5, fontWeight: 700, color: 'var(--accent)', background: 'var(--accent-dim)',
+            border: 'none', borderRadius: 8, padding: '5px 10px', cursor: 'pointer' }}>
+          <PaperclipIcon size={13} /> Anexar documento
+        </button>
+      )}>
+      <input ref={inputRef} type="file" hidden onChange={escolherArquivo} />
+      {docs === null ? (
+        <Vazio>Para anexar documentos avulsos no painel, rode o arquivo supabase-schema-painel-documentos.sql no Supabase.</Vazio>
+      ) : (
+        <div style={LISTA}>
+          {form && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: '10px 12px', border: '1px dashed var(--accent)', borderRadius: 'var(--r-md)', background: 'var(--bg)' }}>
+              <div style={{ fontSize: 11.5, color: 'var(--text3)', display: 'flex', alignItems: 'center', gap: 6 }}>
+                <PaperclipIcon size={12} /> {form.arquivo.name}
+              </div>
+              <input value={form.titulo} onChange={(e) => setForm((f) => ({ ...f, titulo: e.target.value }))} placeholder="Nome para o cliente (ex.: Contrato social)"
+                style={{ fontSize: 13, padding: '7px 10px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--text1)' }} />
+              <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', fontSize: 12, color: 'var(--text2)' }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 5, cursor: 'pointer' }}>
+                  <input type="radio" checked={!form.fixo} onChange={() => setForm((f) => ({ ...f, fixo: false }))} /> Só na competência {competencia}
+                </label>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 5, cursor: 'pointer' }}>
+                  <input type="radio" checked={form.fixo} onChange={() => setForm((f) => ({ ...f, fixo: true }))} /> Fixo (aparece em todos os meses)
+                </label>
+              </div>
+              <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                <button type="button" onClick={() => setForm(null)} disabled={salvando}
+                  style={{ fontSize: 12, fontWeight: 600, background: 'transparent', border: '1px solid var(--border)', borderRadius: 8, padding: '6px 12px', cursor: 'pointer', color: 'var(--text2)' }}>
+                  Cancelar
+                </button>
+                <button type="button" onClick={salvar} disabled={salvando || !form.titulo.trim()}
+                  style={{ fontSize: 12, fontWeight: 700, background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 8, padding: '6px 14px', cursor: salvando ? 'wait' : 'pointer', opacity: salvando ? 0.7 : 1 }}>
+                  {salvando ? 'Anexando…' : 'Anexar ao painel'}
+                </button>
+              </div>
+            </div>
+          )}
+          {lista.length === 0 && !form && <Vazio>Nenhum documento avulso. Use "Anexar documento" para mandar contrato, alvará, recibos e outros arquivos ao cliente.</Vazio>}
+          {lista.map((d) => (
+            <ItemOcultavel key={d.id} id={d.id}>
+              <Linha chave={`doc-${d.id}`} corBorda="var(--accent)" titulo={nomeDocPainel(d)}
+                detalhes={(
+                  <span style={{ color: 'var(--text3)', display: 'flex', alignItems: 'center', gap: 4 }}>
+                    {d.painel_competencia ? <><CalendarIcon size={10} /> Competência {d.painel_competencia}</> : <><PinIcon size={10} /> Documento fixo</>}
+                    {' · enviado em '}{fmtData(String(d.created_at).slice(0, 10))}
+                  </span>
+                )}
+                direita={(
+                  <>
+                    {editando && (
+                      <>
+                        <button type="button" onClick={() => renomear(d)} title="Mudar o nome que o cliente vê"
+                          style={{ fontSize: 11, fontWeight: 600, background: 'transparent', border: '1px solid var(--border)', borderRadius: 8, padding: '5px 9px', cursor: 'pointer', color: 'var(--text2)' }}>
+                          Renomear
+                        </button>
+                        <button type="button" title={d.painel_competencia ? 'Deixar fixo (aparece em todos os meses)' : `Mostrar só na competência ${competencia}`}
+                          onClick={() => atualizar(d, { painel_competencia: d.painel_competencia ? null : competencia })}
+                          style={{ fontSize: 11, fontWeight: 600, background: 'transparent', border: '1px solid var(--border)', borderRadius: 8, padding: '5px 9px', cursor: 'pointer', color: 'var(--text2)' }}>
+                          {d.painel_competencia ? 'Deixar fixo' : 'Só neste mês'}
+                        </button>
+                        <button type="button" title="Tirar do painel (o arquivo continua na tela Documentos do Gestor)"
+                          onClick={() => window.confirm(`Tirar "${nomeDocPainel(d)}" do painel?`) && atualizar(d, { painel_visivel: false })}
+                          style={{ display: 'inline-flex', alignItems: 'center', fontSize: 11, background: 'transparent', border: '1px solid var(--border)', borderRadius: 8, padding: '5px 7px', cursor: 'pointer', color: 'var(--danger)' }}>
+                          <XIcon size={12} />
+                        </button>
+                      </>
+                    )}
+                    <BotaoGuia anexo={d} onBaixar={onBaixar} label="Baixar" descricao={nomeDocPainel(d)} />
+                  </>
+                )} />
+            </ItemOcultavel>
+          ))}
+        </div>
+      )}
+    </Secao>
+  );
+}
 
 function LinhaCertidao({ cnd, esfera, titulo, onBaixar }) {
   const situacao = cnd[`situacao_${esfera}`];

@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from 'react'
-import { PaperclipIcon, CameraIcon, UploadCloudIcon, CheckCircle2Icon, Loader2Icon, FileIcon, Share2Icon, DownloadIcon, MessageCircleIcon, ExternalLinkIcon, SearchCheckIcon, Trash2Icon, ArchiveIcon, ListPlusIcon } from 'lucide-react'
+import { PaperclipIcon, CameraIcon, UploadCloudIcon, CheckCircle2Icon, Loader2Icon, FileIcon, Share2Icon, DownloadIcon, MessageCircleIcon, ExternalLinkIcon, SearchCheckIcon, Trash2Icon, ArchiveIcon, ListPlusIcon, MonitorIcon } from 'lucide-react'
+import { definirDocumentoPainel } from '../painel/painelApi'
 import { useStore } from '../../store'
 import { useToast } from '../../components/shared'
 import OpcoesCandidatos from '../../components/OpcoesCandidatos'
@@ -453,11 +454,41 @@ function AbaRevisar() {
 function AbaConcluidos() {
   const [docs, setDocs] = useState(null) // null = carregando
   const [erro, setErro] = useState(null)
+  const [painelForm, setPainelForm] = useState(null) // { id, titulo, competencia ('' = fixo) }
   const { show } = useToast()
 
   useEffect(() => {
     listarDocumentosConfirmados().then(setDocs).catch((e) => setErro(e.message))
   }, [])
+
+  // Seção "Documentos" do painel do cliente (supabase-schema-painel-documentos.sql)
+  const competencias = useMemo(() => {
+    const lista = []
+    const d = new Date()
+    for (let i = 0; i < 4; i++) {
+      d.setDate(1); d.setMonth(d.getMonth() - 1) // do mês anterior para trás
+      lista.push(`${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`)
+    }
+    return lista
+  }, [])
+  const salvarPainel = async (doc, patch, msg) => {
+    try {
+      const salvo = await definirDocumentoPainel(doc.id, patch)
+      setDocs((l) => l.map((x) => (x.id === doc.id ? { ...x, ...salvo } : x)))
+      setPainelForm(null)
+      show?.(msg)
+    } catch (e) {
+      show?.('Erro: ' + e.message)
+    }
+  }
+  const alternarPainel = (doc) => {
+    if (!('painel_visivel' in doc)) { show?.('Falta rodar supabase-schema-painel-documentos.sql no Supabase.'); return }
+    if (doc.painel_visivel) {
+      if (window.confirm('Tirar este documento do painel do cliente?')) salvarPainel(doc, { painel_visivel: false }, 'Documento tirado do painel.')
+      return
+    }
+    setPainelForm({ id: doc.id, titulo: doc.painel_titulo || doc.tipo_documento_sugerido || doc.nome_arquivo.replace(/\.[^.]+$/, ''), competencia: competencias[0] })
+  }
 
   const baixar = async (doc) => {
     try {
@@ -486,7 +517,8 @@ function AbaConcluidos() {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
       {docs.map((doc) => (
-        <div key={doc.id} style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)', padding: '12px 14px', display: 'flex', alignItems: 'center', gap: 12 }}>
+        <div key={doc.id} style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)', padding: '12px 14px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
           <FileIcon size={16} color="var(--text3)" style={{ flexShrink: 0 }} />
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text1)' }}>{doc.tipo_documento_sugerido || doc.nome_arquivo}</div>
@@ -501,6 +533,30 @@ function AbaConcluidos() {
           <button className="btn btn-ghost btn-sm" onClick={() => compartilhar(doc)} title="Compartilhar via WhatsApp">
             <Share2Icon size={13} /> Compartilhar
           </button>
+          {doc.cliente_id && (
+            <button className={`btn btn-sm ${doc.painel_visivel ? 'btn-accent' : 'btn-ghost'}`} onClick={() => alternarPainel(doc)}
+              title={doc.painel_visivel ? `No painel do cliente (${doc.painel_competencia ? 'competência ' + doc.painel_competencia : 'fixo'}) — clique para tirar` : 'Mostrar este arquivo na seção Documentos do painel do cliente'}>
+              <MonitorIcon size={13} /> {doc.painel_visivel ? 'No painel' : 'Mostrar no painel'}
+            </button>
+          )}
+          </div>
+          {painelForm?.id === doc.id && (
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginTop: 10, paddingTop: 10, borderTop: '1px dashed var(--border)' }}>
+              <input className="input" style={{ flex: '1 1 220px' }} value={painelForm.titulo} placeholder="Nome para o cliente"
+                onChange={(e) => setPainelForm((f) => ({ ...f, titulo: e.target.value }))} />
+              <select className="input" style={{ width: 'auto' }} value={painelForm.competencia}
+                onChange={(e) => setPainelForm((f) => ({ ...f, competencia: e.target.value }))}>
+                {competencias.map((c) => <option key={c} value={c}>Só na competência {c}</option>)}
+                <option value="">Fixo (todos os meses)</option>
+              </select>
+              <button className="btn btn-ghost btn-sm" onClick={() => setPainelForm(null)}>Cancelar</button>
+              <button className="btn btn-accent btn-sm" disabled={!painelForm.titulo.trim()}
+                onClick={() => salvarPainel(doc, { painel_visivel: true, painel_titulo: painelForm.titulo.trim(), painel_competencia: painelForm.competencia || null },
+                  `Documento no painel de ${doc.clientes?.nome || 'cliente'}.`)}>
+                <MonitorIcon size={13} /> Mostrar no painel
+              </button>
+            </div>
+          )}
         </div>
       ))}
     </div>
