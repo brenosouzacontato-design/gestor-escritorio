@@ -59,6 +59,14 @@ test('semanas: segunda a domingo, só as encerradas, desde o início', () => {
   assert.equal(descricaoDa({ descricao: 'Coleta de {inicio} a {fim}' }, { inicio: '2026-10-26', fim: '2026-11-01' }), 'Coleta de 26/10/2026 a 01/11/2026')
 })
 
+// Busca de CEP/CNPJ do endereço do tomador: falsa, nada sai da máquina
+globalThis.fetch = async (url) => {
+  if (String(url).includes('viacep.com.br/ws/30000000/')) {
+    return { ok: true, json: async () => ({ cep: '30000-000', logradouro: '', bairro: '', localidade: 'Belo Horizonte', uf: 'MG', ibge: '3106200' }) }
+  }
+  return { ok: false, json: async () => ({}) }
+}
+
 function montar() {
   const supa = criarSupabaseFalso({
     usuarios: { tok: { id: 'u1', email: 'dono@escritorio.com' } },
@@ -129,6 +137,8 @@ test('function: modelo semanal com CNPJ, emite a semana com o valor digitado, pu
   assert.equal(e1.nota.recorrente_id, modelo.id)
   assert.equal(supa.db.nfse_lotes.find((l) => l.id === e1.nota.lote_id).origem, 'recorrente')
   assert.match(e1.nota.xml_enviado, new RegExp(`<CNPJ>${MARKET}</CNPJ>`))
+  // endereço do tomador vai na DPS (E0234): município pelo CEP, logradouro/número/bairro do texto
+  assert.match(e1.nota.xml_enviado, /<end><endNac><cMun>3106200<\/cMun><CEP>30000000<\/CEP><\/endNac><xLgr>Av. Teste<\/xLgr><nro>100<\/nro><xBairro>Centro<\/xBairro><\/end>/)
 
   // a mesma semana não sai de novo
   assert.equal((await chamar({ acao: 'recorrente_emitir', id: modelo.id, semana: s1.inicio, valor: '50', ambiente: 'homologacao' })).status, 409)
