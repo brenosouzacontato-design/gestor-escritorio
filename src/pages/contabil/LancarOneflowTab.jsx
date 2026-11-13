@@ -126,7 +126,7 @@ export default function LancarOneflowTab({ empresaId, empresaNome, periodo, onIr
             <Kpi rotulo="Vindos de nota fiscal" valor={grupos.doFiscal.length} sub="o OneFlow já tem pelo Fiscal" />
           </div>
 
-          <div className="dre-g-card">
+          <div className="dre-g-card fin-card">
             <h3>Gerar arquivo para o OneFlow — {fmtData(periodo.dataInicio)} a {fmtData(periodo.dataFim)}</h3>
             <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap', marginBottom: 10 }}>
               <label style={{ fontSize: '0.82rem', display: 'inline-flex', gap: 6, alignItems: 'center' }}>
@@ -168,12 +168,12 @@ export default function LancarOneflowTab({ empresaId, empresaNome, periodo, onIr
                   <span style={{ fontSize: '0.82rem', color: 'var(--text2)' }}>{previa.linhas.length} linha(s) · {fmt(totalPrevia)}</span>
                 </div>
                 <div className="contabil-tabela-scroll" style={{ maxHeight: 320, marginTop: 12 }}>
-                  <table className="dre-g-tabela">
+                  <table className="dre-g-tabela fin-tabela">
                     <thead><tr><th style={{ textAlign: 'left' }}>Data</th><th style={{ textAlign: 'left' }}>Débito</th><th style={{ textAlign: 'left' }}>Crédito</th><th style={{ textAlign: 'left' }}>Histórico</th><th className="num">Valor</th></tr></thead>
                     <tbody>
                       {previa.linhas.slice(0, 200).map((l, i) => (
                         <tr key={i}>
-                          <td>{fmtData(l.data)}</td><td>{l.debito}</td><td>{l.credito}</td><td>{l.historico}</td><td className="num">{fmt(l.valor)}</td>
+                          <td>{fmtData(l.data)}</td><td className="txt">{l.debito}</td><td className="txt">{l.credito}</td><td className="txt">{l.historico}</td><td className="num">{fmt(l.valor)}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -185,7 +185,7 @@ export default function LancarOneflowTab({ empresaId, empresaNome, periodo, onIr
             {aviso && <p style={{ color: corAviso, fontSize: '0.85rem', margin: '10px 0 0' }}>{aviso.texto}</p>}
           </div>
 
-          <div className="dre-g-card">
+          <div className="dre-g-card fin-card">
             <h3>Como importar no OneFlow</h3>
             <ol className="fin-passos">
               <li>Abra o <a href={ONEFLOW_URL} target="_blank" rel="noreferrer">OneFlow</a> → módulo <b>Contábil</b> → <b>Abrir Contábil</b> da empresa.</li>
@@ -199,10 +199,10 @@ export default function LancarOneflowTab({ empresaId, empresaNome, periodo, onIr
             </p>
           </div>
 
-          <div className="dre-g-card">
+          <div className="dre-g-card fin-card">
             <h3>Envios para o OneFlow</h3>
             {envios.length === 0 ? <p style={{ fontSize: '0.8rem', color: 'var(--text3)', margin: 0 }}>Nenhum envio ainda.</p> : (
-              <table className="dre-g-tabela">
+              <table className="dre-g-tabela fin-tabela">
                 <thead><tr><th style={{ textAlign: 'left' }}>Gerado em</th><th style={{ textAlign: 'left' }}>Período</th><th className="num">Lançamentos</th><th className="num">Linhas</th><th className="num">Total</th><th /></tr></thead>
                 <tbody>
                   {envios.map((e) => (

@@ -251,3 +251,8 @@
 .fin-barra { height: 4px; background: var(--border); border-radius: 2px; margin-top: 4px; overflow: hidden; }
 .fin-barra i { display: block; height: 100%; border-radius: 2px; }
 .fin-passos { margin: 0; padding-left: 18px; font-size: 0.82rem; color: var(--text2); line-height: 1.6; }
+/* tabelas compactas do Resumo/Lançar no OneFlow: sem a 1ª coluna larga e
+   fixa da DRE (estourava o card e sobrepunha o vizinho) */
+.fin-tabela th:first-child, .fin-tabela td:first-child { min-width: 0; position: static; }
+.fin-card { min-width: 0; overflow-x: auto; }
+.fin-tabela td.txt { text-align: left; white-space: normal; }
