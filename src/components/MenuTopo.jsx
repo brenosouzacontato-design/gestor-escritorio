@@ -155,7 +155,7 @@ const soDigitos = (s) => String(s || '').replace(/\D/g, '')
 const nomeEmpresa = (nome) => String(nome || '').replace(/^[\d./-]+\s+/, '')
 const MAX_EMPRESAS = 8
 
-export function BuscaRapida({ aberta, onFechar, onNavigate, badges, onAbrirEmpresa, onAbrirCadastro }) {
+export function BuscaRapida({ aberta, onFechar, onNavigate, badges, onAbrirEmpresa, onAbrirCadastro, onAbrirAba }) {
   const clientes = useStore(s => s.clientes)
   const [termo, setTermo] = useState('')
   const [sel, setSel] = useState(0)
@@ -194,18 +194,20 @@ export function BuscaRapida({ aberta, onFechar, onNavigate, badges, onAbrirEmpre
     listaRef.current?.querySelector('.destaque')?.scrollIntoView({ block: 'nearest' })
   }, [sel])
   if (!aberta) return null
-  const escolher = (item, cadastro = false) => {
+  // modo: 'fechamento' (Enter) | 'cadastro' (Shift+Enter) | 'aba' (Ctrl+Enter)
+  const escolher = (item, modo = 'fechamento') => {
     if (!item) return
     onFechar()
     if (item.tipo === 'tela') onNavigate(item.i.id)
-    else if (cadastro) onAbrirCadastro?.(item.c.id)
+    else if (modo === 'cadastro') onAbrirCadastro?.(item.c.id)
+    else if (modo === 'aba') onAbrirAba?.(item.c.id)
     else onAbrirEmpresa?.(item.c.id)
   }
   const tecla = (e) => {
     if (e.key === 'Escape') onFechar()
     else if (e.key === 'ArrowDown') { e.preventDefault(); setSel(s => Math.min(s + 1, itens.length - 1)) }
     else if (e.key === 'ArrowUp') { e.preventDefault(); setSel(s => Math.max(s - 1, 0)) }
-    else if (e.key === 'Enter') { e.preventDefault(); escolher(itens[sel], e.shiftKey) }
+    else if (e.key === 'Enter') { e.preventDefault(); escolher(itens[sel], e.ctrlKey || e.metaKey ? 'aba' : e.shiftKey ? 'cadastro' : 'fechamento') }
   }
   return (
     <div className="busca-fundo" onMouseDown={onFechar}>
@@ -228,9 +230,15 @@ export function BuscaRapida({ aberta, onFechar, onNavigate, badges, onAbrirEmpre
                 <span className="menu-item-desc">{[c.cnpj || c.cpf, c.regime].filter(Boolean).join(' · ') || 'Empresa'}</span>
               </span>
               <button type="button" className="busca-acao" title="Abrir o cadastro (Shift+Enter)"
-                onClick={(e) => { e.stopPropagation(); escolher({ tipo: 'empresa', c }, true) }}>
+                onClick={(e) => { e.stopPropagation(); escolher({ tipo: 'empresa', c }, 'cadastro') }}>
                 Cadastro
               </button>
+              {onAbrirAba && (
+                <button type="button" className="busca-acao" title="Abrir a empresa numa aba, com todos os módulos dela (Ctrl+Enter)"
+                  onClick={(e) => { e.stopPropagation(); escolher({ tipo: 'empresa', c }, 'aba') }}>
+                  Abrir em aba
+                </button>
+              )}
               <span className="busca-acao busca-acao-principal" title="Abrir no Fechamento (Enter)">Fechamento</span>
             </div>
           ))}
@@ -244,6 +252,7 @@ export function BuscaRapida({ aberta, onFechar, onNavigate, badges, onAbrirEmpre
           <span><kbd>↑</kbd><kbd>↓</kbd> escolher</span>
           <span><kbd>Enter</kbd> abrir</span>
           {empresas.length > 0 && <span><kbd>Shift</kbd>+<kbd>Enter</kbd> cadastro da empresa</span>}
+          {empresas.length > 0 && onAbrirAba && <span><kbd>Ctrl</kbd>+<kbd>Enter</kbd> abrir em aba</span>}
         </div>
       </div>
     </div>

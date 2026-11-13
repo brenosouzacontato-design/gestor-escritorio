@@ -27,11 +27,12 @@ function hoje() {
   return new Date().toISOString().slice(0, 10);
 }
 
-export default function ContabilPage() {
+// clienteFixo: aberta dentro da aba da empresa (EmpresaAbaPage), sem trocar de empresa
+export default function ContabilPage({ clienteFixo = null } = {}) {
   const clientes = useStore(s => s.clientes)
 
   const [abaAtiva, setAbaAtiva] = useState('resumo');
-  const [empresaId, setEmpresaId] = useState(null);
+  const [empresaId, setEmpresaId] = useState(clienteFixo);
   const [dataInicio, setDataInicio] = useState(primeiroDiaDoMes());
   const [dataFim, setDataFim] = useState(hoje());
 
@@ -42,7 +43,7 @@ export default function ContabilPage() {
   return (
     <div className="contabil-modulo">
       <div className="contabil-toolbar">
-        <EmpresaCombobox empresas={clientes} value={empresaIdAtual} onChange={setEmpresaId} style={{ minWidth: 260 }} />
+        {!clienteFixo && <EmpresaCombobox empresas={clientes} value={empresaIdAtual} onChange={setEmpresaId} style={{ minWidth: 260 }} />}
         <input type="date" value={dataInicio} onChange={(e) => setDataInicio(e.target.value)} />
         <span style={{ color: 'var(--text2)' }}>até</span>
         <input type="date" value={dataFim} onChange={(e) => setDataFim(e.target.value)} />

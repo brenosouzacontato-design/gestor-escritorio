@@ -300,11 +300,13 @@ function Configuracao({ clienteId, status, onAtualizado }) {
 
 // ---------------------------------------------------------------- página
 
-export default function NfseEmissaoPage() {
+// clienteFixo: aberta dentro da aba da empresa (EmpresaAbaPage) — sem trocar de
+// empresa e sem mexer na empresa lembrada da tela Emitir NFS-e.
+export default function NfseEmissaoPage({ clienteFixo = null } = {}) {
   const { show } = useToast()
   const clientes = useStore((s) => s.clientes)
   const empresas = useMemo(() => [...clientes].filter((c) => c.ativo !== false).sort((a, b) => a.nome.localeCompare(b.nome)), [clientes])
-  const [clienteId, setClienteId] = useState(() => localStorage.getItem('nfse-cliente') || '')
+  const [clienteId, setClienteId] = useState(() => clienteFixo || localStorage.getItem('nfse-cliente') || '')
   const [status, setStatus] = useState(null)
   const [lotes, setLotes] = useState([])
   const [loteId, setLoteId] = useState('')
@@ -344,7 +346,7 @@ export default function NfseEmissaoPage() {
   }
 
   useEffect(() => {
-    localStorage.setItem('nfse-cliente', clienteId)
+    if (!clienteFixo) localStorage.setItem('nfse-cliente', clienteId)
     setStatus(null); setLotes([]); setLoteId(''); setNotas([]); setSelecionadas(new Set()); setExtratoAberto(false)
     carregarStatus(clienteId)
   }, [clienteId])
@@ -495,7 +497,7 @@ export default function NfseEmissaoPage() {
       </div>
 
       <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginBottom: 14, flexWrap: 'wrap' }}>
-        <EmpresaCombobox empresas={empresas} value={clienteId} onChange={setClienteId} placeholder="Escolher empresa..." style={{ flex: 1, minWidth: 260 }} />
+        {!clienteFixo && <EmpresaCombobox empresas={empresas} value={clienteId} onChange={setClienteId} placeholder="Escolher empresa..." style={{ flex: 1, minWidth: 260 }} />}
         {ambiente && <AmbienteBadge ambiente={ambiente} />}
         {status?.configurada && (
           <button className="btn" title="Link para o cliente ver e baixar todas as notas emitidas (Sistema Nacional), com PDF, XML e WhatsApp"
