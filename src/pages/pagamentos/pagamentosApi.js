@@ -113,6 +113,41 @@ export async function darBaixaComComprovante(comprovante, guiaId, { justificativ
   if (error) throw error;
 }
 
+// ---------- Honorários pagos por comprovante ----------
+// O comprovante pode ser o cliente pagando o honorário do escritório
+// (supabase-schema-honorarios-comprovante.sql; leitura da IA em
+// netlify/functions/lib/comprovantePagamento.js).
+
+const colunaFaltando = (e) => ['42703', 'PGRST204'].includes(e?.code) || /column .* does not exist|Could not find the '.*' column/i.test(e?.message || '');
+
+export async function listarHonorariosPendentes(clienteId) {
+  if (!clienteId) return [];
+  const { data, error } = await supabase
+    .from('honorarios')
+    .select('id, competencia, valor, vencimento')
+    .eq('cliente_id', clienteId)
+    .eq('status', 'pendente')
+    .order('vencimento', { ascending: true });
+  if (error) throw error;
+  return (data || []).map((h) => ({ ...h, valor: h.valor != null ? Number(h.valor) : null }));
+}
+
+export async function darBaixaHonorarioComComprovante(comprovante, honorarioId, { clienteId = null } = {}) {
+  const por = await emailUsuario();
+  const agora = new Date().toISOString();
+  const basico = { status: 'pago', data_pagamento: comprovante.data_pagamento || agora.slice(0, 10) };
+  const completo = { ...basico, valor_pago: comprovante.valor_pago, comprovante_path: comprovante.storage_path, comprovante_nome: comprovante.nome_arquivo, baixa_por: por };
+  let { data, error } = await supabase.from('honorarios').update(completo).eq('id', honorarioId).eq('status', 'pendente').select('id');
+  if (error && colunaFaltando(error)) ({ data, error } = await supabase.from('honorarios').update(basico).eq('id', honorarioId).eq('status', 'pendente').select('id'));
+  if (error) throw error;
+  if (!data?.length) throw new Error('Esse honorário já está pago — atualize a lista.');
+
+  const resolvido = { status: 'baixado', cliente_id: clienteId || comprovante.cliente_id, resolvido_por: por, resolvido_em: agora };
+  let r = await supabase.from('comprovantes_pagamento').update({ ...resolvido, honorario_id: honorarioId }).eq('id', comprovante.id);
+  if (r.error && colunaFaltando(r.error)) r = await supabase.from('comprovantes_pagamento').update(resolvido).eq('id', comprovante.id);
+  if (r.error) throw r.error;
+}
+
 export async function descartarComprovante(comprovanteId, motivo) {
   const { error } = await supabase
     .from('comprovantes_pagamento')

@@ -126,6 +126,9 @@ function mensagemComprovante(res) {
   const a = res.analise
   const valor = a.valorPago != null ? `\n💰 ${fmtBRL(a.valorPago)}` : ''
   const data = a.dataPagamento ? ` em ${fmtDataBR(a.dataPagamento)}` : ''
+  if (res.baixaAutomatica && res.honorario) {
+    return `✅ *Comprovante identificado — honorário marcado como pago!*\n👤 ${res.honorario.clienteNome}\n📄 Honorário${res.honorario.competencia ? ` ${res.honorario.competencia}` : ''}${valor}\n📅 Pago${data}\nO comprovante fica guardado em Gestor → Honorários.`
+  }
   if (res.baixaAutomatica) {
     return `✅ *Comprovante identificado — guia marcada como paga!*\n👤 ${res.guia.clienteNome}\n📄 ${res.guia.titulo}${res.guia.competencia ? ` ${res.guia.competencia}` : ''}${valor}\n📅 Pago${data}\nO comprovante já está disponível no painel do cliente.`
   }

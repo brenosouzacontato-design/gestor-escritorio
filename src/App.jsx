@@ -195,9 +195,7 @@ export default function App() {
   // Conteúdo de cada tela (as abas abertas ficam montadas ao mesmo tempo)
   const renderTela = (id) => {
     if (loading && (id === 'overview' || id === 'hoje')) return <div className="center"><div className="spinner" /></div>
-    if (ehAbaEmpresa(id)) return <EmpresaAbaPage clienteId={empresaDaAba(id)} onNavigate={navigate} onAddTarefa={openNewTask}
-      onAbrirFechamento={abrirNoFechamento} onFecharAba={() => fecharAba(id)}
-      onAbrirTarefas={(clienteId) => { setFiltroClienteTarefas(clienteId); remontar('tarefas'); navigate('tarefas') }} />
+    if (ehAbaEmpresa(id)) return <EmpresaAbaPage clienteId={empresaDaAba(id)} onAddTarefa={openNewTask} onFecharAba={() => fecharAba(id)} />
     switch (id) {
       case 'overview': return <Overview onAddTarefa={openNewTask} onOpenCliente={(id) => navigate('clientes', id)} onOpenEmpresa={(id) => { setClienteAbrirEmpresas(id); navigate('empresas') }} onOpenObrigacoes={() => navigate('empresas')} onOpenTarefas={() => navigate('tarefas')} onOpenContabil={() => navigate('contabil')} />
       case 'empresas': return <Empresas onOpenTarefas={(clienteId) => { setFiltroClienteTarefas(clienteId ?? null); remontar('tarefas'); navigate('tarefas') }}

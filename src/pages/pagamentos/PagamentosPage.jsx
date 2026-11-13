@@ -10,6 +10,7 @@ import { abrirLinkAssinado } from '../documentos/documentosApi'
 import {
   listarComprovantes, listarGuiasPendentes, darBaixaComComprovante, descartarComprovante, reabrirComprovante,
   darBaixaManual, listarBaixas, desfazerBaixa, valorCompativel, faltaSchema,
+  listarHonorariosPendentes, darBaixaHonorarioComComprovante,
 } from './pagamentosApi'
 
 // Tela Pagamentos — baixa das guias de imposto anexadas.
@@ -133,6 +134,53 @@ function useGuiasPendentes(clienteId) {
   return guias
 }
 
+// Honorários do escritório em aberto da empresa — o comprovante pode ser o cliente pagando o escritório
+function useHonorariosPendentes(clienteId) {
+  const [lista, setLista] = useState(null)
+  useEffect(() => {
+    if (!clienteId) { setLista([]); return }
+    setLista(null)
+    let vivo = true
+    listarHonorariosPendentes(clienteId).then((h) => vivo && setLista(h)).catch(() => vivo && setLista([]))
+    return () => { vivo = false }
+  }, [clienteId])
+  return lista
+}
+
+function ListaHonorarios({ honorarios, selecionado, onSelecionar, sugeridoId, valorPago }) {
+  if (!honorarios?.length) return null
+  return (
+    <div style={{ marginTop: 12 }}>
+      <Rotulo>Honorários do escritório em aberto</Rotulo>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+        {honorarios.map((h) => {
+          const ativo = selecionado === h.id
+          const confere = valorPago != null && h.valor != null ? valorCompativel(valorPago, h.valor) : null
+          return (
+            <label key={h.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', cursor: 'pointer',
+              borderRadius: 'var(--r-md)', border: `1px solid ${ativo ? 'var(--accent)' : 'var(--border)'}`, background: ativo ? 'var(--accent-dim)' : 'var(--bg)' }}>
+              <input type="radio" checked={ativo} onChange={() => onSelecionar(h.id)} />
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text1)' }}>
+                  Honorário <span style={{ color: 'var(--accent)', marginLeft: 4 }}>{h.competencia}</span>
+                  {h.id === sugeridoId && <span className="badge badge-ok" style={{ marginLeft: 8, fontSize: 9.5 }}><SparklesIcon size={9} /> sugerido</span>}
+                </div>
+                <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 1 }}>Vencimento {fmtData(h.vencimento)}</div>
+              </div>
+              <div style={{ textAlign: 'right' }}>
+                <div style={{ fontSize: 13, fontWeight: 800, color: 'var(--text1)' }}>{fmt(h.valor)}</div>
+                {confere != null && (
+                  <div style={{ fontSize: 10, fontWeight: 700, color: confere ? 'var(--ok)' : 'var(--danger)' }}>{confere ? 'valor confere' : 'valor diferente'}</div>
+                )}
+              </div>
+            </label>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
 function ListaGuias({ guias, selecionada, onSelecionar, sugeridaId, valorPago, clienteId }) {
   if (!clienteId) return <div style={{ fontSize: 12.5, color: 'var(--text3)', padding: '8px 0' }}>Selecione a empresa para ver as guias pendentes de pagamento.</div>
   if (guias === null) return <Carregando />
@@ -176,7 +224,12 @@ function CartaoComprovante({ c, empresas, onResolvido }) {
   const { show } = useToast()
   const [clienteId, setClienteId] = useState(c.cliente_id || '')
   const guias = useGuiasPendentes(clienteId)
-  const [guiaId, setGuiaId] = useState('')
+  const honorarios = useHonorariosPendentes(clienteId)
+  const [guiaId, setGuiaIdBruto] = useState('')
+  const [honorarioId, setHonorarioIdBruto] = useState('')
+  // guia ou honorário: escolher um desmarca o outro
+  const setGuiaId = (id) => { setGuiaIdBruto(id); if (id) setHonorarioIdBruto('') }
+  const setHonorarioId = (id) => { setHonorarioIdBruto(id); if (id) setGuiaIdBruto('') }
   const [justificativa, setJustificativa] = useState('')
   const [descartando, setDescartando] = useState(false)
   const [motivo, setMotivo] = useState('')
@@ -185,17 +238,28 @@ function CartaoComprovante({ c, empresas, onResolvido }) {
   // pré-seleciona a guia sugerida pela IA quando ela está na lista da empresa
   useEffect(() => {
     if (guias && c.guia_sugerida_id && guias.some((g) => g.id === c.guia_sugerida_id)) setGuiaId(c.guia_sugerida_id)
-    else setGuiaId('')
+    else setGuiaIdBruto('')
   }, [guias, c.guia_sugerida_id])
+  useEffect(() => {
+    if (honorarios && c.honorario_sugerido_id && honorarios.some((h) => h.id === c.honorario_sugerido_id)) setHonorarioId(c.honorario_sugerido_id)
+    else setHonorarioIdBruto('')
+  }, [honorarios, c.honorario_sugerido_id])
+  const honorario = honorarios?.find((h) => h.id === honorarioId)
 
   const guia = guias?.find((g) => g.id === guiaId)
   const valorPago = c.valor_pago != null ? Number(c.valor_pago) : null
   const divergente = guia && valorPago != null && guia.valor != null && !valorCompativel(valorPago, guia.valor)
-  const podeBaixar = guia && (!divergente || justificativa.trim()) && !salvando
+  const podeBaixar = (guia && (!divergente || justificativa.trim()) && !salvando) || (honorario && !salvando)
 
   const baixar = async () => {
     setSalvando(true)
     try {
+      if (honorario) {
+        await darBaixaHonorarioComComprovante(c, honorarioId, { clienteId })
+        show?.(`Honorário ${honorario.competencia} marcado como pago`)
+        onResolvido()
+        return
+      }
       await darBaixaComComprovante(c, guiaId, { justificativa: justificativa.trim() || null, clienteId })
       show?.(`Baixa feita: ${guia.titulo}${guia.competencia ? ` ${guia.competencia}` : ''}`)
       onResolvido()
@@ -255,6 +319,7 @@ function CartaoComprovante({ c, empresas, onResolvido }) {
         <div>
           <Rotulo>Guias anexadas pendentes de pagamento</Rotulo>
           <ListaGuias guias={guias} selecionada={guiaId} onSelecionar={setGuiaId} sugeridaId={c.guia_sugerida_id} valorPago={valorPago} clienteId={clienteId} />
+          <ListaHonorarios honorarios={honorarios} selecionado={honorarioId} onSelecionar={setHonorarioId} sugeridoId={c.honorario_sugerido_id} valorPago={valorPago} />
         </div>
       </div>
 
