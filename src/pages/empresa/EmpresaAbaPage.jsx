@@ -204,8 +204,8 @@ function Resumo({ cliente, competencia, trilha, obsAbertas, obsComp, guias, guia
       </div>
 
       <div className="empresa-aba-falta">
-        <Bloco Icon={ClipboardCheckIcon} titulo={`Obrigações abertas (${obsAbertas.length} de ${obsComp.length})`} vazio="Todas concluídas ou sem obrigação."
-          itens={obsAbertas} onClick={onAbrirFechamento} acao="Abrir no Fechamento"
+        <Bloco Icon={ClipboardCheckIcon} titulo={`Obrigações abertas (${obsAbertas.length}/${obsComp.length})`} vazio="Todas concluídas ou sem obrigação."
+          itens={obsAbertas} onClick={onAbrirFechamento} acao="Fechamento"
           linha={(o) => (<>
             <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{o.titulo || o.tipo}</span>
             {o.vencimento && <span style={{ fontSize: 11.5, color: 'var(--text3)' }}>vence {dataBR(o.vencimento)}</span>}

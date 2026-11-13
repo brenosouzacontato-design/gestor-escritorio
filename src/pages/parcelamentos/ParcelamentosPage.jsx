@@ -110,27 +110,28 @@ export default function ParcelamentosPage({ clienteFixo = null } = {}) {
   }
 
   // ---------- lista ----------
+  // na aba da empresa, lista e números só dela (a importação continua vendo todos, pra achar repetidos)
+  const daEmpresa = useMemo(() => (clienteFixo ? parcelamentos.filter((p) => p.cliente_id === clienteFixo) : parcelamentos), [parcelamentos, clienteFixo])
   const filtrados = useMemo(() => {
     const t = busca.trim().toLowerCase()
-    return parcelamentos.filter((p) => {
-      if (clienteFixo && p.cliente_id !== clienteFixo) return false
+    return daEmpresa.filter((p) => {
       if (filtroOrigem === 'avulso') { if (p.cliente_id) return false }
       else if (filtroOrigem !== 'todos' && (p.origem || 'manual') !== filtroOrigem) return false
       if (!t) return true
       return [p.clientes?.nome, p.nome_devedor, p.conta, p.documento_devedor].some((v) => (v || '').toLowerCase().includes(t))
     })
-  }, [parcelamentos, busca, filtroOrigem, clienteFixo])
+  }, [daEmpresa, busca, filtroOrigem])
 
   const stats = useMemo(() => {
-    const ativos = parcelamentos.filter((p) => p.status === 'ativo')
+    const ativos = daEmpresa.filter((p) => p.status === 'ativo')
     const mes = mesAtual()
     return {
       ativos: ativos.length,
       comGuiaDoMes: ativos.filter((p) => (p.ultima_guia_vencimento || '').startsWith(mes)).length,
-      alertas: parcelamentos.filter((p) => ['erro', 'nao_permite_emissao'].includes(p.ultima_busca_status)).length,
+      alertas: daEmpresa.filter((p) => ['erro', 'nao_permite_emissao'].includes(p.ultima_busca_status)).length,
       mensal: ativos.reduce((s, p) => s + Number(p.valor_parcela || 0), 0),
     }
-  }, [parcelamentos])
+  }, [daEmpresa])
 
   const abrirGuia = async (g) => {
     try { window.open(await urlDaGuia(g.storage_path), '_blank', 'noopener') }
