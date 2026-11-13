@@ -26,6 +26,13 @@
   node_bundler = "esbuild"
   external_node_modules = ["pdfjs-dist", "@cantoo/pdf-lib"]
 
+# Processamento dos documentos do grupo Documentos do WhatsApp (menu: Simples,
+# CND, parcelamento, baixa, painel): usa src/lib/guiaParcelamento.js (o mesmo
+# código da tela Parcelamentos) e o pdf.js pra ler a guia de parcelamento.
+[functions."documento-processar-background"]
+  node_bundler = "esbuild"
+  external_node_modules = ["pdfjs-dist"]
+
 # Link curto do painel (/p/<codigo>) — antes do catch-all do app
 [[redirects]]
   from = "/p/:codigo"

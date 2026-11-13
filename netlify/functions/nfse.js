@@ -757,5 +757,54 @@ exports.handler = responder(async (event) => {
   }
 })
 
+// Emissão pedida no grupo "Documentos" do WhatsApp (nfse-whatsapp-background.js), para tomador
+// já cadastrado. Mesmas regras da tela: validação, duplicidade e reserva de número. Não passa pelo
+// login (quem chama é a própria aplicação); o "usuário" do histórico é "WhatsApp (quem pediu)".
+//   dados: { tipo: 'recorrente'|'tomador', cliente_id, ref_id, ambiente, nome, cpf, endereco, cep,
+//            data (AAAA-MM-DD), valor ("1250.00"), descricao, semana? (segunda-feira), texto_original? }
+// Devolve { resultado, nota }; lança Error com a mensagem para o grupo.
+async function emitirPedidoWhatsapp(dados, { remetente = null } = {}) {
+  const db = deps.supabase()
+  const repo = new RepositorioSupabase(db)
+  const usuario = { email: `WhatsApp${remetente ? ` (${String(remetente).slice(0, 60)})` : ''}` }
+  try {
+    if (dados.tipo === 'recorrente') {
+      return await acoes.recorrente_emitir({ db, repo, usuario }, {
+        cliente_id: dados.cliente_id, id: dados.ref_id, semana: dados.semana, valor: dados.valor,
+        ambiente: dados.ambiente, data: dados.data,
+      })
+    }
+    const empresa = await repo.obterEmpresa(uuid(dados.cliente_id, 'cliente_id'))
+    exigir(empresa, 'Empresa sem configuração de NFS-e', 409)
+    exigir(dados.ambiente === empresa.ambiente, `O ambiente da empresa mudou para ${empresa.ambiente} depois da prévia. Nada foi enviado; peça a nota de novo.`, 409)
+    const loteId = await lotes.criarLote(repo, {
+      empresa, origem: 'whatsapp', descricao: `WhatsApp · ${dados.nome}`.slice(0, 200),
+      registros: [novoRegistro({
+        nome: dados.nome, cpf: dados.cpf || '', endereco: dados.endereco || '', cep: dados.cep || '', data: dados.data,
+        valor: dados.valor, descricao: dados.descricao || '', origem: 'whatsapp', autor: remetente || '',
+        textoOriginal: String(dados.texto_original || '').slice(0, 2000),
+      })],
+    })
+    const notaId = (await repo.listarNotasLote(loteId))[0].id
+    const nota = await repo.obterNota(notaId)
+    if (nota.status_validacao !== 'pronto') {
+      throw new ErroHttp(422, `A nota não foi emitida: ${[...(nota.erros || []), ...(nota.pendencias || []).map((x) => `falta ${x}`)].join('; ')}. Ela ficou em Emitir NFS-e para conferir.`)
+    }
+    const resultado = await (await emissorDa(db, repo, empresa, usuario)).emitir(notaId, { confirmarRepetida: false })
+    return { resultado, nota: await repo.obterNota(notaId) }
+  } catch (e) {
+    if (e instanceof EmissaoBloqueada || e instanceof lotes.NotaNaoEditavel || e instanceof TransicaoInvalida) throw new ErroHttp(409, e.message)
+    throw e
+  }
+}
+
+// Manda o PDF e o XML da nota autorizada de produção no WhatsApp da empresa (mesmo envio da tela).
+async function enviarNotaWhatsappEmpresa(notaId) {
+  const db = deps.supabase()
+  return acoes.enviar_whatsapp({ db, repo: new RepositorioSupabase(db) }, { nota_id: notaId })
+}
+
+exports.emitirPedidoWhatsapp = emitirPedidoWhatsapp
+exports.enviarNotaWhatsappEmpresa = enviarNotaWhatsappEmpresa
 exports._deps = deps // testes
 exports._analisarGabarito = analisarGabarito

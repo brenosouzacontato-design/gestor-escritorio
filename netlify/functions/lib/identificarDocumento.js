@@ -17,10 +17,11 @@ const { tipoReal, leituraPossivel, blocoArquivo, textoLegenda } = require('./mid
 const SYSTEM_PROMPT = `Você é um assistente de escritório contábil brasileiro. Recebe um documento (comprovante, guia, certidão, recibo etc) e uma lista de "candidatos" — obrigações e tarefas em aberto de vários clientes — e precisa: 1) identificar que tipo de documento é; 2) identificar de qual cliente ele é (comparando com a lista); 3) apontar qual candidato da lista esse documento resolve, se houver um.
 
 Devolva APENAS um JSON, sem texto antes ou depois, sem markdown e sem crases, no formato exato:
-{"tipoDocumento":"string","clienteId":"id da lista ou null","candidatoId":"id da lista ou null","confianca":"alta"|"media"|"baixa","observacao":"string curta","extrato":null}
+{"tipoDocumento":"string","categoria":"declaracao_simples"|"cnd"|"situacao_fiscal"|"parcelamento"|"guia"|"extrato"|"outro","clienteId":"id da lista ou null","candidatoId":"id da lista ou null","confianca":"alta"|"media"|"baixa","observacao":"string curta","extrato":null}
 
 Regras:
 - "tipoDocumento": descrição curta e objetiva do documento (ex: "Comprovante de pagamento do DAS", "Guia do FGTS", "Certidão Negativa de Débitos"). Se não conseguir identificar, use "Documento não identificado".
+- "categoria": "declaracao_simples" para a Declaração/extrato do Simples Nacional (PGDAS-D, apuração com receita bruta e RBT12 — NÃO a guia DAS); "cnd" para certidão de débitos (CND/CPEN) federal, estadual ou municipal; "situacao_fiscal" para o Relatório de Situação Fiscal da Receita; "parcelamento" para guia de parcelamento (DAS de PARCMEI, PGFN-SISPAR, parcelamento do Simples/RFB); "guia" para qualquer outra guia ou boleto a pagar (DAS, DAS-MEI, DARF, GPS, FGTS, DCTFWeb, ISS, ICMS, boleto bancário); "extrato" para extrato bancário; "outro" para o resto (inclusive comprovante de pagamento).
 - "clienteId": só preencha se o nome do cliente (ou CNPJ) aparecer no documento e bater com um item da lista de candidatos. Se não tiver certeza, null — não invente.
 - "candidatoId": só preencha se o tipo de documento corresponder claramente ao rótulo de um candidato daquele MESMO cliente (ex: documento é "guia do DAS" e existe candidato "PGDAS" do mesmo cliente). Se não achar correspondência clara, null.
 - "confianca": "alta" só quando cliente E candidato foram identificados com bastante segurança; "media" quando um dos dois ficou incerto; "baixa" quando pouca coisa foi identificada.
@@ -30,8 +31,10 @@ Regras:
 - Se o arquivo não parecer um documento relevante pra um escritório de contabilidade, devolva tipoDocumento "Documento não identificado" e os dois ids null.
 - "extrato": só quando o documento for um EXTRATO DE CONTA BANCÁRIA (lista de movimentações/lançamentos de uma conta, com datas, valores e saldos — não comprovante avulso, fatura de cartão, boleto ou guia). Nesse caso use tipoDocumento "Extrato bancário" e devolva {"banco":"nome do banco ou instituição","titularNome":"nome do titular da conta","titularDocumento":"CNPJ ou CPF do titular, só se aparecer","periodoInicio":"YYYY-MM-DD","periodoFim":"YYYY-MM-DD"} (campo que não aparecer = null). Em qualquer outro documento, "extrato" é null.`;
 
+const CATEGORIAS = ['declaracao_simples', 'cnd', 'situacao_fiscal', 'parcelamento', 'guia', 'extrato', 'outro'];
+
 // candidatos: [{id, clienteId, clienteNome, rotulo}]
-// Retorna { tipoDocumento, clienteId, candidatoId, confianca, observacao }
+// Retorna { tipoDocumento, categoria, clienteId, candidatoId, confianca, observacao }
 async function identificarDocumento({ arquivoBase64, filename, mimeType: mimeInformado, legenda = null, candidatos, apiKey }) {
   if (!apiKey) throw new Error('ANTHROPIC_API_KEY não configurada.');
   if (!arquivoBase64) throw new Error('arquivoBase64 não informado.');
@@ -93,6 +96,7 @@ async function identificarDocumento({ arquivoBase64, filename, mimeType: mimeInf
 
   return {
     tipoDocumento: sugestao.tipoDocumento || 'Documento não identificado',
+    categoria: CATEGORIAS.includes(sugestao.categoria) ? sugestao.categoria : 'outro',
     clienteId: sugestao.clienteId || null,
     candidatoId: sugestao.candidatoId || null,
     confianca: sugestao.confianca || 'baixa',
@@ -115,4 +119,4 @@ function normalizarExtrato(e) {
   };
 }
 
-module.exports = { identificarDocumento, normalizarExtrato };
+module.exports = { identificarDocumento, normalizarExtrato, CATEGORIAS };

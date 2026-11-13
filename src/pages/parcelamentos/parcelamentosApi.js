@@ -16,15 +16,13 @@
 import { supabase } from '../../lib/supabase';
 import { lerGuiaParcelamento } from './leitorGuiaParcelamento';
 import { perguntarAvisoPainel } from '../../lib/avisoPainelFila';
+import {
+  ORIGENS, sugerirCliente, acharOuCriarParcelamento, acharObrigacaoParcelamento, camposGuiaParcelamento,
+} from '../../lib/guiaParcelamento';
+
+export { ORIGENS, sugerirCliente };
 
 const BUCKET = 'documentos';
-const soDigitos = (s) => (s || '').replace(/\D/g, '');
-const normalizar = (s) => (s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase().replace(/\s+/g, ' ').trim();
-
-export const ORIGENS = {
-  PARCMEI: { label: 'PARCMEI', desc: 'Parcelamento MEI — Receita', tipoDocumento: 'PARCELAMENTO MEI' },
-  PGFN:    { label: 'PGFN',    desc: 'Dívida ativa — SISPAR/Regularize', tipoDocumento: 'PARCELAMENTO PGFN' },
-};
 
 // ---------- LEITURA ----------
 
@@ -75,33 +73,6 @@ export async function atualizarParcelamento(id, patch) {
 
 // ---------- IMPORTAÇÃO (passo 1: ler e conferir, sem gravar) ----------
 
-// Empresa da guia: pelo CNPJ; senão por um parcelamento já cadastrado com o
-// mesmo devedor (PGFN de MEI vem no CPF da pessoa); senão pelo CPF colado no
-// nome do MEI ("FULANO 12345678901"); senão pelo nome.
-export function sugerirCliente(dados, clientes, parcelamentos) {
-  const doc = dados.documentoDigitos;
-  const porCnpj = clientes.find((c) => soDigitos(c.cnpj) === doc);
-  if (porCnpj) return { clienteId: porCnpj.id, como: 'CNPJ' };
-
-  const parc = parcelamentos.find((p) => p.documento_devedor === doc && p.cliente_id);
-  if (parc) return { clienteId: parc.cliente_id, como: 'parcelamento anterior' };
-
-  if (doc.length === 11) {
-    const porCpf = clientes.find((c) => soDigitos(c.nome).includes(doc));
-    if (porCpf) return { clienteId: porCpf.id, como: 'CPF no nome' };
-  }
-  const nome = normalizar(dados.nome);
-  if (nome) {
-    const porNome = clientes.filter((c) => normalizar(c.nome).replace(/\s*\d+$/, '') === nome);
-    if (porNome.length === 1) return { clienteId: porNome[0].id, como: 'nome' };
-  }
-  // devedor já cadastrado como avulso antes: continua avulso
-  if (parcelamentos.some((p) => p.documento_devedor === doc && !p.cliente_id)) {
-    return { clienteId: null, como: null, avulso: true };
-  }
-  return { clienteId: null, como: null };
-}
-
 export async function prepararImportacao(arquivos, clientes, parcelamentos) {
   const itens = [];
   for (const arquivo of arquivos) {
@@ -127,86 +98,21 @@ export async function prepararImportacao(arquivos, clientes, parcelamentos) {
 
 // ---------- IMPORTAÇÃO (passo 2: gravar) ----------
 
-async function acharOuCriarParcelamento(dados, clienteId) {
-  const { data: existente, error } = await supabase
-    .from('parcelamentos')
-    .select('*')
-    .eq('origem', dados.origem)
-    .eq('documento_devedor', dados.documentoDigitos)
-    .eq('conta', dados.conta)
-    .maybeSingle();
-  if (error) throw error;
-
-  const maisNova = !existente?.ultima_guia_vencimento || (dados.vencimento && dados.vencimento >= existente.ultima_guia_vencimento);
-  const agora = new Date().toISOString();
-
-  if (existente) {
-    const patch = { updated_at: agora };
-    if (!existente.cliente_id && clienteId) patch.cliente_id = clienteId;
-    if (!existente.nome_devedor && dados.nome) patch.nome_devedor = dados.nome;
-    if (dados.totalParcelas) patch.total_parcelas = dados.totalParcelas;
-    if (dados.parcela && dados.parcela > (existente.parcela_atual || 0)) patch.parcela_atual = dados.parcela;
-    if (maisNova) {
-      patch.ultima_guia_vencimento = dados.vencimento;
-      if (dados.valor != null) patch.valor_parcela = dados.valor;
-    }
-    const { data, error: errUp } = await supabase.from('parcelamentos').update(patch).eq('id', existente.id).select().single();
-    if (errUp) throw errUp;
-    return data;
-  }
-
-  const { data, error: errIns } = await supabase.from('parcelamentos').insert({
-    cliente_id: clienteId,
-    origem: dados.origem,
-    conta: dados.conta,
-    documento_devedor: dados.documentoDigitos,
-    nome_devedor: dados.nome,
-    tipo: ORIGENS[dados.origem].tipoDocumento,
-    numero_processo: dados.conta,
-    descricao: ORIGENS[dados.origem].desc,
-    total_parcelas: dados.totalParcelas,
-    parcela_atual: dados.parcela,
-    valor_parcela: dados.valor,
-    vencimento_dia: dados.vencimento ? Number(dados.vencimento.slice(8, 10)) : null,
-    ultima_guia_vencimento: dados.vencimento,
-    status: 'ativo',
-  }).select().single();
-  if (errIns) throw errIns;
-  return data;
-}
-
-// Obrigação de parcelamento em aberto da empresa na competência da guia
-// (mês do vencimento). Só liga quando a escolha é inequívoca.
-async function acharObrigacao(clienteId, dados) {
-  if (!dados.vencimento) return null;
-  const competencia = `${dados.vencimento.slice(5, 7)}/${dados.vencimento.slice(0, 4)}`;
-  const { data } = await supabase
-    .from('obrigacoes')
-    .select('id, titulo, tipo')
-    .eq('cliente_id', clienteId)
-    .eq('competencia', competencia)
-    .in('status', ['pendente', 'vencido']);
-  const deParcelamento = (data || []).filter((o) => /PARCEL/i.test(`${o.titulo || ''} ${o.tipo || ''}`));
-  if (deParcelamento.length === 1) return deParcelamento[0].id;
-  const daOrigem = deParcelamento.filter((o) => {
-    const t = `${o.titulo || ''} ${o.tipo || ''}`;
-    return dados.origem === 'PARCMEI' ? /MEI/i.test(t) : /PGFN|D[IÍ]VIDA|ATIVA/i.test(t);
-  });
-  return daOrigem.length === 1 ? daOrigem[0].id : null;
-}
+// Cadastro do parcelamento e vínculo com a obrigação: src/lib/guiaParcelamento.js
+// (o grupo "Documentos" do WhatsApp usa o mesmo código).
 
 export async function salvarGuia(item) {
   const { dados, arquivo, avulso } = item;
   const clienteId = avulso ? null : item.clienteId;
   if (!clienteId && !avulso) throw new Error('Escolha a empresa ou marque como avulso.');
 
-  const parcelamento = await acharOuCriarParcelamento(dados, clienteId);
+  const parcelamento = await acharOuCriarParcelamento(supabase, dados, clienteId);
 
   const path = `parcelamentos/${crypto.randomUUID()}.pdf`;
   const { error: errUp } = await supabase.storage.from(BUCKET).upload(path, arquivo, { contentType: 'application/pdf' });
   if (errUp) throw errUp;
 
-  const obrigacaoId = clienteId ? await acharObrigacao(clienteId, dados).catch(() => null) : null;
+  const obrigacaoId = clienteId ? await acharObrigacaoParcelamento(supabase, clienteId, dados).catch(() => null) : null;
   const agora = new Date().toISOString();
   const { error } = await supabase.from('documentos').insert({
     cliente_id: clienteId,
@@ -214,17 +120,9 @@ export async function salvarGuia(item) {
     storage_path: path,
     tipo_mime: 'application/pdf',
     tamanho_bytes: arquivo.size,
-    tipo_documento_sugerido: ORIGENS[dados.origem].tipoDocumento,
     status: 'confirmado',
     confirmado_em: agora,
-    obrigacao_id: obrigacaoId,
-    valor_guia: dados.valor,
-    vencimento_guia: dados.vencimento,
-    valor_guia_extraido_em: agora,
-    linha_digitavel: dados.linhaDigitavel,
-    codigos_extraidos_em: agora,
-    parcelamento_id: parcelamento.id,
-    parcela_numero: dados.parcela,
+    ...camposGuiaParcelamento(dados, parcelamento.id, obrigacaoId, agora),
   });
   if (error) {
     await supabase.storage.from(BUCKET).remove([path]).catch(() => {});
