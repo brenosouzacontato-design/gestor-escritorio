@@ -4,7 +4,9 @@
 // reconhece o extrato, identifica a empresa e pergunta se é pra importar.
 // Com "sim", importar-extrato-background.mjs importa o extrato na
 // contabilidade da empresa (plano padrão OneFlow, regras de classificação,
-// "Valores a Identificar"), gera os lançamentos e devolve a DRE do período.
+// "Valores a Identificar"), gera os lançamentos e devolve o resumo do
+// extrato. Daí o escritório lança no OneFlow (Financeiro → Lançar no
+// OneFlow), onde ficam a DRE e as demais demonstrações.
 //
 // Aqui ficam as regras sem banco nem rede (testes em
 // __tests__/extratoWhatsapp.test.cjs); o fluxo está em whatsapp-webhook.js.
@@ -109,14 +111,14 @@ function perguntaExtrato(extrato, empresa) {
   const periodo = textoPeriodo(extrato)
   const cabecalho = `\n\n🏦 *Extrato bancário*${banco}${periodo ? `\n📅 ${periodo}` : ''}`
   if (empresa) {
-    return `${cabecalho}\n👤 ${empresa.nome}\n\n❓ *Importo para a contabilidade dessa empresa?*\nResponda *sim* para importar, gerar os lançamentos (padrão OneFlow) e a DRE, ou *não* para só arquivar.`
+    return `${cabecalho}\n👤 ${empresa.nome}\n\n❓ *Importo para a contabilidade dessa empresa?*\nResponda *sim* para importar e gerar os lançamentos (padrão OneFlow), ou *não* para só arquivar.`
   }
   const titular = extrato?.titularNome ? ` (titular no extrato: ${extrato.titularNome})` : ''
   return `${cabecalho}\n⚠️ Não identifiquei a empresa${titular}.\n\n❓ *Importo para a contabilidade?*\nResponda *sim* + o nome ou CNPJ da empresa (ex.: *sim Amanda Lima*) ou *não* para só arquivar.`
 }
 
 function respostaImportando(empresa) {
-  return `⏳ *Importando o extrato de ${empresa.nome}…*\nLendo as transações, gerando os lançamentos e a DRE. Aviso aqui quando terminar.`
+  return `⏳ *Importando o extrato de ${empresa.nome}…*\nLendo as transações e gerando os lançamentos. Aviso aqui quando terminar.`
 }
 
 function respostaRecusado(doc) {
@@ -130,25 +132,22 @@ function respostaSemEmpresa(texto) {
 }
 
 // Resumo enviado no grupo quando a importação termina.
-// res: retorno de importarExtrato (lib/importarExtrato.mjs) + linkDre
+// res: retorno de importarExtrato (lib/importarExtrato.mjs)
 function resultadoImportacao(empresa, res) {
   const linhas = [`✅ *Extrato importado — ${empresa.nome}*`]
   linhas.push(`🏦 ${res.contaBanco.nome} (${res.contaBanco.codigo})${res.contaBancoCriada ? ' — conta criada agora' : ''}`)
   if (res.periodo) linhas.push(`📅 ${fmtData(res.periodo.dataInicio)} a ${fmtData(res.periodo.dataFim)}`)
   linhas.push(`📥 ${res.criados} lançamento${res.criados === 1 ? '' : 's'} gerado${res.criados === 1 ? '' : 's'}${res.pulados ? ` (${res.pulados} já tinha${res.pulados === 1 ? '' : 'm'} sido importado${res.pulados === 1 ? '' : 's'})` : ''}`)
   linhas.push(`✔️ ${res.classificadas} classificado${res.classificadas === 1 ? '' : 's'} pelas regras · ⏳ ${res.pendentes} em Valores a Identificar`)
-  linhas.push(`💰 Entradas ${fmtBRL(res.totalEntradas)} · Saídas ${fmtBRL(res.totalSaidas)}`)
+  linhas.push('', '📊 *Resumo do extrato*')
+  linhas.push(`Entradas: ${fmtBRL(res.totalEntradas)}`)
+  linhas.push(`Saídas: ${fmtBRL(res.totalSaidas)}`)
+  linhas.push(`*Saldo do período: ${fmtBRL((res.totalEntradas || 0) - (res.totalSaidas || 0))}*`)
   if (res.planoCriado) linhas.push('🗂️ A empresa não tinha plano de contas: apliquei o plano padrão OneFlow.')
   if (res.avisos?.length) linhas.push(...res.avisos.slice(0, 3).map((a) => `⚠️ ${a}`))
-  if (res.dre) {
-    linhas.push('', '📊 *DRE do período*')
-    linhas.push(`Receitas: ${fmtBRL(res.dre.totalReceitas)}`)
-    if (res.dre.totalCustos) linhas.push(`Custos: ${fmtBRL(res.dre.totalCustos)}`)
-    linhas.push(`Despesas: ${fmtBRL(res.dre.totalDespesas)}`)
-    linhas.push(`*Resultado: ${fmtBRL(res.dre.resultado)}*`)
-    if (res.linkDre) linhas.push(`🔗 ${res.linkDre}`)
-  }
-  if (res.pendentes) linhas.push('', 'Classifique os pendentes em Gestor → Contábil → Lançamentos para completar a DRE.')
+  linhas.push('', '➡️ *Próximo passo*')
+  if (res.pendentes) linhas.push(`1. Identifique os ${res.pendentes} pendente${res.pendentes === 1 ? '' : 's'} em Gestor → Financeiro → Lançamentos.`)
+  linhas.push(`${res.pendentes ? '2' : '1'}. Lance no OneFlow em Gestor → Financeiro → *Lançar no OneFlow* (DRE e demonstrações ficam no OneFlow).`)
   return linhas.join('\n')
 }
 

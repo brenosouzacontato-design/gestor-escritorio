@@ -385,7 +385,7 @@ async function processarDecisaoDocumento(body, mensagem, remoteJid) {
 
 // Resposta "sim" / "não" à pergunta "importar o extrato?". Com "sim", trava
 // o documento em "importando" e dispara importar-extrato-background.mjs, que
-// importa, gera os lançamentos e a DRE e responde no grupo quando terminar.
+// importa, gera os lançamentos e responde com o resumo no grupo quando terminar.
 async function processarRespostaExtrato(doc, escolha, remoteJid) {
   const agora = new Date().toISOString()
   if (escolha.acao === 'recusar') {

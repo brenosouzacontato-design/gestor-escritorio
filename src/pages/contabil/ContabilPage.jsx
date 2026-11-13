@@ -2,20 +2,21 @@ import { useState } from 'react';
 import { useStore } from '../../store';
 import EmpresaCombobox from '../../components/EmpresaCombobox';
 import './contabil.css';
+import ResumoTab from './ResumoTab';
 import LancamentosTab from './LancamentosTab';
-import DRETab from './DRETab';
+import LancarOneflowTab from './LancarOneflowTab';
 import ImportarExtratoTab from './ImportarExtratoTab';
 import RegrasTab from './RegrasTab';
-import PrecificacaoTab from './PrecificacaoTab';
-import DocumentosFiscaisTab from './DocumentosFiscaisTab';
 
+// Financeiro = ponte entre o extrato e o OneFlow: resumo + lançamentos do
+// extrato (importado aqui ou pelo WhatsApp) e o envio pro módulo Contábil do
+// OneFlow, onde ficam DRE, balancete e demais demonstrações.
 const TABS = [
+  { id: 'resumo', label: 'Resumo' },
   { id: 'lancamentos', label: 'Lançamentos' },
-  { id: 'dre', label: 'DRE' },
+  { id: 'oneflow', label: 'Lançar no OneFlow' },
   { id: 'extrato', label: 'Importar Extrato' },
-  { id: 'notasfiscais', label: 'Notas Fiscais' },
   { id: 'regras', label: 'Regras' },
-  { id: 'precificacao', label: 'Precificação' },
 ];
 
 function primeiroDiaDoMes() {
@@ -29,13 +30,14 @@ function hoje() {
 export default function ContabilPage() {
   const clientes = useStore(s => s.clientes)
 
-  const [abaAtiva, setAbaAtiva] = useState('lancamentos');
+  const [abaAtiva, setAbaAtiva] = useState('resumo');
   const [empresaId, setEmpresaId] = useState(null);
   const [dataInicio, setDataInicio] = useState(primeiroDiaDoMes());
   const [dataFim, setDataFim] = useState(hoje());
 
   const empresaIdAtual = empresaId ?? clientes[0]?.id ?? null;
   const periodo = { dataInicio, dataFim };
+  const empresaNome = clientes.find((c) => c.id === empresaIdAtual)?.nome;
 
   return (
     <div className="contabil-modulo">
@@ -63,14 +65,12 @@ export default function ContabilPage() {
         <p style={{ color: 'var(--text2)' }}>Selecione uma empresa para começar.</p>
       ) : (
         <>
-          {abaAtiva === 'lancamentos' && <LancamentosTab empresaId={empresaIdAtual} periodo={periodo} empresaNome={clientes.find((c) => c.id === empresaIdAtual)?.nome} />}
-          {abaAtiva === 'dre' && <DRETab empresaId={empresaIdAtual} periodo={periodo}
-            onPeriodo={(p) => { setDataInicio(p.dataInicio); setDataFim(p.dataFim); }}
-            empresaNome={clientes.find((c) => c.id === empresaIdAtual)?.nome} />}
+          {abaAtiva === 'resumo' && <ResumoTab empresaId={empresaIdAtual} periodo={periodo}
+            onPeriodo={(p) => { setDataInicio(p.dataInicio); setDataFim(p.dataFim); }} onIrPara={setAbaAtiva} />}
+          {abaAtiva === 'lancamentos' && <LancamentosTab empresaId={empresaIdAtual} periodo={periodo} empresaNome={empresaNome} />}
+          {abaAtiva === 'oneflow' && <LancarOneflowTab empresaId={empresaIdAtual} periodo={periodo} empresaNome={empresaNome} onIrPara={setAbaAtiva} />}
           {abaAtiva === 'extrato' && <ImportarExtratoTab empresaId={empresaIdAtual} />}
-          {abaAtiva === 'notasfiscais' && <DocumentosFiscaisTab empresaId={empresaIdAtual} empresaNome={clientes.find((c) => c.id === empresaIdAtual)?.nome} />}
           {abaAtiva === 'regras' && <RegrasTab empresaId={empresaIdAtual} />}
-          {abaAtiva === 'precificacao' && <PrecificacaoTab empresaId={empresaIdAtual} periodo={periodo} />}
         </>
       )}
     </div>
