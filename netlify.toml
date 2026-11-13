@@ -19,6 +19,13 @@
 [functions."documentos-fiscais-cron"]
   schedule = "0 13 * * *"
 
+# Extrato importado pelo grupo Documentos do WhatsApp: função ESM que usa
+# código de src/lib (compartilhado com a tela) — esbuild empacota isso; o
+# pdf.js e o pdf-lib vão como node_modules (pdf.js carrega o worker sozinho).
+[functions."importar-extrato-background"]
+  node_bundler = "esbuild"
+  external_node_modules = ["pdfjs-dist", "@cantoo/pdf-lib"]
+
 # Link curto do painel (/p/<codigo>) — antes do catch-all do app
 [[redirects]]
   from = "/p/:codigo"

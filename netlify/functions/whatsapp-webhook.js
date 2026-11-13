@@ -13,6 +13,8 @@ const {
   EXTENSAO_POR_MIME, extrairMidia, extrairTexto, limparBase64, tipoReal, leituraPossivel, nomeDoArquivo,
 } = require('./lib/midiaWhatsapp')
 const decisao = require('./lib/decisaoDocumento')
+const extratoWpp = require('./lib/extratoWhatsapp')
+const { cabecalhoInterno } = require('./lib/autenticacao')
 
 const supabase = createClient(
   process.env.SUPABASE_URL,
@@ -221,7 +223,7 @@ async function processarDocumento(body, anexo, remoteJid) {
     // Só SUGERE: a baixa de fato só acontece quando alguém confirma no
     // sistema — nunca automático.
     let mensagemIdentificacao = '\n\n⚠️ Não consegui rodar a identificação automática — revise manualmente no sistema.'
-    let perguntarId = null // documento sem identificação: pergunta "tarefa ou arquivar?"
+    let perguntarId = null // documento sem identificação ("tarefa ou arquivar?") ou extrato ("importar?")
     try {
       const candidatos = await listarCandidatosDocumento(supabase)
       // comprovante sem guia identificada com segurança já foi analisado
@@ -234,6 +236,15 @@ async function processarDocumento(body, anexo, remoteJid) {
           : await identificarDocumento({ arquivoBase64: base64, filename: nomeArquivo, mimeType, legenda, candidatos, apiKey: ANTHROPIC_KEY })
       const candidato = sugestao.candidatoId ? candidatos.find((c) => c.id === sugestao.candidatoId) : null
 
+      // Extrato bancário (PDF): acha a empresa pelo titular e, depois de
+      // gravar, pergunta se é pra importar na contabilidade (lib/extratoWhatsapp.js)
+      const ehExtrato = !!sugestao.extrato && mimeType === 'application/pdf' && !pareceComprovante
+      let empresaExtrato = null
+      if (ehExtrato) {
+        const { data: clientes } = await supabase.from('clientes').select('id, nome, cnpj').eq('ativo', true)
+        empresaExtrato = extratoWpp.acharEmpresaDoExtrato(sugestao.extrato, clientes, sugestao.clienteId)
+      }
+
       const storagePath = `${crypto.randomUUID()}.${EXTENSAO_POR_MIME[mimeType] || 'bin'}`
       const { error: errStorage } = await supabase.storage
         .from('documentos')
@@ -241,7 +252,7 @@ async function processarDocumento(body, anexo, remoteJid) {
       if (errStorage) throw errStorage
 
       const { data: docNovo, error: errDoc } = await supabase.from('documentos').insert({
-        cliente_id: sugestao.clienteId || null,
+        cliente_id: empresaExtrato?.id || sugestao.clienteId || null,
         nome_arquivo: nomeArquivo,
         storage_path: storagePath,
         tipo_mime: mimeType,
@@ -259,16 +270,30 @@ async function processarDocumento(body, anexo, remoteJid) {
       }).select('id').single()
       if (errDoc) throw errDoc
 
+      // Extrato: pergunta "importar?". Só se as colunas existem
+      // (supabase-schema-documentos-extrato-whatsapp.sql); senão segue como
+      // documento comum, com a pergunta "tarefa ou arquivar?".
+      let perguntaExtrato = null
+      if (ehExtrato && docNovo?.id) {
+        const { error: errExtrato } = await supabase.from('documentos')
+          .update({ whatsapp_decisao: extratoWpp.AGUARDANDO, whatsapp_extrato: sugestao.extrato }).eq('id', docNovo.id)
+        if (errExtrato) console.error('Pergunta de importar extrato desligada:', errExtrato.message)
+        else {
+          perguntarId = docNovo.id
+          perguntaExtrato = extratoWpp.perguntaExtrato(sugestao.extrato, empresaExtrato)
+        }
+      }
+
       // Sem correspondência (e não é comprovante): o grupo escolhe tarefa ou arquivo.
       // Só pergunta se a coluna existe (supabase-schema-documentos-decisao-whatsapp.sql).
-      if (!sugestao.candidatoId && !pareceComprovante && docNovo?.id) {
+      if (!perguntaExtrato && !sugestao.candidatoId && !pareceComprovante && docNovo?.id) {
         const { error: errDecisao } = await supabase.from('documentos').update({ whatsapp_decisao: 'aguardando' }).eq('id', docNovo.id)
         if (errDecisao) console.error('Pergunta tarefa/arquivo desligada:', errDecisao.message)
         else perguntarId = docNovo.id
       }
 
       const avisoLeitura = leitura.ok ? '' : `\n⚠️ Não li o arquivo automaticamente: ${leitura.motivo}.`
-      mensagemIdentificacao = `\n\n🔎 ${sugestao.tipoDocumento}${avisoLeitura}` + (
+      mensagemIdentificacao = perguntaExtrato || `\n\n🔎 ${sugestao.tipoDocumento}${avisoLeitura}` + (
         pareceComprovante
           ? '\n⚠️ Não consegui registrar na fila de pagamentos — dê a baixa em Gestor → Pagamentos → Baixa manual.'
           : candidato
@@ -295,17 +320,22 @@ async function processarDocumento(body, anexo, remoteJid) {
   }
 }
 
-// Resposta de texto no grupo "Documentos" à pergunta "1 = tarefa / 2 = arquivar".
+// Resposta de texto no grupo "Documentos" a uma pergunta do robô:
+//  - "1 = tarefa / 2 = arquivar" (documento não identificado);
+//  - "sim / não" (importar extrato bancário — processarRespostaExtrato).
 // Vale para o documento cuja mensagem foi citada ou, sem citação, para o
-// último que está esperando (até VALIDADE_HORAS). Outro texto é ignorado.
+// último que está esperando aquele tipo de resposta (até VALIDADE_HORAS).
+// Outro texto é ignorado.
 async function processarDecisaoDocumento(body, mensagem, remoteJid) {
-  const escolha = decisao.lerDecisao(mensagem)
-  if (!escolha) return { statusCode: 200, body: 'No file in docs group message' }
+  const escolhaDoc = decisao.lerDecisao(mensagem)
+  const escolhaExtrato = extratoWpp.lerRespostaExtrato(mensagem)
+  if (!escolhaDoc && !escolhaExtrato) return { statusCode: 200, body: 'No file in docs group message' }
 
   const citado = decisao.idCitado(body?.data?.message)
+  const estados = [escolhaDoc && 'aguardando', escolhaExtrato && extratoWpp.AGUARDANDO].filter(Boolean)
   let consulta = supabase.from('documentos')
-    .select('id, cliente_id, nome_arquivo, tipo_documento_sugerido, observacao_ia, clientes(nome)')
-    .eq('whatsapp_decisao', 'aguardando')
+    .select('id, cliente_id, nome_arquivo, tipo_documento_sugerido, observacao_ia, whatsapp_decisao, clientes(nome)')
+    .in('whatsapp_decisao', estados)
   consulta = citado
     ? consulta.eq('whatsapp_pergunta_id', citado)
     : consulta.gte('created_at', new Date(Date.now() - decisao.VALIDADE_HORAS * 3600e3).toISOString())
@@ -316,7 +346,9 @@ async function processarDecisaoDocumento(body, mensagem, remoteJid) {
   }
   const doc = docs?.[0]
   if (!doc) return { statusCode: 200, body: 'No document waiting for decision' }
+  if (doc.whatsapp_decisao === extratoWpp.AGUARDANDO) return await processarRespostaExtrato(doc, escolhaExtrato, remoteJid)
 
+  const escolha = escolhaDoc
   // trava: só um processamento por documento (a Evolution pode reenviar o webhook)
   const agora = new Date().toISOString()
   const { data: travado } = await supabase.from('documentos')
@@ -347,6 +379,57 @@ async function processarDecisaoDocumento(body, mensagem, remoteJid) {
     await supabase.from('documentos').update({ whatsapp_decisao: 'aguardando', whatsapp_decidido_em: null })
       .eq('id', doc.id).neq('status', 'confirmado')
     await enviarMensagem(remoteJid, `❌ Não consegui ${escolha.acao === 'tarefa' ? 'criar a tarefa' : 'arquivar'}: ${e.message}`)
+    return { statusCode: 200, body: JSON.stringify({ success: false, error: e.message }) }
+  }
+}
+
+// Resposta "sim" / "não" à pergunta "importar o extrato?". Com "sim", trava
+// o documento em "importando" e dispara importar-extrato-background.mjs, que
+// importa, gera os lançamentos e a DRE e responde no grupo quando terminar.
+async function processarRespostaExtrato(doc, escolha, remoteJid) {
+  const agora = new Date().toISOString()
+  if (escolha.acao === 'recusar') {
+    const { data: travado } = await supabase.from('documentos')
+      .update({ whatsapp_decisao: 'arquivado', whatsapp_decidido_em: agora, status: 'confirmado', confirmado_em: agora })
+      .eq('id', doc.id).eq('whatsapp_decisao', extratoWpp.AGUARDANDO).select('id')
+    if (travado?.length) await enviarMensagem(remoteJid, extratoWpp.respostaRecusado(doc))
+    return { statusCode: 200, body: JSON.stringify({ success: true, arquivado: doc.id }) }
+  }
+
+  // empresa: a digitada junto do "sim" vence a identificada no extrato
+  let empresa = null
+  if (escolha.empresa) {
+    const { data: clientes } = await supabase.from('clientes').select('id, nome, cnpj').eq('ativo', true)
+    empresa = extratoWpp.acharEmpresaPorTexto(escolha.empresa, clientes)
+  } else if (doc.cliente_id) {
+    empresa = { id: doc.cliente_id, nome: doc.clientes?.nome || 'a empresa' }
+  }
+  if (!empresa) {
+    await enviarMensagem(remoteJid, extratoWpp.respostaSemEmpresa(escolha.empresa))
+    return { statusCode: 200, body: 'Extrato sem empresa' }
+  }
+
+  // trava: só uma importação por documento (a Evolution pode reenviar o webhook)
+  const { data: travado } = await supabase.from('documentos')
+    .update({ whatsapp_decisao: extratoWpp.IMPORTANDO, whatsapp_decidido_em: agora, cliente_id: empresa.id })
+    .eq('id', doc.id).eq('whatsapp_decisao', extratoWpp.AGUARDANDO).select('id')
+  if (!travado?.length) return { statusCode: 200, body: 'Decision already taken' }
+
+  try {
+    const base = (process.env.URL || '').replace(/\/+$/, '')
+    if (!base) throw new Error('endereço do site desconhecido (variável URL do Netlify).')
+    const resp = await fetchComTimeout(`${base}/.netlify/functions/importar-extrato-background`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...cabecalhoInterno() },
+      body: JSON.stringify({ documentoId: doc.id, remoteJid }),
+    }, 8000)
+    if (!resp.ok) throw new Error(`a importação não começou (${resp.status}).`)
+    await enviarMensagem(remoteJid, extratoWpp.respostaImportando(empresa))
+    return { statusCode: 200, body: JSON.stringify({ success: true, importando: doc.id }) }
+  } catch (e) {
+    console.error('Importar extrato:', e.message)
+    await supabase.from('documentos').update({ whatsapp_decisao: extratoWpp.AGUARDANDO, whatsapp_decidido_em: null }).eq('id', doc.id)
+    await enviarMensagem(remoteJid, `❌ Não consegui começar a importação: ${e.message} Tente responder *sim* de novo.`)
     return { statusCode: 200, body: JSON.stringify({ success: false, error: e.message }) }
   }
 }
@@ -577,8 +660,9 @@ exports.handler = async (event) => {
 
   // Grupo "Documentos" — qualquer arquivo enviado aqui vai pro Drive, sem
   // depender de prefixo. Texto nesse grupo só conta como resposta "1 = tarefa /
-  // 2 = arquivar" a um documento não identificado; o resto é ignorado e não
-  // cai no fluxo de tarefa abaixo.
+  // 2 = arquivar" a um documento não identificado ou "sim / não" à pergunta
+  // de importar um extrato bancário; o resto é ignorado e não cai no fluxo
+  // de tarefa abaixo.
   // Grupo "Pagamentos" — todo arquivo é comprovante de pagamento: vai pra
   // fila de baixa (tela Pagamentos do gestor). Texto sem arquivo é ignorado.
   if (PAGAMENTOS_GRUPO_ID && remoteJid === PAGAMENTOS_GRUPO_ID) {

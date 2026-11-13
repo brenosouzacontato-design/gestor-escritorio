@@ -12,11 +12,12 @@ import {
 } from './contabilApi';
 import { extrairTransacoesDeExcel } from './excelExtrato';
 import ContaCombobox from './ContaCombobox';
+import { corrigirTipoPelaDescricao, montarItensExtrato } from '../../lib/contabilExtrato';
 
 // Contrapartida usada quando a transação é salva sem conta classificada ainda
 // ("Valores a Identificar" — código muda entre o plano padrão e o enxuto,
 // ver planoContasConstantes.js)
-import { acharContaPendente, CODIGOS_CONTA_PENDENTE, PREFIXO_DISPONIVEL } from './planoContasConstantes';
+import { acharContaPendente, PREFIXO_DISPONIVEL } from './planoContasConstantes';
 
 /**
  * Chama a Netlify Function netlify/functions/extrair-extrato.js. Ela manda
@@ -152,17 +153,8 @@ async function extrairTransacoesComDivisao(arquivo) {
   return { transacoes: dedupBySobreposicao(transacoes).map(corrigirTipoPelaDescricao), truncado, falhas: falhas.length > 0 ? falhas : undefined };
 }
 
-// Rede de segurança pra extração por IA: quando a própria descrição já diz
-// a direção ("Transferência enviada", "Pix recebido", "Pagamento de boleto
-// efetuado"...), ela vence o "tipo" que a IA devolveu — a IA olha uma
-// página por vez e, em extrato sem sinal no valor, às vezes erra a direção
-// (ex: "Depósito recebido ... * Débito" virava saída por causa do "Débito").
-function corrigirTipoPelaDescricao(t) {
-  const d = (t.descricao || '').toLowerCase();
-  if (/\b(recebid[oa]|dep[óo]sito recebido|reembolso|estorno|resgate)\b/.test(d)) return { ...t, tipo: 'entrada' };
-  if (/\b(enviad[oa]|pagamento (de boleto )?efetuado|tarifa|saque)\b/.test(d)) return { ...t, tipo: 'saida' };
-  return t;
-}
+// corrigirTipoPelaDescricao: em src/lib/contabilExtrato.js (vale também pro
+// extrato que chega pelo WhatsApp).
 
 // Extrato do Nubank: lido por regra direto do texto do PDF (ver
 // extratoNubank.js) — devolve null se o PDF não for do Nubank, pra cair na
@@ -352,47 +344,9 @@ export default function ImportarExtratoTab({ empresaId }) {
       const contaPendente = acharContaPendente(contasBanco);
       const validas = transacoes.filter((t) => !t.ignorar);
 
-      const ocorrencias = new Map(); // chave base -> quantas vezes já apareceu nesse extrato
-      const itens = validas.map((t) => {
-        // sem conta classificada ainda: lança em "Valores a Identificar" pra
-        // não perder a transação, e fica pra conciliar depois nos Lançamentos
-        const contraId = t.conta_id || contaPendente?.id;
-        if (!contraId) {
-          throw new Error(`Não achei a conta "Valores a Identificar" (código ${CODIGOS_CONTA_PENDENTE.join(' ou ')}) no plano dessa empresa, e a transação "${t.descricao}" não tem conta selecionada.`);
-        }
-        const valor = Math.abs(Number(t.valor));
-        const partidas = t.tipo === 'entrada'
-          ? [
-              { conta_id: contaBancoId, tipo: 'debito', valor },
-              { conta_id: contraId, tipo: 'credito', valor },
-            ]
-          : [
-              { conta_id: contraId, tipo: 'debito', valor },
-              { conta_id: contaBancoId, tipo: 'credito', valor },
-            ];
-        // identifica a transação de forma estável pra não duplicar se o
-        // mesmo extrato (ou um período sobreposto) for reimportado depois —
-        // usa o identificador do banco quando tem, senão cai pra descrição
-        // Duas transações legítimas e idênticas no mesmo dia (ex: dois Pix de
-        // R$ 160 pra mesma pessoa — comum no Nubank, que não traz código da
-        // transação) davam a mesma chave e a 2ª era descartada como "já
-        // importada". A partir da 2ª ocorrência dentro do mesmo extrato a
-        // chave ganha "#2", "#3"... — a 1ª mantém a chave antiga, então
-        // reimportar o mesmo extrato continua sem duplicar.
-        const base = [contaBancoId, t.data, t.tipo, valor.toFixed(2), t.identificador || t.descricao.trim()].join('|');
-        const n = (ocorrencias.get(base) || 0) + 1;
-        ocorrencias.set(base, n);
-        const extratoReferencia = n === 1 ? base : `${base}#${n}`;
-        return {
-          data: t.data,
-          historico: t.descricao,
-          numeroDocumento: t.identificador || null,
-          origem: 'importacao_extrato',
-          extratoReferencia,
-          conciliado: !!t.conta_id,
-          partidas,
-        };
-      });
+      // sem conta classificada ainda: lança em "Valores a Identificar" pra
+      // não perder a transação, e fica pra conciliar depois nos Lançamentos
+      const itens = montarItensExtrato(validas, { contaBancoId, contaPendenteId: contaPendente?.id });
 
       const { criados, pulados } = await criarLancamentosEmLote(empresaId, itens);
 

@@ -17,7 +17,7 @@ const { tipoReal, leituraPossivel, blocoArquivo, textoLegenda } = require('./mid
 const SYSTEM_PROMPT = `Você é um assistente de escritório contábil brasileiro. Recebe um documento (comprovante, guia, certidão, recibo etc) e uma lista de "candidatos" — obrigações e tarefas em aberto de vários clientes — e precisa: 1) identificar que tipo de documento é; 2) identificar de qual cliente ele é (comparando com a lista); 3) apontar qual candidato da lista esse documento resolve, se houver um.
 
 Devolva APENAS um JSON, sem texto antes ou depois, sem markdown e sem crases, no formato exato:
-{"tipoDocumento":"string","clienteId":"id da lista ou null","candidatoId":"id da lista ou null","confianca":"alta"|"media"|"baixa","observacao":"string curta"}
+{"tipoDocumento":"string","clienteId":"id da lista ou null","candidatoId":"id da lista ou null","confianca":"alta"|"media"|"baixa","observacao":"string curta","extrato":null}
 
 Regras:
 - "tipoDocumento": descrição curta e objetiva do documento (ex: "Comprovante de pagamento do DAS", "Guia do FGTS", "Certidão Negativa de Débitos"). Se não conseguir identificar, use "Documento não identificado".
@@ -27,7 +27,8 @@ Regras:
 - "observacao": uma frase curta explicando a escolha (ou por que ficou null).
 - O arquivo pode ser PDF, foto ou print de tela. Leia o que estiver visível; se estiver cortado ou ilegível, use confiança "baixa".
 - Se vier uma mensagem junto com o arquivo (ex: "guia do FGTS da Loja"), use como pista, mas só conte como certo o que o documento mostrar.
-- Se o arquivo não parecer um documento relevante pra um escritório de contabilidade, devolva tipoDocumento "Documento não identificado" e os dois ids null.`;
+- Se o arquivo não parecer um documento relevante pra um escritório de contabilidade, devolva tipoDocumento "Documento não identificado" e os dois ids null.
+- "extrato": só quando o documento for um EXTRATO DE CONTA BANCÁRIA (lista de movimentações/lançamentos de uma conta, com datas, valores e saldos — não comprovante avulso, fatura de cartão, boleto ou guia). Nesse caso use tipoDocumento "Extrato bancário" e devolva {"banco":"nome do banco ou instituição","titularNome":"nome do titular da conta","titularDocumento":"CNPJ ou CPF do titular, só se aparecer","periodoInicio":"YYYY-MM-DD","periodoFim":"YYYY-MM-DD"} (campo que não aparecer = null). Em qualquer outro documento, "extrato" é null.`;
 
 // candidatos: [{id, clienteId, clienteNome, rotulo}]
 // Retorna { tipoDocumento, clienteId, candidatoId, confianca, observacao }
@@ -96,7 +97,22 @@ async function identificarDocumento({ arquivoBase64, filename, mimeType: mimeInf
     candidatoId: sugestao.candidatoId || null,
     confianca: sugestao.confianca || 'baixa',
     observacao: sugestao.observacao || '',
+    extrato: normalizarExtrato(sugestao.extrato),
   };
 }
 
-module.exports = { identificarDocumento };
+// Dados do extrato bancário (ou null) — datas fora do formato viram null.
+function normalizarExtrato(e) {
+  if (!e || typeof e !== 'object') return null;
+  const texto = (v) => (typeof v === 'string' && v.trim() ? v.trim().slice(0, 120) : null);
+  const data = (v) => (typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v.trim()) ? v.trim() : null);
+  return {
+    banco: texto(e.banco),
+    titularNome: texto(e.titularNome),
+    titularDocumento: texto(e.titularDocumento),
+    periodoInicio: data(e.periodoInicio),
+    periodoFim: data(e.periodoFim),
+  };
+}
+
+module.exports = { identificarDocumento, normalizarExtrato };
