@@ -3,10 +3,11 @@
 // topo, o que falta para fechar a competência — a aba serve de lembrete das
 // empresas que o escritório pretende fechar (continua lá depois de recarregar).
 // Nada de lógica nova de dados: cada módulo é a tela de sempre com `clienteFixo`.
+// Tudo acontece dentro da aba: nenhum botão daqui abre outra aba do app.
 import { useEffect, useMemo, useState } from 'react'
 import {
   ListChecksIcon, MonitorIcon, SettingsIcon, SendIcon, FileSignatureIcon, LayersIcon, BanknoteIcon, CalculatorIcon,
-  ClipboardCheckIcon, CheckSquareIcon, PaperclipIcon, CircleDollarSignIcon, PlusIcon, ChevronLeftIcon, ChevronRightIcon,
+  ClipboardCheckIcon, CheckSquareIcon, PaperclipIcon, PlusIcon, ChevronLeftIcon, ChevronRightIcon,
   CheckCircle2Icon, AlertCircleIcon, StickyNoteIcon, XIcon,
 } from 'lucide-react'
 import { useStore } from '../../store'
@@ -20,11 +21,17 @@ import NfseEmissaoPage from '../nfse/NfseEmissaoPage'
 import ParcelamentosPage from '../parcelamentos/ParcelamentosPage'
 import HonorariosPage from '../honorarios/HonorariosPage'
 import ContabilPage from '../contabil/ContabilPage'
+import Tarefas from '../Tarefas'
+import { AbaAnexosEmpresa } from '../Empresas'
+import { useAcoesEmpresa, AcoesItem } from './AcoesItemEmpresa'
 import { listarGuias, situacaoGuia } from '../entregas/entregasApi'
 import { listarNfsePendentes } from '../painel/nfsePainelApi'
 
 const MODULOS = [
   { id: 'resumo', rotulo: 'Para fechar', Icon: ListChecksIcon },
+  { id: 'obrigacoes', rotulo: 'Obrigações', Icon: ClipboardCheckIcon },
+  { id: 'tarefas', rotulo: 'Tarefas', Icon: CheckSquareIcon },
+  { id: 'documentos', rotulo: 'Documentos', Icon: PaperclipIcon },
   { id: 'painel', rotulo: 'Painel do cliente', Icon: MonitorIcon },
   { id: 'cadastro', rotulo: 'Cadastro e obrigações', Icon: SettingsIcon },
   { id: 'entregas', rotulo: 'Entregas', Icon: SendIcon },
@@ -51,7 +58,7 @@ function somarMes(comp, n) {
 const dataBR = (d) => (d ? String(d).slice(0, 10).split('-').reverse().join('/') : '')
 const feita = (o) => o.status === 'concluido' || o.status === 'nao_aplica'
 
-export default function EmpresaAbaPage({ clienteId, onNavigate, onAddTarefa, onAbrirFechamento, onAbrirTarefas, onFecharAba }) {
+export default function EmpresaAbaPage({ clienteId, onAddTarefa, onFecharAba }) {
   const clientes = useStore((s) => s.clientes)
   const carregandoStore = useStore((s) => s.loading)
   const tarefas = useStore((s) => s.tarefas)
@@ -74,6 +81,7 @@ export default function EmpresaAbaPage({ clienteId, onNavigate, onAddTarefa, onA
   const obsAbertas = useMemo(() => obsComp.filter((o) => !feita(o))
     .sort((a, b) => String(a.vencimento || '9').localeCompare(String(b.vencimento || '9'))), [obsComp])
   const tarefasAbertas = useMemo(() => tarefas.filter((t) => t.cliente_id === clienteId && !t.concluida), [tarefas, clienteId])
+  const acoes = useAcoesEmpresa(cliente, obsComp.map((o) => o.id), tarefasAbertas.map((t) => t.id))
 
   const [guias, setGuias] = useState(null) // null = carregando
   const [statusManual, setStatusManual] = useState({ entregue: false, aguardando: false })
@@ -98,7 +106,7 @@ export default function EmpresaAbaPage({ clienteId, onNavigate, onAddTarefa, onA
   const guiasSemAbrir = (guias || []).filter((g) => ['entregue', 'vista'].includes(situacaoGuia(g)))
   const trilha = trilhaEmpresa({ obrigacoes: obsComp, guias: guias || [], marcadoConcluido: statusManual.entregue, aguardando: statusManual.aguardando })
   const totalFalta = obsAbertas.length + guiasPendentes.length + tarefasAbertas.length + (nfsePend?.length || 0)
-  const qtdModulo = { resumo: totalFalta, entregas: guiasPendentes.length, nfse: nfsePend?.length || 0 }
+  const qtdModulo = { resumo: totalFalta, obrigacoes: obsAbertas.length, tarefas: tarefasAbertas.length, entregas: guiasPendentes.length, nfse: nfsePend?.length || 0 }
 
   if (!cliente) {
     if (carregandoStore || !clientes.length) return <div className="center"><div className="spinner" /></div>
@@ -112,16 +120,14 @@ export default function EmpresaAbaPage({ clienteId, onNavigate, onAddTarefa, onA
     )
   }
 
-  const atalho = (Icon, rotulo, onClick, title) => (
-    <button type="button" className="btn btn-sm" onClick={onClick} title={title}><Icon size={14} /> {rotulo}</button>
-  )
-
   const renderModulo = (id) => {
     switch (id) {
       case 'resumo': return (
-        <Resumo {...{ cliente, competencia, trilha, obsAbertas, obsComp, guias, guiasPendentes, guiasSemAbrir, tarefasAbertas, nfsePend, totalFalta, lembrete, setLembrete, setModulo }}
-          onAbrirFechamento={() => onAbrirFechamento(clienteId)} onAbrirTarefas={() => onAbrirTarefas(clienteId)} />
+        <Resumo {...{ cliente, competencia, trilha, obsAbertas, obsComp, guias, guiasPendentes, guiasSemAbrir, tarefasAbertas, nfsePend, totalFalta, lembrete, setLembrete, setModulo, acoes }} />
       )
+      case 'obrigacoes': return <ModuloObrigacoes obrigacoes={obsComp} competencia={competencia} acoes={acoes} onCadastro={() => setModulo('cadastro')} />
+      case 'tarefas': return <Tarefas clienteFixo={clienteId} onAddTarefa={() => onAddTarefa(clienteId)} />
+      case 'documentos': return <AbaAnexosEmpresa clienteId={clienteId} />
       case 'painel': return <PainelCompartilhadoPage key={competencia} clienteId={clienteId} competencia={competencia} admin />
       case 'cadastro': return (
         <ClienteDetalhe cliente={cliente} tarefas={tarefas.filter((t) => t.cliente_id === clienteId)}
@@ -151,10 +157,6 @@ export default function EmpresaAbaPage({ clienteId, onNavigate, onAddTarefa, onA
           <button type="button" className="btn btn-icon btn-ghost" onClick={() => setCompetencia(somarMes(competencia, 1))} aria-label="Próxima competência"><ChevronRightIcon size={16} /></button>
         </div>
         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-          {atalho(ClipboardCheckIcon, 'Fechamento', () => onAbrirFechamento(clienteId), 'Abrir a empresa no Fechamento (obrigações do mês)')}
-          {atalho(CheckSquareIcon, 'Tarefas', () => onAbrirTarefas(clienteId), 'Tarefas desta empresa')}
-          {atalho(PaperclipIcon, 'Documentos', () => onNavigate('documentos'), 'Arquivos recebidos')}
-          {atalho(CircleDollarSignIcon, 'Pagamentos', () => onNavigate('pagamentos'), 'Guias e comprovantes')}
           <button type="button" className="btn btn-sm btn-accent" onClick={() => onAddTarefa(clienteId)}><PlusIcon size={14} /> Tarefa</button>
         </div>
       </div>
@@ -172,12 +174,13 @@ export default function EmpresaAbaPage({ clienteId, onNavigate, onAddTarefa, onA
       {MODULOS.filter((m) => visitados.has(m.id) || m.id === modulo).map((m) => (
         <div key={m.id} className="empresa-aba-conteudo" style={{ display: m.id === modulo ? 'block' : 'none' }}>{renderModulo(m.id)}</div>
       ))}
+      {acoes.modais}
     </div>
   )
 }
 
 function Resumo({ cliente, competencia, trilha, obsAbertas, obsComp, guias, guiasPendentes, guiasSemAbrir, tarefasAbertas, nfsePend,
-  totalFalta, lembrete, setLembrete, setModulo, onAbrirFechamento, onAbrirTarefas }) {
+  totalFalta, lembrete, setLembrete, setModulo, acoes }) {
   const carregando = guias === null || nfsePend === null
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
@@ -205,12 +208,8 @@ function Resumo({ cliente, competencia, trilha, obsAbertas, obsComp, guias, guia
 
       <div className="empresa-aba-falta">
         <Bloco Icon={ClipboardCheckIcon} titulo={`Obrigações abertas (${obsAbertas.length}/${obsComp.length})`} vazio="Todas concluídas ou sem obrigação."
-          itens={obsAbertas} onClick={onAbrirFechamento} acao="Fechamento"
-          linha={(o) => (<>
-            <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{o.titulo || o.tipo}</span>
-            {o.vencimento && <span style={{ fontSize: 11.5, color: 'var(--text3)' }}>vence {dataBR(o.vencimento)}</span>}
-            <span className={`badge ${o.status === 'vencido' ? 'badge-err' : 'badge-warn'}`}>{o.status === 'vencido' ? 'Vencida' : 'Pendente'}</span>
-          </>)} />
+          itens={obsAbertas} onClick={() => setModulo('obrigacoes')} acao="Ver todas"
+          linha={(o) => <LinhaObrigacao o={o} acoes={acoes} />} />
         <Bloco Icon={SendIcon} titulo={`Guias para entregar (${guiasPendentes.length})`} carregando={guias === null}
           vazio={guias?.length ? 'Todas as guias foram entregues.' : 'Nenhuma guia anexada na competência.'}
           itens={guiasPendentes} onClick={() => setModulo('entregas')} acao="Abrir Entregas"
@@ -220,10 +219,11 @@ function Resumo({ cliente, competencia, trilha, obsAbertas, obsComp, guias, guia
             <span className={`badge ${situacaoGuia(g) === 'falhou' ? 'badge-err' : 'badge-warn'}`}>{situacaoGuia(g) === 'falhou' ? 'Falhou' : 'A entregar'}</span>
           </>)} />
         <Bloco Icon={CheckSquareIcon} titulo={`Tarefas abertas (${tarefasAbertas.length})`} vazio="Nenhuma tarefa aberta."
-          itens={tarefasAbertas} onClick={onAbrirTarefas} acao="Abrir Tarefas"
+          itens={tarefasAbertas} onClick={() => setModulo('tarefas')} acao="Ver todas"
           linha={(t) => (<>
-            <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.titulo}</span>
+            <span style={{ flex: '1 1 140px', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={t.titulo}>{t.titulo}</span>
             {t.vencimento && <span style={{ fontSize: 11.5, color: 'var(--text3)' }}>{dataBR(t.vencimento)}</span>}
+            <AcoesItem tipo="tarefa" item={t} acoes={acoes} />
           </>)} />
         <Bloco Icon={FileSignatureIcon} titulo={`NFS-e a emitir (${nfsePend?.length || 0})`} carregando={nfsePend === null} vazio="Nenhuma nota esperando emissão."
           itens={nfsePend || []} onClick={() => setModulo('nfse')} acao="Abrir NFS-e"
@@ -234,7 +234,7 @@ function Resumo({ cliente, competencia, trilha, obsAbertas, obsComp, guias, guia
           </>)} />
       </div>
       <p style={{ fontSize: 11.5, color: 'var(--text3)', margin: 0 }}>
-        Os módulos acima (painel, cadastro, entregas, NFS-e, parcelamentos, honorários e financeiro) já abrem só com {cliente.nome.replace(/^[\d./-]+\s+/, '')}.
+        Os módulos acima já abrem só com {cliente.nome.replace(/^[\d./-]+\s+/, '')}, sem sair desta aba.
       </p>
     </div>
   )
@@ -254,10 +254,47 @@ function Bloco({ Icon, titulo, itens, linha, vazio, onClick, acao, carregando = 
         : itens.length === 0
           ? <p style={{ fontSize: 12, color: 'var(--text3)', margin: 0 }}>{vazio}</p>
           : itens.slice(0, MAX_LINHAS).map((it, i) => (
-            <button key={it.id || i} type="button" className="empresa-aba-linha" onClick={onClick}>{linha(it)}</button>
+            <div key={it.id || i} role="button" tabIndex={0} className="empresa-aba-linha" onClick={onClick}
+              onKeyDown={(e) => { if (e.key === 'Enter') onClick() }}>{linha(it)}</div>
           ))}
       {!carregando && itens.length > MAX_LINHAS && <p style={{ fontSize: 11.5, color: 'var(--text3)', margin: '4px 0 0' }}>+ {itens.length - MAX_LINHAS} mais</p>}
       {!carregando && rodape && <p style={{ fontSize: 11.5, color: 'var(--text3)', margin: '6px 0 0' }}>{rodape}</p>}
+    </div>
+  )
+}
+
+const STATUS_ROTULO = { pendente: ['Pendente', 'badge-warn'], vencido: ['Vencida', 'badge-err'], concluido: ['Concluída', 'badge-ok'], nao_aplica: ['Não se aplica', 'badge-gray'] }
+
+function LinhaObrigacao({ o, acoes }) {
+  const [rotulo, classe] = STATUS_ROTULO[o.status] || STATUS_ROTULO.pendente
+  return (<>
+    <span style={{ flex: '1 1 140px', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={o.titulo || o.tipo}>{o.titulo || o.tipo}</span>
+    {o.vencimento && <span style={{ fontSize: 11.5, color: 'var(--text3)', whiteSpace: 'nowrap' }}>vence {dataBR(o.vencimento)}</span>}
+    <span className={`badge ${classe}`}>{rotulo}</span>
+    <AcoesItem tipo="obrigacao" item={o} acoes={acoes} />
+  </>)
+}
+
+// Módulo Obrigações: todas as da competência (a entregar e entregues), com as ações
+function ModuloObrigacoes({ obrigacoes, competencia, acoes, onCadastro }) {
+  const ordenar = (l) => [...l].sort((a, b) => String(a.vencimento || '9').localeCompare(String(b.vencimento || '9')))
+  const abertas = ordenar(obrigacoes.filter((o) => !feita(o)))
+  const entregues = ordenar(obrigacoes.filter(feita))
+  const lista = (titulo, itens, vazio) => (
+    <div className="empresa-aba-bloco">
+      <h4>{titulo} ({itens.length})</h4>
+      {itens.length === 0
+        ? <p style={{ fontSize: 12, color: 'var(--text3)', margin: 0 }}>{vazio}</p>
+        : itens.map((o) => <div key={o.id} className="empresa-aba-linha" style={{ cursor: 'default' }}><LinhaObrigacao o={o} acoes={acoes} /></div>)}
+    </div>
+  )
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      {lista(`A entregar em ${competencia}`, abertas, 'Nada pendente nesta competência.')}
+      {lista('Entregues', entregues, 'Nenhuma entregue ainda.')}
+      <p style={{ fontSize: 11.5, color: 'var(--text3)', margin: 0 }}>
+        Para criar obrigações ou gerar em lote, use <button type="button" className="btn btn-sm btn-ghost" onClick={onCadastro}>Cadastro e obrigações</button>.
+      </p>
     </div>
   )
 }

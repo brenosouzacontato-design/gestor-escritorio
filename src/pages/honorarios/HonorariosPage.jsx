@@ -1,8 +1,9 @@
 import { useState, useEffect, useMemo } from 'react'
-import { BanknoteIcon, SearchIcon, SendIcon, SettingsIcon, RefreshCwIcon, PencilIcon, InfoIcon, PlusIcon, BarChart3Icon, XIcon, ListChecksIcon } from 'lucide-react'
+import { BanknoteIcon, SearchIcon, SendIcon, SettingsIcon, RefreshCwIcon, PencilIcon, InfoIcon, PlusIcon, BarChart3Icon, XIcon, ListChecksIcon, ReceiptIcon } from 'lucide-react'
 import { Modal, useToast } from '../../components/shared'
 import { useStore } from '../../store'
 import EmpresaCombobox from '../../components/EmpresaCombobox'
+import { abrirLinkAssinado } from '../documentos/documentosApi'
 import {
   listarHonorariosDoMes, gerarHonorariosDoMes, marcarStatusHonorario,
   atualizarHonorario, atualizarConfigCliente, obterConfigPix, salvarConfigPix,
@@ -285,6 +286,13 @@ export default function HonorariosPage({ clienteFixo = null } = {}) {
                         </td>
                         <td style={{ padding: '8px 12px', whiteSpace: 'nowrap', color: 'var(--text2)' }}>
                           {h.status === 'pago' ? fmtData(h.data_pagamento) : '—'}
+                          {h.comprovante_path && (
+                            <button type="button" className="btn btn-ghost btn-sm" style={{ marginLeft: 4, padding: '0 4px' }}
+                              title={`Ver comprovante${h.baixa_por ? ` · baixa: ${h.baixa_por}` : ''}`}
+                              onClick={() => abrirLinkAssinado(h.comprovante_path).catch(() => {})}>
+                              <ReceiptIcon size={13} />
+                            </button>
+                          )}
                         </td>
                         <td style={{ padding: '8px 12px', fontSize: 11, color: 'var(--text3)', whiteSpace: 'nowrap' }}>
                           {h.lembrete_enviado_em ? `Enviado ${fmtData(h.lembrete_enviado_em.slice(0, 10))}` : '—'}

@@ -2053,7 +2053,8 @@ export default function Empresas({ onOpenTarefas, onOpenCadastro, onAbrirAba, cl
 // enviar um documento novo e já rodar a identificação por IA sem sair do
 // card da empresa (mesmo fluxo de DocumentosPage.jsx, só que com o cliente
 // já sabido — nem precisa perguntar "de qual empresa é").
-function AbaAnexosEmpresa({ clienteId }) {
+// Exportada: também é o módulo Documentos da aba da empresa (EmpresaAbaPage).
+export function AbaAnexosEmpresa({ clienteId }) {
   const [docs, setDocs] = useState(null) // null = carregando
   const [erro, setErro] = useState(null)
   const { show } = useToast()

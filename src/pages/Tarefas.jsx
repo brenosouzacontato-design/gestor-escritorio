@@ -47,7 +47,8 @@ function getKanbanStatus(t) {
   return t.concluida ? 'concluido' : 'pendente'
 }
 
-export default function Tarefas({ onAddTarefa, highlightTaskId, onHighlightConsumed, clienteFilterInicial, onClienteFilterConsumido }) {
+// clienteFixo: aberta dentro da aba da empresa (EmpresaAbaPage), só com as tarefas dela
+export default function Tarefas({ onAddTarefa, highlightTaskId, onHighlightConsumed, clienteFilterInicial, onClienteFilterConsumido, clienteFixo = null }) {
   const tarefas      = useStore(s => s.tarefas)
   const clientes     = useStore(s => s.clientes)
   const toggleTarefa = useStore(s => s.toggleTarefa)
@@ -55,7 +56,7 @@ export default function Tarefas({ onAddTarefa, highlightTaskId, onHighlightConsu
   const fetchTarefas = useStore(s => s.fetchTarefas)
 
   const [deptFilter,    setDeptFilter]    = useState('todos')
-  const [clienteFilter, setClienteFilter] = useState(clienteFilterInicial || 'todos')
+  const [clienteFilter, setClienteFilter] = useState(clienteFixo || clienteFilterInicial || 'todos')
   const [tarefaAberta,  setTarefaAberta]  = useState(null)
   const [dragging,      setDragging]      = useState(null) // { id, fromCol }
   const [dragOver,      setDragOver]      = useState(null) // colId
@@ -204,10 +205,12 @@ export default function Tarefas({ onAddTarefa, highlightTaskId, onHighlightConsu
       </div>
 
       <div style={{ display:'flex', gap:8, flexWrap:'wrap', alignItems:'center', marginBottom:12 }}>
-        <select value={clienteFilter} onChange={e => setClienteFilter(e.target.value)} style={{ flex:'1 1 220px', maxWidth:360 }}>
-          <option value="todos">— Todos os clientes —</option>
-          {clientes.map(c => <option key={c.id} value={c.id}>{c.nome}</option>)}
-        </select>
+        {!clienteFixo && (
+          <select value={clienteFilter} onChange={e => setClienteFilter(e.target.value)} style={{ flex:'1 1 220px', maxWidth:360 }}>
+            <option value="todos">— Todos os clientes —</option>
+            {clientes.map(c => <option key={c.id} value={c.id}>{c.nome}</option>)}
+          </select>
+        )}
         <div className="tarefas-resumo">
           <span className="tarefas-resumo-item"><b>{resumo.abertas}</b> abertas</span>
           {resumo.atrasadas > 0 && <span className="tarefas-resumo-item perigo"><AlertTriangleIcon size={12} /> <b>{resumo.atrasadas}</b> atrasada{resumo.atrasadas !== 1 ? 's' : ''}</span>}

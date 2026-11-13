@@ -408,11 +408,11 @@ input, select, textarea { font-family: var(--font); }
 .empresa-aba-modulo[data-ativo="true"] { color: var(--accent); border-bottom-color: var(--accent); }
 .empresa-aba-qtd { font-size: 10.5px; font-weight: 700; border-radius: 99px; padding: 0 6px; background: var(--warn-dim); color: var(--warn); }
 .empresa-aba-qtd.err { background: var(--danger-dim); color: var(--danger); }
-.empresa-aba-falta { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 12px; }
+.empresa-aba-falta { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 12px; }
 .empresa-aba-bloco { border: 1px solid var(--border); border-radius: var(--r-sm, 10px); background: var(--surface); padding: 12px 14px; }
 .empresa-aba-bloco h4 { margin: 0 0 8px; font-size: 13px; display: flex; align-items: center; gap: 6px; }
 .empresa-aba-linha {
-  display: flex; align-items: center; gap: 8px; padding: 6px 0; font-size: 12.5px; border-top: 1px solid var(--border);
+  display: flex; align-items: center; flex-wrap: wrap; row-gap: 4px; gap: 8px; padding: 6px 0; font-size: 12.5px; border-top: 1px solid var(--border);
   background: none; border-left: 0; border-right: 0; border-bottom: 0; width: 100%; text-align: left; color: var(--text1); font-family: inherit; cursor: pointer;
 }
 .empresa-aba-linha:first-of-type { border-top: 0; }
