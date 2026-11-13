@@ -45,7 +45,11 @@ function semAcento(s) {
   return String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '')
 }
 const digitos = (s) => String(s || '').replace(/\D/g, '')
-const VAZIAS = new Set(['LTDA', 'ME', 'EPP', 'EIRELI', 'SA', 'DE', 'DA', 'DO', 'DAS', 'DOS', 'E', 'MEI', 'CIA', 'EI', 'SLU', 'COM', 'PARA', 'NOTA', 'NFSE', 'NFS', 'EMITIR', 'VALOR', 'REAIS', 'SEMANA'])
+const VAZIAS = new Set(['LTDA', 'ME', 'EPP', 'EIRELI', 'SA', 'DE', 'DA', 'DO', 'DAS', 'DOS', 'E', 'MEI', 'CIA', 'EI', 'SLU', 'COM', 'PARA', 'NOTA', 'NFSE', 'NFS', 'EMITIR', 'VALOR', 'REAIS', 'SEMANA',
+  // palavras de pedido em texto livre ("preciso emitir uma nota pra Maria")
+  'NOTAS', 'NF', 'FISCAL', 'FISCAIS', 'EMITE', 'EMITA', 'EMITIMOS', 'PRECISO', 'PRECISA', 'PRECISAMOS', 'PRA', 'UMA', 'UM',
+  'FAZER', 'FAZ', 'FACA', 'GERAR', 'GERA', 'TIRAR', 'TIRA', 'POR', 'FAVOR', 'PODE', 'PODERIA', 'NO', 'NA', 'EM', 'OI', 'OLA',
+  'PESSOAL', 'SOLICITO', 'PEDIDO', 'HOJE', 'ATENDIMENTO', 'CLIENTE'])
 function palavras(s) {
   return semAcento(s).toUpperCase().replace(/[^A-Z0-9 ]+/g, ' ').split(/\s+/)
     .filter((p) => p.length >= 2 && !/^\d+$/.test(p) && !VAZIAS.has(p))
@@ -125,6 +129,25 @@ function escolherSemana(semanas, data) {
   return semanas.find((s) => s.emAndamento && s.situacao === 'a_emitir') || null
 }
 
+// Empresa deduzida pelo tomador citado ("nota pra Friocargo"), quando ele está cadastrado em
+// uma empresa só. Tomador comum a várias (ex.: MMS em três MEIs) → null.
+function empresaPeloTomador(empresas, cadastros, texto) {
+  const itens = []
+  for (const e of empresas) {
+    const cad = (cadastros || {})[e.cliente_id] || {}
+    for (const t of cad.tomadores || []) if (t.ativo !== false) itens.push({ e, cpf: t.cpf, nomes: [t.nome, ...(Array.isArray(t.apelidos) ? t.apelidos : [])] })
+    for (const m of cad.modelos || []) if (m.ativo !== false) itens.push({ e, cpf: m.cpf, nomes: [m.nome] })
+    for (const m of cad.mei || []) if (m.ativo !== false && m.tomador_nome) itens.push({ e, cpf: m.tomador_doc, nomes: [m.tomador_nome] })
+  }
+  const achado = melhorPorNome(itens, (i) => i.nomes, texto)
+  if (!achado) return null
+  // o mesmo tomador (mesmo nome/documento) em outra empresa torna a escolha ambígua
+  const alvo = new Set(palavras(texto))
+  const empate = itens.filter((i) => i.e !== achado.e && (digitos(i.cpf) && digitos(i.cpf) === digitos(achado.cpf)
+    || pontuar(i.nomes, alvo) === pontuar(achado.nomes, alvo)))
+  return empate.length ? null : achado.e
+}
+
 // Interpreta o pedido.
 //   empresas:   [{ cliente_id, nome, ambiente, descricao_padrao }]  (nfse_empresas + clientes.nome)
 //   cadastros:  { [cliente_id]: { modelos: nfse_recorrentes[], tomadores: nfse_tomadores[] } }
@@ -134,11 +157,13 @@ function interpretarPedido(texto, { empresas, cadastros, hoje }) {
   if (!ativas.length) return { erro: 'Nenhuma empresa está configurada para emitir NFS-e no gestor (Emitir NFS-e).' }
   const { data, valor, resto } = extrairDataValor(texto || '', hoje)
 
-  const empresa = ativas.length === 1 ? ativas[0] : melhorPorNome(ativas, (e) => [e.nome], resto)
+  const empresa = ativas.length === 1 ? ativas[0]
+    : melhorPorNome(ativas, (e) => [e.nome], resto) || empresaPeloTomador(ativas, cadastros, resto)
   if (!empresa) {
     return {
       erro: resto ? `Não sei de qual empresa é a nota ("${resto.slice(0, 60)}").` : 'Diga de qual empresa é a nota.',
-      lista: { titulo: 'Empresas que emitem NFS-e pelo gestor', itens: ativas.map((e) => e.nome) },
+      lista: { titulo: 'Empresas que emitem NFS-e pelo gestor', itens: ativas.map((e) => `${e.nome}${e.mei ? ' (MEI)' : ''}`) },
+      valor, data,
     }
   }
 
@@ -175,16 +200,17 @@ function interpretarPedido(texto, { empresas, cadastros, hoje }) {
     return {
       erro: textoTomador ? `Não achei "${textoTomador.toLowerCase()}" entre os cadastrados de ${empresa.nome}.` : `Para quem é a nota de ${empresa.nome}?`,
       lista: { titulo: `Cadastrados de ${empresa.nome}`, itens: nomesListados },
-      empresa,
+      empresa, valor, data,
     }
   }
 
   const valorFinal = valor || (achado.item.valor != null ? String(Number(achado.item.valor).toFixed(2)) : null)
     || (achado.item.valor_padrao != null ? String(Number(achado.item.valor_padrao).toFixed(2)) : null)
-  if (!valorFinal) return { erro: `Qual o valor da nota de ${achado.item.nome}? Mande de novo com o valor (ex.: "nfse ${empresa.nome} ${achado.item.nome} 150,00").`, empresa }
-  if (data && data > hoje) return { erro: 'A data do atendimento não pode ser futura.', empresa }
+  const unico = todos.length === 1
+  if (!valorFinal) return { erro: `Falta o valor da nota de ${achado.item.nome}.`, empresa, item: achado.item, unico, data }
+  if (data && data > hoje) return { erro: 'A data do atendimento não pode ser futura.', empresa, item: achado.item, unico, valor: valorFinal }
 
-  return { empresa, tipo: achado.tipo, item: achado.item, valor: valorFinal, data, resto }
+  return { empresa, tipo: achado.tipo, item: achado.item, valor: valorFinal, data, resto, unico }
 }
 
 const brl = (v) => Number(v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
@@ -213,6 +239,61 @@ function previaMei(dados) {
     + '\n\nResponda *sim* para mandar ao robô (ele emite no portal e manda o PDF no WhatsApp do cliente) ou *não* para cancelar.'
 }
 
+// ---------- pedido em texto livre e modelo da mensagem ----------
+
+// "preciso emitir uma nota pra Maria de 150", "pode fazer a NF da Shopee?", "nota fiscal pra Friocargo".
+// Conversa sobre nota ("a nota chegou?", "notas de outubro") não conta.
+const VERBO = String.raw`(?:emit\p{L}*|ger(?:a|ar|e)\p{L}*|tir(?:a|ar|e)\p{L}*|faz\p{L}*|fa[çc]a|fazer|precis\p{L}*|solicit\p{L}*|ped(?:e|ir|indo)|lan[çc]a\p{L}*)`
+const NOTA = String.raw`(?:notas?(?:\s+fisca(?:l|is))?|nfs-?e|nfse|nf)`
+const RE_INTENCAO = [
+  new RegExp(String.raw`(?<![\p{L}])${VERBO}(?![\p{L}])[^\n]{0,40}?(?<![\p{L}])${NOTA}(?![\p{L}\d])`, 'iu'),
+  new RegExp(String.raw`(?<![\p{L}])${NOTA}\s+(?:pra|para)(?![\p{L}])`, 'iu'),
+]
+function pareceNfse(texto) {
+  const t = String(texto || '').trim()
+  if (!t || t.length > 300 || lerComandoNfse(t)) return false
+  return RE_INTENCAO.some((re) => re.test(t))
+}
+
+// "SIMPLE CARE ODONTOLOGIA LTDA" → "Simple Care Odontologia" (o suficiente para o comando achar a empresa)
+const SUFIXOS = new Set(['LTDA', 'ME', 'EPP', 'EIRELI', 'SA', 'S/A', 'SLU', 'MEI', 'EI', '-'])
+function nomeCurto(nome) {
+  const ps = String(nome || '').trim().split(/\s+/)
+    .filter((p) => p && !SUFIXOS.has(semAcento(p).toUpperCase().replace(/[.,]/g, '')) && !/^[\d./-]+$/.test(p))
+    .slice(0, 3)
+  return ps.map((p) => p.charAt(0).toUpperCase() + p.slice(1).toLowerCase()).join(' ') || String(nome || '')
+}
+const valorBR = (v) => Number(v).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+
+// Modelo da mensagem para emitir, com o que já se sabe do pedido.
+// r: retorno de interpretarPedido (com ou sem erro). Partes que faltam ficam em MAIÚSCULAS.
+function modeloMensagem(r = {}) {
+  const partes = ['nfse', r.empresa ? nomeCurto(r.empresa.nome) : 'EMPRESA']
+  if (r.item) {
+    if (!r.unico) partes.push(r.item.nome)
+  } else {
+    partes.push('TOMADOR')
+  }
+  partes.push(r.valor ? valorBR(r.valor) : 'VALOR')
+  if (r.data) partes.push(dataBR(r.data).slice(0, 5))
+  return partes.join(' ')
+}
+
+// Resposta com o modelo: explicação (o que falta) + o modelo em mensagem separada, fácil de copiar.
+// Devolve [texto, modelo].
+function respostaModelo(r, { textoLivre = false } = {}) {
+  const modelo = modeloMensagem(r)
+  const falta = (modelo.match(/\b(EMPRESA|TOMADOR|VALOR)\b/g) || []).map((x) => x.toLowerCase())
+  const cabecalho = r.erro && !(textoLivre && !falta.length)
+    ? `⚠️ ${r.erro}`
+    : '🧾 *Entendi um pedido de NFS-e.*'
+  const instrucao = falta.length
+    ? `Copie a mensagem abaixo, troque ${falta.map((f) => `*${f.toUpperCase()}*`).join(falta.length === 3 ? ', ' : ' e ').replace(/, (?=[^,]*$)/, ' e ')} e mande no grupo:`
+    : 'Para emitir, mande a mensagem abaixo (pode ajustar valor e data). Vou mostrar a prévia antes de emitir:'
+  const dica = '\n_Data do atendimento opcional no fim (ex.: 10/11); sem data, vale hoje._'
+  return [`${cabecalho}${textoLista(r.lista)}\n\n${instrucao}${dica}`, modelo]
+}
+
 function textoLista(lista) {
   if (!lista?.itens?.length) return ''
   return `\n\n*${lista.titulo}:*\n${lista.itens.map((i) => `• ${i}`).join('\n')}`
@@ -224,5 +305,5 @@ function ajuda() {
 
 module.exports = {
   VALIDADE_HORAS, ESTADOS, lerComandoNfse, lerConfirmacao, extrairDataValor, escolherSemana,
-  interpretarPedido, previa, textoLista, ajuda, palavras,
+  interpretarPedido, previa, textoLista, ajuda, palavras, pareceNfse, modeloMensagem, respostaModelo, nomeCurto,
 }

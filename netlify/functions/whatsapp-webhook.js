@@ -374,7 +374,7 @@ async function dispararBackground(nome, corpo) {
 //  - "sim / não" à pergunta de importar um extrato bancário (processarRespostaExtrato);
 //  - "sim / não" à prévia de uma NFS-e pedida pelo grupo (processarConfirmacaoNfse).
 // Vale para a mensagem citada ou, sem citação, para a pergunta mais recente
-// que aceita aquela resposta (dentro da validade). Outro texto é ignorado.
+// que aceita aquela resposta (dentro da validade). Outro texto → null.
 async function processarRespostaDocs(body, mensagem, remoteJid) {
   const citado = decisao.idCitado(body?.data?.message)
   const confirmacao = nfseWpp.lerConfirmacao(mensagem)
@@ -384,7 +384,7 @@ async function processarRespostaDocs(body, mensagem, remoteJid) {
   if (pedido && (!pendente || citado || new Date(pedido.criado_em) >= new Date(pendente.doc.created_at))) {
     return await processarConfirmacaoNfse(pedido, confirmacao, remoteJid)
   }
-  if (!pendente) return { statusCode: 200, body: 'No document waiting for decision' }
+  if (!pendente) return null // não é resposta a nenhuma pergunta
   const { doc, escolha } = pendente
   if (doc.whatsapp_decisao === extratoWpp.AGUARDANDO) return await processarRespostaExtrato(doc, escolha, remoteJid)
   return await processarEscolhaDocumento(doc, escolha, body, remoteJid)
@@ -497,46 +497,54 @@ async function pedidoNfsePendente(citado) {
   return data?.[0] || null
 }
 
+// Empresas que emitem NFS-e pelo gestor (com certificado: nfse_empresas; MEI: senha + modelo
+// em NFS-e MEI) e o que cada uma tem cadastrado (recorrentes, tomadores, modelos MEI).
+async function carregarCadastrosNfse() {
+  const { data: linhas, error } = await supabase.from('nfse_empresas').select('cliente_id, ambiente, descricao_padrao, ativo, clientes(nome)')
+  if (error) console.error('NFS-e: empresas com certificado não lidas:', error.message)
+  const empresas = (linhas || []).map((e) => ({ ...e, nome: e.clientes?.nome || 'Empresa' }))
+  // MEI pelo Emissor Nacional (docs/nfse-mei.md): com senha cadastrada e modelo ativo
+  const [acessosMei, modelosMei] = await Promise.all([
+    supabase.from('nfse_mei_acessos').select('cliente_id'),
+    supabase.from('nfse_mei_modelos').select('*').eq('ativo', true),
+  ])
+  const comSenha = new Set((acessosMei.data || []).map((a) => a.cliente_id))
+  const idsMei = [...new Set((modelosMei.data || []).map((m) => m.cliente_id))]
+    .filter((id) => comSenha.has(id) && !empresas.some((e) => e.cliente_id === id))
+  if (idsMei.length) {
+    const { data: cliMei } = await supabase.from('clientes').select('id, nome').in('id', idsMei).eq('ativo', true)
+    for (const c of cliMei || []) empresas.push({ cliente_id: c.id, nome: c.nome, ambiente: 'producao', ativo: true, mei: true })
+  }
+  const ids = empresas.filter((e) => !e.mei).map((e) => e.cliente_id)
+  const [modelos, tomadores] = await Promise.all([
+    ids.length ? supabase.from('nfse_recorrentes').select('*').in('cliente_id', ids) : { data: [] },
+    ids.length ? supabase.from('nfse_tomadores').select('id, cliente_id, nome, cpf, apelidos, endereco, cep, descricao_padrao, valor_padrao, ativo').in('cliente_id', ids) : { data: [] },
+  ])
+  const cadastros = {}
+  const cad = (id) => (cadastros[id] ||= { modelos: [], tomadores: [], mei: [] })
+  for (const m of modelos.data || []) cad(m.cliente_id).modelos.push(m)
+  for (const t of tomadores.data || []) cad(t.cliente_id).tomadores.push(t)
+  for (const m of modelosMei.data || []) if (empresas.some((e) => e.mei && e.cliente_id === m.cliente_id)) cad(m.cliente_id).mei.push(m)
+
+  return { empresas, cadastros }
+}
+
 // "nfse <empresa> <tomador> <valor> [data]": confere com o cadastro e manda a
 // prévia. A nota só sai depois do "sim" (processarConfirmacaoNfse).
 async function processarComandoNfse(resto, mensagem, body, remoteJid) {
   try {
     const hoje = hojeSP()
-    const { data: linhas, error } = await supabase.from('nfse_empresas').select('cliente_id, ambiente, descricao_padrao, ativo, clientes(nome)')
-    if (error) console.error('NFS-e: empresas com certificado não lidas:', error.message)
-    const empresas = (linhas || []).map((e) => ({ ...e, nome: e.clientes?.nome || 'Empresa' }))
-    // MEI pelo Emissor Nacional (docs/nfse-mei.md): com senha cadastrada e modelo ativo
-    const [acessosMei, modelosMei] = await Promise.all([
-      supabase.from('nfse_mei_acessos').select('cliente_id'),
-      supabase.from('nfse_mei_modelos').select('*').eq('ativo', true),
-    ])
-    const comSenha = new Set((acessosMei.data || []).map((a) => a.cliente_id))
-    const idsMei = [...new Set((modelosMei.data || []).map((m) => m.cliente_id))]
-      .filter((id) => comSenha.has(id) && !empresas.some((e) => e.cliente_id === id))
-    if (idsMei.length) {
-      const { data: cliMei } = await supabase.from('clientes').select('id, nome').in('id', idsMei).eq('ativo', true)
-      for (const c of cliMei || []) empresas.push({ cliente_id: c.id, nome: c.nome, ambiente: 'producao', ativo: true, mei: true })
-    }
+    const { empresas, cadastros } = await carregarCadastrosNfse()
     if (!resto) {
       const ativas = empresas.filter((e) => e.ativo !== false)
       await enviarMensagem(remoteJid, `🧾 *Emitir NFS-e pelo grupo*\n${nfseWpp.ajuda()}${nfseWpp.textoLista({ titulo: 'Empresas que emitem pelo gestor', itens: ativas.map((e) => `${e.nome}${e.mei ? ' (MEI)' : ''}`) })}`)
       return { statusCode: 200, body: 'NFS-e help' }
     }
 
-    const ids = empresas.filter((e) => !e.mei).map((e) => e.cliente_id)
-    const [modelos, tomadores] = await Promise.all([
-      ids.length ? supabase.from('nfse_recorrentes').select('*').in('cliente_id', ids) : { data: [] },
-      ids.length ? supabase.from('nfse_tomadores').select('id, cliente_id, nome, cpf, apelidos, endereco, cep, descricao_padrao, valor_padrao, ativo').in('cliente_id', ids) : { data: [] },
-    ])
-    const cadastros = {}
-    const cad = (id) => (cadastros[id] ||= { modelos: [], tomadores: [], mei: [] })
-    for (const m of modelos.data || []) cad(m.cliente_id).modelos.push(m)
-    for (const t of tomadores.data || []) cad(t.cliente_id).tomadores.push(t)
-    for (const m of modelosMei.data || []) if (empresas.some((e) => e.mei && e.cliente_id === m.cliente_id)) cad(m.cliente_id).mei.push(m)
-
     const r = nfseWpp.interpretarPedido(resto, { empresas, cadastros, hoje })
     if (r.erro) {
-      await enviarMensagem(remoteJid, `⚠️ ${r.erro}${nfseWpp.textoLista(r.lista)}${r.lista ? '' : `\n\n${nfseWpp.ajuda()}`}`)
+      // falta algo: responde com o modelo da mensagem já preenchido com o que deu pra entender
+      await enviarModeloNfse(remoteJid, nfseWpp.respostaModelo(r))
       return { statusCode: 200, body: 'NFS-e request incomplete' }
     }
 
@@ -593,6 +601,26 @@ async function processarComandoNfse(resto, mensagem, body, remoteJid) {
   } catch (e) {
     console.error('Comando NFS-e:', e.message)
     await enviarMensagem(remoteJid, `❌ Não consegui preparar a NFS-e: ${e.message}`)
+    return { statusCode: 200, body: JSON.stringify({ success: false, error: e.message }) }
+  }
+}
+
+async function enviarModeloNfse(remoteJid, [texto, modelo]) {
+  await enviarMensagem(remoteJid, texto)
+  await enviarMensagem(remoteJid, modelo)
+}
+
+// Pedido de nota escrito em texto livre ("preciso emitir uma nota pra Maria de 150"), sem o
+// comando: responde com o modelo da mensagem, preenchido com empresa, tomador, valor e data
+// que deu pra reconhecer no cadastro. Não emite nada.
+async function processarIntencaoNfse(mensagem, remoteJid) {
+  try {
+    const { empresas, cadastros } = await carregarCadastrosNfse()
+    const r = nfseWpp.interpretarPedido(mensagem, { empresas, cadastros, hoje: hojeSP() })
+    await enviarModeloNfse(remoteJid, nfseWpp.respostaModelo(r, { textoLivre: true }))
+    return { statusCode: 200, body: 'NFS-e template sent' }
+  } catch (e) {
+    console.error('Pedido de NFS-e em texto livre:', e.message)
     return { statusCode: 200, body: JSON.stringify({ success: false, error: e.message }) }
   }
 }
@@ -939,7 +967,11 @@ exports.handler = async (event) => {
       // "nfse <empresa> <tomador> <valor>": NFS-e para tomador já cadastrado
       const comandoNfse = nfseWpp.lerComandoNfse(mensagem)
       if (comandoNfse) return await processarComandoNfse(comandoNfse.resto, mensagem, body, remoteJid)
-      return await processarRespostaDocs(body, mensagem, remoteJid)
+      const resposta = await processarRespostaDocs(body, mensagem, remoteJid)
+      if (resposta) return resposta
+      // pedido de nota em texto livre: responde com o modelo da mensagem
+      if (nfseWpp.pareceNfse(mensagem)) return await processarIntencaoNfse(mensagem, remoteJid)
+      return { statusCode: 200, body: 'No document waiting for decision' }
     }
     return await processarDocumento(body, anexo, remoteJid)
   }

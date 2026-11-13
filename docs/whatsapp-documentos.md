@@ -44,6 +44,29 @@ nfse Simple Care                        → lista os cadastrados da empresa
 nfse                                    → lista as empresas que emitem
 ```
 
+### Pedido em texto livre → modelo da mensagem
+
+Não precisa saber o comando. Se alguém escrever um pedido de nota do jeito que quiser no grupo —
+"preciso emitir uma nota pra Maria Souza de 180", "pode fazer a NF da Friocargo?", "nota fiscal pra
+Shopee" —, o robô reconhece e responde com o **modelo da mensagem** já preenchido com o que achou no
+cadastro, numa mensagem separada (fácil de copiar):
+
+```
+🧾 Entendi um pedido de NFS-e.
+Para emitir, mande a mensagem abaixo (pode ajustar valor e data)...
+
+nfse Loja X Maria Souza 180,00
+```
+
+- A empresa vem do nome citado ou, se só o tomador foi citado e ele está cadastrado em uma empresa só,
+  é deduzida por ele.
+- O que não deu para identificar fica em maiúsculas para trocar (`nfse Loja X TOMADOR VALOR`), com a
+  lista dos cadastrados da empresa.
+- Sem valor no texto, usa o valor padrão do cadastro (ou do modelo MEI).
+- Nada é emitido nessa etapa: quem mandar o modelo recebe a prévia e confirma com **sim**.
+- O mesmo modelo aparece quando o comando `nfse` vem incompleto.
+- Conversa sobre nota ("a nota chegou?", "notas de outubro") é ignorada.
+
 ### MEI (Emissor Nacional)
 
 MEIs com senha do portal e modelo cadastrados em **Documentos → NFS-e MEI** também entram no comando:
