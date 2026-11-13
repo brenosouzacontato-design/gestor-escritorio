@@ -140,6 +140,21 @@ test('function: modelo semanal com CNPJ, emite a semana com o valor digitado, pu
   // endereço do tomador vai na DPS (E0234): município pelo CEP, logradouro/número/bairro do texto
   assert.match(e1.nota.xml_enviado, /<end><endNac><cMun>3106200<\/cMun><CEP>30000000<\/CEP><\/endNac><xLgr>Av. Teste<\/xLgr><nro>100<\/nro><xBairro>Centro<\/xBairro><\/end>/)
 
+  // entrega no WhatsApp da empresa: homologação não vai; produção manda PDF + XML
+  assert.equal((await chamar({ acao: 'enviar_whatsapp', nota_id: e1.nota.id })).status, 409)
+  const linha = supa.db.nfse_notas.find((n) => n.id === e1.nota.id)
+  linha.ambiente = 'producao'
+  linha.xml_retorno = fs.readFileSync(path.join(__dirname, 'fixtures', 'nfse_homologacao.xml'), 'utf8')
+  const mandados = []
+  funcao._deps.enviarDocumento = async (destino, doc) => { mandados.push([destino, doc.fileName, doc.mimetype]); return { sucesso: true } }
+  assert.equal((await chamar({ acao: 'enviar_whatsapp', nota_id: e1.nota.id })).status, 422) // empresa sem WhatsApp
+  supa.db.clientes[0].whatsapp_entrega = '(31) 99999-8888'
+  const w = await chamar({ acao: 'enviar_whatsapp', nota_id: e1.nota.id })
+  assert.equal(w.status, 200, JSON.stringify(w))
+  assert.deepEqual(mandados.map(([d, , m]) => [d, m]), [[w.destino, 'application/pdf'], [w.destino, 'application/xml']])
+  assert.match(mandados[0][1], /^NFS-e \d+ Market Ltda\.pdf$/)
+  linha.ambiente = 'homologacao'
+
   // a mesma semana não sai de novo
   assert.equal((await chamar({ acao: 'recorrente_emitir', id: modelo.id, semana: s1.inicio, valor: '50', ambiente: 'homologacao' })).status, 409)
 

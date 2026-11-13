@@ -234,7 +234,7 @@ function PainelCompartilhado({ clienteId, competencia: competenciaInicial, admin
   // function fora do ar) a seção só não aparece.
   useEffect(() => {
     let ativo = true;
-    listarNfseEmitidas(clienteId, competencia)
+    listarNfseEmitidas(clienteId, competencia, { recentes: true })
       .then((notas) => ativo && setNfseEmitidas(notas))
       .catch(() => ativo && setNfseEmitidas([]));
     return () => { ativo = false; };
@@ -785,7 +785,7 @@ function PainelCompartilhado({ clienteId, competencia: competenciaInicial, admin
               {(nfseEmitidas.length > 0 || nfsePendentes.length > 0) && (
                 <Ocultavel chave="nfse_emitidas" {...propsOc}>
                 <Secao titulo={`Notas fiscais de serviço — ${competencia}`} icone={<FileTextIcon size={14} />}>
-                  <NotasServico emitidas={nfseEmitidas} pendentes={nfsePendentes}
+                  <NotasServico emitidas={nfseEmitidas} pendentes={nfsePendentes} competencia={competencia}
                     onBaixar={baixarNotaEmitida} onWhatsapp={enviarNotaWhatsapp} onCompletar={completarPendente} />
                 </Secao>
                 </Ocultavel>
@@ -1445,12 +1445,12 @@ function LinhaHonorario({ h }) {
 // Mesmo formato das notas de entrada: cada grupo (Emitidas / A emitir) fechado mostra o total e a
 // quantidade; "Ver por nota" abre a lista dele. Se alguma a emitir precisa de informação do
 // cliente, o aviso aparece no resumo.
-function NotasServico({ emitidas, pendentes, onBaixar, onWhatsapp, onCompletar }) {
+function NotasServico({ emitidas, pendentes, competencia, onBaixar, onWhatsapp, onCompletar }) {
   const faltando = pendentes.filter((n) => !n.pronta).length;
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
       <GrupoNotas rotulo="Emitidas" lista={emitidas} cor="var(--ok)" vazio="Nenhuma nota emitida nesta competência.">
-        <div style={LISTA}>{emitidas.map((n) => <LinhaNfseEmitida key={n.id} n={n} onBaixar={onBaixar} onWhatsapp={onWhatsapp} />)}</div>
+        <div style={LISTA}>{emitidas.map((n) => <LinhaNfseEmitida key={n.id} n={n} competencia={competencia} onBaixar={onBaixar} onWhatsapp={onWhatsapp} />)}</div>
       </GrupoNotas>
       <GrupoNotas rotulo="A emitir" lista={pendentes} cor="var(--warn)" vazio="Nenhuma nota aguardando emissão."
         aviso={faltando > 0 && `${faltando} nota${faltando !== 1 ? 's' : ''} precisa${faltando !== 1 ? 'm' : ''} de informação sua (ex.: CPF do paciente)`}
@@ -1498,7 +1498,7 @@ function GrupoNotas({ rotulo, lista, cor, vazio, aviso = null, abertoInicial = f
   );
 }
 
-function LinhaNfseEmitida({ n, onBaixar, onWhatsapp }) {
+function LinhaNfseEmitida({ n, competencia, onBaixar, onWhatsapp }) {
   const emitida = n.emitidaEm ? fmtData(String(n.emitidaEm).slice(0, 10)) : null;
   const [enviando, setEnviando] = useState(false); // mostra o campo do número
   const [numero, setNumero] = useState('');
@@ -1510,6 +1510,7 @@ function LinhaNfseEmitida({ n, onBaixar, onWhatsapp }) {
       detalhes={(
         <>
           {emitida && <span style={{ color: 'var(--text3)', display: 'flex', alignItems: 'center', gap: 3 }}><CalendarIcon size={10} /> Emitida em {emitida}</span>}
+          {n.competencia && n.competencia !== competencia && <span style={{ color: 'var(--info)', fontWeight: 700 }}>Competência {n.competencia}</span>}
           {n.descricao && <span style={{ color: 'var(--text3)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 260 }}>{n.descricao}</span>}
           {n.ambiente === 'homologacao' && <span style={{ color: 'var(--danger)', fontWeight: 700 }}>Homologação (teste)</span>}
         </>

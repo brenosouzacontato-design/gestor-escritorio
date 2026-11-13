@@ -1,7 +1,9 @@
 // netlify/functions/painel-nfse.js
 //
 // Notas fiscais de serviço emitidas pelo gestor, para o painel do cliente acompanhar e baixar.
-//   POST { acao: 'listar', competencia?: 'MM/AAAA', cliente_id? }
+//   POST { acao: 'listar', competencia?: 'MM/AAAA', recentes?: true, cliente_id? }
+//        recentes: além da competência, as de competência posterior emitidas nos últimos RECENTES_DIAS
+//        dias (o painel abre no mês anterior, e a nota emitida hoje costuma ser da competência atual)
 //        → { notas: [{ id, numero, chave, competencia, emitidaEm, tomador, valor, descricao, ambiente }] }
 //   POST { acao: 'pdf', nota_id, cliente_id? }   → o DANFSe em PDF (lib/nfse/danfse, NT 008/2026)
 //   POST { acao: 'xml', nota_id, cliente_id? }   → o XML da NFS-e autorizada (o documento com validade)
@@ -50,6 +52,7 @@ const deps = {
 const db = () => deps.supabase || (deps.supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY))
 
 const LINK_DIAS = 30
+const RECENTES_DIAS = 40
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
@@ -68,7 +71,7 @@ exports.handler = async (event) => {
     const acesso = await quemPede(event, corpo)
     if (!acesso) return json(401, { error: 'Link inválido ou expirado. Peça um link novo ao escritório.' })
 
-    if (corpo.acao === 'listar') return json(200, { notas: await listar(acesso, corpo.competencia) })
+    if (corpo.acao === 'listar') return json(200, { notas: await listar(acesso, corpo.competencia, corpo.recentes === true) })
 
     if (corpo.acao === 'pendentes') return json(200, { notas: await pendentes(acesso) })
 
@@ -129,7 +132,11 @@ function competenciaDa(nota) {
 
 const emitidaEm = (nota) => ((/<dhProc>([^<]+)<\/dhProc>/.exec(nota.xml_retorno || '') || [])[1]) || nota.criado_em
 
-async function listar(acesso, competencia) {
+// 'MM/AAAA' → AAAAMM, para comparar competências
+const ordem = (c) => (/^\d{2}\/\d{4}$/.test(c || '') ? Number(c.slice(3) + c.slice(0, 2)) : 0)
+
+async function listar(acesso, competencia, recentes = false) {
+  const desde = new Date(Date.now() - RECENTES_DIAS * 86400000).toISOString()
   const { data, error } = await db().from('nfse_notas')
     .select('id, numero_nfse, chave_acesso, nome, valor, descricao, data, competencia, ambiente, criado_em, xml_retorno')
     .eq('cliente_id', acesso.clienteId)
@@ -151,7 +158,8 @@ async function listar(acesso, competencia) {
       descricao: n.descricao,
       ambiente: n.ambiente,
     }))
-    .filter((n) => !competencia || n.competencia === competencia)
+    .filter((n) => !competencia || n.competencia === competencia
+      || (recentes && ordem(n.competencia) > ordem(competencia) && String(n.emitidaEm) >= desde.slice(0, 10)))
     .sort((a, b) => String(b.emitidaEm).localeCompare(String(a.emitidaEm)))
 }
 

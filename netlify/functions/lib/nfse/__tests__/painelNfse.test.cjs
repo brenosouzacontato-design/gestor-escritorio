@@ -238,3 +238,16 @@ test('não é complementar: sai pelo valor cheio; já emitida: cliente fica cien
   assert.equal(lista.corpo.notas.some((n) => n.id === IGUAL), false)
   assert.equal(lista.corpo.notas.some((n) => n.id === COMP), true)
 })
+
+test('recentes: a nota emitida agora aparece mesmo sendo de outra competência', async () => {
+  const chamar = montar()
+  const hoje = new Date().toISOString().slice(0, 10)
+  const recente = nota('aaaaaaaa-0000-4000-8000-000000000009', A, 'producao', '2026-11-13')
+  recente.xml_retorno = recente.xml_retorno.replace(/<dhProc>[^<]+<\/dhProc>/, `<dhProc>${hoje}T10:00:00-03:00</dhProc>`)
+  funcao._deps.supabase.db.nfse_notas.push(recente)
+  const so = await chamar({ acao: 'listar', competencia: '10/2026' }, { 'x-painel-token': 'tokA' })
+  assert.ok(!so.corpo.notas.some((n) => n.id === recente.id))
+  const r = await chamar({ acao: 'listar', competencia: '10/2026', recentes: true }, { 'x-painel-token': 'tokA' })
+  assert.deepEqual(r.corpo.notas.map((n) => n.id), [recente.id, 'aaaaaaaa-0000-4000-8000-000000000001'])
+  assert.equal(r.corpo.notas[0].competencia, '11/2026')
+})

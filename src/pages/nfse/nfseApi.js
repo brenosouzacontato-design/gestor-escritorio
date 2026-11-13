@@ -15,6 +15,17 @@ export async function chamarNfse(acao, dados = {}) {
   return corpo
 }
 
+// Manda o PDF e o XML da nota autorizada (produção) no WhatsApp da empresa emissora.
+// Devolve o texto para mostrar; não lança (a nota já está emitida).
+export async function enviarNfseWhatsapp(notaId) {
+  try {
+    const r = await chamarNfse('enviar_whatsapp', { nota_id: notaId })
+    return { ok: true, texto: `enviada no WhatsApp da empresa (${r.destino})` }
+  } catch (e) {
+    return { ok: false, texto: `WhatsApp não enviado: ${e.message}` }
+  }
+}
+
 // Leitura: direto do Supabase (RLS libera só leitura para o usuário logado).
 const CAMPOS_NOTA = 'id,lote_id,estado,status_validacao,pendencias,erros,avisos,nome,cpf,endereco,cep,data,competencia,valor,' +
   'descricao,autor,data_mensagem,texto_original,observacao_cliente,serie,n_dps,chave_acesso,numero_nfse,mensagem_sefin,copiada_para,criado_em'

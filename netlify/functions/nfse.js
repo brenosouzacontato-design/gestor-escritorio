@@ -40,6 +40,10 @@
 //        ← cria a nota da semana com o valor e emite na hora (ver lib/nfse/recorrentes.js). Os campos opcionais
 //        mudam só esta nota (o modelo fica igual); data: qualquer dia da semana até hoje. Cada semana é uma
 //        nota: o aviso de "parecida" não trava.
+//   { acao: 'enviar_whatsapp', nota_id, destino? }
+//        ← manda o PDF (DANFSe) e o XML da nota autorizada de produção no WhatsApp da empresa emissora
+//        (clientes.whatsapp_entrega ou telefone; destino troca o número). A tela chama logo depois de
+//        cada nota autorizada, em outra chamada (a emissão já usa quase todo o tempo da function).
 //
 // Leitura de lotes/notas é feita direto pelo navegador (RLS: usuário logado só lê). Toda escrita passa
 // por aqui, onde valem a máquina de estados, a reserva de número e a duplicidade.
@@ -62,6 +66,10 @@ const recorrentes = require('./lib/nfse/recorrentes')
 const { criarClienteAdn, sincronizar } = require('./lib/nfse/adn')
 const { lerExtrato, montarPessoas, sugerirNotas, norm, guardarLancamentos, listarGuardados, marcarGuardados, SemTabelaExtrato, pedirAoCliente } = require('./lib/nfse/extrato')
 const { novoRegistro } = require('./lib/nfse/importador')
+const { gerarDanfse } = require('./lib/nfse/danfse/danfse')
+const { enviarDocumento, numeroWhatsapp } = require('./lib/whatsapp')
+
+const brl = (v) => Number(v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 
 // Timeout da Sefin abaixo do limite da function: se estourar, a nota fica "indeterminada" e a
 // próxima tentativa reconsulta antes de reenviar (nunca há envio em dobro).
@@ -70,6 +78,7 @@ const TIMEOUT_SEFIN_MS = 8000
 // Dependências externas (substituídas nos testes)
 const deps = {
   supabase: () => supabaseServico(),
+  enviarDocumento,
   criarCliente,
   // Antes de importar, busca as notas novas no Ambiente Nacional (as emitidas fora do gestor entram
   // na conferência de "já emitida"/"complementar"). Falha aqui não impede a importação.
@@ -304,6 +313,25 @@ const acoes = {
       `Ambiente confirmado (${p.ambiente}) difere do configurado (${empresa.ambiente}). Nada foi enviado.`, 409)
     const resultado = await (await emissorDa(db, repo, empresa, usuario)).emitir(nota.id, { confirmarRepetida: p.confirmar_repetida === true })
     return { resultado, nota: await repo.obterNota(nota.id) }
+  },
+
+  async enviar_whatsapp({ db, repo }, p) {
+    const { nota, empresa } = await empresaDaNota(repo, p.nota_id)
+    exigir(nota.estado === 'autorizada' && nota.xml_retorno, 'Só nota autorizada (com o XML da Sefin) pode ser enviada', 409)
+    exigir(nota.ambiente === 'producao', 'Nota de homologação (teste): não é enviada ao cliente', 409)
+    const { data: c, error } = await db.from('clientes').select('nome, telefone, whatsapp_entrega').eq('id', empresa.cliente_id).maybeSingle()
+    if (error) throw new Error(error.message)
+    const destino = numeroWhatsapp(p.destino || (c && (c.whatsapp_entrega || c.telefone)))
+    exigir(destino, 'Empresa sem WhatsApp no cadastro (WhatsApp de entrega ou telefone)', 422)
+    const pdf = Buffer.from(await gerarDanfse(nota.xml_retorno))
+    const nome = `NFS-e ${nota.numero_nfse || ''} ${String(nota.nome || '').slice(0, 60)}`.trim().replace(/[\/:*?"<>|]/g, '')
+    const legenda = `✅ NFS-e nº ${nota.numero_nfse || '—'} emitida${nota.nome ? ` — ${nota.nome}` : ''}
+Valor: ${brl(nota.valor)}`
+    for (const [conteudo, ext, mime, caption] of [[pdf, 'pdf', 'application/pdf', legenda], [Buffer.from(nota.xml_retorno, 'utf8'), 'xml', 'application/xml', '']]) {
+      const r = await deps.enviarDocumento(destino, { media: conteudo.toString('base64'), fileName: `${nome}.${ext}`, caption, mimetype: mime })
+      exigir(r.sucesso, `WhatsApp não enviado: ${r.erro || 'falha no envio'}`, 502)
+    }
+    return { ok: true, destino }
   },
 
   // A NFS-e foi cancelada no portal nacional: tira do painel do cliente, dos totais e da trava de
