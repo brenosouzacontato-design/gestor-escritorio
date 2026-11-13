@@ -82,6 +82,23 @@ async function guiasPendentesDeEntrega(supabase, clienteId) {
   return (data || []).filter((d) => d.parcelamento_id || ehImposto(d.obrigacoes))
 }
 
+// Documentos avulsos da seção "Documentos" do painel (contrato, alvará...)
+// anexados e ainda não entregues. Sem as colunas no banco
+// (supabase-schema-painel-documentos.sql): nenhum.
+async function documentosNovos(supabase, clienteId, agora = new Date()) {
+  const desde = new Date(agora.getTime() - JANELA_DIAS * 24 * 60 * 60 * 1000).toISOString()
+  const { data, error } = await supabase.from('documentos')
+    .select('id, nome_arquivo, tipo_documento_sugerido, painel_titulo, painel_competencia, confirmado_em')
+    .eq('cliente_id', clienteId)
+    .eq('status', 'confirmado')
+    .eq('painel_visivel', true)
+    .is('entregue_em', null)
+    .gte('confirmado_em', desde)
+  if (error) return []
+  return data || []
+}
+const tituloDocumento = (d) => d.painel_titulo || d.tipo_documento_sugerido || d.nome_arquivo || 'Documento'
+
 function tituloGuia(g) {
   if (g.obrigacoes) return g.obrigacoes.titulo || g.obrigacoes.tipo || 'Guia'
   if (g.parcelamentos) return `Parcelamento ${g.parcelamentos.origem || ''}`.trim()
@@ -95,14 +112,23 @@ function fmtData(iso) {
 
 const nomeCurto = (nome) => String(nome || '').replace(/^[\d./-]+\s+/, '')
 
-function mensagemAviso(cliente, lista, link, { generica = false } = {}) {
+function mensagemAviso(cliente, lista, link, { generica = false, documentos = [] } = {}) {
   const nome = nomeCurto(cliente.nome)
-  if (generica || !lista.length) {
+  const docs = documentos.map((d) => `• *${tituloDocumento(d)}*`)
+  if (generica || (!lista.length && !docs.length)) {
     return [
       `Olá! O painel de *${nome}* foi atualizado pelo escritório.`,
       '',
-      'Acesse para ver os impostos, as guias e as pendências:',
+      docs.length ? 'Acesse para ver os impostos, as guias, os documentos e as pendências:' : 'Acesse para ver os impostos, as guias e as pendências:',
       link,
+    ].join('\n')
+  }
+  if (!lista.length) {
+    return [
+      docs.length === 1
+        ? `Olá! Um novo documento de *${nome}* já está disponível no seu painel:`
+        : `Olá! ${docs.length} novos documentos de *${nome}* já estão disponíveis no seu painel:`,
+      '', ...docs, '', 'Acesse para baixar:', link,
     ].join('\n')
   }
   const linhas = [
@@ -121,8 +147,10 @@ function mensagemAviso(cliente, lista, link, { generica = false } = {}) {
     if (g.valor_guia != null) partes.push(Number(g.valor_guia).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }))
     linhas.push(partes.join(' · '))
   }
-  linhas.push('', 'Acesse para ver o valor, baixar a guia ou copiar o código de pagamento:', link)
+  if (docs.length) linhas.push('', docs.length === 1 ? 'E um novo documento:' : 'E novos documentos:', ...docs)
+  linhas.push('', docs.length ? 'Acesse para ver o valor, baixar as guias e os documentos ou copiar o código de pagamento:'
+    : 'Acesse para ver o valor, baixar a guia ou copiar o código de pagamento:', link)
   return linhas.join('\n')
 }
 
-module.exports = { ehImposto, guiasNovas, mensagemAviso, tituloGuia, nomeCurto, competenciaAtual, guiaPaga }
+module.exports = { ehImposto, guiasNovas, documentosNovos, tituloDocumento, mensagemAviso, tituloGuia, nomeCurto, competenciaAtual, guiaPaga }

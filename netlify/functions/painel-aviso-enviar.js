@@ -21,7 +21,7 @@ const { createClient } = require('@supabase/supabase-js')
 const { exigirEscritorio } = require('./lib/autenticacao')
 const { enviarMensagem, numeroWhatsapp, horarioDeSilencio } = require('./lib/whatsapp')
 const { linkCurtoPainel } = require('./lib/linkCurtoPainel')
-const { guiasNovas, mensagemAviso, tituloGuia, nomeCurto } = require('./lib/avisoPainel')
+const { guiasNovas, documentosNovos, tituloDocumento, mensagemAviso, tituloGuia, nomeCurto } = require('./lib/avisoPainel')
 
 const supabase = createClient(
   process.env.SUPABASE_URL,
@@ -54,27 +54,30 @@ exports.handler = async (event) => {
 
     const destino = numeroWhatsapp(cliente.whatsapp_entrega || cliente.telefone)
     const { guias, generica } = await guiasNovas(supabase, clienteId)
+    const documentos = await documentosNovos(supabase, clienteId)
     const silencio = horarioDeSilencio()
     const previa = {
       destino, silencio, generica,
+      documentos: documentos.map((d) => ({ id: d.id, titulo: tituloDocumento(d) })),
       guias: guias.map((g) => ({ id: g.id, titulo: tituloGuia(g), vencimento: g.vencimento_guia || g.obrigacoes?.vencimento || null, valor: g.valor_guia })),
     }
     if (simular) {
       // o link curto é criado no envio; na prévia vai um marcador
-      return resposta(200, { ok: true, enviada: false, ...previa, mensagem: mensagemAviso(cliente, guias, '(link do painel)', { generica }) })
+      return resposta(200, { ok: true, enviada: false, ...previa, mensagem: mensagemAviso(cliente, guias, '(link do painel)', { generica, documentos }) })
     }
     if (!destino) return resposta(400, { error: `${nomeCurto(cliente.nome)}: sem WhatsApp de entrega. Cadastre o número na aba Empresas da Central.` })
     if (silencio && !forcar) return resposta(409, { error: 'Horário de silêncio (19h às 7h): confirme para enviar mesmo assim.', silencio: true })
 
     const link = await linkCurtoPainel(supabase, cliente)
-    const mensagem = mensagemAviso(cliente, guias, link, { generica })
+    const mensagem = mensagemAviso(cliente, guias, link, { generica, documentos })
     const envio = await enviarMensagem(destino, mensagem)
     const agora = new Date().toISOString()
-    if (guias.length) {
+    const entregues = [...guias, ...documentos]
+    if (entregues.length) {
       const patch = envio.sucesso
         ? { aviso_painel_em: agora, entregue_em: agora, entrega_canal: 'painel', entrega_destino: destino, entrega_erro: null }
         : { aviso_painel_em: agora, entrega_erro: `${agora.slice(0, 10)}: ${envio.erro}`.slice(0, 300) }
-      const { error: errMarca } = await supabase.from('documentos').update(patch).in('id', guias.map((g) => g.id))
+      const { error: errMarca } = await supabase.from('documentos').update(patch).in('id', entregues.map((g) => g.id))
       if (errMarca) throw errMarca
     }
     if (!envio.sucesso) return resposta(502, { error: envio.erro })
