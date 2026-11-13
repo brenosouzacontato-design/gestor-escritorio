@@ -1,29 +1,43 @@
-import React, { useEffect, useState, useCallback } from 'react';
-import { calcularDREPorConta, listarLancamentosPorConta, listarContasTodasGerenciamento, comSomasDeFilhas } from './contabilApi';
-import ContaLancamentosSidebar from './ContaLancamentosSidebar';
+import React, { useEffect, useState, useCallback, useMemo } from 'react';
+import { supabase } from '../../lib/supabase';
+import { carregarDadosDreGerencialCom, montarDreGerencial, ehDisponivel } from '../../lib/dreGerencial';
+import { reclassificarLancamento } from './contabilApi';
+import DreGerencialView from './DreGerencialView';
 import CompartilharButton from './CompartilharButton';
+import ContaCombobox from './ContaCombobox';
 
-function fmt(v) {
-  return v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+const fmt = (v) => (Number(v) || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+const iso = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+
+// atalhos de período: a DRE gerencial é mensal, então faz sentido olhar
+// vários meses de uma vez (o período do topo vale para todas as abas)
+function atalhos() {
+  const h = new Date();
+  const inicioMes = (a, m) => new Date(a, m, 1);
+  const fimMes = (a, m) => new Date(a, m + 1, 0);
+  return [
+    { rotulo: 'Mês atual', inicio: iso(inicioMes(h.getFullYear(), h.getMonth())), fim: iso(fimMes(h.getFullYear(), h.getMonth())) },
+    { rotulo: 'Mês anterior', inicio: iso(inicioMes(h.getFullYear(), h.getMonth() - 1)), fim: iso(fimMes(h.getFullYear(), h.getMonth() - 1)) },
+    { rotulo: 'Últimos 3 meses', inicio: iso(inicioMes(h.getFullYear(), h.getMonth() - 2)), fim: iso(fimMes(h.getFullYear(), h.getMonth())) },
+    { rotulo: 'Últimos 6 meses', inicio: iso(inicioMes(h.getFullYear(), h.getMonth() - 5)), fim: iso(fimMes(h.getFullYear(), h.getMonth())) },
+    { rotulo: 'Ano atual', inicio: `${h.getFullYear()}-01-01`, fim: `${h.getFullYear()}-12-31` },
+  ];
 }
 
-// DRE simplificada: uma linha por conta de Receita/Despesa (sem os grupos
-// fixos de antes) — clicar numa linha abre os lançamentos daquela conta no
-// período, pra conferir o que compõe o total.
-export default function DRETab({ empresaId, periodo, empresaNome }) {
-  const [dre, setDre] = useState(null);
-  const [contas, setContas] = useState([]);
+// DRE gerencial mensal (modelo "DRE mensal — Amanda Lima Gonçalves"), com
+// indicadores, gráfico, detalhamento por contraparte e pontos de atenção.
+// Cálculo em src/lib/dreGerencial.js.
+export default function DRETab({ empresaId, periodo, empresaNome, onPeriodo }) {
+  const [dados, setDados] = useState(null);
   const [carregando, setCarregando] = useState(false);
   const [erro, setErro] = useState(null);
-
-  const [sidebar, setSidebar] = useState(null); // { conta, lancamentos, carregando }
+  const [painel, setPainel] = useState(null); // { titulo, ids }
 
   const carregar = useCallback(async () => {
     setCarregando(true);
     setErro(null);
     try {
-      const resultado = await calcularDREPorConta(empresaId, periodo);
-      setDre(resultado);
+      setDados(await carregarDadosDreGerencialCom(supabase, empresaId, periodo));
     } catch (e) {
       setErro(e.message);
     } finally {
@@ -32,109 +46,106 @@ export default function DRETab({ empresaId, periodo, empresaNome }) {
   }, [empresaId, periodo.dataInicio, periodo.dataFim]);
 
   useEffect(() => { carregar(); }, [carregar]);
-  // só contas analíticas (aceita_lancamento) entram como opção de
-  // contrapartida no razão — contas sintéticas não recebem lançamento direto
-  useEffect(() => { listarContasTodasGerenciamento(empresaId).then((c) => setContas(c.filter((x) => x.aceita_lancamento))).catch(() => {}); }, [empresaId]);
 
-  async function abrirConta(conta) {
-    setSidebar({ conta, lancamentos: [], carregando: true });
-    try {
-      const lancamentos = await listarLancamentosPorConta(empresaId, conta.id, periodo);
-      setSidebar({ conta, lancamentos, carregando: false });
-    } catch (e) {
-      setErro(e.message);
-      setSidebar(null);
-    }
-  }
-
-  async function recarregarSidebar() {
-    if (!sidebar) return;
-    try {
-      const lancamentos = await listarLancamentosPorConta(empresaId, sidebar.conta.id, periodo);
-      setSidebar((prev) => (prev ? { ...prev, lancamentos } : prev));
-    } catch (e) {
-      setErro(e.message);
-    }
-    carregar();
-  }
-
-  if (carregando) return <p>Calculando DRE...</p>;
-  if (erro) return <p style={{ color: 'var(--danger)' }}>{erro}</p>;
-  if (!dre) return null;
-
-  // comSomasDeFilhas agrupa conta-pai (sintética, via conta_pai_id) com a
-  // soma dela + filhas; filhas seguem listadas indentadas com valor próprio.
-  const receitas = comSomasDeFilhas(dre.receitas, ['valor']).filter((l) => l.valor !== 0);
-  const despesas = comSomasDeFilhas(dre.despesas, ['valor']).filter((l) => l.valor !== 0);
-  const custos = comSomasDeFilhas(dre.custos, ['valor']).filter((l) => l.valor !== 0);
+  const dre = useMemo(() => (dados ? montarDreGerencial(dados) : null), [dados]);
 
   return (
     <div>
-      <div style={{ maxWidth: 900, marginBottom: 12, display: 'flex', justifyContent: 'flex-end' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginBottom: 14 }}>
+        <div className="dre-g-atalhos">
+          {onPeriodo && atalhos().map((a) => {
+            const ativo = periodo.dataInicio === a.inicio && periodo.dataFim === a.fim;
+            return (
+              <button key={a.rotulo} type="button" className="btn-ghost"
+                style={{ fontSize: '0.78rem', fontWeight: ativo ? 700 : 400, borderColor: ativo ? 'var(--accent)' : undefined }}
+                onClick={() => onPeriodo({ dataInicio: a.inicio, dataFim: a.fim })}>
+                {a.rotulo}
+              </button>
+            );
+          })}
+        </div>
         <CompartilharButton tipo="dre" empresaId={empresaId} empresaNome={empresaNome} periodo={periodo} />
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 24, maxWidth: 900 }}>
-        <LinhaGrupo titulo="Receitas" total={dre.totalReceitas} linhas={receitas} cor="var(--ok)" onClick={abrirConta} />
-        <LinhaGrupo titulo="Custos" total={dre.totalCustos} linhas={custos} cor="var(--warn)" onClick={abrirConta} />
-        <LinhaGrupo titulo="Despesas" total={dre.totalDespesas} linhas={despesas} cor="var(--danger)" onClick={abrirConta} />
-      </div>
+      {carregando && !dados && <p>Calculando DRE...</p>}
+      {erro && <p style={{ color: 'var(--danger)' }}>{erro}</p>}
+      {!erro && dre && (
+        <div style={{ opacity: carregando ? 0.6 : 1 }}>
+          <DreGerencialView dre={dre} onAbrirLancamentos={setPainel} />
+        </div>
+      )}
 
-      <div style={{ maxWidth: 900, marginTop: 20, padding: '14px 18px', background: 'var(--surface)',
-        border: '2px solid var(--navy)', borderRadius: 10, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <span style={{ fontSize: '0.95rem', fontWeight: 700, color: 'var(--text1)' }}>Resultado do período</span>
-        <span className={`num ${dre.resultado < 0 ? 'valor-negativo' : 'valor-positivo'}`} style={{ fontSize: '1.1rem', fontWeight: 800 }}>
-          {fmt(dre.resultado)}
-        </span>
-      </div>
-
-      {sidebar && (
-        <ContaLancamentosSidebar
-          conta={sidebar.conta}
-          lancamentos={sidebar.lancamentos}
-          carregando={sidebar.carregando}
-          contas={contas}
-          onClose={() => setSidebar(null)}
-          periodo={periodo}
-          empresaNome={empresaNome}
-          onAlterado={recarregarSidebar}
-          onContaAtualizada={(contaAtualizada) => {
-            setSidebar((prev) => (prev ? { ...prev, conta: { ...prev.conta, ...contaAtualizada } } : prev));
-            carregar();
-          }}
+      {painel && dados && (
+        <PainelLancamentos
+          titulo={painel.titulo}
+          lancamentos={dados.lancamentos.filter((l) => painel.ids.includes(l.id))}
+          contas={dados.contas}
+          onClose={() => setPainel(null)}
+          onAlterado={carregar}
         />
       )}
     </div>
   );
 }
 
-function LinhaGrupo({ titulo, total, linhas, cor, onClick }) {
+// lista os lançamentos de uma contraparte e deixa trocar a contrapartida
+// (a partida que não é caixa/banco) — reclassificar aqui já reflete na DRE
+function PainelLancamentos({ titulo, lancamentos, contas, onClose, onAlterado }) {
+  const [erro, setErro] = useState(null);
+  const [salvando, setSalvando] = useState(null);
+  const contaPorId = useMemo(() => new Map(contas.map((c) => [c.id, c])), [contas]);
+  const lancaveis = useMemo(() => contas.filter((c) => c.aceita_lancamento && c.ativo !== false), [contas]);
+
+  async function trocar(l, partida, novaContaId) {
+    if (!novaContaId || novaContaId === partida.conta_id) return;
+    setSalvando(l.id);
+    setErro(null);
+    try {
+      await reclassificarLancamento(l.id, partida.id, novaContaId);
+      await onAlterado();
+    } catch (e) {
+      setErro(e.message);
+    } finally {
+      setSalvando(null);
+    }
+  }
+
   return (
-    <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8,
-        paddingBottom: 6, borderBottom: `2px solid ${cor}` }}>
-        <span style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--text1)', textTransform: 'uppercase', letterSpacing: '.03em' }}>
-          {titulo}
-        </span>
-        <span className="num" style={{ fontWeight: 700, color: cor }}>{fmt(total)}</span>
+    <>
+      <div style={{ position: 'fixed', inset: 0, zIndex: 999, background: 'rgba(15,23,42,.35)' }} onClick={onClose} />
+      <div style={{ position: 'fixed', left: 0, right: 0, bottom: 0, zIndex: 1000, height: 'min(620px, 80vh)', background: 'var(--surface)',
+        borderTopLeftRadius: 16, borderTopRightRadius: 16, display: 'flex', flexDirection: 'column', boxShadow: '0 -8px 30px rgba(15,23,42,.25)' }}>
+        <div style={{ padding: '14px 20px', background: 'var(--navy)', color: '#fff', borderTopLeftRadius: 16, borderTopRightRadius: 16,
+          display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
+          <b style={{ fontSize: 14 }}>{titulo}</b>
+          <button type="button" className="btn-ghost" style={{ color: '#fff' }} onClick={onClose}>Fechar</button>
+        </div>
+        {erro && <p style={{ color: 'var(--danger)', padding: '0 20px' }}>{erro}</p>}
+        <div style={{ overflow: 'auto', padding: '8px 20px 20px' }}>
+          <table className="contabil-tabela" style={{ width: '100%' }}>
+            <thead><tr><th>Data</th><th>Histórico</th><th style={{ textAlign: 'right' }}>Valor</th><th>Conta (contrapartida)</th></tr></thead>
+            <tbody>
+              {lancamentos.map((l) => {
+                const contrapartida = (l.partidas_contabeis ?? []).find((p) => !ehDisponivel(contaPorId.get(p.conta_id)?.codigo));
+                const valor = (l.partidas_contabeis ?? []).filter((p) => p.tipo === 'debito').reduce((s, p) => s + Number(p.valor), 0);
+                return (
+                  <tr key={l.id}>
+                    <td>{new Date(l.data + 'T00:00:00').toLocaleDateString('pt-BR')}</td>
+                    <td>{l.historico}</td>
+                    <td className="num" style={{ textAlign: 'right' }}>{fmt(valor)}</td>
+                    <td style={{ minWidth: 280 }}>
+                      {contrapartida ? (
+                        <ContaCombobox contas={lancaveis} value={contrapartida.conta_id} disabled={salvando === l.id}
+                          onChange={(id) => trocar(l, contrapartida, id)} />
+                      ) : '—'}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
       </div>
-      {linhas.length === 0 && <p style={{ color: 'var(--text3)', fontSize: '0.85rem' }}>Sem movimento no período.</p>}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-        {linhas.map(({ conta, valor, nivelExibicao, temFilhas }) => (
-          <button key={conta.id} onClick={() => onClick(conta)}
-            style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8,
-              background: 'none', border: 'none', borderBottom: '1px solid var(--border)', padding: '7px 2px',
-              paddingLeft: 2 + nivelExibicao * 16,
-              cursor: 'pointer', textAlign: 'left', width: '100%' }}
-            onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--surface2)'; }}
-            onMouseLeave={(e) => { e.currentTarget.style.background = 'none'; }}>
-            <span style={{ fontSize: '0.85rem', color: 'var(--text2)', fontWeight: temFilhas ? 700 : 400 }}>
-              {nivelExibicao > 0 ? '↳ ' : ''}{conta.nome}
-            </span>
-            <span className="num" style={{ fontSize: '0.85rem', color: 'var(--text1)', fontWeight: temFilhas ? 700 : 500 }}>{fmt(valor)}</span>
-          </button>
-        ))}
-      </div>
-    </div>
+    </>
   );
 }
