@@ -144,7 +144,10 @@ export async function obterLogGuia(g) {
     add(1, quando || g.entregue_em || g.created_at, 'Falha no envio', g.entrega_erro.replace(/^\d{4}-\d{2}-\d{2}:\s*/, ''))
   }
 
-  if (g.entrega_canal === 'manual' && g.aberto_em) add(2, g.aberto_em, 'Abertura confirmada à mão pelo escritório')
+  // aberto_vezes só sobe com download/cópia no painel; a confirmação à mão não mexe nele
+  const abertaNoPainel = !!g.aberto_em && (g.aberto_vezes || 0) > 0
+  if (g.entrega_canal === 'manual' && g.aberto_em && !abertaNoPainel) add(2, g.aberto_em, 'Abertura confirmada à mão pelo escritório')
+  if (!g.entregue_em && abertaNoPainel) add(1, g.aberto_em, 'Encontrada no painel pelo cliente (sem entrega pela Central)')
   if (g.pago_em) add(2, g.pago_em, g.baixa_manual ? 'Pagamento registrado à mão' : 'Pagamento confirmado pelo comprovante',
     g.baixa_manual ? [g.baixa_por, g.baixa_justificativa].filter(Boolean).join(' · ') : null)
 
@@ -161,7 +164,7 @@ export async function obterLogGuia(g) {
     }
     for (const e of painel.error ? [] : painel.data || []) add(2, e.criado_em, `Abriu o painel${quem(e)}`, e.competencia ? `competência ${e.competencia}` : null)
     // guia aberta antes de existir o vínculo do evento: fica o registro da própria guia
-    if (g.entrega_canal !== 'manual' && g.aberto_em && !(docs.data || []).length) {
+    if ((g.entrega_canal !== 'manual' || abertaNoPainel) && g.aberto_em && !(docs.data || []).length) {
       add(2, g.aberto_em, 'Baixou a guia ou copiou o código', g.aberto_vezes > 1 ? `${g.aberto_vezes} vezes, a última em ${new Date(g.aberto_ultimo_em).toLocaleString('pt-BR')}` : null)
     }
     if (g.visto_em && !(painel.data || []).length) add(2, g.visto_em, 'Viu o painel depois da entrega')
