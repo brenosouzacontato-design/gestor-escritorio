@@ -167,3 +167,19 @@ Conferida na hora de emitir (não só na importação), contra as notas já emit
 Nota cancelada no portal nacional: na linha da nota, **Cancelada no portal** registra o motivo. Ela sai do
 painel do cliente, dos totais e da trava (a nota certa pode ser emitida de novo). Requer
 `supabase-schema-nfse-cancelamento.sql` aplicado no Supabase.
+
+## Endereço do tomador na DPS — E0234 (13/11/2026)
+
+A DPS saía só com documento e nome do tomador. Com o leiaute novo, quando o `cIndOp` da empresa ou a
+incidência do ISSQN cai no domicílio do tomador, a Sefin exige `toma/end` e rejeita com **E0234**.
+`lib/nfse/enderecoTomador.js` transforma o endereço livre da nota no grupo `end`
+(`endNac/cMun` + `CEP`, `xLgr`, `nro`, `xCpl`, `xBairro`):
+
+- CEP da nota (ou o que estiver no texto) → município IBGE, logradouro e bairro pelo **ViaCEP**;
+  número e complemento saem do texto ("Rua Tal, 150, Sala 3, Centro"); sem número, `S/N`;
+- tomador **CNPJ** sem CEP utilizável: endereço do cadastro da Receita (**BrasilAPI**);
+- sem dados suficientes, a DPS sai sem endereço, como antes.
+
+Nota já rejeitada com E0234: "Copiar para corrigir" (o número rejeitado não volta), conferir se o
+endereço tem número e CEP, e emitir a cópia. A prévia da DPS (ícone ao lado da nota) mostra o `<end>`.
+Testes: `enderecoTomador.test.cjs` e o fluxo da function em `recorrente.test.cjs`.

@@ -13,6 +13,7 @@ const { carregarGabarito, montarDps } = require('./dps')
 const { assinar } = require('./assinatura')
 const { serializar } = require('./xml')
 const { ErroRede, descomprimir, ok } = require('./sefin')
+const { resolverEnderecoTomador } = require('./enderecoTomador')
 
 const CODIGO_DPS_INEXISTENTE = 'E2404'
 
@@ -21,6 +22,7 @@ const EXPLICACOES = {
   E0015: 'A competência (dCompet) não pode ser posterior à data de emissão.',
   E0160: 'A opção pelo Simples Nacional na DPS não confere com o cadastro do prestador na competência.',
   E0207: 'O CPF do tomador não existe na Receita Federal.',
+  E0234: 'Faltou o endereço do tomador na DPS. Informe na nota o endereço com número e CEP (ex.: "Rua Tal, 150, Centro, CEP 30100-000"), use "Copiar para corrigir" e emita a cópia.',
   E0714: 'A Sefin não validou a assinatura digital (XML alterado depois de assinado, certificado ou forma canônica divergente).',
   E2404: 'A Sefin não tem NFS-e gerada para esta DPS.',
   RNG9999: 'Erro não catalogado na Sefin (geralmente problema de formato do envio).',
@@ -57,8 +59,9 @@ function mensagemErros(erros) {
 
 const numeroDaNfse = (xml) => ((xml.match(/<infNFSe\b[^>]*>[\s\S]*?<nNFSe>(\d+)<\/nNFSe>/) || [])[1]) || null
 
-// contexto: { repo, empresa (linha de nfse_empresas), certificado (lerPfx), cliente (criarCliente), usuario }
-function criarEmissor({ repo, empresa, certificado, cliente, usuario = null }) {
+// contexto: { repo, empresa (linha de nfse_empresas), certificado (lerPfx), cliente (criarCliente), usuario,
+//             buscasEndereco? ({ buscarCep, buscarCnpj }, para testes) }
+function criarEmissor({ repo, empresa, certificado, cliente, usuario = null, buscasEndereco = {} }) {
   const gabarito = carregarGabarito(empresa.gabarito_xml)
   const dadosEmpresa = {
     cnpj: empresa.cnpj, codigoMunicipio: empresa.codigo_municipio,
@@ -66,22 +69,26 @@ function criarEmissor({ repo, empresa, certificado, cliente, usuario = null }) {
   }
   if (cliente.ambiente !== empresa.ambiente) throw new EmissaoBloqueada('Cliente Sefin e empresa em ambientes diferentes')
 
-  const montar = (nota, nDps, serie) => montarDps({
+  const montar = (nota, nDps, serie, enderecoTomador = null) => montarDps({
     gabarito, empresa: dadosEmpresa, ambiente: empresa.ambiente, serie, nDps,
     cpfTomador: nota.cpf, nomeTomador: nota.nome, descricao: nota.descricao, valor: String(nota.valor),
-    dataAtendimento: nota.data, competencia: nota.competencia || null,
+    dataAtendimento: nota.data, competencia: nota.competencia || null, enderecoTomador,
   })
+  const endereco = (nota) => resolverEnderecoTomador({ endereco: nota.endereco, cep: nota.cep, documento: nota.cpf }, buscasEndereco)
 
   // validada → numero_reservado → XML assinado gravado na nota
   async function preparar(nota) {
+    let end
     if (nota.estado === 'validada') {
+      end = await endereco(nota)
       // Monta antes de gastar um número da série: erro de dados aparece sem queimar numeração
-      montar(nota, await repo.proximoNumero(empresa.cliente_id, empresa.ambiente, empresa.serie_dps), empresa.serie_dps)
+      montar(nota, await repo.proximoNumero(empresa.cliente_id, empresa.ambiente, empresa.serie_dps), empresa.serie_dps, end)
       await repo.reservarNumero(nota.id, usuario)
       nota = await repo.obterNota(nota.id)
     }
     if (!nota.xml_enviado) {
-      const dps = assinar(montar(nota, nota.n_dps, nota.serie), certificado)
+      if (end === undefined) end = await endereco(nota)
+      const dps = assinar(montar(nota, nota.n_dps, nota.serie, end), certificado)
       const id = dps.children[0].attrs.find(([k]) => k === 'Id')[1]
       await repo.atualizarNota(nota.id, { id_dps: id, xml_enviado: serializar(dps) })
       nota = await repo.obterNota(nota.id)
@@ -192,7 +199,7 @@ function criarEmissor({ repo, empresa, certificado, cliente, usuario = null }) {
     if (!nota) throw new Error('Nota não encontrada')
     if (nota.status_validacao !== 'pronto') throw new EmissaoBloqueada('Só dá para gerar a DPS de notas prontas')
     const numero = nota.n_dps || await repo.proximoNumero(empresa.cliente_id, empresa.ambiente, empresa.serie_dps)
-    const dps = assinar(montar(nota, numero, nota.serie || empresa.serie_dps), certificado)
+    const dps = assinar(montar(nota, numero, nota.serie || empresa.serie_dps, await endereco(nota)), certificado)
     return { numero_previa: numero, xml: serializar(dps) }
   }
 

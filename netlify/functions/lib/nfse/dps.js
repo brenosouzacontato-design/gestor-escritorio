@@ -194,7 +194,7 @@ function aplicarIbsCbs(inf, servicoPadrao = {}, grupos = { indDest: true }, env 
 //                             cIndOp?, CST?, cClassTrib?, cNBS? } }
 function montarDps({
   gabarito, empresa, ambiente, serie, nDps, cpfTomador, nomeTomador, descricao, valor,
-  dataAtendimento, competencia = null, agora = new Date(),
+  dataAtendimento, competencia = null, agora = new Date(), enderecoTomador = null,
 }) {
   const emissao = dataHoraBrasilia(agora)
   let dCompet = competencia
@@ -223,6 +223,15 @@ function montarDps({
   toma.text = ''
   // cpfTomador: CPF (11 dígitos) ou CNPJ (14, tomador pessoa jurídica)
   toma.children = [novo(String(cpfTomador).length === 14 ? 'CNPJ' : 'CPF', cpfTomador), novo('xNome', espacos(nomeTomador))]
+  // Endereço (TCEndereco), quando resolvido: exigido se a operação ocorre no domicílio do tomador (E0234)
+  if (enderecoTomador) {
+    const e = enderecoTomador
+    const endNac = novo('endNac')
+    endNac.children = [novo('cMun', e.cMun), novo('CEP', e.CEP)]
+    const end = novo('end')
+    end.children = [endNac, novo('xLgr', e.xLgr), novo('nro', e.nro), ...(e.xCpl ? [novo('xCpl', e.xCpl)] : []), novo('xBairro', e.xBairro)]
+    toma.children.push(end)
+  }
 
   const sp = empresa.servicoPadrao || {}
   if (sp.cTribNac) definir(inf, 'serv/cServ/cTribNac', sp.cTribNac)

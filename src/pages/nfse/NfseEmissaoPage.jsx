@@ -53,6 +53,32 @@ const anteriorDe = (n, prefixo) => (n.erros.find((e) => e.startsWith(prefixo)) |
 // Valor da diferença sugerida na "Complementar?" (null quando o já emitido cobre a nota)
 const diferencaDe = (n) => ((n.erros.find((e) => e.startsWith(COMPLEMENTAR)) || '').match(/mude o valor para (R\$\s?[\d.,]+)/) || [])[1] || null
 
+// "E0234 — texto longo da Sefin → explicação | E0160 — …" → [{ codigo, curto, completo }]
+function errosSefin(msg) {
+  return String(msg || '').split(' | ').filter(Boolean).map((parte) => {
+    const m = parte.match(/^([A-Z]+\d+|HTTP \d+) — ([\s\S]*?)(?: → ([\s\S]*))?$/)
+    if (!m) return { codigo: '', curto: parte, completo: '' }
+    return { codigo: m[1], curto: m[3] || m[2], completo: m[3] ? m[2] : '' }
+  })
+}
+
+// Erro da Sefin em uma linha por código (explicação do gestor); o texto original fica recolhido
+function MensagemSefin({ texto, cor }) {
+  const erros = errosSefin(texto)
+  const completos = erros.filter((e) => e.completo)
+  return (
+    <div style={{ color: cor, lineHeight: 1.4 }}>
+      {erros.map((e, i) => <div key={i}>{e.codigo && <b>{e.codigo} · </b>}{e.curto}</div>)}
+      {completos.length > 0 && (
+        <details style={{ marginTop: 2 }}>
+          <summary style={{ ...suave, cursor: 'pointer' }}>texto da Sefin</summary>
+          {completos.map((e, i) => <div key={i} style={{ ...suave, marginTop: 2 }}>{e.codigo} — {e.completo}</div>)}
+        </details>
+      )}
+    </div>
+  )
+}
+
 // Abas da conferência: o que fazer com cada nota
 const ABAS = [
   ['', 'Todas', () => true],
@@ -442,8 +468,8 @@ export default function NfseEmissaoPage() {
         onBlur={(e) => editar(n, campo, e.target.value.trim())} onKeyDown={(e) => e.key === 'Enter' && e.target.blur()}
         placeholder={falta ? 'preencher' : undefined} title={falta ? `Falta ${PENDENCIA[campo]}` : undefined}
         onFocus={(e) => { e.target.style.borderColor = 'var(--accent)' }} {...extra}
-        style={{ minWidth: largura, padding: '4px 6px', fontSize: 12, background: falta ? 'var(--surface)' : 'transparent',
-          border: falta ? '1px dashed var(--warn)' : '1px solid transparent', ...(extra.style || {}) }} />
+        style={{ minWidth: largura, padding: '3px 6px', fontSize: 12, borderRadius: 4, background: falta ? 'var(--surface)' : 'transparent',
+          border: falta ? '1px dashed var(--warn)' : '1px solid transparent', display: 'block', ...(extra.style || {}) }} />
     )
   }
 
@@ -574,13 +600,13 @@ export default function NfseEmissaoPage() {
                       checked={visiveis.some(EDITAVEL) && visiveis.filter(EDITAVEL).every((n) => selecionadas.has(n.id))}
                       onChange={(e) => setSelecionadas((s) => { const x = new Set(s); visiveis.filter(EDITAVEL).forEach((n) => (e.target.checked ? x.add(n.id) : x.delete(n.id))); return x })} />
                   </th>
-                  {['Situação', 'Paciente', 'CPF', 'Atendimento', 'Competência', 'Valor', 'Descrição', 'Endereço', 'O que fazer / resultado', ''].map((h, i) => (
-                    <th key={i} style={{ padding: '6px', borderBottom: '1px solid var(--border)', whiteSpace: 'nowrap' }}>{h}</th>
+                  {['Situação', 'Tomador', 'Atendimento / comp.', 'Valor', 'Serviço e endereço', 'Resultado', ''].map((h, i) => (
+                    <th key={i} style={{ padding: '8px 6px', borderBottom: '1px solid var(--border)', whiteSpace: 'nowrap', fontWeight: 600, textAlign: h === 'Valor' ? 'right' : 'left' }}>{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
-                {visiveis.length === 0 && <tr><td colSpan={11} style={{ padding: 16, ...suave, textAlign: 'center' }}>Nenhuma nota nesta aba.</td></tr>}
+                {visiveis.length === 0 && <tr><td colSpan={8} style={{ padding: 16, ...suave, textAlign: 'center' }}>Nenhuma nota nesta aba.</td></tr>}
                 {visiveis.map((n) => {
                   const tipo = situacao(n)
                   const fundo = { pendente: 'var(--warn-dim)', invalido: 'var(--danger-dim)', rejeitada: 'var(--danger-dim)', indeterminada: 'var(--warn-dim)', complementar: 'var(--info-dim)' }[tipo]
@@ -588,42 +614,49 @@ export default function NfseEmissaoPage() {
                   const dif = tipo === 'complementar' ? diferencaDe(n) : null
                   const outrosErros = n.erros.filter((e) => !e.startsWith(JA_EMITIDA) && !e.startsWith(COMPLEMENTAR))
                   return (
-                    <tr key={n.id} style={{ background: fundo, borderBottom: '1px solid var(--border)', verticalAlign: 'top', opacity: n.ciente_em ? 0.6 : 1 }}>
+                    <tr key={n.id} style={{ background: fundo, borderBottom: '1px solid var(--border)', verticalAlign: 'top', opacity: n.ciente_em || n.estado === 'cancelada' || n.copiada_para ? 0.6 : 1 }}>
                       <td style={{ padding: 6 }}><input type="checkbox" style={{ width: 'auto' }} disabled={!EDITAVEL(n)} checked={selecionadas.has(n.id)}
                         onChange={(e) => setSelecionadas((s) => { const x = new Set(s); e.target.checked ? x.add(n.id) : x.delete(n.id); return x })} /></td>
-                      <td style={{ padding: 6 }}><Pill tipo={tipo}>{ROTULO[tipo] || tipo.replace('_', ' ')}</Pill></td>
-                      <td style={{ padding: 2 }}>{inp(n, 'nome', n.nome, 180)}</td>
-                      <td style={{ padding: 2 }}>{inp(n, 'cpf', cpfFmt(n.cpf), 120)}</td>
-                      <td style={{ padding: 2 }}>{inp(n, 'data', dataBR(n.data), 90)}</td>
-                      <td style={{ padding: 2 }}>{inp(n, 'competencia', dataBR(n.competencia), 90, { placeholder: padraoComp, title: `Vazio = ${padraoComp}. Aceita dd/mm/aaaa ou mm/aaaa` })}</td>
-                      <td style={{ padding: 2 }}>{inp(n, 'valor', valorBR(n.valor), 80, { style: { minWidth: 80, padding: '4px 6px', fontSize: 12, textAlign: 'right', background: 'transparent', border: '1px solid transparent' } })}</td>
-                      <td style={{ padding: 2 }}>{inp(n, 'descricao', n.descricao, 180)}</td>
-                      <td style={{ padding: 2 }}>{inp(n, 'endereco', n.endereco, 180)}</td>
-                      <td style={{ padding: 6, minWidth: 240, maxWidth: 360 }}>
+                      <td style={{ padding: '8px 6px' }}><Pill tipo={tipo}>{ROTULO[tipo] || tipo.replace('_', ' ')}</Pill></td>
+                      <td style={{ padding: 2, minWidth: 190 }}>
+                        {inp(n, 'nome', n.nome, 190, { style: { width: '100%', fontWeight: 600 } })}
+                        {inp(n, 'cpf', cpfFmt(n.cpf), 150, { title: 'CPF ou CNPJ', style: { width: '100%', color: 'var(--text3)', fontSize: 11.5 } })}
+                      </td>
+                      <td style={{ padding: 2 }}>
+                        {inp(n, 'data', dataBR(n.data), 96, { title: 'Data do atendimento' })}
+                        {inp(n, 'competencia', dataBR(n.competencia), 96, { placeholder: `comp. ${padraoComp}`, title: `Competência. Vazio = ${padraoComp}. Aceita dd/mm/aaaa ou mm/aaaa`, style: { color: 'var(--text3)', fontSize: 11.5 } })}
+                      </td>
+                      <td style={{ padding: 2 }}>{inp(n, 'valor', valorBR(n.valor), 84, { style: { minWidth: 84, width: 84, textAlign: 'right', fontWeight: 600 } })}</td>
+                      <td style={{ padding: 2, minWidth: 220 }}>
+                        {inp(n, 'descricao', n.descricao, 220, { style: { width: '100%' } })}
+                        {inp(n, 'endereco', n.endereco, 220, { title: 'Endereço do tomador (com número e CEP)', style: { width: '100%', color: 'var(--text3)', fontSize: 11.5 } })}
+                      </td>
+                      <td style={{ padding: 6, minWidth: 220, maxWidth: 340 }}>
                         {n.estado === 'autorizada' && <>
-                          <div style={{ color: 'var(--ok)', fontWeight: 700 }}>✔ NFS-e nº {n.numero_nfse || '?'}</div>
+                          <div style={{ color: 'var(--ok)', fontWeight: 700 }} title={n.chave_acesso ? `Chave de acesso: ${n.chave_acesso}` : undefined}>✔ NFS-e nº {n.numero_nfse || '?'}</div>
                           <a href="#" onClick={(e) => { e.preventDefault(); baixarNfse(clienteId, { id: n.id, numero: n.numero_nfse, chave: n.chave_acesso }, 'pdf', { incluirHomologacao: true }).catch((x) => show(x.message)) }}
                             title="DANFSe (NT 008/2026) gerado a partir do XML autorizado">PDF</a>{' · '}
                           <a href="#" onClick={(e) => { e.preventDefault(); baixarXml(n.id, 'xml_retorno').catch((x) => show(x.message)) }}>XML</a>{' · '}
                           <a href="#" onClick={(e) => { e.preventDefault(); baixarXml(n.id, 'xml_enviado').catch((x) => show(x.message)) }} title="DPS assinada enviada à Sefin">DPS</a>{' · '}
-                          <a href="#" style={{ color: 'var(--danger)' }} onClick={(e) => { e.preventDefault(); if (!ocupado) marcarCancelada(n) }}
-                            title="Use depois de cancelar a nota no portal nacional (www.nfse.gov.br)">Cancelada no portal</a>
-                          <div style={{ ...suave, fontSize: 10.5, wordBreak: 'break-all' }}>{n.chave_acesso}</div>
+                          <a href="#" style={{ color: 'var(--text3)' }} onClick={(e) => { e.preventDefault(); if (!ocupado) marcarCancelada(n) }}
+                            title="Use depois de cancelar a nota no portal nacional (www.nfse.gov.br)">cancelada no portal?</a>
+                          {n.chave_acesso && <div><a href="#" style={{ ...suave, fontSize: 11 }} title={n.chave_acesso}
+                            onClick={(e) => { e.preventDefault(); navigator.clipboard.writeText(n.chave_acesso).then(() => show('Chave de acesso copiada'), () => show(n.chave_acesso)) }}>copiar chave de acesso</a></div>}
                         </>}
                         {n.estado === 'cancelada' && <>
                           <div style={{ color: 'var(--text3)', textDecoration: 'line-through' }}>NFS-e nº {n.numero_nfse || '?'}</div>
                           <div style={suave}>{n.mensagem_sefin || 'Cancelada no portal nacional'}</div>
                         </>}
                         {n.estado === 'rejeitada' && <>
-                          <div style={{ color: 'var(--danger)' }}>✖ {n.mensagem_sefin}</div>
+                          <MensagemSefin texto={n.mensagem_sefin} cor="var(--danger)" />
                           {n.copiada_para ? <div style={suave}>Refeita em outra nota (fora dos totais)</div>
-                            : <button className="btn" style={{ marginTop: 4 }} disabled={ocupado}
+                            : <button className="btn" style={{ marginTop: 6 }} disabled={ocupado}
                               onClick={async () => { await acao(() => chamarNfse('copiar', { nota_id: n.id }), 'Cópia criada para corrigir'); await carregarNotas() }}>
                               <CopyIcon size={12} /> Copiar para corrigir</button>}
                         </>}
                         {(n.estado === 'indeterminada' || n.estado === 'enviada') && <>
-                          <div style={{ color: 'var(--warn)' }}>? {n.mensagem_sefin || 'Envio sem resposta'}</div>
-                          <button className="btn" style={{ marginTop: 4 }} disabled={ocupado} onClick={() => reconsultar(n)}>Reconsultar (e reenviar se não existir)</button>
+                          <MensagemSefin texto={n.mensagem_sefin || 'Envio sem resposta'} cor="var(--warn)" />
+                          <button className="btn" style={{ marginTop: 6 }} disabled={ocupado} onClick={() => reconsultar(n)} title="Consulta a Sefin e só reenvia se a nota não existir">Reconsultar</button>
                         </>}
                         {n.estado === 'numero_reservado' && <div style={suave}>DPS nº {n.n_dps} reservada, ainda não enviada.</div>}
 
@@ -666,7 +699,7 @@ export default function NfseEmissaoPage() {
                           {n.avisos.map((a) => <div key={a} style={suave}>• {a}</div>)}
                         </>}
                         {n.observacao_cliente && <div style={{ color: 'var(--info)', whiteSpace: 'pre-wrap' }}>💬 Cliente: {n.observacao_cliente}</div>}
-                        {n.n_dps && <div style={suave}>DPS série {n.serie} nº {n.n_dps}</div>}
+                        {n.n_dps && n.estado !== 'autorizada' && <div style={{ ...suave, fontSize: 11 }}>DPS série {n.serie} nº {n.n_dps}</div>}
                         {n.texto_original && <details><summary style={{ ...suave, cursor: 'pointer' }}>mensagem original{n.autor ? ` de ${n.autor}` : ''}</summary>
                           <pre style={{ whiteSpace: 'pre-wrap', fontSize: 11, margin: '4px 0 0', maxWidth: 320 }}>{n.texto_original}</pre></details>}
                       </td>
