@@ -14,6 +14,7 @@ import EnviarIdentificacaoButton from './EnviarIdentificacaoButton';
 // planoContasConstantes.js (vale pro plano padrão e pro enxuto).
 import { PREFIXO_DISPONIVEL, CODIGOS_CONTA_PENDENTE, ehContaPendente } from './planoContasConstantes';
 import ExportarOneflowButton from './ExportarOneflowButton';
+import IdentificarIAModal from './IdentificarIAModal';
 
 export default function LancamentosTab({ empresaId, periodo, empresaNome }) {
   const [contas, setContas] = useState([]);
@@ -21,6 +22,7 @@ export default function LancamentosTab({ empresaId, periodo, empresaNome }) {
   const [carregando, setCarregando] = useState(false);
   const [erro, setErro] = useState(null);
   const [modalAberto, setModalAberto] = useState(false);
+  const [identificarAberto, setIdentificarAberto] = useState(false);
 
   // filtros nos cabeçalhos da tabela de lançamentos
   const [filtroHistorico, setFiltroHistorico] = useState('');
@@ -263,9 +265,17 @@ export default function LancamentosTab({ empresaId, periodo, empresaNome }) {
           <EnviarIdentificacaoButton empresaId={empresaId} empresaNome={empresaNome} periodo={periodo}
             lancamentoIds={semFiltroAplicado && selecionados.size === 0 ? [] : idsParaIdentificar} />
           <ExportarOneflowButton lancamentos={lancamentos} periodo={periodo} empresaId={empresaId} empresaNome={empresaNome} />
+          <button className="btn-ghost" onClick={() => setIdentificarAberto(true)} title="Cruza as saídas com as NFs de entrada e usa IA para sugerir a conta do restante">
+            ✨ Identificar com NFs e IA
+          </button>
         </div>
         {erro && <p style={{ color: 'var(--danger)', margin: 0 }}>{erro}</p>}
       </div>
+
+      {identificarAberto && (
+        <IdentificarIAModal empresaId={empresaId} empresaNome={empresaNome} periodo={periodo}
+          onClose={() => setIdentificarAberto(false)} onAplicado={carregar} />
+      )}
 
       {modalAberto && (
         <NovoLancamentoModal

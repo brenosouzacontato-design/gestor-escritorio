@@ -1,13 +1,13 @@
 import React, { useEffect, useState } from 'react';
 import AcessoPainel from '../painel/AcessoPainel';
-import { calcularDREPorConta, calcularBalancete, comSomasDeFilhas, somarRaizes } from './contabilApi';
+import { calcularBalancete, comSomasDeFilhas, somarRaizes } from './contabilApi';
+import { supabase } from '../../lib/supabase';
+import { carregarDadosDreGerencialCom, montarDreGerencial } from '../../lib/dreGerencial';
+import DreGerencialView from './DreGerencialView';
 import BalanceteLista from './BalanceteLista';
 
 const CAMPOS_BALANCETE = ['saldoAnterior', 'debito', 'credito', 'saldoAtual'];
 
-function fmt(v) {
-  return v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-}
 function fmtData(iso) {
   return new Date(iso + 'T00:00:00').toLocaleDateString('pt-BR');
 }
@@ -43,7 +43,7 @@ function RelatorioCompartilhado({ tipo, empresaId, dataInicio, dataFim, sessao }
         const [{ data: cliente, error: errCliente }, resultado] = await Promise.all([
           Promise.resolve({ data: sessao, error: null }),
           tipo === 'dre'
-            ? calcularDREPorConta(empresaId, { dataInicio, dataFim })
+            ? carregarDadosDreGerencialCom(supabase, empresaId, { dataInicio, dataFim }).then(montarDreGerencial)
             : calcularBalancete(empresaId, { dataInicio, dataFim }),
         ]);
         if (errCliente) throw errCliente;
@@ -59,10 +59,10 @@ function RelatorioCompartilhado({ tipo, empresaId, dataInicio, dataFim, sessao }
 
   return (
     <div style={{ minHeight: '100vh', background: 'var(--bg)', padding: '32px 16px' }}>
-      <div style={{ maxWidth: 900, margin: '0 auto', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 12, overflow: 'hidden' }}>
+      <div style={{ maxWidth: tipo === 'dre' ? 1280 : 900, margin: '0 auto', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 12, overflow: 'hidden' }}>
         <div style={{ padding: '18px 24px', background: 'var(--navy)' }}>
           <div style={{ fontSize: 11, color: 'var(--navy-text)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.04em' }}>
-            {tipo === 'dre' ? 'DRE — Demonstração de Resultado' : 'Balancete'}
+            {tipo === 'dre' ? 'DRE gerencial mensal' : 'Balancete'}
           </div>
           <div style={{ fontSize: 18, color: '#fff', fontWeight: 700, marginTop: 4 }}>{empresaNome || '...'}</div>
           <div style={{ fontSize: 12, color: 'var(--navy-text)', marginTop: 2 }}>
@@ -74,25 +74,7 @@ function RelatorioCompartilhado({ tipo, empresaId, dataInicio, dataFim, sessao }
           {carregando && <p style={{ color: 'var(--text2)' }}>Carregando...</p>}
           {erro && <p style={{ color: 'var(--danger)' }}>{erro}</p>}
 
-          {!carregando && !erro && tipo === 'dre' && dre && (
-            <>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 24 }}>
-                <GrupoDRE titulo="Receitas" total={dre.totalReceitas}
-                  linhas={comSomasDeFilhas(dre.receitas, ['valor']).filter((l) => l.valor !== 0)} cor="var(--ok)" />
-                <GrupoDRE titulo="Custos" total={dre.totalCustos}
-                  linhas={comSomasDeFilhas(dre.custos, ['valor']).filter((l) => l.valor !== 0)} cor="var(--warn)" />
-                <GrupoDRE titulo="Despesas" total={dre.totalDespesas}
-                  linhas={comSomasDeFilhas(dre.despesas, ['valor']).filter((l) => l.valor !== 0)} cor="var(--danger)" />
-              </div>
-              <div style={{ marginTop: 20, padding: '14px 18px', background: 'var(--bg)', border: '2px solid var(--navy)',
-                borderRadius: 10, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <span style={{ fontSize: '0.95rem', fontWeight: 700 }}>Resultado do período</span>
-                <span className="num" style={{ fontSize: '1.1rem', fontWeight: 800, color: dre.resultado < 0 ? 'var(--danger)' : 'var(--ok)' }}>
-                  {fmt(dre.resultado)}
-                </span>
-              </div>
-            </>
-          )}
+          {!carregando && !erro && tipo === 'dre' && dre && <DreGerencialView dre={dre} />}
 
           {!carregando && !erro && tipo === 'balancete' && balancete && (() => {
             const porTipo = ORDEM_TIPO_BALANCETE.map((t) => {
@@ -110,29 +92,6 @@ function RelatorioCompartilhado({ tipo, empresaId, dataInicio, dataFim, sessao }
         <div style={{ padding: '12px 24px', borderTop: '1px solid var(--border)', fontSize: 11, color: 'var(--text3)' }}>
           Relatório gerado pelo Gestor — Escritório Contábil, só pra conferência.
         </div>
-      </div>
-    </div>
-  );
-}
-
-function GrupoDRE({ titulo, total, linhas, cor }) {
-  return (
-    <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8, paddingBottom: 6, borderBottom: `2px solid ${cor}` }}>
-        <span style={{ fontSize: '0.85rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.03em' }}>{titulo}</span>
-        <span className="num" style={{ fontWeight: 700, color: cor }}>{fmt(total)}</span>
-      </div>
-      {linhas.length === 0 && <p style={{ color: 'var(--text3)', fontSize: '0.85rem' }}>Sem movimento no período.</p>}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-        {linhas.map(({ conta, valor, nivelExibicao, temFilhas }) => (
-          <div key={conta.id} style={{ display: 'flex', justifyContent: 'space-between', gap: 8, padding: '5px 2px',
-            paddingLeft: 2 + nivelExibicao * 16, borderBottom: '1px solid var(--border)' }}>
-            <span style={{ fontSize: '0.85rem', color: 'var(--text2)', fontWeight: temFilhas ? 700 : 400 }}>
-              {nivelExibicao > 0 ? '↳ ' : ''}{conta.nome}
-            </span>
-            <span className="num" style={{ fontSize: '0.85rem', fontWeight: temFilhas ? 700 : 500 }}>{fmt(valor)}</span>
-          </div>
-        ))}
       </div>
     </div>
   );

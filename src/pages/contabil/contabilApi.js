@@ -415,20 +415,26 @@ export async function excluirRegraClassificacao(id) {
 }
 
 export async function listarLancamentos(empresaId, { dataInicio, dataFim } = {}) {
-  let query = supabase
-    .from('lancamentos_contabeis')
-    // contas_contabeis(*) em vez de colunas fixas: traz o cnpj (fornecedor)
-    // usado na exportação p/ OneFlow sem quebrar se a coluna ainda não existir
-    .select('*, partidas_contabeis(*, contas_contabeis(*))')
-    .eq('empresa_id', empresaId)
-    .order('data', { ascending: false });
-
-  if (dataInicio) query = query.gte('data', dataInicio);
-  if (dataFim) query = query.lte('data', dataFim);
-
-  const { data, error } = await query;
-  if (error) throw error;
-  return data;
+  // paginado: o PostgREST corta em 1000 linhas e um extrato de alguns meses
+  // já passa disso (os mais antigos sumiam da tela sem aviso)
+  const todos = [];
+  for (let de = 0; ; de += 1000) {
+    let query = supabase
+      .from('lancamentos_contabeis')
+      // contas_contabeis(*) em vez de colunas fixas: traz o cnpj (fornecedor)
+      // usado na exportação p/ OneFlow sem quebrar se a coluna ainda não existir
+      .select('*, partidas_contabeis(*, contas_contabeis(*))')
+      .eq('empresa_id', empresaId)
+      .order('data', { ascending: false })
+      .order('id');
+    if (dataInicio) query = query.gte('data', dataInicio);
+    if (dataFim) query = query.lte('data', dataFim);
+    const { data, error } = await query.range(de, de + 999);
+    if (error) throw error;
+    todos.push(...(data ?? []));
+    if (!data || data.length < 1000) break;
+  }
+  return todos;
 }
 
 // Link curto pra identificação de uma lista específica de lançamentos

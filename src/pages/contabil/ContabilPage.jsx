@@ -2,9 +2,7 @@ import { useState } from 'react';
 import { useStore } from '../../store';
 import EmpresaCombobox from '../../components/EmpresaCombobox';
 import './contabil.css';
-import PlanoContasTab from './PlanoContasTab';
 import LancamentosTab from './LancamentosTab';
-import BalanceteTab from './BalanceteTab';
 import DRETab from './DRETab';
 import ImportarExtratoTab from './ImportarExtratoTab';
 import RegrasTab from './RegrasTab';
@@ -13,11 +11,9 @@ import DocumentosFiscaisTab from './DocumentosFiscaisTab';
 
 const TABS = [
   { id: 'lancamentos', label: 'Lançamentos' },
-  { id: 'balancete', label: 'Balancete' },
   { id: 'dre', label: 'DRE' },
   { id: 'extrato', label: 'Importar Extrato' },
   { id: 'notasfiscais', label: 'Notas Fiscais' },
-  { id: 'plano', label: 'Plano de Contas' },
   { id: 'regras', label: 'Regras' },
   { id: 'precificacao', label: 'Precificação' },
 ];
@@ -68,11 +64,11 @@ export default function ContabilPage() {
       ) : (
         <>
           {abaAtiva === 'lancamentos' && <LancamentosTab empresaId={empresaIdAtual} periodo={periodo} empresaNome={clientes.find((c) => c.id === empresaIdAtual)?.nome} />}
-          {abaAtiva === 'balancete' && <BalanceteTab empresaId={empresaIdAtual} periodo={periodo} empresaNome={clientes.find((c) => c.id === empresaIdAtual)?.nome} />}
-          {abaAtiva === 'dre' && <DRETab empresaId={empresaIdAtual} periodo={periodo} empresaNome={clientes.find((c) => c.id === empresaIdAtual)?.nome} />}
+          {abaAtiva === 'dre' && <DRETab empresaId={empresaIdAtual} periodo={periodo}
+            onPeriodo={(p) => { setDataInicio(p.dataInicio); setDataFim(p.dataFim); }}
+            empresaNome={clientes.find((c) => c.id === empresaIdAtual)?.nome} />}
           {abaAtiva === 'extrato' && <ImportarExtratoTab empresaId={empresaIdAtual} />}
           {abaAtiva === 'notasfiscais' && <DocumentosFiscaisTab empresaId={empresaIdAtual} empresaNome={clientes.find((c) => c.id === empresaIdAtual)?.nome} />}
-          {abaAtiva === 'plano' && <PlanoContasTab empresaId={empresaIdAtual} />}
           {abaAtiva === 'regras' && <RegrasTab empresaId={empresaIdAtual} />}
           {abaAtiva === 'precificacao' && <PrecificacaoTab empresaId={empresaIdAtual} periodo={periodo} />}
         </>
