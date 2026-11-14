@@ -14,6 +14,10 @@ const {
 } = require('./lib/midiaWhatsapp')
 const decisao = require('./lib/decisaoDocumento')
 const extratoWpp = require('./lib/extratoWhatsapp')
+const processamento = require('./lib/processamentoDocumento')
+const nfseWpp = require('./lib/nfseWhatsapp')
+const recorrentes = require('./lib/nfse/recorrentes')
+const nfseMei = require('./lib/nfse/mei')
 const { cabecalhoInterno } = require('./lib/autenticacao')
 
 const supabase = createClient(
@@ -287,24 +291,52 @@ async function processarDocumento(body, anexo, remoteJid) {
         }
       }
 
-      // Sem correspondência (e não é comprovante): o grupo escolhe tarefa ou arquivo.
-      // Só pergunta se a coluna existe (supabase-schema-documentos-decisao-whatsapp.sql).
-      if (!perguntaExtrato && !sugestao.candidatoId && !pareceComprovante && docNovo?.id) {
-        const { error: errDecisao } = await supabase.from('documentos').update({ whatsapp_decisao: 'aguardando' }).eq('id', docNovo.id)
-        if (errDecisao) console.error('Pergunta tarefa/arquivo desligada:', errDecisao.message)
-        else perguntarId = docNovo.id
+      // Menu de processamento (lib/processamentoDocumento.js): o grupo escolhe
+      // o que fazer — carregar no painel, anexar a CND, cadastrar o
+      // parcelamento, dar baixa, criar tarefa ou só arquivar. Comprovante e
+      // extrato já têm fluxo próprio. Sem a coluna whatsapp_opcoes
+      // (supabase-schema-documentos-processamento-whatsapp.sql), cai na
+      // pergunta antiga "1 = tarefa / 2 = arquivar", só para não identificado.
+      let menu = ''
+      if (!perguntaExtrato && !pareceComprovante && docNovo?.id) {
+        const categoria = processamento.categoriaDoDocumento({ categoria: sugestao.categoria, tipoDocumento: sugestao.tipoDocumento, nomeArquivo })
+        const clienteDoc = empresaExtrato?.id || sugestao.clienteId || null
+        const opcoes = processamento.montarOpcoes({
+          categoria,
+          pdf: mimeType === 'application/pdf',
+          candidato,
+          candidatosDoCliente: clienteDoc ? candidatos.filter((c) => c.clienteId === clienteDoc) : [],
+        })
+        const { error: errMenu } = await supabase.from('documentos')
+          .update({ whatsapp_decisao: processamento.AGUARDANDO, whatsapp_opcoes: opcoes }).eq('id', docNovo.id)
+        if (!errMenu) {
+          perguntarId = docNovo.id
+          menu = processamento.textoMenu(opcoes)
+        } else {
+          console.error('Menu de processamento desligado:', errMenu.message)
+          if (!sugestao.candidatoId) {
+            const { error: errDecisao } = await supabase.from('documentos').update({ whatsapp_decisao: 'aguardando' }).eq('id', docNovo.id)
+            if (errDecisao) console.error('Pergunta tarefa/arquivo desligada:', errDecisao.message)
+            else {
+              perguntarId = docNovo.id
+              menu = decisao.PERGUNTA
+            }
+          }
+        }
       }
 
       const avisoLeitura = leitura.ok ? '' : `\n⚠️ Não li o arquivo automaticamente: ${leitura.motivo}.`
+      const revisar = menu ? '' : '\nRevise e confirme em Documentos → A revisar.'
+      const nomeCliente = (id) => candidatos.find((c) => c.clienteId === id)?.clienteNome
       mensagemIdentificacao = perguntaExtrato || `\n\n🔎 ${sugestao.tipoDocumento}${avisoLeitura}` + (
         pareceComprovante
           ? '\n⚠️ Não consegui registrar na fila de pagamentos — dê a baixa em Gestor → Pagamentos → Baixa manual.'
           : candidato
-          ? `\n👤 ${candidato.clienteNome} — ${candidato.rotulo}\nRevise e confirme em Documentos → A revisar.`
+          ? `\n👤 ${candidato.clienteNome} — sugestão: ${candidato.rotulo}${revisar}`
           : sugestao.clienteId
-            ? `\n👤 Cliente identificado, mas sem correspondência clara. Revise em Documentos → A revisar.`
-            : '\n⚠️ Não identifiquei o cliente. Revise em Documentos → A revisar.'
-      ) + (perguntarId ? decisao.PERGUNTA : '')
+            ? `\n👤 ${nomeCliente(sugestao.clienteId) || 'Cliente identificado'}${menu ? '' : ', mas sem correspondência clara. Revise em Documentos → A revisar.'}`
+            : `\n⚠️ Não identifiquei o cliente.${menu ? '' : ' Revise em Documentos → A revisar.'}`
+      ) + (perguntaExtrato ? '' : menu)
     } catch (eIdent) {
       console.error('Erro ao identificar documento:', eIdent.message)
     }
@@ -323,52 +355,114 @@ async function processarDocumento(body, anexo, remoteJid) {
   }
 }
 
+// Dispara uma background function (documento-processar-background,
+// importar-extrato-background, nfse-whatsapp-background): o Netlify responde
+// 202 na hora e ela roda até 15 min. Lança erro se não começou.
+async function dispararBackground(nome, corpo) {
+  const base = (process.env.URL || '').replace(/\/+$/, '')
+  if (!base) throw new Error('endereço do site desconhecido (variável URL do Netlify).')
+  const resp = await fetchComTimeout(`${base}/.netlify/functions/${nome}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...cabecalhoInterno() },
+    body: JSON.stringify(corpo),
+  }, 8000)
+  if (!resp.ok) throw new Error(`o processamento não começou (${resp.status}).`)
+}
+
 // Resposta de texto no grupo "Documentos" a uma pergunta do robô:
-//  - "1 = tarefa / 2 = arquivar" (documento não identificado);
-//  - "sim / não" (importar extrato bancário — processarRespostaExtrato).
-// Vale para o documento cuja mensagem foi citada ou, sem citação, para o
-// último que está esperando aquele tipo de resposta (até VALIDADE_HORAS).
-// Outro texto é ignorado.
-async function processarDecisaoDocumento(body, mensagem, remoteJid) {
-  const escolhaDoc = decisao.lerDecisao(mensagem)
-  const escolhaExtrato = extratoWpp.lerRespostaExtrato(mensagem)
-  if (!escolhaDoc && !escolhaExtrato) return { statusCode: 200, body: 'No file in docs group message' }
-
+//  - número/palavra do menu de processamento do documento (processarEscolhaDocumento);
+//  - "sim / não" à pergunta de importar um extrato bancário (processarRespostaExtrato);
+//  - "sim / não" à prévia de uma NFS-e pedida pelo grupo (processarConfirmacaoNfse).
+// Vale para a mensagem citada ou, sem citação, para a pergunta mais recente
+// que aceita aquela resposta (dentro da validade). Outro texto → null.
+async function processarRespostaDocs(body, mensagem, remoteJid) {
   const citado = decisao.idCitado(body?.data?.message)
-  const estados = [escolhaDoc && 'aguardando', escolhaExtrato && extratoWpp.AGUARDANDO].filter(Boolean)
-  let consulta = supabase.from('documentos')
-    .select('id, cliente_id, nome_arquivo, tipo_documento_sugerido, observacao_ia, whatsapp_decisao, clientes(nome)')
-    .in('whatsapp_decisao', estados)
-  consulta = citado
-    ? consulta.eq('whatsapp_pergunta_id', citado)
-    : consulta.gte('created_at', new Date(Date.now() - decisao.VALIDADE_HORAS * 3600e3).toISOString())
-  const { data: docs, error } = await consulta.order('created_at', { ascending: false }).limit(1)
-  if (error) {
-    console.error('Decisão do documento: falha ao buscar pendente:', error.message)
-    return { statusCode: 200, body: 'Decision lookup failed' }
-  }
-  const doc = docs?.[0]
-  if (!doc) return { statusCode: 200, body: 'No document waiting for decision' }
-  if (doc.whatsapp_decisao === extratoWpp.AGUARDANDO) return await processarRespostaExtrato(doc, escolhaExtrato, remoteJid)
+  const confirmacao = nfseWpp.lerConfirmacao(mensagem)
+  const pedido = confirmacao ? await pedidoNfsePendente(citado) : null
+  const pendente = await documentoPendente(citado, mensagem)
 
-  const escolha = escolhaDoc
-  // trava: só um processamento por documento (a Evolution pode reenviar o webhook)
+  if (pedido && (!pendente || citado || new Date(pedido.criado_em) >= new Date(pendente.doc.created_at))) {
+    return await processarConfirmacaoNfse(pedido, confirmacao, remoteJid)
+  }
+  if (!pendente) return null // não é resposta a nenhuma pergunta
+  const { doc, escolha } = pendente
+  if (doc.whatsapp_decisao === extratoWpp.AGUARDANDO) return await processarRespostaExtrato(doc, escolha, remoteJid)
+  return await processarEscolhaDocumento(doc, escolha, body, remoteJid)
+}
+
+// Documento esperando resposta que aceita esta mensagem → { doc, escolha } ou null.
+async function documentoPendente(citado, mensagem) {
+  const estados = [processamento.AGUARDANDO, extratoWpp.AGUARDANDO]
+  const buscar = (campos) => {
+    let q = supabase.from('documentos').select(campos).in('whatsapp_decisao', estados)
+    q = citado
+      ? q.eq('whatsapp_pergunta_id', citado)
+      : q.gte('created_at', new Date(Date.now() - decisao.VALIDADE_HORAS * 3600e3).toISOString())
+    return q.order('created_at', { ascending: false }).limit(10)
+  }
+  const CAMPOS = 'id, cliente_id, nome_arquivo, tipo_documento_sugerido, observacao_ia, whatsapp_decisao, created_at, clientes(nome)'
+  let { data: docs, error } = await buscar(`${CAMPOS}, whatsapp_opcoes`)
+  // banco ainda sem whatsapp_opcoes: segue com a pergunta antiga
+  if (error && /whatsapp_opcoes/.test(error.message || '')) ({ data: docs, error } = await buscar(CAMPOS))
+  if (error) {
+    console.error('Resposta no grupo Documentos: falha ao buscar pendente:', error.message)
+    return null
+  }
+  for (const doc of docs || []) {
+    let escolha = null
+    if (doc.whatsapp_decisao === extratoWpp.AGUARDANDO) {
+      escolha = extratoWpp.lerRespostaExtrato(mensagem)
+    } else if (Array.isArray(doc.whatsapp_opcoes) && doc.whatsapp_opcoes.length) {
+      escolha = processamento.lerEscolha(mensagem, doc.whatsapp_opcoes)
+    } else {
+      const antiga = decisao.lerDecisao(mensagem) // "1 = tarefa / 2 = arquivar"
+      if (antiga) escolha = { opcao: { acao: antiga.acao }, complemento: antiga.descricao || null }
+    }
+    if (escolha) return { doc, escolha }
+  }
+  return null
+}
+
+// Opção do menu escolhida. Tarefa e arquivar são resolvidos aqui; o resto
+// (Simples, CND, parcelamento, baixa, painel) lê o arquivo e pode demorar:
+// vai para documento-processar-background.mjs, que responde no grupo.
+async function processarEscolhaDocumento(doc, { opcao, complemento }, body, remoteJid) {
+  const remetente = body?.data?.pushName || participante(body) || null
   const agora = new Date().toISOString()
+
+  if (processamento.ACOES_BACKGROUND.includes(opcao.acao)) {
+    // trava: só um processamento por documento (a Evolution pode reenviar o webhook)
+    const { data: travado } = await supabase.from('documentos')
+      .update({ whatsapp_decisao: processamento.PROCESSANDO, whatsapp_decidido_em: agora })
+      .eq('id', doc.id).eq('whatsapp_decisao', processamento.AGUARDANDO).select('id')
+    if (!travado?.length) return { statusCode: 200, body: 'Decision already taken' }
+    try {
+      await dispararBackground('documento-processar-background', { documentoId: doc.id, remoteJid, opcao, complemento, remetente })
+      await enviarMensagem(remoteJid, `⏳ *Processando…*\n${opcao.rotulo}\n📄 ${doc.nome_arquivo}\nAviso aqui quando terminar.`)
+      return { statusCode: 200, body: JSON.stringify({ success: true, processando: doc.id, acao: opcao.acao }) }
+    } catch (e) {
+      console.error('Processar documento:', e.message)
+      await supabase.from('documentos').update({ whatsapp_decisao: processamento.AGUARDANDO, whatsapp_decidido_em: null }).eq('id', doc.id)
+      await enviarMensagem(remoteJid, `❌ Não consegui começar: ${e.message} Responda de novo em instantes.`)
+      return { statusCode: 200, body: JSON.stringify({ success: false, error: e.message }) }
+    }
+  }
+
+  // trava: só um processamento por documento (a Evolution pode reenviar o webhook)
   const { data: travado } = await supabase.from('documentos')
-    .update({ whatsapp_decisao: escolha.acao === 'tarefa' ? 'tarefa' : 'arquivado', whatsapp_decidido_em: agora })
+    .update({ whatsapp_decisao: opcao.acao === 'tarefa' ? 'tarefa' : 'arquivado', whatsapp_decidido_em: agora })
     .eq('id', doc.id).eq('whatsapp_decisao', 'aguardando').select('id')
   if (!travado?.length) return { statusCode: 200, body: 'Decision already taken' }
 
   try {
-    if (escolha.acao === 'arquivar') {
+    if (opcao.acao === 'arquivar') {
       const { error: e } = await supabase.from('documentos').update({ status: 'confirmado', confirmado_em: agora }).eq('id', doc.id)
       if (e) throw new Error(e.message)
       await enviarMensagem(remoteJid, decisao.respostaArquivado(doc))
       return { statusCode: 200, body: JSON.stringify({ success: true, arquivado: doc.id }) }
     }
-    const remetente = body?.data?.pushName || participante(body) || null
     const tarefa = await criarTarefa(
-      { titulo: decisao.tituloTarefa(doc, escolha.descricao), cliente_id: doc.cliente_id || null },
+      { titulo: decisao.tituloTarefa(doc, complemento), cliente_id: doc.cliente_id || null },
       decisao.observacaoTarefa(doc, remetente),
     )
     const { error: e } = await supabase.from('documentos')
@@ -381,7 +475,205 @@ async function processarDecisaoDocumento(body, mensagem, remoteJid) {
     // libera para tentar de novo (se o documento ainda não saiu da fila)
     await supabase.from('documentos').update({ whatsapp_decisao: 'aguardando', whatsapp_decidido_em: null })
       .eq('id', doc.id).neq('status', 'confirmado')
-    await enviarMensagem(remoteJid, `❌ Não consegui ${escolha.acao === 'tarefa' ? 'criar a tarefa' : 'arquivar'}: ${e.message}`)
+    await enviarMensagem(remoteJid, `❌ Não consegui ${opcao.acao === 'tarefa' ? 'criar a tarefa' : 'arquivar'}: ${e.message}`)
+    return { statusCode: 200, body: JSON.stringify({ success: false, error: e.message }) }
+  }
+}
+
+// ---------- NFS-e pelo grupo Documentos (lib/nfseWhatsapp.js) ----------
+
+// Prévia de NFS-e esperando "sim/não" (nfse_whatsapp_pedidos) ou null.
+async function pedidoNfsePendente(citado) {
+  let q = supabase.from('nfse_whatsapp_pedidos').select('*').eq('estado', nfseWpp.ESTADOS.AGUARDANDO)
+  q = citado
+    ? q.eq('pergunta_id', citado)
+    : q.gte('criado_em', new Date(Date.now() - nfseWpp.VALIDADE_HORAS * 3600e3).toISOString())
+  const { data, error } = await q.order('criado_em', { ascending: false }).limit(1)
+  if (error) {
+    // tabela ainda não criada: o comando de NFS-e só fica desligado
+    if (!/nfse_whatsapp_pedidos/.test(error.message || '')) console.error('Pedido de NFS-e pendente:', error.message)
+    return null
+  }
+  return data?.[0] || null
+}
+
+// Empresas que emitem NFS-e pelo gestor (com certificado: nfse_empresas; MEI: senha + modelo
+// em NFS-e MEI) e o que cada uma tem cadastrado (recorrentes, tomadores, modelos MEI).
+async function carregarCadastrosNfse() {
+  const { data: linhas, error } = await supabase.from('nfse_empresas').select('cliente_id, ambiente, descricao_padrao, ativo, clientes(nome)')
+  if (error) console.error('NFS-e: empresas com certificado não lidas:', error.message)
+  const empresas = (linhas || []).map((e) => ({ ...e, nome: e.clientes?.nome || 'Empresa' }))
+  // MEI pelo Emissor Nacional (docs/nfse-mei.md): com senha cadastrada e modelo ativo
+  const [acessosMei, modelosMei] = await Promise.all([
+    supabase.from('nfse_mei_acessos').select('cliente_id'),
+    supabase.from('nfse_mei_modelos').select('*').eq('ativo', true),
+  ])
+  const comSenha = new Set((acessosMei.data || []).map((a) => a.cliente_id))
+  const idsMei = [...new Set((modelosMei.data || []).map((m) => m.cliente_id))]
+    .filter((id) => comSenha.has(id) && !empresas.some((e) => e.cliente_id === id))
+  if (idsMei.length) {
+    const { data: cliMei } = await supabase.from('clientes').select('id, nome').in('id', idsMei).eq('ativo', true)
+    for (const c of cliMei || []) empresas.push({ cliente_id: c.id, nome: c.nome, ambiente: 'producao', ativo: true, mei: true })
+  }
+  const ids = empresas.filter((e) => !e.mei).map((e) => e.cliente_id)
+  const [modelos, tomadores] = await Promise.all([
+    ids.length ? supabase.from('nfse_recorrentes').select('*').in('cliente_id', ids) : { data: [] },
+    ids.length ? supabase.from('nfse_tomadores').select('id, cliente_id, nome, cpf, apelidos, endereco, cep, descricao_padrao, valor_padrao, ativo').in('cliente_id', ids) : { data: [] },
+  ])
+  const cadastros = {}
+  const cad = (id) => (cadastros[id] ||= { modelos: [], tomadores: [], mei: [] })
+  for (const m of modelos.data || []) cad(m.cliente_id).modelos.push(m)
+  for (const t of tomadores.data || []) cad(t.cliente_id).tomadores.push(t)
+  for (const m of modelosMei.data || []) if (empresas.some((e) => e.mei && e.cliente_id === m.cliente_id)) cad(m.cliente_id).mei.push(m)
+
+  return { empresas, cadastros }
+}
+
+// "nfse <empresa> <tomador> <valor> [data]": confere com o cadastro e manda a
+// prévia. A nota só sai depois do "sim" (processarConfirmacaoNfse).
+async function processarComandoNfse(resto, mensagem, body, remoteJid) {
+  try {
+    const hoje = hojeSP()
+    const { empresas, cadastros } = await carregarCadastrosNfse()
+    if (!resto) {
+      const ativas = empresas.filter((e) => e.ativo !== false)
+      await enviarMensagem(remoteJid, `🧾 *Emitir NFS-e pelo grupo*\n${nfseWpp.ajuda()}${nfseWpp.textoLista({ titulo: 'Empresas que emitem pelo gestor', itens: ativas.map((e) => `${e.nome}${e.mei ? ' (MEI)' : ''}`) })}`)
+      return { statusCode: 200, body: 'NFS-e help' }
+    }
+
+    const r = nfseWpp.interpretarPedido(resto, { empresas, cadastros, hoje })
+    if (r.erro) {
+      // falta algo: responde com o modelo da mensagem já preenchido com o que deu pra entender
+      await enviarModeloNfse(remoteJid, nfseWpp.respostaModelo(r))
+      return { statusCode: 200, body: 'NFS-e request incomplete' }
+    }
+
+    const { empresa, item } = r
+    const base = { cliente_id: empresa.cliente_id, ref_id: item.id, ambiente: empresa.ambiente, empresa_nome: empresa.nome, valor: r.valor, texto_original: mensagem.slice(0, 2000) }
+    let dados
+    if (r.tipo === 'mei') {
+      // mesmas conferências da tela NFS-e MEI (lib/nfse/mei.js): valor, tomador, competência, nota repetida
+      const competencia = r.data || hoje
+      let nota
+      try {
+        nota = nfseMei.normalizarNota({ ...item, tomador_nome: item.tomador_nome, tomador_doc: item.tomador_doc, valor: r.valor, competencia })
+      } catch (e) {
+        await enviarMensagem(remoteJid, `⚠️ ${e.message}`)
+        return { statusCode: 200, body: 'NFS-e MEI invalid' }
+      }
+      const { data: existentes } = await supabase.from('nfse_mei_notas').select('id, status, tomador_doc, valor, competencia, numero').eq('cliente_id', empresa.cliente_id)
+      const repetida = nfseMei.notaRepetida(nota, existentes || [])
+      dados = { ...base, tipo: 'mei', nome: item.nome, cpf: item.tomador_doc || '', data: competencia, descricao: nota.descricao,
+        repetida: repetida ? { id: repetida.id, status: repetida.status, numero: repetida.numero || null } : null }
+    } else if (r.tipo === 'recorrente') {
+      const { data: notas, error: errNotas } = await supabase.from('nfse_notas').select('id, estado, data, valor, numero_nfse, lote_id')
+        .eq('recorrente_id', item.id).eq('ambiente', empresa.ambiente)
+      if (errNotas) throw new Error(errNotas.message)
+      const semanas = recorrentes.semanasDoModelo(item, notas || [], hoje)
+      const semana = nfseWpp.escolherSemana(semanas, r.data)
+      if (!semana) {
+        await enviarMensagem(remoteJid, `⚠️ ${r.data ? `A data ${r.data.split('-').reverse().join('/')} está fora das semanas de ${item.nome}.` : `Todas as semanas de ${item.nome} já têm nota.`}`)
+        return { statusCode: 200, body: 'NFS-e no week' }
+      }
+      if (semana.situacao !== 'a_emitir') {
+        await enviarMensagem(remoteJid, `⚠️ A semana de ${semana.inicio.split('-').reverse().join('/')} a ${semana.fim.split('-').reverse().join('/')} de ${item.nome} ${semana.situacao === 'pulada' ? 'foi marcada como sem serviço' : 'já tem nota'}. Veja em Emitir NFS-e → Notas recorrentes.`)
+        return { statusCode: 200, body: 'NFS-e week taken' }
+      }
+      const data = r.data && r.data <= hoje ? r.data : semana.data
+      dados = { ...base, tipo: 'recorrente', nome: item.nome, cpf: item.cpf, endereco: item.endereco || '', cep: item.cep || '', data, descricao: recorrentes.descricaoDa(item, semana), semana: semana.inicio, semana_fim: semana.fim }
+    } else {
+      dados = { ...base, tipo: 'tomador', nome: item.nome, cpf: item.cpf || '', endereco: item.endereco || '', cep: item.cep || '', data: r.data || hoje, descricao: item.descricao_padrao || empresa.descricao_padrao || '' }
+    }
+
+    const remetente = body?.data?.pushName || participante(body) || null
+    const { data: pedido, error: errPedido } = await supabase.from('nfse_whatsapp_pedidos')
+      .insert({ cliente_id: empresa.cliente_id, dados, texto_original: dados.texto_original, remetente, remote_jid: remoteJid })
+      .select('id').single()
+    if (errPedido) {
+      throw new Error(/nfse_whatsapp_pedidos/.test(errPedido.message || '')
+        ? 'falta rodar supabase-schema-documentos-processamento-whatsapp.sql no SQL Editor do Supabase.'
+        : errPedido.message)
+    }
+    const envio = await enviarMensagem(remoteJid, nfseWpp.previa(dados))
+    const idPergunta = envio?.sucesso ? decisao.idMensagemEnviada(envio.corpo) : null
+    if (idPergunta) await supabase.from('nfse_whatsapp_pedidos').update({ pergunta_id: idPergunta }).eq('id', pedido.id)
+    return { statusCode: 200, body: JSON.stringify({ success: true, pedido: pedido.id }) }
+  } catch (e) {
+    console.error('Comando NFS-e:', e.message)
+    await enviarMensagem(remoteJid, `❌ Não consegui preparar a NFS-e: ${e.message}`)
+    return { statusCode: 200, body: JSON.stringify({ success: false, error: e.message }) }
+  }
+}
+
+async function enviarModeloNfse(remoteJid, [texto, modelo]) {
+  await enviarMensagem(remoteJid, texto)
+  await enviarMensagem(remoteJid, modelo)
+}
+
+// Pedido de nota escrito em texto livre ("preciso emitir uma nota pra Maria de 150"), sem o
+// comando: responde com o modelo da mensagem, preenchido com empresa, tomador, valor e data
+// que deu pra reconhecer no cadastro. Não emite nada.
+async function processarIntencaoNfse(mensagem, remoteJid) {
+  try {
+    const { empresas, cadastros } = await carregarCadastrosNfse()
+    const r = nfseWpp.interpretarPedido(mensagem, { empresas, cadastros, hoje: hojeSP() })
+    await enviarModeloNfse(remoteJid, nfseWpp.respostaModelo(r, { textoLivre: true }))
+    return { statusCode: 200, body: 'NFS-e template sent' }
+  } catch (e) {
+    console.error('Pedido de NFS-e em texto livre:', e.message)
+    return { statusCode: 200, body: JSON.stringify({ success: false, error: e.message }) }
+  }
+}
+
+// MEI: a nota entra na fila do robô (nfse_mei_notas, como o botão Emitir da tela NFS-e MEI).
+// O robô emite no Emissor Nacional e manda o PDF no WhatsApp do cliente (docs/nfse-mei.md).
+async function enfileirarNotaMei(pedido, remoteJid) {
+  const d = pedido.dados || {}
+  try {
+    const { data: modelo, error: errModelo } = await supabase.from('nfse_mei_modelos').select('*').eq('id', d.ref_id).maybeSingle()
+    if (errModelo) throw new Error(errModelo.message)
+    if (!modelo || modelo.ativo === false) throw new Error('o modelo da nota foi excluído.')
+    const nota = nfseMei.normalizarNota({ ...modelo, valor: d.valor, competencia: d.data })
+    const { data: nova, error } = await supabase.from('nfse_mei_notas').insert({
+      ...nota, cliente_id: d.cliente_id, modelo_id: modelo.id, status: 'na_fila',
+      criado_por: `WhatsApp${pedido.remetente ? ` (${String(pedido.remetente).slice(0, 60)})` : ''}`,
+    }).select('id').single()
+    if (error) throw new Error(error.message)
+    await supabase.from('nfse_whatsapp_pedidos').update({ estado: nfseWpp.ESTADOS.EMITIDA, mensagem: `Na fila do robô MEI: nfse_mei_notas ${nova.id}` }).eq('id', pedido.id)
+    await enviarMensagem(remoteJid, `✅ *Nota MEI na fila do robô*\n🏢 ${d.empresa_nome}\n👤 ${d.nome} — ${fmtBRL(d.valor)}\nEle emite no Emissor Nacional e manda o PDF no WhatsApp do cliente. Acompanhe em Documentos → NFS-e MEI.`)
+    return { statusCode: 200, body: JSON.stringify({ success: true, notaMei: nova.id }) }
+  } catch (e) {
+    console.error('NFS-e MEI:', e.message)
+    await supabase.from('nfse_whatsapp_pedidos').update({ estado: nfseWpp.ESTADOS.ERRO, mensagem: String(e.message).slice(0, 1000) }).eq('id', pedido.id)
+    await enviarMensagem(remoteJid, `❌ Não mandei a nota MEI para o robô: ${e.message}\nPeça de novo ou use Documentos → NFS-e MEI.`)
+    return { statusCode: 200, body: JSON.stringify({ success: false, error: e.message }) }
+  }
+}
+
+// "sim" → trava o pedido e dispara nfse-whatsapp-background.js (que emite e
+// responde no grupo); "não" → cancela.
+async function processarConfirmacaoNfse(pedido, confirmacao, remoteJid) {
+  const d = pedido.dados || {}
+  const agora = new Date().toISOString()
+  const novoEstado = confirmacao === 'sim' ? nfseWpp.ESTADOS.EMITINDO : nfseWpp.ESTADOS.CANCELADO
+  const { data: travado } = await supabase.from('nfse_whatsapp_pedidos')
+    .update({ estado: novoEstado, decidido_em: agora })
+    .eq('id', pedido.id).eq('estado', nfseWpp.ESTADOS.AGUARDANDO).select('id')
+  if (!travado?.length) return { statusCode: 200, body: 'Decision already taken' }
+
+  if (confirmacao === 'nao') {
+    await enviarMensagem(remoteJid, `🚫 Ok, não emiti a NFS-e de ${d.nome} (${d.empresa_nome}).`)
+    return { statusCode: 200, body: JSON.stringify({ success: true, cancelado: pedido.id }) }
+  }
+  if (d.tipo === 'mei') return await enfileirarNotaMei(pedido, remoteJid)
+  try {
+    await dispararBackground('nfse-whatsapp-background', { pedidoId: pedido.id, remoteJid })
+    await enviarMensagem(remoteJid, `⏳ *Emitindo a NFS-e…*\n👤 ${d.nome} — ${fmtBRL(d.valor)}\nAviso aqui quando a Sefin responder.`)
+    return { statusCode: 200, body: JSON.stringify({ success: true, emitindo: pedido.id }) }
+  } catch (e) {
+    console.error('Emitir NFS-e:', e.message)
+    await supabase.from('nfse_whatsapp_pedidos').update({ estado: nfseWpp.ESTADOS.AGUARDANDO, decidido_em: null }).eq('id', pedido.id)
+    await enviarMensagem(remoteJid, `❌ Não consegui começar a emissão: ${e.message} Responda *sim* de novo.`)
     return { statusCode: 200, body: JSON.stringify({ success: false, error: e.message }) }
   }
 }
@@ -419,14 +711,7 @@ async function processarRespostaExtrato(doc, escolha, remoteJid) {
   if (!travado?.length) return { statusCode: 200, body: 'Decision already taken' }
 
   try {
-    const base = (process.env.URL || '').replace(/\/+$/, '')
-    if (!base) throw new Error('endereço do site desconhecido (variável URL do Netlify).')
-    const resp = await fetchComTimeout(`${base}/.netlify/functions/importar-extrato-background`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', ...cabecalhoInterno() },
-      body: JSON.stringify({ documentoId: doc.id, remoteJid }),
-    }, 8000)
-    if (!resp.ok) throw new Error(`a importação não começou (${resp.status}).`)
+    await dispararBackground('importar-extrato-background', { documentoId: doc.id, remoteJid })
     await enviarMensagem(remoteJid, extratoWpp.respostaImportando(empresa))
     return { statusCode: 200, body: JSON.stringify({ success: true, importando: doc.id }) }
   } catch (e) {
@@ -662,10 +947,12 @@ exports.handler = async (event) => {
   console.log('anexo:', anexo ? `${anexo.tipo} ${midia.mimetype || ''}` : 'nenhum')
 
   // Grupo "Documentos" — qualquer arquivo enviado aqui vai pro Drive, sem
-  // depender de prefixo. Texto nesse grupo só conta como resposta "1 = tarefa /
-  // 2 = arquivar" a um documento não identificado ou "sim / não" à pergunta
-  // de importar um extrato bancário; o resto é ignorado e não cai no fluxo
-  // de tarefa abaixo.
+  // depender de prefixo, e recebe o menu de processamento (Simples → painel,
+  // CND → painel, guia → baixa, parcelamento → cadastro, tarefa, arquivar).
+  // Texto nesse grupo só conta como resposta ao menu, "sim / não" à pergunta
+  // de importar um extrato bancário ou à prévia de NFS-e, ou como comando
+  // "nfse ..." (NFS-e para tomador cadastrado); o resto é ignorado e não cai
+  // no fluxo de tarefa abaixo.
   // Grupo "Pagamentos" — todo arquivo é comprovante de pagamento: vai pra
   // fila de baixa (tela Pagamentos do gestor). Texto sem arquivo é ignorado.
   if (PAGAMENTOS_GRUPO_ID && remoteJid === PAGAMENTOS_GRUPO_ID) {
@@ -677,7 +964,14 @@ exports.handler = async (event) => {
 
   if (DOCS_GRUPO_ID && remoteJid === DOCS_GRUPO_ID) {
     if (!midia) {
-      return await processarDecisaoDocumento(body, mensagem, remoteJid)
+      // "nfse <empresa> <tomador> <valor>": NFS-e para tomador já cadastrado
+      const comandoNfse = nfseWpp.lerComandoNfse(mensagem)
+      if (comandoNfse) return await processarComandoNfse(comandoNfse.resto, mensagem, body, remoteJid)
+      const resposta = await processarRespostaDocs(body, mensagem, remoteJid)
+      if (resposta) return resposta
+      // pedido de nota em texto livre: responde com o modelo da mensagem
+      if (nfseWpp.pareceNfse(mensagem)) return await processarIntencaoNfse(mensagem, remoteJid)
+      return { statusCode: 200, body: 'No document waiting for decision' }
     }
     return await processarDocumento(body, anexo, remoteJid)
   }
