@@ -220,6 +220,9 @@ function Resumo({ cliente, competencia, trilha, obsAbertas, obsComp, guias, guia
         {trilha.vazia && <p style={{ fontSize: 12, color: 'var(--text3)', margin: '8px 0 0' }}>Sem obrigações geradas para {competencia}.</p>}
       </div>
 
+      {/* CND, Declaração do Simples, Situação Fiscal e documentos diversos para o painel */}
+      <PainelUploadsEmpresa key={`resumo-${competencia}`} cliente={cliente} competencia={competencia} />
+
       <div className="empresa-aba-falta">
         <Bloco Icon={ClipboardCheckIcon} titulo={`Obrigações abertas (${obsAbertas.length}/${obsComp.length})`} vazio="Todas concluídas ou sem obrigação."
           itens={obsAbertas} onClick={() => setModulo('obrigacoes')} acao="Ver todas"

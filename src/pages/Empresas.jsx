@@ -12,7 +12,7 @@ import PainelViewerModal from './painel/PainelViewerModal'
 import {
   listarDocumentosPorCliente, abrirLinkAssinado, uploadArquivo, listarCandidatos,
   identificarDocumento, criarDocumento, confirmarDocumento, excluirDocumento, reatribuirDocumento,
-  anexarDocumentoAoItem,
+  anexarDocumentoAoItem, substituirAnexoDoItem,
 } from './documentos/documentosApi'
 import { BotaoAnexos, AnexosItemModal } from '../components/AnexosItem'
 import OpcoesCandidatos from '../components/OpcoesCandidatos'
@@ -1937,6 +1937,11 @@ export default function Empresas({ onOpenTarefas, onOpenCadastro, onAbrirAba, cl
           anexos={anexosDoItem(anexoAlvo.tipo, anexoAlvo.item.id)}
           concluido={anexoAlvo.tipo === 'obrigacao' ? ['concluido', 'nao_aplica'].includes(anexoAlvo.item.status) : !!anexoAlvo.item.concluida}
           onEnviar={enviarAnexoItem}
+          onSubstituir={async (anexo, arquivo) => {
+            await substituirAnexoDoItem({ clienteId: drawer.c.id, anexo, arquivo })
+            await recarregarAnexosDrawer(drawer.c.id)
+            show?.('Anexo substituído')
+          }}
           onAbrir={(doc) => abrirLinkAssinado(doc.storage_path).catch(e => show?.('Erro: ' + e.message))}
           onClose={() => setAnexoAlvo(null)}
         />

@@ -166,6 +166,40 @@ export async function acharOuCriarParcelamento(supabase, dados, clienteId) {
   return { ...data, criado: true };
 }
 
+// Parcelamento novo de uma empresa: cria a tarefa dela para acompanhar as
+// parcelas (vence junto com a guia lida). Não derruba o cadastro se falhar.
+// Devolve a tarefa criada ou null.
+export function tarefaDoParcelamento(dados) {
+  const nome = ORIGENS[dados.origem]?.label || dados.origem || 'Parcelamento';
+  const parcelas = dados.totalParcelas ? ` em ${dados.totalParcelas} parcelas` : '';
+  return {
+    titulo: `Parcelamento ${nome} nº ${dados.conta}${parcelas}: acompanhar e enviar as guias`.slice(0, 200),
+    observacao: [
+      `Parcelamento cadastrado pela guia${dados.parcela ? ` da parcela ${dados.parcela}${dados.totalParcelas ? `/${dados.totalParcelas}` : ''}` : ''}.`,
+      ORIGENS[dados.origem]?.desc || null,
+      dados.valor != null ? `Valor da parcela: R$ ${Number(dados.valor).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}.` : null,
+      'Veja em Parcelamentos.',
+    ].filter(Boolean).join(' '),
+    vencimento: dados.vencimento || null,
+  };
+}
+
+export async function criarTarefaParcelamento(supabase, dados, clienteId) {
+  if (!clienteId) return null;
+  const { data, error } = await supabase.from('tarefas').insert({
+    ...tarefaDoParcelamento(dados),
+    cliente_id: clienteId,
+    departamento: 'fiscal',
+    prioridade: 'normal',
+    concluida: false,
+  }).select('id, titulo').single();
+  if (error) {
+    console.error('Tarefa do parcelamento não criada:', error.message);
+    return null;
+  }
+  return data;
+}
+
 // Obrigação de parcelamento em aberto da empresa na competência da guia
 // (mês do vencimento). Só liga quando a escolha é inequívoca.
 export async function acharObrigacaoParcelamento(supabase, clienteId, dados) {

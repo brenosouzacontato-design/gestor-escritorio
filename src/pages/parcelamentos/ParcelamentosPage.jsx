@@ -88,7 +88,7 @@ export default function ParcelamentosPage({ clienteFixo = null } = {}) {
 
   const importar = async () => {
     setImportando(true)
-    let ok = 0, ligadas = 0
+    let ok = 0, ligadas = 0, tarefas = 0
     const falhas = []
     // mais antigas primeiro: o parcelamento termina com os dados da guia mais nova
     const ordem = [...prontos].sort((a, b) => (a.dados.vencimento || '').localeCompare(b.dados.vencimento || ''))
@@ -97,6 +97,7 @@ export default function ParcelamentosPage({ clienteFixo = null } = {}) {
         const r = await salvarGuia(it)
         ok++
         if (r.ligadaObrigacao) ligadas++
+        if (r.tarefaCriada) tarefas++
         setItens((prev) => prev.filter((p) => p.chave !== it.chave))
       } catch (e) {
         falhas.push(`${it.arquivo.name}: ${e.message}`)
@@ -104,9 +105,11 @@ export default function ParcelamentosPage({ clienteFixo = null } = {}) {
     }
     setImportando(false)
     await carregar()
+    if (tarefas) useStore.getState().fetchTarefas?.()
+    const sufixoTarefas = tarefas ? `; ${tarefas} tarefa(s) criada(s) para acompanhar o parcelamento` : ''
     show?.(falhas.length
       ? `${ok} importada(s); ${falhas.length} com erro — ${falhas.join('; ')}`
-      : `${ok} guia(s) importada(s)${ligadas ? `, ${ligadas} ligada(s) à obrigação do mês` : ''}`)
+      : `${ok} guia(s) importada(s)${ligadas ? `, ${ligadas} ligada(s) à obrigação do mês` : ''}${sufixoTarefas}`)
   }
 
   // ---------- lista ----------

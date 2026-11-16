@@ -391,6 +391,16 @@ export async function excluirDocumento(id, { desfazerVinculo = false } = {}) {
   if (error) throw error;
 }
 
+// Substitui o arquivo de um anexo de obrigação/tarefa (ex.: guia recalculada):
+// grava o novo ligado ao mesmo item e apaga o antigo (arquivo e registro). A
+// baixa do item fica como estava. O novo é lido de novo pela IA (valor/vencimento).
+export async function substituirAnexoDoItem({ clienteId, anexo, arquivo }) {
+  const alvo = anexo.obrigacao_id ? { tipo: 'obrigacao', id: anexo.obrigacao_id } : { tipo: 'tarefa', id: anexo.tarefa_id };
+  if (!alvo.id) throw new Error('anexo sem obrigação nem tarefa');
+  await anexarDocumentoAoItem({ clienteId, alvo, arquivo, darBaixa: false });
+  await excluirDocumento(anexo.id, { desfazerVinculo: false });
+}
+
 // Troca o vínculo de um documento já confirmado (a IA errou o candidato,
 // ou o usuário quer apontar pra outro) -- desfaz a baixa antiga (se
 // houver) e aplica a nova via confirmarDocumento, mantendo o mesmo
