@@ -38,8 +38,15 @@ fi
 if [ -z "${NOTIFICAR_WHATSAPP:-}" ]; then
   read -rp "WhatsApp que recebe os avisos (só números, com 55 e DDD; vários separados por vírgula): " NOTIFICAR_WHATSAPP
 fi
-if [ -z "${NFSE_CERT_KEY:-}" ]; then
+# Opcional: só pergunta na primeira instalação (vazia no .env = o robô pede a senha do MEI ao gestor).
+if [ -z "${NFSE_CERT_KEY+x}" ]; then
   read -rsp "NFSE_CERT_KEY (opcional: Enter pula, o robô pede a senha do MEI ao gestor): " NFSE_CERT_KEY; echo
+fi
+# Chave AES de 32 bytes em base64 tem 44 caracteres; outra coisa digitada aqui quebraria a leitura das senhas
+NFSE_CERT_KEY=$(printf %s "${NFSE_CERT_KEY:-}" | tr -d '[:space:]')
+if [ -n "$NFSE_CERT_KEY" ] && [ ${#NFSE_CERT_KEY} -ne 44 ]; then
+  echo "NFSE_CERT_KEY inválida (precisa ser a chave de 44 caracteres do Netlify); deixando vazia."
+  NFSE_CERT_KEY=
 fi
 ROBO_USUARIO=${ROBO_USUARIO:-breno}
 if [ -z "${ROBO_SENHA:-}" ]; then
