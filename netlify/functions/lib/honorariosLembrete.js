@@ -24,9 +24,37 @@ function fmtData(iso) {
   return new Date(iso + 'T00:00:00').toLocaleDateString('pt-BR')
 }
 
-// Retorna { honorario, numero, texto, motivoBloqueio? } — motivoBloqueio
-// preenchido quando não dá pra montar um envio válido (telefone inválido,
-// PIX não configurada, já pago); nesses casos `numero`/`texto` vêm null.
+// Texto padrão da cobrança — o mesmo do modelo 'cobranca_honorario' da
+// Central de Mensagens (src/lib/mensagens.js). Vale quando o modelo não
+// existe no banco ou está desativado.
+const MODELO_PADRAO = '🧾 *Lembrete de honorário contábil*\nOlá, {nome}! O {referencia} no valor de {valor} venceu em {vencimento}.\n\n💳 Chave PIX: {pix_chave}\n👤 {pix_favorecido}\n\nSe já pagou, pode desconsiderar. Qualquer dúvida, é só chamar por aqui.'
+
+// Mesma regra de src/lib/mensagens.js (montarTexto): troca {variavel} e tira a
+// linha que só tinha uma variável vazia.
+function montarTexto(modelo, valores) {
+  return String(modelo || '').split('\n').map((linha) => {
+    let vazia = false
+    const nova = linha.replace(/\{(\w+)\}/g, (inteiro, v) => {
+      if (!(v in valores)) return inteiro
+      const val = valores[v]
+      if (val === '' || val == null) { vazia = true; return '' }
+      return String(val)
+    })
+    return vazia && !nova.replace(/[^\p{L}\p{N}]/gu, '') ? null : nova
+  }).filter((l) => l !== null).join('\n').trim()
+}
+
+// Modelo editável da Central de Mensagens; sem a tabela, o texto padrão.
+async function modeloCobranca(supabase) {
+  const { data, error } = await supabase.from('mensagens_modelos').select('id, texto, ativo').eq('chave', 'cobranca_honorario').maybeSingle()
+  if (error || !data || data.ativo === false || !data.texto?.trim()) return { id: null, texto: MODELO_PADRAO }
+  return { id: data.id, texto: data.texto }
+}
+
+// Retorna { honorario, numero, texto, motivoBloqueio?, modeloId } — motivoBloqueio
+// preenchido quando não dá pra enviar (telefone inválido, PIX não configurada,
+// já pago). Com telefone inválido o texto ainda vem (a Central de Mensagens
+// mostra a cobrança com o aviso); nos outros casos `numero`/`texto` vêm null.
 async function montarLembreteHonorario(supabase, honorarioId) {
   const { data: honorario, error: errHon } = await supabase
     .from('honorarios')
@@ -39,15 +67,6 @@ async function montarLembreteHonorario(supabase, honorarioId) {
     return { honorario, numero: null, texto: null, motivoBloqueio: 'Honorário já está marcado como pago.' }
   }
 
-  // Avulso de não cliente não tem linha em "clientes" pra puxar nome/telefone
-  // — usa nome_avulso/telefone_avulso preenchidos na hora de criar a cobrança.
-  const nome = honorario.clientes?.nome || honorario.nome_avulso || ''
-  const numero = normalizarTelefoneWhatsapp(honorario.clientes?.telefone || honorario.telefone_avulso)
-  if (!numero) {
-    const ondeCorrigir = honorario.clientes ? 'confira em Clientes' : 'edite o honorário avulso'
-    return { honorario, numero: null, texto: null, motivoBloqueio: `Telefone não é um celular válido (${ondeCorrigir}).` }
-  }
-
   const { data: config, error: errConfig } = await supabase
     .from('configuracoes')
     .select('chave, valor')
@@ -58,16 +77,25 @@ async function montarLembreteHonorario(supabase, honorarioId) {
   if (!chavePix) {
     return { honorario, numero: null, texto: null, motivoBloqueio: 'Chave PIX não configurada (tela Honorários → Configurar PIX).' }
   }
-  const favorecido = porChave.honorarios_pix_favorecido || ''
 
+  // Avulso de não cliente não tem linha em "clientes" pra puxar nome/telefone
+  // — usa nome_avulso/telefone_avulso preenchidos na hora de criar a cobrança.
+  const nome = String(honorario.clientes?.nome || honorario.nome_avulso || '').replace(/^[\d./-]+\s+/, '').trim()
   const referencia = honorario.tipo === 'avulso' ? (honorario.descricao || 'serviço avulso') : `honorário de ${honorario.competencia}`
-  const texto = `🧾 *Lembrete de honorário contábil*\n`
-    + `Olá, ${nome}! O ${referencia} no valor de ${fmtMoeda(honorario.valor)} venceu em ${fmtData(honorario.vencimento)}.\n\n`
-    + `💳 Chave PIX: ${chavePix}`
-    + (favorecido ? `\n👤 ${favorecido}` : '')
-    + `\n\nSe já pagou, pode desconsiderar. Qualquer dúvida, é só chamar por aqui.`
+  const modelo = await modeloCobranca(supabase)
+  const texto = montarTexto(modelo.texto, {
+    nome, referencia, competencia: honorario.competencia || '',
+    valor: fmtMoeda(honorario.valor), vencimento: fmtData(honorario.vencimento),
+    pix_chave: chavePix, pix_favorecido: porChave.honorarios_pix_favorecido || '',
+    data_hoje: new Date().toLocaleDateString('pt-BR'),
+  })
 
-  return { honorario, numero, texto, motivoBloqueio: null }
+  const numero = normalizarTelefoneWhatsapp(honorario.clientes?.telefone || honorario.telefone_avulso)
+  if (!numero) {
+    const ondeCorrigir = honorario.clientes ? 'confira em Clientes' : 'edite o honorário avulso'
+    return { honorario, numero: null, texto, modeloId: modelo.id, motivoBloqueio: `Telefone não é um celular válido (${ondeCorrigir}).` }
+  }
+  return { honorario, numero, texto, modeloId: modelo.id, motivoBloqueio: null }
 }
 
 // textoPersonalizado (opcional) substitui o texto composto automaticamente
@@ -94,4 +122,4 @@ async function enviarLembreteHonorario(supabase, honorarioId, textoPersonalizado
   return { enviado: true, respostaEvolution: resultadoEnvio.corpo || null }
 }
 
-module.exports = { montarLembreteHonorario, enviarLembreteHonorario }
+module.exports = { montarLembreteHonorario, enviarLembreteHonorario, montarTexto, MODELO_PADRAO }

@@ -25,6 +25,8 @@ import PagamentosPage from './pages/pagamentos/PagamentosPage'
 import ParcelamentosPage from './pages/parcelamentos/ParcelamentosPage'
 import EcacPage from './pages/ecac/EcacPage'
 import { contarComprovantesPendentes } from './pages/pagamentos/pagamentosApi'
+import MensagensPage from './pages/mensagens/MensagensPage'
+import { contarAguardando } from './pages/mensagens/mensagensApi'
 import NotificacoesPage from './pages/Notificacoes'
 import HonorariosPage from './pages/honorarios/HonorariosPage'
 import PaineisPage from './pages/painel/PaineisPage'
@@ -131,7 +133,8 @@ export default function App() {
     setAtualizando(true)
     const s = useStore.getState()
     await Promise.all([s.fetchClientes(), s.fetchTarefas(), s.fetchObrigacoes(), s.fetchFechamentos(),
-      contarComprovantesPendentes().then(setComprovantesPendentes).catch(() => {})]).catch(() => {})
+      contarComprovantesPendentes().then(setComprovantesPendentes).catch(() => {}),
+      contarAguardando().then(setMensagensAguardando).catch(() => {})]).catch(() => {})
     remontar(page)
     setAtualizando(false)
   }
@@ -139,8 +142,13 @@ export default function App() {
   // comprovantes do grupo "Pagamentos" esperando conferência (badge do menu);
   // falha silenciosa enquanto a tabela comprovantes_pagamento não existe
   const [comprovantesPendentes, setComprovantesPendentes] = useState(0)
+  // mensagens programadas esperando aprovação na Central de Mensagens
+  const [mensagensAguardando, setMensagensAguardando] = useState(0)
   useEffect(() => {
-    const atualizar = () => contarComprovantesPendentes().then(setComprovantesPendentes).catch(() => {})
+    const atualizar = () => {
+      contarComprovantesPendentes().then(setComprovantesPendentes).catch(() => {})
+      contarAguardando().then(setMensagensAguardando).catch(() => {})
+    }
     atualizar()
     const timer = setInterval(atualizar, 2 * 60 * 1000)
     return () => clearInterval(timer)
@@ -168,6 +176,7 @@ export default function App() {
   const badges = {
     tarefas:    { n: pendingCount, tipo: 'warn' },
     pagamentos: { n: comprovantesPendentes, tipo: 'warn' },
+    mensagens:  { n: mensagensAguardando, tipo: 'warn' },
     empresas:   { n: obrigVencidas || obrigPendentes, tipo: obrigVencidas > 0 ? 'err' : 'warn' },
   }
 
@@ -207,6 +216,7 @@ export default function App() {
       case 'hoje': return <HojePage onNavigate={navigate} onAddTarefa={openNewTask}
         onCapturar={(arquivos) => { setArquivosCapturados(arquivos); navigate('documentos') }} />
       case 'pagamentos': return <PagamentosPage />
+      case 'mensagens':  return <MensagensPage onAguardandoMudou={setMensagensAguardando} />
       case 'parcelamentos': return <ParcelamentosPage />
       case 'ecac': return <EcacPage />
       case 'notificacoes': return <NotificacoesPage />

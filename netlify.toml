@@ -8,10 +8,15 @@
 [functions."lembretes-cron"]
   schedule = "*/5 * * * *"
 
-# 12:00 UTC = 9h em Brasília (UTC-3) — uma vez por dia é suficiente, já que
-# lembrete_enviado_em evita reenvio da mesma cobrança em execuções seguintes.
+# 12:00 UTC = 9h em Brasília (UTC-3): põe as cobranças vencidas na Central de
+# Mensagens, aguardando aprovação (cada honorário entra uma vez na fila).
 [functions."honorarios-cron"]
   schedule = "0 12 * * *"
+
+# Central de Mensagens: manda as mensagens aprovadas cujo horário chegou
+# (as que aguardam aprovação nunca saem sozinhas).
+[functions."mensagens-cron"]
+  schedule = "*/5 * * * *"
 
 # 13:00 UTC = 10h em Brasília — depois do horário em que o escritório
 # costuma logar de novo no OneFlow de manhã (of_user_token dura ~23h e não
