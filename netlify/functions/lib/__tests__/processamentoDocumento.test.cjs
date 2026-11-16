@@ -79,3 +79,16 @@ test('conversa comum não é escolha', () => {
     assert.ok(r === null || (t === '1 guia anexa' && r === null), `${t} → ${JSON.stringify(r)}`)
   }
 })
+
+test('declaração do Simples, CND e Situação Fiscal em PDF processam sozinhos', () => {
+  assert.equal(p.opcaoAutomatica(p.montarOpcoes({ categoria: 'declaracao_simples' }), 'declaracao_simples').acao, 'simples')
+  assert.equal(p.opcaoAutomatica(p.montarOpcoes({ categoria: 'cnd' }), 'cnd').acao, 'cnd')
+  assert.equal(p.opcaoAutomatica(p.montarOpcoes({ categoria: 'situacao_fiscal' }), 'situacao_fiscal').acao, 'cnd')
+  // foto (não PDF): não tem a opção de leitura, fica o menu
+  assert.equal(p.opcaoAutomatica(p.montarOpcoes({ categoria: 'cnd', pdf: false }), 'cnd'), null)
+  // guia e outros continuam esperando a escolha
+  assert.equal(p.opcaoAutomatica(p.montarOpcoes({ categoria: 'guia', candidato: tarefa }), 'guia'), null)
+  assert.equal(p.opcaoAutomatica(p.montarOpcoes({ categoria: 'outro' }), 'outro'), null)
+  const txt = p.textoProcessandoSozinho(p.montarOpcoes({ categoria: 'cnd' })[0])
+  assert.match(txt, /⏳ \*Processando sozinho:\* Anexar a CND ao painel do cliente\nAviso aqui quando terminar\.$/)
+})

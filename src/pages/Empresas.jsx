@@ -200,7 +200,7 @@ function VazioColuna({ texto }) {
 }
 
 // Mensagem curta do que foi lido no envio de Situação Fiscal / CND.
-function resumoFiscal(salvo) {
+export function resumoFiscal(salvo) {
   if (salvo.tipoDocumento?.startsWith('cnd_')) {
     const esfera = { cnd_federal: 'federal', cnd_estadual: 'estadual', cnd_municipal: 'municipal' }[salvo.tipoDocumento]
     const validade = salvo.validade ? ` · válida até ${salvo.validade.split('-').reverse().join('/')}` : ''
@@ -2344,7 +2344,7 @@ const CONFIANCA_BADGE_EMPRESA = { alta: 'badge-ok', media: 'badge-warn', baixa: 
 // Marcação manual (sem upload/IA — layout de certidão varia demais entre
 // estados/prefeituras) que complementa a Situação Fiscal federal (RFB) já
 // automatizada. Alimenta a aba CND do painel compartilhável do cliente.
-function ModalCndManual({ cliente, competencia, onClose, onSaved }) {
+export function ModalCndManual({ cliente, competencia, onClose, onSaved }) {
   const [situacaoEstadual, setSituacaoEstadual] = useState('')
   const [situacaoMunicipal, setSituacaoMunicipal] = useState('')
   const [observacao, setObservacao] = useState('')

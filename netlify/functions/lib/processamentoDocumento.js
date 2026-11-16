@@ -15,6 +15,10 @@
 // dá pra escrever o nome ou CNPJ da empresa quando a IA não achou
 // ("1 Amanda Lima"), ou a descrição da tarefa ("5 pedir extrato").
 //
+// Declaração do Simples, CND e Relatório de Situação Fiscal em PDF nem
+// mostram o menu: já vão direto para o processamento (opcaoAutomatica). Se a
+// empresa não for achada, o grupo é avisado e responde com o nome.
+//
 // Aqui ficam as regras sem banco nem rede (testes em
 // __tests__/processamentoDocumento.test.cjs). O fluxo está em
 // whatsapp-webhook.js (menu e escolha) e documento-processar-background.mjs
@@ -96,6 +100,22 @@ function montarOpcoes({ categoria = 'outro', pdf = true, candidato = null, candi
   return itens.map((o, i) => ({ n: i + 1, ...o }))
 }
 
+// Categorias processadas sozinhas, sem esperar a escolha no menu.
+const CATEGORIAS_AUTOMATICAS = ['declaracao_simples', 'cnd', 'situacao_fiscal']
+
+// Opção do menu a rodar sozinha para esta categoria (a de "simples"/"cnd"),
+// ou null quando o documento espera a escolha do grupo.
+function opcaoAutomatica(opcoes, categoria) {
+  if (!CATEGORIAS_AUTOMATICAS.includes(categoria)) return null
+  return (opcoes || []).find((o) => o.acao === 'simples' || o.acao === 'cnd') || null
+}
+
+// Trecho da resposta "Documento recebido" quando o processamento já começou sozinho.
+function textoProcessandoSozinho(opcao) {
+  const acao = String(opcao?.rotulo || '').replace(/^[^\p{L}]+/u, '')
+  return `\n\n⏳ *Processando sozinho:* ${acao}\nAviso aqui quando terminar.`
+}
+
 // Bloco de texto do menu, anexado à resposta "Documento recebido".
 function textoMenu(opcoes) {
   const linhas = (opcoes || []).map((o) => `*${o.n}* ${o.rotulo}`)
@@ -154,5 +174,5 @@ function lerEscolha(texto, opcoes) {
 
 module.exports = {
   AGUARDANDO, PROCESSANDO, PROCESSADO, ACOES_BACKGROUND, MAX_BAIXAS, ROTULOS,
-  categoriaDoDocumento, montarOpcoes, textoMenu, lerEscolha,
+  CATEGORIAS_AUTOMATICAS, categoriaDoDocumento, montarOpcoes, opcaoAutomatica, textoMenu, textoProcessandoSozinho, lerEscolha,
 }
