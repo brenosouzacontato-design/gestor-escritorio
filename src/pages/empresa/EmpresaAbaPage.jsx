@@ -24,6 +24,7 @@ import ContabilPage from '../contabil/ContabilPage'
 import Tarefas from '../Tarefas'
 import { AbaAnexosEmpresa } from '../Empresas'
 import { useAcoesEmpresa, AcoesItem } from './AcoesItemEmpresa'
+import PainelUploadsEmpresa from './PainelUploadsEmpresa'
 import { listarGuias, situacaoGuia } from '../entregas/entregasApi'
 import { listarNfsePendentes } from '../painel/nfsePainelApi'
 
@@ -31,7 +32,7 @@ const MODULOS = [
   { id: 'resumo', rotulo: 'Para fechar', Icon: ListChecksIcon },
   { id: 'obrigacoes', rotulo: 'Obrigações', Icon: ClipboardCheckIcon },
   { id: 'tarefas', rotulo: 'Tarefas', Icon: CheckSquareIcon },
-  { id: 'documentos', rotulo: 'Documentos', Icon: PaperclipIcon },
+  { id: 'documentos', rotulo: 'Documentos e painel', Icon: PaperclipIcon },
   { id: 'painel', rotulo: 'Painel do cliente', Icon: MonitorIcon },
   { id: 'cadastro', rotulo: 'Cadastro e obrigações', Icon: SettingsIcon },
   { id: 'entregas', rotulo: 'Entregas', Icon: SendIcon },
@@ -57,6 +58,8 @@ function somarMes(comp, n) {
 }
 const dataBR = (d) => (d ? String(d).slice(0, 10).split('-').reverse().join('/') : '')
 const feita = (o) => o.status === 'concluido' || o.status === 'nao_aplica'
+const ordenarPorVencimento = (lista, vencimentoDe) =>
+  [...lista].sort((a, b) => String(vencimentoDe(a) || '9').localeCompare(String(vencimentoDe(b) || '9')))
 
 export default function EmpresaAbaPage({ clienteId, onAddTarefa, onFecharAba }) {
   const clientes = useStore((s) => s.clientes)
@@ -78,10 +81,10 @@ export default function EmpresaAbaPage({ clienteId, onAddTarefa, onFecharAba }) 
 
   // ---- o que falta para fechar a competência ----
   const obsComp = useMemo(() => obrigacoes.filter((o) => o.cliente_id === clienteId && o.competencia === competencia), [obrigacoes, clienteId, competencia])
-  const obsAbertas = useMemo(() => obsComp.filter((o) => !feita(o))
-    .sort((a, b) => String(a.vencimento || '9').localeCompare(String(b.vencimento || '9'))), [obsComp])
   const tarefasAbertas = useMemo(() => tarefas.filter((t) => t.cliente_id === clienteId && !t.concluida), [tarefas, clienteId])
   const acoes = useAcoesEmpresa(cliente, obsComp.map((o) => o.id), tarefasAbertas.map((t) => t.id))
+  // vencimento: o da guia anexada, se houver (acoes.vencimentoDe)
+  const obsAbertas = ordenarPorVencimento(obsComp.filter((o) => !feita(o)), acoes.vencimentoDe)
 
   const [guias, setGuias] = useState(null) // null = carregando
   const [statusManual, setStatusManual] = useState({ entregue: false, aguardando: false })
@@ -127,7 +130,15 @@ export default function EmpresaAbaPage({ clienteId, onAddTarefa, onFecharAba }) 
       )
       case 'obrigacoes': return <ModuloObrigacoes obrigacoes={obsComp} competencia={competencia} acoes={acoes} onCadastro={() => setModulo('cadastro')} />
       case 'tarefas': return <Tarefas clienteFixo={clienteId} onAddTarefa={() => onAddTarefa(clienteId)} />
-      case 'documentos': return <AbaAnexosEmpresa clienteId={clienteId} />
+      case 'documentos': return (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <PainelUploadsEmpresa key={competencia} cliente={cliente} competencia={competencia} />
+          <div className="empresa-aba-bloco">
+            <h4><PaperclipIcon size={14} /> Documentos da empresa (obrigações, tarefas e arquivo)</h4>
+            <AbaAnexosEmpresa clienteId={clienteId} />
+          </div>
+        </div>
+      )
       case 'painel': return <PainelCompartilhadoPage key={competencia} clienteId={clienteId} competencia={competencia} admin />
       case 'cadastro': return (
         <ClienteDetalhe cliente={cliente} tarefas={tarefas.filter((t) => t.cliente_id === clienteId)}
@@ -157,6 +168,9 @@ export default function EmpresaAbaPage({ clienteId, onAddTarefa, onFecharAba }) 
           <button type="button" className="btn btn-icon btn-ghost" onClick={() => setCompetencia(somarMes(competencia, 1))} aria-label="Próxima competência"><ChevronRightIcon size={16} /></button>
         </div>
         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+          <button type="button" className="btn btn-sm" onClick={() => setModulo('documentos')} title="Documentos diversos, Declaração do Simples, Situação Fiscal e CND para o painel do cliente">
+            <PaperclipIcon size={14} /> Enviar ao painel
+          </button>
           <button type="button" className="btn btn-sm btn-accent" onClick={() => onAddTarefa(clienteId)}><PlusIcon size={14} /> Tarefa</button>
         </div>
       </div>
@@ -267,9 +281,16 @@ const STATUS_ROTULO = { pendente: ['Pendente', 'badge-warn'], vencido: ['Vencida
 
 function LinhaObrigacao({ o, acoes }) {
   const [rotulo, classe] = STATUS_ROTULO[o.status] || STATUS_ROTULO.pendente
+  const daGuia = acoes.vencimentoGuia(o.id)
+  const vencimento = daGuia || o.vencimento
   return (<>
     <span style={{ flex: '1 1 140px', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={o.titulo || o.tipo}>{o.titulo || o.tipo}</span>
-    {o.vencimento && <span style={{ fontSize: 11.5, color: 'var(--text3)', whiteSpace: 'nowrap' }}>vence {dataBR(o.vencimento)}</span>}
+    {vencimento && (
+      <span style={{ fontSize: 11.5, color: 'var(--text3)', whiteSpace: 'nowrap' }}
+        title={daGuia ? `Vencimento da guia anexada${o.vencimento && o.vencimento !== daGuia ? ` (a obrigação previa ${dataBR(o.vencimento)})` : ''}` : 'Vencimento da obrigação (ainda sem guia anexada)'}>
+        vence {dataBR(vencimento)}{daGuia ? ' · guia' : ''}
+      </span>
+    )}
     <span className={`badge ${classe}`}>{rotulo}</span>
     <AcoesItem tipo="obrigacao" item={o} acoes={acoes} />
   </>)
@@ -277,7 +298,7 @@ function LinhaObrigacao({ o, acoes }) {
 
 // Módulo Obrigações: todas as da competência (a entregar e entregues), com as ações
 function ModuloObrigacoes({ obrigacoes, competencia, acoes, onCadastro }) {
-  const ordenar = (l) => [...l].sort((a, b) => String(a.vencimento || '9').localeCompare(String(b.vencimento || '9')))
+  const ordenar = (l) => ordenarPorVencimento(l, acoes.vencimentoDe)
   const abertas = ordenar(obrigacoes.filter((o) => !feita(o)))
   const entregues = ordenar(obrigacoes.filter(feita))
   const lista = (titulo, itens, vazio) => (

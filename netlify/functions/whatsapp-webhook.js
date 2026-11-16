@@ -309,7 +309,13 @@ async function processarDocumento(body, anexo, remoteJid) {
         })
         const { error: errMenu } = await supabase.from('documentos')
           .update({ whatsapp_decisao: processamento.AGUARDANDO, whatsapp_opcoes: opcoes }).eq('id', docNovo.id)
-        if (!errMenu) {
+        // Declaração do Simples, CND e Situação Fiscal em PDF: processa já, sem esperar o menu
+        const automatica = !errMenu ? processamento.opcaoAutomatica(opcoes, categoria) : null
+        if (automatica) {
+          // citando esta mensagem dá para responder depois (ex.: o nome da empresa, se ela não for achada)
+          perguntarId = docNovo.id
+          menu = await processarSozinho(docNovo.id, automatica, opcoes, body, remoteJid)
+        } else if (!errMenu) {
           perguntarId = docNovo.id
           menu = processamento.textoMenu(opcoes)
         } else {
@@ -352,6 +358,27 @@ async function processarDocumento(body, anexo, remoteJid) {
     // quando recebe erro, e reprocessar não conserta uma falha dessas — só
     // repete a mesma mensagem de erro no grupo dez vezes
     return { statusCode: 200, body: JSON.stringify({ success: false, error: e.message }) }
+  }
+}
+
+// Processamento automático (Declaração do Simples, CND, Situação Fiscal): trava o
+// documento em "processando" e dispara a background, que responde no grupo quando
+// terminar (e, se não achar a empresa, volta a esperar a resposta com o nome).
+// Devolve o trecho da mensagem "Documento recebido"; se não começar, o menu.
+async function processarSozinho(documentoId, opcao, opcoes, body, remoteJid) {
+  const agora = new Date().toISOString()
+  const { data: travado } = await supabase.from('documentos')
+    .update({ whatsapp_decisao: processamento.PROCESSANDO, whatsapp_decidido_em: agora })
+    .eq('id', documentoId).eq('whatsapp_decisao', processamento.AGUARDANDO).select('id')
+  if (!travado?.length) return processamento.textoMenu(opcoes)
+  try {
+    const remetente = body?.data?.pushName || participante(body) || null
+    await dispararBackground('documento-processar-background', { documentoId, remoteJid, opcao, complemento: null, remetente })
+    return processamento.textoProcessandoSozinho(opcao)
+  } catch (e) {
+    console.error('Processamento automático não começou:', e.message)
+    await supabase.from('documentos').update({ whatsapp_decisao: processamento.AGUARDANDO, whatsapp_decidido_em: null }).eq('id', documentoId)
+    return processamento.textoMenu(opcoes)
   }
 }
 

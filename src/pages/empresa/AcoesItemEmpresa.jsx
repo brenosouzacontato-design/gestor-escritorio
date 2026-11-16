@@ -1,9 +1,11 @@
 // Ações de obrigação/tarefa dentro da aba da empresa (EmpresaAbaPage) — as
 // mesmas do card da empresa no Fechamento (Empresas.jsx): dar baixa, anexar,
-// atribuir e lembrete. Reaproveita os modais de lá; aqui só junta o estado
-// (anexos e lembretes da empresa) num hook pra a aba toda.
+// atribuir, lembrete e excluir obrigação. Reaproveita os modais de lá; aqui só
+// junta o estado (anexos e lembretes da empresa) num hook pra a aba toda.
+// O vencimento de uma obrigação com guia anexada é o da guia (lido pela IA,
+// como no painel do cliente — extrair-valor-guia.js lê cada guia uma vez).
 import { useCallback, useEffect, useState } from 'react'
-import { CheckIcon, UndoIcon, BellIcon, BellRingIcon, UserIcon } from 'lucide-react'
+import { CheckIcon, UndoIcon, BellIcon, BellRingIcon, UserIcon, Trash2Icon } from 'lucide-react'
 import { useStore } from '../../store'
 import { supabase } from '../../lib/supabase'
 import { useToast } from '../../components/shared'
@@ -12,6 +14,7 @@ import ModalLembrete from '../../components/ModalLembrete'
 import { ModalAtribuir } from '../andamento/modaisObrigacao'
 import { listarLembretesPorItens } from '../andamento/lembretesApi'
 import { listarDocumentosPorCliente, anexarDocumentoAoItem, abrirLinkAssinado } from '../documentos/documentosApi'
+import { extrairValorGuia } from '../painel/painelApi'
 
 const feita = (o) => o.status === 'concluido' || o.status === 'nao_aplica'
 
@@ -42,7 +45,27 @@ export function useAcoesEmpresa(cliente, obrigacaoIds, tarefaIds) {
   [chaveLembretes])
   useEffect(() => { recarregarLembretes() }, [recarregarLembretes])
 
+  // Guias anexadas às obrigações da aba que a IA ainda não leu (vencimento/valor):
+  // lê cada uma uma vez. Só com a coluna valor_guia_extraido_em no banco.
+  const chaveObrigacoes = obrigacaoIds.join()
+  const [lendo, setLendo] = useState(() => new Set())
+  useEffect(() => {
+    const ids = new Set(obrigacaoIds)
+    const pendentes = anexos.filter((d) => ids.has(d.obrigacao_id) && 'valor_guia_extraido_em' in d && !d.valor_guia_extraido_em
+      && /pdf/i.test(d.tipo_mime || d.nome_arquivo || '') && !lendo.has(d.id)).slice(0, 6)
+    if (!pendentes.length) return
+    setLendo((l) => new Set([...l, ...pendentes.map((d) => d.id)]))
+    pendentes.forEach((d) => extrairValorGuia(d.id)
+      .then((r) => setAnexos((lista) => lista.map((a) => (a.id === d.id
+        ? { ...a, valor_guia: r.valor, vencimento_guia: r.vencimento, valor_guia_extraido_em: new Date().toISOString() } : a))))
+      .catch(() => {}))
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [anexos, chaveObrigacoes])
+
   const anexosDoItem = (tipo, id) => anexos.filter((d) => (tipo === 'obrigacao' ? d.obrigacao_id : d.tarefa_id) === id)
+  // vencimento da guia anexada (a mais recente que tem vencimento lido), ou null
+  const vencimentoGuia = (obrigacaoId) => anexos.find((d) => d.obrigacao_id === obrigacaoId && d.vencimento_guia)?.vencimento_guia || null
+  const vencimentoDe = (o) => vencimentoGuia(o.id) || o.vencimento || null
   const lembreteDoItem = (tipo, id) => lembretes.find((l) => (tipo === 'obrigacao' ? l.obrigacao_id : l.tarefa_id) === id)
 
   // Baixa: obrigação vira "concluído" (ou volta pra pendente); tarefa alterna concluída
@@ -60,6 +83,23 @@ export function useAcoesEmpresa(cliente, obrigacaoIds, tarefaIds) {
         show?.(novo === 'concluido' ? `Baixa feita: ${item.titulo || item.tipo}` : `${item.titulo || item.tipo} voltou para pendente`)
       }
     } catch (e) { show?.('Não foi possível dar a baixa: ' + e.message) }
+    setOcupado(null)
+  }
+
+  // Excluir obrigação (como no card da empresa no Fechamento): os documentos
+  // ligados a ela ficam, só soltam o vínculo (a FK de documentos não tem cascade).
+  const excluir = async (item) => {
+    const nome = item.titulo || item.tipo
+    if (!window.confirm(`Excluir a obrigação "${nome}" (${item.competencia}) de ${cliente?.nome || 'esta empresa'}?\n\nSe ela for recorrente, "Gerar" cria de novo — pra não gerar mais, marque "não aplica" ou tire no cadastro da empresa.`)) return
+    setOcupado(item.id)
+    try {
+      const { error: errDoc } = await supabase.from('documentos').update({ obrigacao_id: null, etapa_obrigacao_id: null }).eq('obrigacao_id', item.id)
+      if (errDoc) throw errDoc
+      const { error } = await supabase.from('obrigacoes').delete().eq('id', item.id)
+      if (error) throw error
+      await Promise.all([fetchObrigacoes(), recarregarAnexos()])
+      show?.(`Obrigação "${nome}" excluída`)
+    } catch (e) { show?.('Erro ao excluir obrigação: ' + (e.message || e)) }
     setOcupado(null)
   }
 
@@ -95,7 +135,7 @@ export function useAcoesEmpresa(cliente, obrigacaoIds, tarefaIds) {
   )
 
   return {
-    anexosDoItem, lembreteDoItem, baixar, ocupado, modais,
+    anexosDoItem, lembreteDoItem, vencimentoGuia, vencimentoDe, baixar, excluir, ocupado, modais,
     abrirAnexos: (tipo, item) => setAnexoAlvo({ tipo, item }),
     abrirLembrete: (tipo, item) => setLembreteAlvo({
       [tipo === 'obrigacao' ? 'obrigacaoId' : 'tarefaId']: item.id, titulo: item.titulo || item.tipo, lembrete: lembreteDoItem(tipo, item.id),
@@ -111,7 +151,7 @@ const botao = (cor) => ({
   display: 'inline-flex', alignItems: 'center', color: cor,
 })
 
-// Ícones de ação de um item: ✓ baixa · 📎 anexar · 👤 atribuir · 🔔 lembrete
+// Ícones de ação de um item: 📎 anexar · 👤 atribuir · 🔔 lembrete · ✓ baixa · 🗑 excluir (obrigação)
 export function AcoesItem({ tipo, item, acoes }) {
   const concluido = tipo === 'obrigacao' ? feita(item) : !!item.concluida
   const lembrete = acoes.lembreteDoItem(tipo, item.id)
@@ -134,6 +174,12 @@ export function AcoesItem({ tipo, item, acoes }) {
         onClick={parar(() => acoes.baixar(tipo, item))}>
         {concluido ? <><UndoIcon size={12} /> Reabrir</> : <><CheckIcon size={12} /> Baixar</>}
       </button>
+      {tipo === 'obrigacao' && (
+        <button type="button" disabled={acoes.ocupado === item.id} style={{ ...botao('var(--text3)'), marginLeft: 2 }}
+          title="Excluir obrigação" onClick={parar(() => acoes.excluir(item))}>
+          <Trash2Icon size={13} />
+        </button>
+      )}
     </span>
   )
 }
