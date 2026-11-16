@@ -5,7 +5,8 @@ valor + data); ela entra em nfse_mei_notas com status 'na_fila'. Para cada uma:
   1. entra no portal com o CNPJ do MEI e a senha cadastrada (cifrada no banco;
      o login do portal não tem captcha);
   2. preenche a DPS em três passos: Pessoas (competência e tomador), Serviço
-     (local, código de tributação nacional, descrição) e Valores;
+     (local, código de tributação nacional, obra quando é construção civil,
+     descrição) e Valores;
   3. clica em "Emitir NFS-e" — ou, com MEI_TRANSMITIR=0, espera alguém conferir
      e clicar pela tela remota (avisa no WhatsApp do escritório);
   4. baixa o PDF (DANFSe) e o XML, grava na nota e manda os dois no WhatsApp
@@ -87,6 +88,16 @@ def codigo_rx(c: str) -> str:
     return rf"\b{d[:2]}\.?{d[2:4]}\.?{d[4:6]}\b"
 
 
+# Construção civil (subitens 07.02, 07.04, 07.05 da LC 116): o portal exige os dados da obra.
+# Os MEIs do escritório emitem com o código da obra "00" (sem CNO/inscrição da obra).
+CODIGOS_OBRA = ("0702", "0704", "0705")
+CODIGO_OBRA_PADRAO = os.environ.get("MEI_CODIGO_OBRA", "00")
+
+
+def exige_obra(codigo: str) -> bool:
+    return digitos(codigo)[:4] in CODIGOS_OBRA
+
+
 def valor_br(v) -> str:
     return f"{float(v):,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
 
@@ -166,11 +177,11 @@ class Tela:
             return null
         }""", [pedaco_nome, rotulo_rx])
 
-    def pergunta(self, pergunta_rx: str, rotulo_rx: str) -> str | None:
+    def pergunta(self, pergunta_rx: str, rotulo_rx: str, niveis: int = 8) -> str | None:
         """Marca a resposta (rótulo do rádio) de uma pergunta achada pelo texto, ex.:
         "Preencher as informações IBS/CBS?" → "Não". Entre os rádios com o rótulo certo, fica o
         mais perto do texto da pergunta (o grupo dela, não outro grupo da mesma seção)."""
-        return self.page.evaluate("""([prx, rrx]) => {
+        return self.page.evaluate("""([prx, rrx, niveis]) => {
             const P = new RegExp(prx, 'i'), R = new RegExp(rrx, 'i')
             let melhor = null, dist = 99
             for (const r of document.querySelectorAll('input[type=radio]')) {
@@ -179,13 +190,13 @@ class Tela:
                     || (r.nextSibling && r.nextSibling.textContent) || r.value || '').trim()
                 if (!R.test(lab)) continue
                 let el = r, d = 0
-                while (el && d < 8 && !P.test(el.innerText || '')) { el = el.parentElement; d++ }
+                while (el && d < niveis && !P.test(el.innerText || '')) { el = el.parentElement; d++ }
                 if (el && d < dist) { melhor = [r, lab]; dist = d }
             }
             if (!melhor) return null
             if (!melhor[0].checked) melhor[0].click()
             return melhor[1]
-        }""", [pergunta_rx, rotulo_rx])
+        }""", [pergunta_rx, rotulo_rx, niveis])
 
     def preencher(self, loc: Locator, valor: str) -> None:
         if loc.is_editable():
@@ -247,6 +258,21 @@ class Tela:
                 continue
         return " | ".join(textos)[:400]
 
+    def campos_invalidos(self) -> list[str]:
+        """Rótulo (ou id) dos campos que o portal marcou como inválidos/obrigatórios."""
+        return self.page.evaluate("""() => {
+            const sel = '.input-validation-error, [aria-invalid=true], .is-invalid'
+            const nomes = []
+            for (const el of document.querySelectorAll(sel)) {
+                if (!el.offsetParent && el.type !== 'hidden') continue
+                const lab = (el.labels && el.labels[0] && el.labels[0].innerText)
+                    || (el.closest('.form-group, .col, [class*=col-]')?.querySelector('label')?.innerText) || ''
+                const nome = (lab.trim() || el.id || el.name || '').split(String.fromCharCode(10)).join(' ').split(' ').filter(Boolean).join(' ').slice(0, 60)
+                if (nome && !nomes.includes(nome)) nomes.push(nome)
+            }
+            return nomes.slice(0, 6)
+        }""")
+
     def avancar(self, passo: str) -> None:
         url = self.page.url
         botao = self.page.locator(
@@ -259,6 +285,9 @@ class Tela:
             self.page.wait_for_url(lambda u: u != url, timeout=ESPERA)
         except Exception:  # noqa: BLE001
             msg = self.erros()
+            vazios = self.campos_invalidos()
+            if vazios:
+                msg = (msg + " | " if msg else "") + "campos: " + ", ".join(vazios)
             self.print(f"{passo}-recusado", html=True)
             raise ErroPortal(f"O portal não aceitou o passo {passo}" + (f": {msg}" if msg else "."))
         self.page.wait_for_load_state("networkidle")
@@ -348,6 +377,8 @@ def passo_servico(t: Tela, n: dict) -> None:
             or t.escolher(cod, digitos(n["codigo_tributacao"]), codigo_rx(n["codigo_tributacao"]))):
         raise ErroPortal(f"Código de tributação {codigo_fmt(n['codigo_tributacao'])} não aparece para esta empresa no portal.")
     page.wait_for_timeout(1000)
+    if exige_obra(n["codigo_tributacao"]):
+        passo_obra(t, n)
     # "Há exportação / imunidade / não incidência?" → Não (quando a pergunta aparece)
     for parte in ("Exportacao", "Imunidade", "NaoIncidencia"):
         t.radio(parte, r"^n.o$")
@@ -365,6 +396,36 @@ def passo_servico(t: Tela, n: dict) -> None:
         t.print("descricao-diferente", html=True)
         raise ErroPortal("A descrição não ficou igual no portal.")
     t.print("servico", html=True)
+
+
+def passo_obra(t: Tela, n: dict) -> None:
+    """Dados da obra (construção civil). O grupo aparece depois do código de tributação:
+    responde "Sim" se o portal perguntar se há obra, escolhe informar pelo código da obra
+    (não pelo endereço / inscrição imobiliária) e preenche o código com o padrão ("00")."""
+    page = t.page
+    t.pergunta(r"obra", r"^sim$", niveis=3)  # só a pergunta da própria obra, não outra da seção
+    t.radio("Obra", r"c.digo|cno|cei")
+    page.wait_for_timeout(800)
+    codigo = str(n.get("codigo_obra") or CODIGO_OBRA_PADRAO)
+    preenchidos = page.evaluate("""(cod) => {
+        const feitos = []
+        for (const el of document.querySelectorAll('input[type=text], input:not([type]), input[type=number]')) {
+            const chave = ((el.id || '') + ' ' + (el.name || '')).toLowerCase()
+            if (!chave.includes('obra') || !el.offsetParent || el.readOnly || el.disabled || el.value.trim()) continue
+            if (/endereco|logradouro|cep|bairro|numero|complemento|municipio|inscri/.test(chave)) continue
+            el.focus(); el.value = cod
+            el.dispatchEvent(new Event('input', { bubbles: true }))
+            el.dispatchEvent(new Event('change', { bubbles: true }))
+            el.blur()
+            feitos.push(el.id || el.name)
+        }
+        return feitos
+    }""", codigo)
+    if preenchidos:
+        log.info("Obra: código %s em %s", codigo, ", ".join(preenchidos))
+    else:
+        log.warning("Código de construção civil, mas nenhum campo de obra vazio achado na tela.")
+    t.print("obra", html=True)
 
 
 def passo_valores(t: Tela, n: dict) -> None:

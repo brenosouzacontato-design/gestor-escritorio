@@ -8,7 +8,7 @@ from pathlib import Path
 os.environ.setdefault("SUPABASE_URL", "http://teste.invalid")
 os.environ.setdefault("SUPABASE_SERVICE_KEY", "chave-de-teste")
 
-from nfse_mei import codigo_fmt, codigo_rx, dados_xml, data_br, ler_valor, numero_whatsapp, tipo_arquivo, valor_br  # noqa: E402
+from nfse_mei import codigo_fmt, codigo_rx, dados_xml, data_br, exige_obra, ler_valor, numero_whatsapp, tipo_arquivo, valor_br  # noqa: E402
 from nfse_mei_db import decifrar  # noqa: E402
 import re  # noqa: E402
 
@@ -25,6 +25,11 @@ def test_formatos():
     assert ler_valor("R$ 1.234,50") == 1234.5
     assert ler_valor("250.00") == 250.0
     assert numero_whatsapp("(31) 98817-4677") == "5531988174677"
+
+
+def test_obra_so_na_construcao_civil():
+    assert exige_obra("070202") and exige_obra("07.02.02") and exige_obra("070401") and exige_obra("070501")
+    assert not exige_obra("070101") and not exige_obra("010701") and not exige_obra("")
 
 
 def test_dados_do_xml():
