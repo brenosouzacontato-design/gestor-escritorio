@@ -1024,3 +1024,8 @@ button.hoje-linha:active { background: var(--surface2); }
   .fab:hover { transform: none; }
   ::-webkit-scrollbar { width: 8px; height: 8px; }
 }
+
+/* Central de Mensagens */
+.mensagens-nova { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; align-items: start; }
+.mensagens-modelos { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 10px; margin-top: 6px; }
+@media (max-width: 900px) { .mensagens-nova { grid-template-columns: 1fr; } }
