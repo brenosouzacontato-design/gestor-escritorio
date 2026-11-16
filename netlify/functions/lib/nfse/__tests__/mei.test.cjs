@@ -1,6 +1,6 @@
 const { test } = require('node:test')
 const assert = require('node:assert')
-const { senhaDasObservacoes, ErroMei, dvOk, descricaoDoMes, numero, codigoTributacao, normalizarModelo, normalizarNota, notaRepetida } = require('../mei')
+const { normalizarEmpresa, senhaDasObservacoes, ErroMei, dvOk, descricaoDoMes, numero, codigoTributacao, normalizarModelo, normalizarNota, notaRepetida } = require('../mei')
 
 // documentos fictícios com DV válido
 const CPF = '52998224725'
@@ -69,4 +69,15 @@ test('senha do portal nas observações do cadastro', () => {
   assert.strictEqual(senhaDasObservacoes('Senha gov: Abc'), null)
   assert.strictEqual(senhaDasObservacoes('nfse: a\nnfse: b'), null)
   assert.strictEqual(senhaDasObservacoes(null), null)
+})
+
+test('nova empresa MEI: CNPJ conferido e celular formatado', () => {
+  assert.deepStrictEqual(normalizarEmpresa({ nome: '  Fulana   Doces ', cnpj: CNPJ, telefone: '5531988887777' }),
+    { nome: 'Fulana Doces', cnpj: '11.222.333/0001-81', telefone: '(31) 98888-7777' })
+  assert.strictEqual(normalizarEmpresa({ nome: 'X', cnpj: '11.222.333/0001-81' }).telefone, '')
+  assert.throws(() => normalizarEmpresa({ nome: '', cnpj: CNPJ }), ErroMei)
+  assert.throws(() => normalizarEmpresa({ nome: 'X', cnpj: '11222333000180' }), /dígito verificador/)
+  assert.throws(() => normalizarEmpresa({ nome: 'X', cnpj: CPF }), /14 dígitos/)
+  // sem o 9 da frente: não é celular (WhatsApp recusaria)
+  assert.throws(() => normalizarEmpresa({ nome: 'X', cnpj: CNPJ, telefone: '(31) 8801-8777' }), /DDD \+ 9 dígitos/)
 })

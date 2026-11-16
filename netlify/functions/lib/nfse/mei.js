@@ -110,6 +110,26 @@ function notaRepetida(nova, existentes) {
     && String(e.competencia).slice(0, 7) === mes) || null
 }
 
+// Nova empresa MEI cadastrada pela tela Emitir NFS-e MEI: nome, CNPJ (com dígito conferido) e,
+// opcional, o celular/WhatsApp para onde vão as notas. Devolve os campos do cadastro de clientes.
+function normalizarEmpresa(e) {
+  const nome = String(e?.nome || '').replace(/\s+/g, ' ').trim()
+  if (!nome) throw new ErroMei('Informe o nome da empresa.')
+  if (nome.length > 200) throw new ErroMei('Nome com mais de 200 caracteres.')
+  const cnpj = soDig(e?.cnpj)
+  if (cnpj.length !== 14) throw new ErroMei('CNPJ do MEI precisa ter 14 dígitos.')
+  if (!dvOk(cnpj)) throw new ErroMei(`CNPJ com dígito verificador errado: ${e.cnpj}`)
+  let tel = soDig(e?.telefone)
+  if (tel.length >= 12 && tel.startsWith('55')) tel = tel.slice(2)
+  if (tel && tel.length !== 11) throw new ErroMei('Celular precisa de DDD + 9 dígitos (ex.: 31 98888-7777).')
+  if (tel && tel[2] !== '9') throw new ErroMei('O número precisa ser um celular (começa com 9 depois do DDD).')
+  return {
+    nome,
+    cnpj: cnpj.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, '$1.$2.$3/$4-$5'),
+    telefone: tel ? tel.replace(/^(\d{2})(\d{5})(\d{4})$/, '($1) $2-$3') : '',
+  }
+}
+
 // Observações do cadastro com a senha do portal numa linha "Senha portal nacional nfse: XXXX".
 // Só aceita uma linha única com "nfse:" (senão devolve null e a senha vai pela tela).
 function senhaDasObservacoes(obs) {
@@ -118,4 +138,4 @@ function senhaDasObservacoes(obs) {
   return m ? m[1] : null
 }
 
-module.exports = { senhaDasObservacoes, ErroMei, dvOk, descricaoDoMes, numero, codigoTributacao, normalizarModelo, normalizarNota, notaRepetida }
+module.exports = { normalizarEmpresa, senhaDasObservacoes, ErroMei, dvOk, descricaoDoMes, numero, codigoTributacao, normalizarModelo, normalizarNota, notaRepetida }

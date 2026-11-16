@@ -5,6 +5,9 @@
 // guarda PDF/XML e manda no WhatsApp do cliente. Tabelas: supabase-schema-nfse-mei.sql.
 //   POST { acao: 'empresas' }                                → { empresas: [{ id, nome, cnpj, tem_senha, modelos, whatsapp }] }
 //   POST { acao: 'carregar', cliente_id }                     → { modelos, notas, tem_senha }
+//   POST { acao: 'nova_empresa', empresa: { nome, cnpj, telefone? }, senha?, confirmar_mei? }
+//        → { empresa } | { existente: { id, nome, regime, ativo } }  (CNPJ já no cadastro: com
+//        confirmar_mei, passa a ser MEI ativo — e o telefone vazio no cadastro é preenchido)
 //   POST { acao: 'salvar_senha', cliente_id, senha }          → { ok }   (cifrada; nunca volta para o navegador)
 //   POST { acao: 'importar_senhas' }                         → { copiadas: [nomes], sem: [nomes] }  (MEIs sem senha: lê
 //        a linha "... nfse: SENHA" das observações do cadastro e grava cifrada)
@@ -22,7 +25,7 @@
 const { ErroHttp, exigirUsuario, responder, supabaseServico } = require('./lib/nfse/auth')
 const crypto = require('crypto')
 const { cifrar, decifrar } = require('./lib/nfse/cofre')
-const { ErroMei, normalizarModelo, normalizarNota, notaRepetida, senhaDasObservacoes } = require('./lib/nfse/mei')
+const { ErroMei, normalizarEmpresa, normalizarModelo, normalizarNota, notaRepetida, senhaDasObservacoes } = require('./lib/nfse/mei')
 const { enviarDocumento, numeroWhatsapp } = require('./lib/whatsapp')
 const { gerarDanfse, desenharDanfse } = require('./lib/nfse/danfse/danfse')
 const { camposDaImpressao } = require('./lib/nfse/meiImpressao')
@@ -164,6 +167,30 @@ exports.handler = responder(async (event) => {
         ])
         return { modelos, notas, tem_senha: !!acesso, senha_em: acesso && acesso.atualizado_em,
           whatsapp: numeroWhatsapp(c.whatsapp_entrega || c.telefone) }
+      }
+
+      case 'nova_empresa': {
+        const e = normalizarEmpresa(p.empresa)
+        const digitos = e.cnpj.replace(/\D/g, '')
+        const todos = await ok(sb.from('clientes').select('id,nome,cnpj,regime,ativo,telefone'))
+        const ja = todos.find((c) => String(c.cnpj || '').replace(/\D/g, '') === digitos)
+        let id
+        if (ja) {
+          if (ja.regime === 'MEI' && ja.ativo !== false) throw new ErroHttp(409, `${ja.nome} já está na lista de MEI.`)
+          if (!p.confirmar_mei) return { existente: { id: ja.id, nome: ja.nome, regime: ja.regime, ativo: ja.ativo !== false } }
+          const campos = { regime: 'MEI', ativo: true, updated_at: new Date().toISOString() }
+          if (!ja.telefone && e.telefone) campos.telefone = e.telefone
+          await ok(sb.from('clientes').update(campos).eq('id', ja.id))
+          id = ja.id
+        } else {
+          const nova = await ok(sb.from('clientes').insert({ ...e, regime: 'MEI', ativo: true }).select('id').single())
+          id = nova.id
+        }
+        const senha = String(p.senha || '')
+        if (senha.trim()) {
+          await ok(sb.from('nfse_mei_acessos').upsert({ cliente_id: id, senha_cifrada: cifrar(senha), atualizado_em: new Date().toISOString() }))
+        }
+        return { empresa: { id } }
       }
 
       case 'salvar_senha': {

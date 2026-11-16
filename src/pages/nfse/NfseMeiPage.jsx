@@ -1,12 +1,15 @@
 import { useEffect, useRef, useState } from 'react'
-import { BadgeCheckIcon, KeyRoundIcon, PlusIcon, PencilIcon, Trash2Icon, SendIcon, RefreshCwIcon, FileTextIcon, FileCodeIcon, XIcon, AlertTriangleIcon } from 'lucide-react'
+import { BadgeCheckIcon, KeyRoundIcon, PlusIcon, Building2Icon, FilePlusIcon, PencilIcon, Trash2Icon, SendIcon, RefreshCwIcon, FileTextIcon, FileCodeIcon, XIcon, AlertTriangleIcon } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { useToast } from '../../components/shared'
+import { useStore } from '../../store'
 
 // NFS-e de MEI pelo Emissor Nacional (portal, login com CPF/CNPJ e senha), para quem não tem certificado A1.
 // Cada empresa tem modelos (tomador, código do serviço, descrição, valor sugerido). "Emitir" põe a nota na fila;
 // o robô do servidor (deploy/robo-parcelamentos/nfse_mei.py) emite no portal e manda PDF/XML no WhatsApp
 // do cliente. Servidor: netlify/functions/nfse-mei.js. Ver docs/nfse-mei.md.
+// "Nova empresa MEI" cadastra o cliente (regime MEI) direto daqui; "Nota avulsa" emite para um tomador
+// sem modelo (dá para guardar como modelo na mesma hora).
 
 async function chamar(acao, dados = {}) {
   const { data } = await supabase.auth.getSession()
@@ -58,6 +61,7 @@ export default function NfseMeiPage() {
   const [empresas, setEmpresas] = useState(null)
   const [clienteId, setClienteId] = useState('')
   const [dados, setDados] = useState(null)
+  const [novaEmpresa, setNovaEmpresa] = useState(false)
 
   async function carregarEmpresas() {
     try { setEmpresas((await chamar('empresas')).empresas) } catch (e) { show(e.message); setEmpresas([]) }
@@ -102,6 +106,13 @@ export default function NfseMeiPage() {
 
       <div style={{ display: 'grid', gridTemplateColumns: 'minmax(220px, 280px) 1fr', gap: 14, alignItems: 'start' }}>
         <div style={{ ...card, padding: 8 }}>
+          {novaEmpresa
+            ? <NovaEmpresa onCancelar={() => setNovaEmpresa(false)} onCriada={async (id) => {
+                setNovaEmpresa(false); await carregarEmpresas(); useStore.getState().fetchClientes?.(); setClienteId(id)
+              }} />
+            : <button className="btn btn-accent" style={{ width: '100%', fontSize: 12, marginBottom: 6 }} onClick={() => setNovaEmpresa(true)}>
+                <Building2Icon size={13} /> Nova empresa MEI
+              </button>}
           {semSenha > 0 && (
             <button className="btn btn-ghost" style={{ width: '100%', fontSize: 12, marginBottom: 6 }} onClick={importarSenhas}
               title='Lê a linha "... nfse: SENHA" das observações do cadastro e guarda cifrada'>
@@ -184,6 +195,7 @@ function Senha({ clienteId, dados, onSalva }) {
 function Modelos({ clienteId, dados, temSenha, onMudou }) {
   const { show } = useToast()
   const [form, setForm] = useState(null)
+  const [avulsa, setAvulsa] = useState(false)
   const [ocupado, setOcupado] = useState(false)
   async function salvar() {
     setOcupado(true)
@@ -200,11 +212,18 @@ function Modelos({ clienteId, dados, temSenha, onMudou }) {
     <div style={card}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
         <b style={{ fontSize: 14 }}>Modelos de nota</b>
-        {!form && <button className="btn btn-ghost" style={{ marginLeft: 'auto' }} onClick={() => setForm({ ...VAZIO })}><PlusIcon size={14} /> Novo modelo</button>}
+        {!form && !avulsa && (
+          <span style={{ marginLeft: 'auto', display: 'flex', gap: 4 }}>
+            <button className="btn btn-ghost" disabled={!temSenha} title={temSenha ? 'Nota para um tomador que não tem modelo' : 'Cadastre a senha primeiro'}
+              onClick={() => setAvulsa(true)}><FilePlusIcon size={14} /> Nota avulsa</button>
+            <button className="btn btn-ghost" onClick={() => setForm({ ...VAZIO })}><PlusIcon size={14} /> Novo modelo</button>
+          </span>
+        )}
       </div>
       <p style={{ ...suave, margin: '6px 0 10px' }}>O que se repete em toda nota: tomador, serviço e descrição. Na hora de emitir só confere o valor e a data.</p>
       {form && <FormModelo form={form} setForm={setForm} onSalvar={salvar} onCancelar={() => setForm(null)} ocupado={ocupado} />}
-      {dados.modelos.length === 0 && !form && <div style={suave}>Nenhum modelo ainda.</div>}
+      {avulsa && <NotaAvulsa clienteId={clienteId} onFechar={() => setAvulsa(false)} onMudou={onMudou} />}
+      {dados.modelos.length === 0 && !form && !avulsa && <div style={suave}>Nenhum modelo ainda. Para um tomador só desta vez, use Nota avulsa.</div>}
       {dados.modelos.map((m) => (
         <Modelo key={m.id} m={m} clienteId={clienteId} temSenha={temSenha} onMudou={onMudou}
           onEditar={() => setForm({ ...m, tomador_doc: m.tomador_doc || '', valor: valorBR(m.valor), codigo_tributacao: codFmt(m.codigo_tributacao) })}
@@ -214,7 +233,7 @@ function Modelos({ clienteId, dados, temSenha, onMudou }) {
   )
 }
 
-function FormModelo({ form, setForm, onSalvar, onCancelar, ocupado }) {
+function FormModelo({ form, setForm, onSalvar, onCancelar, ocupado, rotuloSalvar = 'Salvar modelo', extra = null, podeSalvar = true, rotuloValor = 'Valor sugerido' }) {
   const campo = (k) => ({ value: form[k] ?? '', onChange: (e) => setForm({ ...form, [k]: e.target.value }) })
   return (
     <div style={{ border: '1px solid var(--border)', borderRadius: 8, padding: 12, marginBottom: 12, background: 'var(--surface2)' }}>
@@ -223,14 +242,15 @@ function FormModelo({ form, setForm, onSalvar, onCancelar, ocupado }) {
         <div><label className="form-label">CPF ou CNPJ do tomador</label><input value={docFmt(form.tomador_doc)} onChange={(e) => setForm({ ...form, tomador_doc: soDig(e.target.value).slice(0, 14) })} placeholder="opcional" /></div>
         <div><label className="form-label">Código de tributação nacional</label><input {...campo('codigo_tributacao')} placeholder="Ex.: 01.07.01" /></div>
         <div><label className="form-label">Município da prestação</label><input {...campo('municipio_prestacao')} placeholder="Vazio = o do MEI" /></div>
-        <div><label className="form-label">Valor sugerido</label><input {...campo('valor')} placeholder="0,00" /></div>
+        <div><label className="form-label">{rotuloValor}</label><input {...campo('valor')} placeholder="0,00" /></div>
       </div>
       <div style={{ marginTop: 10 }}>
         <label className="form-label">Descrição do serviço — {'{mes}'} vira o mês da competência (ex.: novembro de 2026)</label>
         <textarea rows={2} {...campo('descricao')} />
       </div>
+      {extra}
       <div style={{ display: 'flex', gap: 8, marginTop: 10, alignItems: 'center' }}>
-        <button className="btn btn-accent" disabled={ocupado || !form.descricao.trim() || soDig(form.codigo_tributacao).length !== 6} onClick={onSalvar}>Salvar modelo</button>
+        <button className="btn btn-accent" disabled={ocupado || !podeSalvar || !form.descricao.trim() || soDig(form.codigo_tributacao).length !== 6} onClick={onSalvar}>{rotuloSalvar}</button>
         <button className="btn btn-ghost" onClick={onCancelar}>Cancelar</button>
         <span style={suave}>O código aparece no portal em "Serviço" (ou numa nota antiga do MEI).</span>
       </div>
@@ -338,6 +358,88 @@ function Notas({ clienteId, notas, onMudou }) {
           </tbody>
         </table>
       )}
+    </div>
+  )
+}
+
+// Cadastro de uma empresa MEI que ainda não está no gestor (ou que está com outro regime).
+function NovaEmpresa({ onCancelar, onCriada }) {
+  const { show } = useToast()
+  const [e, setE] = useState({ nome: '', cnpj: '', telefone: '', senha: '' })
+  const [ocupado, setOcupado] = useState(false)
+  const campo = (k) => ({ value: e[k], onChange: (ev) => setE({ ...e, [k]: ev.target.value }) })
+  async function salvar(confirmarMei = false) {
+    setOcupado(true)
+    try {
+      const r = await chamar('nova_empresa', { empresa: { nome: e.nome, cnpj: e.cnpj, telefone: e.telefone }, senha: e.senha, confirmar_mei: confirmarMei })
+      if (r.existente) {
+        const x = r.existente
+        if (window.confirm(`Este CNPJ já está no cadastro: ${x.nome} (${x.regime || 'sem regime'}${x.ativo ? '' : ', inativa'}).\n\nPassar para MEI ativa e mostrar aqui?`)) {
+          setOcupado(false)
+          return salvar(true)
+        }
+        return
+      }
+      show('Empresa MEI cadastrada'); onCriada(r.empresa.id)
+    } catch (err) { show(err.message) } finally { setOcupado(false) }
+  }
+  return (
+    <div style={{ border: '1px solid var(--border)', borderRadius: 8, padding: 10, marginBottom: 8, background: 'var(--surface2)', display: 'flex', flexDirection: 'column', gap: 8 }}>
+      <b style={{ fontSize: 13 }}>Nova empresa MEI</b>
+      <div><label className="form-label">Nome</label><input autoFocus {...campo('nome')} placeholder="Nome da empresa / MEI" /></div>
+      <div><label className="form-label">CNPJ</label><input value={docFmt(e.cnpj)} onChange={(ev) => setE({ ...e, cnpj: soDig(ev.target.value).slice(0, 14) })} placeholder="00.000.000/0000-00" /></div>
+      <div><label className="form-label">Celular / WhatsApp (recebe as notas)</label><input {...campo('telefone')} placeholder="(31) 98888-7777" /></div>
+      <div><label className="form-label">Senha do Emissor Nacional (opcional)</label><input type="password" autoComplete="new-password" {...campo('senha')} placeholder="Pode cadastrar depois" /></div>
+      <div style={{ display: 'flex', gap: 6 }}>
+        <button className="btn btn-accent btn-sm" disabled={ocupado || !e.nome.trim() || soDig(e.cnpj).length !== 14} onClick={() => salvar()}>Cadastrar</button>
+        <button className="btn btn-ghost btn-sm" onClick={onCancelar}>Cancelar</button>
+      </div>
+      <div style={{ ...suave, fontSize: 11 }}>Entra no cadastro de Clientes com regime MEI. O resto do cadastro dá para completar em Clientes.</div>
+    </div>
+  )
+}
+
+// Nota para um tomador sem modelo (cliente do MEI que não está cadastrado). Opcional: guardar como modelo.
+function NotaAvulsa({ clienteId, onFechar, onMudou }) {
+  const { show } = useToast()
+  const [form, setForm] = useState({ ...VAZIO, competencia: hoje() })
+  const [guardar, setGuardar] = useState(false)
+  const [ocupado, setOcupado] = useState(false)
+  async function emitir(confirmar = false, modeloId = null) {
+    setOcupado(true)
+    try {
+      let idModelo = modeloId
+      if (guardar && !idModelo) {
+        const { competencia, ...modelo } = form
+        idModelo = (await chamar('salvar_modelo', { cliente_id: clienteId, modelo: { ...modelo, valor: modelo.valor } })).modelo.id
+      }
+      const r = await chamar('emitir', { cliente_id: clienteId, modelo_id: idModelo, confirmar_repetida: confirmar, nota: form })
+      if (r.repetida) {
+        const rep = r.repetida
+        if (window.confirm(`Já existe nota ${rep.numero ? `nº ${rep.numero} ` : ''}para este tomador com o mesmo valor em ${dataBR(rep.competencia).slice(3)}. Emitir mesmo assim?`)) {
+          setOcupado(false)
+          return emitir(true, idModelo)
+        }
+        if (idModelo) onMudou()
+        return
+      }
+      show(guardar ? 'Nota na fila do robô e modelo salvo' : 'Nota na fila do robô'); onFechar(); onMudou()
+    } catch (e) { show(e.message) } finally { setOcupado(false) }
+  }
+  const extra = (
+    <div style={{ display: 'grid', gridTemplateColumns: '160px 1fr', gap: 10, marginTop: 10, alignItems: 'end' }}>
+      <div><label className="form-label">Competência</label><input type="date" max={hoje()} value={form.competencia} onChange={(e) => setForm({ ...form, competencia: e.target.value })} /></div>
+      <label style={{ fontSize: 12, display: 'flex', gap: 6, alignItems: 'center', paddingBottom: 6 }}>
+        <input type="checkbox" checked={guardar} onChange={(e) => setGuardar(e.target.checked)} /> Guardar também como modelo (para as próximas notas deste tomador)
+      </label>
+      {/\{mes\}/i.test(form.descricao) && <div style={{ ...suave, gridColumn: '1 / -1' }}>Vai sair: {comMes(form.descricao, form.competencia)}</div>}
+    </div>
+  )
+  return (
+    <div>
+      <div style={{ fontSize: 13, fontWeight: 600, margin: '4px 0 6px' }}>Nota avulsa</div>
+      <FormModelo form={form} setForm={setForm} onSalvar={() => emitir()} onCancelar={onFechar} ocupado={ocupado}
+        rotuloValor="Valor da nota" rotuloSalvar={`Emitir${form.valor ? ` R$ ${form.valor}` : ''}`} podeSalvar={!!String(form.valor).trim()} extra={extra} />
     </div>
   )
 }
