@@ -952,7 +952,8 @@ function montarGuias({ impostos, anexos, gerenciais, gerenciaisPorComp = {} }, c
 // Débitos (RFB) + inscrições em Dívida Ativa (PGFN) do relatório mais
 // recente, ordenados por competência. `valor` já é o saldo atualizado
 // (ver extrair-situacao-fiscal.js).
-function montarPendencias(situacaoFiscal) {
+// Exportada para o painel completo (PainelClientePage) ocultar as mesmas linhas.
+export function montarPendencias(situacaoFiscal) {
   if (!situacaoFiscal) return [];
   const debitos = (situacaoFiscal.debitos || []).map((d, i) => ({
     id: `deb-${i}`, origem: 'Receita Federal', nome: nomeTributo(d.tributo), codigo: d.tributo || null,
@@ -975,6 +976,10 @@ function montarPendencias(situacaoFiscal) {
     return { ...p, chave, dias, aVencer: dias != null ? dias >= 0 : /a\s*vencer/i.test(p.situacao || '') };
   }).sort((a, b) => competenciaOrdinal(a.competencia) - competenciaOrdinal(b.competencia));
 }
+
+// Chave da linha de parcelamento do relatório (só o painel completo mostra);
+// sem o nº de parcelas, que muda a cada relatório.
+export const chaveParcelamentoFiscal = (p) => `pend-parc-${p?.modalidade || ''}`;
 
 // Obrigações (não-imposto) e tarefas de Fiscal/Folha do mês. Concluída sem
 // anexo não interessa ao cliente (não há nada pra ele ver/baixar) — só
