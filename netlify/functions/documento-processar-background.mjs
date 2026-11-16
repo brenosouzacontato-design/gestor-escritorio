@@ -33,7 +33,7 @@ import declaracao from './lib/extrairDeclaracaoSimples.js'
 import situacao from './lib/extrairSituacaoFiscal.js'
 import valorGuia from './lib/extrairValorGuia.js'
 import {
-  interpretarTextoGuia, sugerirCliente, acharOuCriarParcelamento, acharObrigacaoParcelamento, camposGuiaParcelamento,
+  interpretarTextoGuia, sugerirCliente, acharOuCriarParcelamento, acharObrigacaoParcelamento, camposGuiaParcelamento, criarTarefaParcelamento,
 } from '../../src/lib/guiaParcelamento.js'
 
 const { exigirEscritorio } = autenticacao
@@ -323,6 +323,7 @@ async function parcelamento({ doc, opcao, complemento, empresa, clientes }) {
   }
 
   const parc = await acharOuCriarParcelamento(supabase, dados, clienteId)
+  const tarefa = parc.criado ? await criarTarefaParcelamento(supabase, dados, clienteId) : null
   const obrigacaoId = clienteId ? await acharObrigacaoParcelamento(supabase, clienteId, dados).catch(() => null) : null
   const nome = clienteId ? (clientes.find((c) => c.id === clienteId)?.nome || 'empresa') : `${dados.nome || dados.documento} (avulso)`
 
@@ -331,6 +332,7 @@ async function parcelamento({ doc, opcao, complemento, empresa, clientes }) {
     `👤 ${nome}`,
     `📑 ${dados.origem === 'PARCMEI' ? 'PARCMEI' : 'PGFN-SISPAR'} nº ${dados.conta}${dados.parcela ? ` — parcela ${dados.parcela}${dados.totalParcelas ? `/${dados.totalParcelas}` : ''}` : ''}`,
     dados.valor != null ? `💰 ${fmtBRL(dados.valor)}${dados.vencimento ? ` — vence ${fmtData(dados.vencimento)}` : ''}` : null,
+    tarefa ? `📝 Tarefa criada: ${tarefa.titulo}` : null,
     obrigacaoId ? '🔗 Guia ligada à obrigação de parcelamento do mês (aparece no painel e na baixa de pagamentos).' : null,
     'Veja em Gestor → Parcelamentos.',
   ]

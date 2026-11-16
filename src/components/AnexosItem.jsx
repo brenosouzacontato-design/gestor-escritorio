@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react'
-import { PaperclipIcon, UploadCloudIcon, FileIcon, DownloadIcon, Loader2Icon, XIcon } from 'lucide-react'
+import { PaperclipIcon, UploadCloudIcon, FileIcon, DownloadIcon, Loader2Icon, XIcon, RefreshCwIcon } from 'lucide-react'
 
 // Anexos de uma obrigação ou tarefa — o mesmo visual no gestor (cards do
 // modal da empresa em Empresas.jsx) e no link da carteira
@@ -23,8 +23,19 @@ export function BotaoAnexos({ qtd = 0, onClick, tamanho = 12 }) {
 const fmtTamanho = (b) => !b ? '' : b < 1024 * 1024 ? `${Math.max(1, Math.round(b / 1024))} KB` : `${(b / 1024 / 1024).toLocaleString('pt-BR', { maximumFractionDigits: 1 })} MB`
 
 // onEnviar(arquivo, { darBaixa }) → Promise; onAbrir(anexo) → abre/baixa
-export function AnexosItemModal({ titulo, subtitulo, anexos, concluido, onEnviar, onAbrir, onClose }) {
+// onSubstituir(anexo, arquivo) → Promise (opcional): troca o arquivo de um anexo
+// (ex.: guia recalculada) — sem ele, o botão "Substituir" não aparece.
+export function AnexosItemModal({ titulo, subtitulo, anexos, concluido, onEnviar, onAbrir, onSubstituir, onClose }) {
   const inputRef = useRef(null)
+  const substituirRef = useRef(null)
+  const [trocando, setTrocando] = useState(null) // anexo sendo substituído
+  const substituir = async (arquivo) => {
+    const alvo = trocando
+    if (!arquivo || !alvo) return
+    setErro(null)
+    try { await onSubstituir(alvo, arquivo) } catch (e) { setErro(`Não foi possível substituir: ${e.message}`) }
+    setTrocando(null)
+  }
   const [arquivos, setArquivos] = useState([])
   const [darBaixa, setDarBaixa] = useState(!concluido)
   const [enviando, setEnviando] = useState(false)
@@ -66,9 +77,14 @@ export function AnexosItemModal({ titulo, subtitulo, anexos, concluido, onEnviar
         {/* anexos já enviados */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 12 }}>
           {anexos.length === 0 && <div style={{ fontSize: 12, color: 'var(--text3)' }}>Nenhum documento anexado ainda.</div>}
+          {onSubstituir && (
+            <input ref={substituirRef} type="file" style={{ display: 'none' }}
+              onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; if (f) substituir(f); else setTrocando(null) }} />
+          )}
           {anexos.map((a) => (
-            <button key={a.id} type="button" onClick={() => onAbrir(a)} title="Abrir / baixar"
-              style={{ display: 'flex', alignItems: 'center', gap: 8, textAlign: 'left', cursor: 'pointer', width: '100%',
+            <div key={a.id} style={{ display: 'flex', alignItems: 'stretch', gap: 6 }}>
+            <button type="button" onClick={() => onAbrir(a)} title="Abrir / baixar"
+              style={{ display: 'flex', alignItems: 'center', gap: 8, textAlign: 'left', cursor: 'pointer', flex: 1, minWidth: 0,
                 background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: 8, padding: '7px 10px' }}>
               <FileIcon size={14} color="var(--accent)" style={{ flexShrink: 0 }} />
               <span style={{ flex: 1, minWidth: 0 }}>
@@ -80,6 +96,15 @@ export function AnexosItemModal({ titulo, subtitulo, anexos, concluido, onEnviar
               </span>
               <DownloadIcon size={13} color="var(--text3)" style={{ flexShrink: 0 }} />
             </button>
+            {onSubstituir && (
+              <button type="button" disabled={!!trocando} title="Substituir este arquivo por outro (o atual é apagado)"
+                onClick={() => { setTrocando(a); substituirRef.current?.click() }}
+                style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0, cursor: trocando ? 'default' : 'pointer', fontSize: 11, fontWeight: 600,
+                  background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: 8, padding: '0 9px', color: 'var(--text2)', opacity: trocando && trocando.id !== a.id ? 0.5 : 1 }}>
+                {trocando?.id === a.id ? <Loader2Icon size={12} style={{ animation: 'spin 0.8s linear infinite' }} /> : <RefreshCwIcon size={12} />} Substituir
+              </button>
+            )}
+            </div>
           ))}
         </div>
 

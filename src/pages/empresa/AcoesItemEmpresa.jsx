@@ -13,7 +13,7 @@ import { BotaoAnexos, AnexosItemModal } from '../../components/AnexosItem'
 import ModalLembrete from '../../components/ModalLembrete'
 import { ModalAtribuir } from '../andamento/modaisObrigacao'
 import { listarLembretesPorItens } from '../andamento/lembretesApi'
-import { listarDocumentosPorCliente, anexarDocumentoAoItem, abrirLinkAssinado } from '../documentos/documentosApi'
+import { listarDocumentosPorCliente, anexarDocumentoAoItem, abrirLinkAssinado, substituirAnexoDoItem } from '../documentos/documentosApi'
 import { extrairValorGuia } from '../painel/painelApi'
 
 const feita = (o) => o.status === 'concluido' || o.status === 'nao_aplica'
@@ -119,6 +119,11 @@ export function useAcoesEmpresa(cliente, obrigacaoIds, tarefaIds) {
           anexos={anexosDoItem(anexoAlvo.tipo, anexoAlvo.item.id)}
           concluido={anexoAlvo.tipo === 'obrigacao' ? feita(anexoAlvo.item) : !!anexoAlvo.item.concluida}
           onEnviar={enviarAnexo}
+          onSubstituir={async (anexo, arquivo) => {
+            await substituirAnexoDoItem({ clienteId, anexo, arquivo })
+            await recarregarAnexos()
+            show?.('Anexo substituído')
+          }}
           onAbrir={(doc) => abrirLinkAssinado(doc.storage_path).catch((e) => show?.('Erro: ' + e.message))}
           onClose={() => setAnexoAlvo(null)}
         />

@@ -512,7 +512,10 @@ function PainelCompartilhado({ clienteId, competencia: competenciaInicial, admin
     // documento entregue na própria competência (ex: holerite, recibo) continua pra baixar
     && !(it.anexo && it.competencia === competencia);
   const aparece = (id, resolvido) => editando || (!resolvido && !itemOculto(id));
-  const pendencias = dados && montarPendencias(dados.situacaoFiscal);
+  // Linhas do Relatório de Situação Fiscal: o escritório escolhe quais o cliente vê
+  // (olho de cada linha no modo edição; a chave é estável entre relatórios).
+  const pendenciasTodas = dados && montarPendencias(dados.situacaoFiscal);
+  const pendencias = pendenciasTodas && pendenciasTodas.filter((p) => !itemOculto(p.chave));
   // o que foi atribuído ao cliente já aparece em "Suas tarefas" — não repete na lista geral
   const idsDoCliente = new Set((dados?.tarefasCliente || []).map((t) => t.id));
   const itensArea = dados && montarObrigacoesTarefas(dados, competencia).filter((it) => !idsDoCliente.has(it.id));
@@ -834,9 +837,16 @@ function PainelCompartilhado({ clienteId, competencia: competenciaInicial, admin
                 extra={pendencias.some((p) => !p.aVencer) && <Total valor={somaValores(pendencias.filter((p) => !p.aVencer))} cor="var(--danger)" />}>
                 {!dados.situacaoFiscal
                   ? <Vazio>Relatório de Situação Fiscal ainda não enviado.</Vazio>
-                  : pendencias.length === 0
+                  : (editando ? pendenciasTodas : pendencias).length === 0
                     ? <Vazio ok>Nenhuma pendência na Receita Federal nem em Dívida Ativa.</Vazio>
-                    : <div style={LISTA}>{pendencias.map((p) => <LinhaPendencia key={p.id} p={p} />)}</div>}
+                    : <div style={LISTA}>{(editando ? pendenciasTodas : pendencias).map((p) => (
+                      <ItemOcultavel key={p.id} id={p.chave}><LinhaPendencia p={p} /></ItemOcultavel>
+                    ))}</div>}
+                {editando && pendenciasTodas?.length > 0 && (
+                  <p style={{ fontSize: 11, color: 'var(--text3)', margin: '8px 0 0' }}>
+                    Use "Ocultar do cliente" em cada linha para escolher o que ele vê. {pendenciasTodas.length - pendencias.length > 0 ? `${pendenciasTodas.length - pendencias.length} oculta(s).` : ''}
+                  </p>
+                )}
                 {dados.situacaoFiscal && (
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap', marginTop: 10, fontSize: 11, color: 'var(--text3)' }}>
                     <span>

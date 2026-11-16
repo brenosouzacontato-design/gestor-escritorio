@@ -17,7 +17,7 @@ import { supabase } from '../../lib/supabase';
 import { lerGuiaParcelamento } from './leitorGuiaParcelamento';
 import { perguntarAvisoPainel } from '../../lib/avisoPainelFila';
 import {
-  ORIGENS, sugerirCliente, acharOuCriarParcelamento, acharObrigacaoParcelamento, camposGuiaParcelamento,
+  ORIGENS, sugerirCliente, acharOuCriarParcelamento, acharObrigacaoParcelamento, camposGuiaParcelamento, criarTarefaParcelamento,
 } from '../../lib/guiaParcelamento';
 
 export { ORIGENS, sugerirCliente };
@@ -107,6 +107,8 @@ export async function salvarGuia(item) {
   if (!clienteId && !avulso) throw new Error('Escolha a empresa ou marque como avulso.');
 
   const parcelamento = await acharOuCriarParcelamento(supabase, dados, clienteId);
+  // parcelamento novo de uma empresa: tarefa dela para acompanhar as parcelas
+  const tarefa = parcelamento.criado ? await criarTarefaParcelamento(supabase, dados, clienteId) : null;
 
   const path = `parcelamentos/${crypto.randomUUID()}.pdf`;
   const { error: errUp } = await supabase.storage.from(BUCKET).upload(path, arquivo, { contentType: 'application/pdf' });
@@ -130,5 +132,5 @@ export async function salvarGuia(item) {
   }
   // guia nova: pergunta se avisa o cliente no WhatsApp
   perguntarAvisoPainel(clienteId);
-  return { parcelamentoId: parcelamento.id, ligadaObrigacao: !!obrigacaoId };
+  return { parcelamentoId: parcelamento.id, ligadaObrigacao: !!obrigacaoId, tarefaCriada: !!tarefa };
 }
