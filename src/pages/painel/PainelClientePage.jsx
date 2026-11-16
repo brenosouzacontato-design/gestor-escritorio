@@ -10,6 +10,9 @@ import { calcularAliquotaNominal } from '../../lib/simplesNacional';
 import { listarLancamentosAIdentificar } from '../contabil/contabilApi';
 import LancamentosIdentificar from '../contabil/LancamentosIdentificar';
 import { abrirLinkAssinado } from '../documentos/documentosApi';
+// import circular de propósito (só usado na renderização): as chaves das linhas
+// do relatório são as mesmas do painel novo, então ocultar lá oculta aqui também
+import { montarPendencias, chaveParcelamentoFiscal } from './PainelCompartilhadoPage';
 import {
   obterResumoObrigacoes, obterResumoTarefas, obterResumoFinanceiro, obterDadosGerenciais,
   obterDocumentosPorObrigacao, obterSituacaoFiscal, obterHistoricoFaturamento, obterCndManual,
@@ -259,6 +262,11 @@ function PainelCliente({ clienteId, competencia: competenciaInicial, admin = fal
     setCliente((c) => ({ ...c, painel_secoes_ocultas: proxima }));
     await definirSecoesOcultasPainel(clienteId, proxima).catch(() => {});
   };
+  // Linhas do Relatório de Situação Fiscal: cada uma ocultável no modo edição
+  // ("item:<chave>", a mesma chave de PainelCompartilhadoPage → montarPendencias)
+  const chavesFiscais = Object.fromEntries((situacaoFiscal ? montarPendencias(situacaoFiscal) : []).map((p) => [p.id, p.chave]));
+  const linhaFiscal = { editando: admin && editandoPainel, secoesOcultas, onToggle: toggleSecao };
+  const linhaVisivel = (chave) => !chave || !secoesOcultas.includes(`item:${chave}`);
 
   // Status geral pra o selo em destaque no cabeçalho — "atrasado" pesa mais
   // que "pendente" (uma pendência de mês anterior sempre entra no cálculo,
@@ -307,7 +315,7 @@ function PainelCliente({ clienteId, competencia: competenciaInicial, admin = fal
           </select>
           {admin && editandoPainel && (
             <div style={{ marginTop: 10, fontSize: 11, color: 'var(--navy-text)', background: 'rgba(255,255,255,.08)', borderRadius: 6, padding: '6px 10px' }}>
-              Modo de edição — só você vê isso. Use o ícone {'👁'} em cada seção pra escolher o que o cliente enxerga no Resumo.
+              Modo de edição — só você vê isso. Use o ícone {'👁'} em cada seção pra escolher o que o cliente enxerga no Resumo, e "Ocultar do cliente" em cada linha do Relatório de Situação Fiscal (aba CND).
             </div>
           )}
           {cliente && (
@@ -404,7 +412,8 @@ function PainelCliente({ clienteId, competencia: competenciaInicial, admin = fal
                   ];
                   const semData = [
                     ...(temValorDas && !obrigDas ? [{ titulo: 'DAS — Simples Nacional', sub: 'Vencimento não cadastrado', valor: gerenciais.valor_das }] : []),
-                    ...(situacaoFiscal?.debitos || []).map((d) => ({ titulo: d.tributo, sub: d.situacao, valor: d.valor })),
+                    ...(situacaoFiscal?.debitos || []).map((d, i) => ({ titulo: d.tributo, sub: d.situacao, valor: d.valor, chave: chavesFiscais[`deb-${i}`] }))
+                      .filter((d) => admin && editandoPainel ? true : linhaVisivel(d.chave)),
                   ];
 
                   const propsSecao = { secoesOcultas, editando: admin && editandoPainel, onToggle: toggleSecao };
@@ -508,7 +517,9 @@ function PainelCliente({ clienteId, competencia: competenciaInicial, admin = fal
                               <div style={{ fontSize: 10.5, color: 'var(--text3)', fontWeight: 600, marginBottom: 6 }}>Sem vencimento definido</div>
                               <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                                 {semData.map((it, i) => (
-                                  <ItemLista key={i} titulo={it.titulo} sub={it.sub} statusLabel={fmt(it.valor)} statusCor={['var(--warn)', 'var(--warn-dim)']} />
+                                  <LinhaOcultavel key={i} chave={it.chave} {...linhaFiscal}>
+                                    <ItemLista titulo={it.titulo} sub={it.sub} statusLabel={fmt(it.valor)} statusCor={['var(--warn)', 'var(--warn-dim)']} />
+                                  </LinhaOcultavel>
                                 ))}
                               </div>
                             </div>
@@ -652,7 +663,9 @@ function PainelCliente({ clienteId, competencia: competenciaInicial, admin = fal
                             <div style={{ fontSize: 10.5, color: 'var(--text3)', fontWeight: 600, marginBottom: 6 }}>Débitos em aberto</div>
                             <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                               {situacaoFiscal.debitos.map((d, i) => (
-                                <ItemLista key={i} titulo={d.tributo} sub={fmt(d.valor)} statusLabel={d.situacao} statusCor={['var(--warn)', 'var(--warn-dim)']} />
+                                <LinhaOcultavel key={i} chave={chavesFiscais[`deb-${i}`]} {...linhaFiscal}>
+                                  <ItemLista titulo={d.tributo} sub={fmt(d.valor)} statusLabel={d.situacao} statusCor={['var(--warn)', 'var(--warn-dim)']} />
+                                </LinhaOcultavel>
                               ))}
                             </div>
                           </div>
@@ -662,7 +675,9 @@ function PainelCliente({ clienteId, competencia: competenciaInicial, admin = fal
                             <div style={{ fontSize: 10.5, color: 'var(--text3)', fontWeight: 600, marginBottom: 6 }}>Parcelamentos ativos</div>
                             <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                               {situacaoFiscal.parcelamentos.map((p, i) => (
-                                <ItemLista key={i} titulo={p.modalidade} sub={fmt(p.valor)} statusLabel={p.parcelas || null} statusCor={['var(--info)', 'var(--info-dim)']} />
+                                <LinhaOcultavel key={i} chave={chaveParcelamentoFiscal(p)} {...linhaFiscal}>
+                                  <ItemLista titulo={p.modalidade} sub={fmt(p.valor)} statusLabel={p.parcelas || null} statusCor={['var(--info)', 'var(--info-dim)']} />
+                                </LinhaOcultavel>
                               ))}
                             </div>
                           </div>
@@ -672,7 +687,9 @@ function PainelCliente({ clienteId, competencia: competenciaInicial, admin = fal
                             <div style={{ fontSize: 10.5, color: 'var(--text3)', fontWeight: 600, marginBottom: 6 }}>Dívida Ativa (PGFN)</div>
                             <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                               {situacaoFiscal.dividas_ativas.map((d, i) => (
-                                <ItemLista key={i} titulo={d.inscricao || 'Inscrição'} sub={fmt(d.valor)} statusLabel={d.situacao} statusCor={['var(--danger)', 'var(--danger-dim)']} />
+                                <LinhaOcultavel key={i} chave={chavesFiscais[`pgfn-${i}`]} {...linhaFiscal}>
+                                  <ItemLista titulo={d.inscricao || 'Inscrição'} sub={fmt(d.valor)} statusLabel={d.situacao} statusCor={['var(--danger)', 'var(--danger-dim)']} />
+                                </LinhaOcultavel>
                               ))}
                             </div>
                           </div>
@@ -735,6 +752,26 @@ function SecaoToggleable({ chave, secoesOcultas, editando, onToggle, children })
         {oculta ? <EyeOffIcon size={13} /> : <EyeIcon size={13} />}
       </button>
       {children}
+    </div>
+  );
+}
+
+// Uma linha do Relatório de Situação Fiscal. Fora do modo edição a linha
+// oculta some (pro cliente também); no modo edição aparece esmaecida, com o
+// botão para mostrar/ocultar. Mesma chave "item:<chave>" do painel novo.
+function LinhaOcultavel({ chave, secoesOcultas, editando, onToggle, children }) {
+  const oculto = !!chave && secoesOcultas.includes(`item:${chave}`);
+  if (!editando || !chave) return oculto ? null : children;
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+      <button type="button" onClick={() => onToggle(`item:${chave}`)}
+        title={oculto ? 'O cliente não vê esta linha — clique para mostrar' : 'Ocultar esta linha do cliente'}
+        style={{ alignSelf: 'flex-end', display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 10.5, fontWeight: 700, border: 'none', borderRadius: 99,
+          padding: '2px 9px', cursor: 'pointer', background: oculto ? 'var(--surface3)' : 'var(--accent-dim)', color: oculto ? 'var(--text3)' : 'var(--accent)' }}>
+        {oculto ? <EyeOffIcon size={11} /> : <EyeIcon size={11} />}
+        {oculto ? 'Oculto pro cliente — mostrar' : 'Ocultar do cliente'}
+      </button>
+      <div style={{ opacity: oculto ? 0.4 : 1 }}>{children}</div>
     </div>
   );
 }
