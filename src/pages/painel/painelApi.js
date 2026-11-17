@@ -67,6 +67,9 @@ export async function obterResumoTarefas(clienteId, competencia) {
 }
 
 // ---------- Painel consolidado (por vencimento, independente da competência) ----------
+// As leituras usadas pelo painel aceitam `db` (cliente Supabase) no fim: a aba
+// Consolidado do painel de grupo (ConsolidadoGrupo.jsx) lê cada empresa com o
+// token dela, ao mesmo tempo. Sem `db`, vale o cliente da página (`supabase`).
 
 // Janela de vencimentos da competência de referência do painel: do 1º dia do
 // mês da competência até o fim do mês seguinte (o imposto da competência
@@ -96,7 +99,7 @@ function entraNaJanela({ vencimento, competencia, aberto }, ref, janela) {
 
 // Obrigações e tarefas do painel do cliente, consolidadas pela data de
 // vencimento (a competência de cada item vem junto, como referência).
-export async function obterItensConsolidados(clienteId, competencia) {
+export async function obterItensConsolidados(clienteId, competencia, db = supabase) {
   const janela = janelaVencimentos(competencia);
   const filtro = (...extras) => [
     ...extras,
@@ -104,12 +107,12 @@ export async function obterItensConsolidados(clienteId, competencia) {
     `and(vencimento.gte.${janela.inicio},vencimento.lt.${janela.fimExclusivo})`,
   ].join(',');
   const [{ data: obrigacoes, error: errObs }, { data: tarefas, error: errTar }] = await Promise.all([
-    supabase
+    db
       .from('obrigacoes')
       .select('id, titulo, tipo, status, vencimento, competencia, departamento_id, departamentos(nome, icone), tipos_obrigacao(eh_imposto)')
       .eq('cliente_id', clienteId)
       .or(filtro('status.in.(pendente,vencido)')),
-    supabase
+    db
       .from('tarefas')
       .select('id, titulo, prioridade, vencimento, concluida, concluida_em, created_at, departamento, competencia, observacao')
       .eq('cliente_id', clienteId)
@@ -131,9 +134,9 @@ export async function obterItensConsolidados(clienteId, competencia) {
 // Declaração do Simples de várias competências de uma vez (o painel
 // consolidado mostra DAS de mais de uma competência): valor do DAS e
 // faturamento de cada uma, pra "Sem movimento" e valor do DAS sem guia lida.
-export async function obterGerenciaisPorCompetencia(clienteId, competencias) {
+export async function obterGerenciaisPorCompetencia(clienteId, competencias, db = supabase) {
   if (!competencias || competencias.length === 0) return {};
-  const { data, error } = await supabase
+  const { data, error } = await db
     .from('dados_gerenciais_simples')
     .select('competencia, valor_das, faturamento_periodo')
     .eq('cliente_id', clienteId)
@@ -164,9 +167,9 @@ export async function obterDocumentosDoMes(clienteId, { dataInicio, dataFim }) {
 // Documentos confirmados vinculados a essas obrigações (pra oferecer o
 // "baixar anexo" direto na lista de obrigações do painel) — indexado por
 // obrigacao_id pra lookup rápido no render.
-export async function obterDocumentosPorObrigacao(obrigacaoIds) {
+export async function obterDocumentosPorObrigacao(obrigacaoIds, db = supabase) {
   if (!obrigacaoIds || obrigacaoIds.length === 0) return {};
-  const { data, error } = await supabase
+  const { data, error } = await db
     .from('documentos')
     // '*' em vez de lista fixa: inclui valor_guia/vencimento_guia quando a
     // coluna já existe (supabase-schema-documentos-valor-guia.sql) sem
@@ -398,8 +401,8 @@ export async function marcarGuiaPaga(documentoId, paga, justificativa = null) {
   return patch;
 }
 
-export async function obterDadosGerenciais(clienteId, competencia) {
-  const { data, error } = await supabase
+export async function obterDadosGerenciais(clienteId, competencia, db = supabase) {
+  const { data, error } = await db
     .from('dados_gerenciais_simples')
     .select('*')
     .eq('cliente_id', clienteId)
@@ -414,8 +417,8 @@ export async function obterDadosGerenciais(clienteId, competencia) {
 // texto "MM/YYYY", não dá pra ordenar direto no Postgres, então busca tudo
 // e ordena no client convertendo pra ano*100+mes; mantém só os últimos 12
 // pontos (mais recentes) pro gráfico não ficar espremido.
-export async function obterHistoricoFaturamento(clienteId) {
-  const { data, error } = await supabase
+export async function obterHistoricoFaturamento(clienteId, db = supabase) {
+  const { data, error } = await db
     .from('dados_gerenciais_simples')
     .select('competencia, faturamento_periodo')
     .eq('cliente_id', clienteId)
@@ -599,8 +602,8 @@ async function salvarCndArquivo(clienteId, competencia, esfera, { situacao, path
 // CND mais recente de cada esfera até a competência (certidão vale meses, não
 // só o mês em que foi enviada) — formato da linha de cnd_manual, já mesclado,
 // mais `vencida_<esfera>` quando a validade passou.
-export async function obterCndVigente(clienteId, competencia) {
-  const { data, error } = await supabase.from('cnd_manual').select('*').eq('cliente_id', clienteId);
+export async function obterCndVigente(clienteId, competencia, db = supabase) {
+  const { data, error } = await db.from('cnd_manual').select('*').eq('cliente_id', clienteId);
   if (error) throw error;
   const ordAtual = competenciaOrdinal(competencia);
   const linhas = (data || [])
@@ -634,8 +637,8 @@ export async function obterSituacaoFiscal(clienteId, competencia) {
 // o relatório é um retrato do momento e nem todo mês recebe um novo, então
 // a página compartilhada (PainelCompartilhadoPage.jsx) usa o último
 // disponível em vez de mostrar "nenhum relatório" só porque o mês virou.
-export async function obterSituacaoFiscalMaisRecente(clienteId, competencia) {
-  const { data, error } = await supabase
+export async function obterSituacaoFiscalMaisRecente(clienteId, competencia, db = supabase) {
+  const { data, error } = await db
     .from('situacao_fiscal_rfb')
     .select('*')
     .eq('cliente_id', clienteId);
@@ -878,8 +881,8 @@ function ordinalCompetencia(c) {
   const m = /^(\d{2})\/(\d{4})$/.exec(c || '');
   return m ? Number(m[2]) * 100 + Number(m[1]) : null;
 }
-export async function obterHonorariosPainel(clienteId, competencia) {
-  const { data, error } = await supabase
+export async function obterHonorariosPainel(clienteId, competencia, db = supabase) {
+  const { data, error } = await db
     .from('honorarios')
     .select('*')
     .eq('cliente_id', clienteId);
