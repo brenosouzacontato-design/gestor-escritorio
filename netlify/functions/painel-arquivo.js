@@ -10,6 +10,8 @@
 //          (Authorization) pode qualquer arquivo.
 //   POST { documentoId } → link ?doc=<id> (DocumentoCompartilhadoPage): o id
 //        do documento é o segredo do link; devolve o arquivo dele, por 1h.
+//   nomeArquivo (opcional, nos dois) → a URL baixa o arquivo com esse nome
+//        (o nome original do anexo) em vez do uuid do Storage.
 // Resposta: { url }.
 //
 // Variáveis de ambiente necessárias no Netlify: SUPABASE_URL,
@@ -39,12 +41,13 @@ exports.handler = async (event) => {
     return resposta(405, { error: 'Método não permitido, use POST.' })
   }
 
-  let storagePath, documentoId, segundos
+  let storagePath, documentoId, segundos, nomeArquivo
   try {
     const body = JSON.parse(event.body || '{}')
     storagePath = body.storagePath ? String(body.storagePath) : null
     documentoId = body.documentoId ? String(body.documentoId) : null
     segundos = Math.min(Math.max(parseInt(body.segundos, 10) || 300, 60), 60 * 60)
+    nomeArquivo = nomeParaDownload(body.nomeArquivo)
   } catch {
     return resposta(400, { error: 'Body inválido: esperado JSON com { storagePath } ou { documentoId }.' })
   }
@@ -55,13 +58,13 @@ exports.handler = async (event) => {
       const { data: doc, error } = await supabase.from('documentos').select('storage_path').eq('id', documentoId).maybeSingle()
       if (error) throw error
       if (!doc?.storage_path) return resposta(404, { error: 'Documento não encontrado.' })
-      return resposta(200, { url: await assinar(doc.storage_path, 60 * 60) })
+      return resposta(200, { url: await assinar(doc.storage_path, 60 * 60, nomeArquivo) })
     }
 
     if (!storagePath) return resposta(400, { error: 'Informe storagePath ou documentoId.' })
 
     if (await usuarioEscritorio(event)) {
-      return resposta(200, { url: await assinar(storagePath, segundos) })
+      return resposta(200, { url: await assinar(storagePath, segundos, nomeArquivo) })
     }
 
     const cliente = await clienteDoPainel(event)
@@ -70,7 +73,7 @@ exports.handler = async (event) => {
     if (!(await arquivoDoCliente(storagePath, cliente.id))) {
       return resposta(404, { error: 'Arquivo não encontrado.' })
     }
-    return resposta(200, { url: await assinar(storagePath, segundos) })
+    return resposta(200, { url: await assinar(storagePath, segundos, nomeArquivo) })
   } catch (e) {
     console.error('painel-arquivo:', e.message)
     return resposta(500, { error: e.message })
@@ -102,8 +105,17 @@ async function arquivoDoCliente(storagePath, clienteId) {
   return false
 }
 
-async function assinar(storagePath, segundos) {
-  const { data, error } = await supabase.storage.from(BUCKET).createSignedUrl(storagePath, segundos)
+// Nome que o navegador dá ao arquivo baixado: só o nome (sem pasta), sem
+// caracteres de controle, até 150 caracteres. Vazio → sem nome (abre como antes).
+function nomeParaDownload(nome) {
+  if (!nome) return null
+  const limpo = String(nome).replace(/[\u0000-\u001f\u007f]/g, '').replace(/[\\/]/g, '_').trim().slice(0, 150)
+  return limpo || null
+}
+
+async function assinar(storagePath, segundos, nomeArquivo = null) {
+  const opcoes = nomeArquivo ? { download: nomeArquivo } : undefined
+  const { data, error } = await supabase.storage.from(BUCKET).createSignedUrl(storagePath, segundos, opcoes)
   if (error) throw error
   return data.signedUrl
 }

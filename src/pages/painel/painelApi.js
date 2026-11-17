@@ -179,12 +179,17 @@ export async function obterDocumentosPorObrigacao(obrigacaoIds) {
   // Uma obrigação pode ter mais de um anexo (guia recalculada, comprovante,
   // holerite…). Fica a guia paga, se alguma foi paga — senão a paga
   // "sumia" atrás de outro anexo e voltava a aparecer em aberto no painel —;
-  // fora isso, o anexo mais recente.
+  // fora isso, o anexo mais recente. Todos os anexos vão em `arquivos` (do
+  // mais antigo pro mais novo): com mais de um, o painel oferece cada um,
+  // pelo nome do arquivo.
   const porObrigacao = {};
+  const todos = {};
   for (const d of data || []) {
+    (todos[d.obrigacao_id] ||= []).push(d);
     const atual = porObrigacao[d.obrigacao_id];
     if (!atual || !atual.pago_em || d.pago_em) porObrigacao[d.obrigacao_id] = d;
   }
+  for (const [id, principal] of Object.entries(porObrigacao)) principal.arquivos = todos[id];
   return porObrigacao;
 }
 
@@ -700,11 +705,18 @@ export async function obterDocumentosPorTarefa(tarefaIds) {
   if (!tarefaIds || tarefaIds.length === 0) return {};
   const { data, error } = await supabase
     .from('documentos')
-    .select('id, tarefa_id, storage_path, nome_arquivo')
+    .select('id, tarefa_id, storage_path, nome_arquivo, created_at')
     .in('tarefa_id', tarefaIds)
-    .eq('status', 'confirmado');
+    .eq('status', 'confirmado')
+    .order('created_at', { ascending: true });
   if (error) throw error;
-  return Object.fromEntries(data.map((d) => [d.tarefa_id, d]));
+  // o mais recente é o principal; todos vão em `arquivos`
+  const porTarefa = {};
+  for (const d of data) {
+    const arquivos = [...(porTarefa[d.tarefa_id]?.arquivos || []), d];
+    porTarefa[d.tarefa_id] = { ...d, arquivos };
+  }
+  return porTarefa;
 }
 
 // ---------- Tarefas do cliente ----------

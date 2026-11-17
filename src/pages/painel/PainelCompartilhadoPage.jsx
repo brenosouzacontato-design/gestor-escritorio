@@ -10,7 +10,7 @@ import { listarNfseEmitidas, baixarNfse, listarNfsePendentes, completarNfse, lin
 import LinhaNfsePendente from './NfsePendenteLinha';
 import PixParaIdentificar, { usePixPedidos } from './PixParaIdentificar';
 import { descreverAparelho } from './aparelho';
-import { abrirLinkAssinado, criarLinkAssinado } from '../documentos/documentosApi';
+import { abrirLinkAssinado, baixarComNome, criarLinkAssinado } from '../documentos/documentosApi';
 import { lerCodigosDaGuia } from './codigosGuia';
 import AvisoPainelModal from '../../components/AvisoPainelModal';
 import { GraficoFaturamento, ComparativoDas, ComparativoPjPf, NotasEntrada, TarefasDoCliente } from './PainelClientePage';
@@ -419,9 +419,12 @@ function PainelCompartilhado({ clienteId, competencia: competenciaInicial, admin
   const copiouCodigo = (anexo, descricao) => {
     if (registrar) avisarEventoPainel(clienteId, 'download', { descricao, competencia, documentoId: anexo.id });
   };
-  const baixar = (storagePath, descricao, documentoId = null) => {
+  // com `nomeArquivo` o arquivo baixa com o nome original (anexos de
+  // obrigação/tarefa); sem ele abre numa aba, como antes (declaração, relatório…)
+  const baixar = (storagePath, descricao, documentoId = null, nomeArquivo = null) => {
     if (registrar) avisarEventoPainel(clienteId, 'download', { descricao, competencia, documentoId });
-    return abrirLinkAssinado(storagePath).catch(() => null);
+    const pedido = nomeArquivo ? baixarComNome(storagePath, nomeArquivo) : abrirLinkAssinado(storagePath);
+    return pedido.catch(() => null);
   };
 
   const secoesOcultas = dados?.cliente?.painel_secoes_ocultas || [];
@@ -1280,11 +1283,28 @@ function BotaoLink({ onClick, children }) {
 
 function BotaoGuia({ anexo, onBaixar, label = 'Guia', descricao }) {
   return (
-    <button type="button" onClick={() => onBaixar(anexo.storage_path, descricao || anexo.nome_arquivo, anexo.id)} title={`Baixar ${anexo.nome_arquivo}`}
+    <button type="button" onClick={() => onBaixar(anexo.storage_path, descricao || anexo.nome_arquivo, anexo.id, anexo.nome_arquivo)} title={`Baixar ${anexo.nome_arquivo}`}
       style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11.5, fontWeight: 700, color: '#fff', background: 'var(--accent)',
         border: 'none', borderRadius: 8, padding: '6px 11px', cursor: 'pointer', whiteSpace: 'nowrap' }}>
       <DownloadIcon size={13} /> {label}
     </button>
+  );
+}
+
+// Anexos de uma obrigação/tarefa. Um só: o botão de sempre (label fixo).
+// Mais de um (guia recalculada, recibo + holerite…): um botão por arquivo,
+// com o nome do arquivo — e não a competência do painel — no botão e no
+// aviso de download pro escritório.
+function BotoesAnexos({ anexo, onBaixar, label, descricao }) {
+  const arquivos = anexo.arquivos || [];
+  if (arquivos.length <= 1) return <BotaoGuia anexo={anexo} onBaixar={onBaixar} label={label} descricao={descricao} />;
+  return (
+    <span style={{ display: 'inline-flex', flexWrap: 'wrap', gap: 6, justifyContent: 'flex-end' }}>
+      {arquivos.map((a) => (
+        <BotaoGuia key={a.id} anexo={a} onBaixar={onBaixar} descricao={a.nome_arquivo}
+          label={<span style={{ maxWidth: 190, overflow: 'hidden', textOverflow: 'ellipsis' }}>{a.nome_arquivo || label}</span>} />
+      ))}
+    </span>
   );
 }
 
@@ -1381,7 +1401,7 @@ function Linha({ chave, corBorda, titulo, competencia, detalhes, direita }) {
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 2, flexWrap: 'wrap', fontSize: 10.5 }}>{detalhes}</div>
       </div>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginLeft: 'auto' }}>{direita}</div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginLeft: 'auto', flexWrap: 'wrap', justifyContent: 'flex-end', minWidth: 0 }}>{direita}</div>
       {chave && <RecadoLinha key={chave} chave={chave} />}
     </div>
   );
@@ -1436,7 +1456,7 @@ function LinhaGuia({ g, onBaixar, onCopiar, editando, onSalvarValor, onMarcarPag
           {g.paga && (
             <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--ok)', background: 'var(--ok-dim)', borderRadius: 99, padding: '3px 9px', whiteSpace: 'nowrap' }}>Paga</span>
           )}
-          {g.anexo && <BotaoGuia anexo={g.anexo} onBaixar={onBaixar} descricao={`Guia — ${g.titulo} ${g.competencia || ''}`.trim()} />}
+          {g.anexo && <BotoesAnexos anexo={g.anexo} onBaixar={onBaixar} label="Guia" descricao={`Guia — ${g.titulo} ${g.competencia || ''}`.trim()} />}
           {/* pagar sem baixar a guia: código de barras e PIX copia e cola lidos da própria guia */}
           {!g.paga && !g.semMovimento && g.anexo?.linha_digitavel && (
             <BotaoCopiar texto={g.anexo.linha_digitavel} icone={<BarcodeIcon size={13} />} label="Código de barras"
@@ -1877,7 +1897,7 @@ function LinhaObrigacao({ it, onBaixar }) {
       )}
       direita={(
         <>
-          {it.anexo && <BotaoGuia anexo={it.anexo} onBaixar={onBaixar} label="Baixar" descricao={`${it.titulo} ${it.competencia || ''}`.trim()} />}
+          {it.anexo && <BotoesAnexos anexo={it.anexo} onBaixar={onBaixar} label="Baixar" descricao={`${it.titulo} ${it.competencia || ''}`.trim()} />}
           <span style={{ fontSize: 10, fontWeight: 700, color: cor, background: dim, borderRadius: 99, padding: '3px 9px', whiteSpace: 'nowrap' }}>
             {STATUS_LABEL[it.status] || it.status}
           </span>
