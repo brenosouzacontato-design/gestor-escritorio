@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react';
-import { Building2Icon } from 'lucide-react';
+import { Building2Icon, LayersIcon } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import PainelClientePage from './PainelClientePage';
 import PainelCompartilhadoPage from './PainelCompartilhadoPage';
+import ConsolidadoGrupo from './ConsolidadoGrupo';
 import { registrarVisualizacaoPainel, avisarEventoPainel } from './painelApi';
 import { sessaoDoToken } from './AcessoPainel';
 import { useTelaNoHistorico } from '../../lib/historico';
@@ -14,13 +15,17 @@ import { useTelaNoHistorico } from '../../lib/historico';
 // A empresa escolhida fica na URL (&empresa=<id>) pra sobreviver a um F5.
 // Visita/aviso pro escritório são registrados por empresa, quando o
 // cliente abre cada uma (não só a primeira).
+// A primeira aba, "Consolidado" (ConsolidadoGrupo.jsx), soma as empresas do
+// grupo; é a que abre quando o link não diz a empresa (&empresa=consolidado).
 // `admin` = prévia de dentro do gestor: não registra visita nem mexe na URL.
 // No link público cada item de `clienteIds` é o token do painel da empresa
 // (ver AcessoPainel.jsx): o nome sai de painel_sessao com o token de cada
 // uma, e o painel exibido usa o token da empresa escolhida.
+export const CONSOLIDADO = 'consolidado';
+
 export default function PainelGrupoPage({ clienteIds, competencia, versao, empresaInicial, admin = false }) {
   const [empresas, setEmpresas] = useState(null); // [{ id, nome, cnpj }] na ordem do link
-  const inicial = clienteIds.includes(empresaInicial) ? empresaInicial : clienteIds[0];
+  const inicial = clienteIds.includes(empresaInicial) ? empresaInicial : CONSOLIDADO;
   // empresa escolhida no histórico do navegador (voltar retorna à anterior);
   // na prévia de dentro do gestor fica só no estado, sem mexer no histórico
   const [selecionada, setSelecionada] = useTelaNoHistorico('grupo-empresa', inicial,
@@ -44,11 +49,12 @@ export default function PainelGrupoPage({ clienteIds, competencia, versao, empre
 
   // empresa escolhida saiu da barra (painel desligado / token trocado): vai pra primeira que abre
   useEffect(() => {
-    if (empresas?.length && !empresas.some((e) => e.id === selecionada)) setSelecionada(empresas[0].id);
+    if (empresas?.length && selecionada !== CONSOLIDADO && !empresas.some((e) => e.id === selecionada)) setSelecionada(CONSOLIDADO);
   }, [empresas]);
 
   useEffect(() => {
-    if (admin) return;
+    // a visita é registrada por empresa, quando o cliente abre o painel dela
+    if (admin || selecionada === CONSOLIDADO) return;
     registrarVisualizacaoPainel(selecionada, competencia, versao === 'completa' ? 'completa' : 'nova').catch(() => {});
     avisarEventoPainel(selecionada, 'visualizacao', { competencia });
   }, [selecionada]);
@@ -67,31 +73,40 @@ export default function PainelGrupoPage({ clienteIds, competencia, versao, empre
             <Building2Icon size={13} /> Suas empresas {empresas ? `· ${empresas.length}` : ''}
           </div>
           <div style={{ display: 'flex', gap: 6, overflowX: 'auto', paddingBottom: 2 }}>
+            <BotaoAba ativa={selecionada === CONSOLIDADO} onClick={() => setSelecionada(CONSOLIDADO)} titulo="Consolidado"
+              sub={<span style={{ display: 'inline-flex', alignItems: 'center', gap: 3 }}><LayersIcon size={10} /> todas as empresas</span>} />
             {(empresas || clienteIds.map((id) => ({ id, nome: '...' }))).map((e) => {
-              const ativa = e.id === selecionada;
               return (
-                <button key={e.id} type="button" onClick={() => setSelecionada(e.id)} title={e.nome}
-                  style={{ flexShrink: 0, display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 1, maxWidth: 240,
-                    cursor: 'pointer', borderRadius: 10, padding: '7px 12px', textAlign: 'left',
-                    border: `1px solid ${ativa ? 'var(--navy)' : 'var(--border)'}`,
-                    background: ativa ? 'var(--navy)' : 'var(--surface2)' }}>
-                  <span style={{ fontSize: 12.5, fontWeight: 700, color: ativa ? '#fff' : 'var(--text1)', maxWidth: '100%',
-                    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {nomeCurto(e.nome)}
-                  </span>
-                  {e.cnpj && (
-                    <span style={{ fontSize: 10, color: ativa ? 'var(--navy-text)' : 'var(--text3)' }}>{e.cnpj}</span>
-                  )}
-                </button>
+                <BotaoAba key={e.id} ativa={e.id === selecionada} onClick={() => setSelecionada(e.id)} titulo={nomeCurto(e.nome)} dica={e.nome} sub={e.cnpj} />
               );
             })}
           </div>
         </div>
       </div>
 
-      {versao === 'completa'
+      {selecionada === CONSOLIDADO
+        ? (empresas
+          ? <ConsolidadoGrupo empresas={empresas} competencia={competencia} admin={admin} onAbrirEmpresa={(id) => { setSelecionada(id); window.scrollTo(0, 0); }} />
+          : <div style={{ padding: 24, textAlign: 'center', color: 'var(--text3)', fontSize: 13 }}>Carregando...</div>)
+        : versao === 'completa'
         ? <PainelClientePage key={selecionada} clienteId={selecionada} competencia={competencia} admin={admin} />
         : <PainelCompartilhadoPage key={selecionada} clienteId={selecionada} competencia={competencia} admin={admin} />}
     </div>
+  );
+}
+
+function BotaoAba({ ativa, onClick, titulo, sub, dica }) {
+  return (
+    <button type="button" onClick={onClick} title={dica || titulo}
+      style={{ flexShrink: 0, display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 1, maxWidth: 240,
+        cursor: 'pointer', borderRadius: 10, padding: '7px 12px', textAlign: 'left',
+        border: `1px solid ${ativa ? 'var(--navy)' : 'var(--border)'}`,
+        background: ativa ? 'var(--navy)' : 'var(--surface2)' }}>
+      <span style={{ fontSize: 12.5, fontWeight: 700, color: ativa ? '#fff' : 'var(--text1)', maxWidth: '100%',
+        overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+        {titulo}
+      </span>
+      {sub && <span style={{ fontSize: 10, color: ativa ? 'var(--navy-text)' : 'var(--text3)' }}>{sub}</span>}
+    </button>
   );
 }

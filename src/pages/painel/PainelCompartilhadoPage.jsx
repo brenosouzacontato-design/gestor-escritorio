@@ -22,6 +22,11 @@ import { GraficoFaturamento, ComparativoDas, ComparativoPjPf, NotasEntrada, Tare
 const CHAVE_COMPARATIVO_PF = 'mostrar:comparativo_pf';
 import { calcularAliquotaNominal } from '../../lib/simplesNacional';
 import {
+  ehImposto, ehDas, diasParaVencer, competenciaOrdinal, somaValores, temValor,
+  filtrarOutrasCompetencias, montarGuias, montarPendencias, chaveParcelamentoFiscal, montarHonorarios,
+  alertaVencida, alertaUrgente, indicadoresPainel, situacaoFiscalGeral,
+} from './painelRegras';
+import {
   obterItensConsolidados, obterGerenciaisPorCompetencia, obterDadosGerenciais, obterDocumentosPorObrigacao,
   obterDocumentosPorTarefa, obterSituacaoFiscalMaisRecente, obterCndVigente, obterHistoricoFaturamento,
   obterUltimaVisualizacaoPainel, extrairValorGuia, obterHonorariosPainel, obterDocumentosFiscais,
@@ -56,27 +61,6 @@ import {
 // do painel completo onde a seção é a mesma) e corrigir os números da
 // Declaração do Simples e o valor das guias.
 
-// Mesmo fallback de PainelClientePage.jsx pra obrigações legadas sem
-// tipo_obrigacao_id, mais reconhecimento pelo nome (FGTS, DARF etc. nem
-// sempre estão marcados como eh_imposto) — anexo de obrigação que não é
-// imposto (ex: holerites na obrigação "Folha") não é guia a pagar.
-const NOMES_IMPOSTO = new Set([
-  'PGDAS', 'PGMEI', 'PARCELAMENTO MEI', 'PARCELAMENTO SIMPLES',
-  'PARCELAMENTO SIMPLIFICADO RFB', 'RECALCULO INSS', 'RECALCULO PGDAS',
-  'INSS MENSAL',
-]);
-const TITULO_IMPOSTO = /\b(pg)?das\b|pgmei|inss|fgts|darf|dctfweb|irrf|irpj|csll|pis|cofins|icms|iss|difal|parcelamento|guia|maed|multa/i;
-function ehImposto(o) {
-  return o.tipos_obrigacao?.eh_imposto || NOMES_IMPOSTO.has((o.tipo || '').toUpperCase())
-    || TITULO_IMPOSTO.test(`${o.titulo || ''} ${o.tipo || ''}`);
-}
-// Recálculo do PGDAS não é o DAS do mês: não herda o valor da declaração
-// nem a regra de "Sem movimento" — só aparece se tiver guia anexada.
-function ehDas(o) {
-  const texto = `${o.titulo || ''} ${o.tipo || ''}`;
-  return /\b(pg)?das\b/i.test(texto) && !/rec[aá]lculo/i.test(texto);
-}
-
 // Área (Fiscal/Folha) pelo departamento — o resto (Contábil, Societário...)
 // fica de fora da lista de obrigações/tarefas.
 function areaObrigacao(o) {
@@ -90,30 +74,6 @@ function areaObrigacao(o) {
 const AREAS_TAREFA = { folha: 'Folha', pessoal: 'Folha', fiscal: 'Fiscal', contabil: 'Contábil', societario: 'Societário', geral: 'Geral' };
 function areaTarefa(t) {
   return AREAS_TAREFA[(t.departamento || '').toLowerCase()] || 'Escritório';
-}
-
-// O relatório da RFB traz o código da receita ("1099-01 - CP-SEGUR.") —
-// traduz pro nome que o cliente reconhece. Sem correspondência, usa o
-// texto original sem o período (que já aparece ao lado do nome).
-const NOMES_TRIBUTO = [
-  [/CP[\s.-]*SEGUR|1099|INSS\s*MENSAL/i, 'INSS Mensal'],
-  [/CP[\s.-]*PATRONAL|1138/i, 'INSS Patronal'],
-  [/CP[\s.-]*TERCEIROS|1170|1176|1191|1196|1200/i, 'INSS Terceiros'],
-  [/CP[\s.-]*(GIL)?RAT|CP[\s.-]*SAT|1646/i, 'INSS RAT'],
-  [/SIMPLES\s*NAC|\bDAS\b|\bSN\b/i, 'DAS — Simples Nacional'],
-  [/\bMEI\b|SIMEI/i, 'DAS MEI'],
-  [/IRRF|0561/i, 'IRRF'],
-  [/IRPJ/i, 'IRPJ'],
-  [/CSLL/i, 'CSLL'],
-  [/COFINS/i, 'COFINS'],
-  [/\bPIS\b/i, 'PIS'],
-  [/FGTS/i, 'FGTS'],
-];
-function nomeTributo(texto) {
-  const t = texto || '';
-  const achado = NOMES_TRIBUTO.find(([re]) => re.test(t));
-  if (achado) return achado[1];
-  return t.replace(/\s*(PA\s*)?\d{2}\/\d{4}\s*$/i, '').trim() || 'Débito';
 }
 
 function fmt(v) {
@@ -139,11 +99,6 @@ function fmtHaQuanto(ts) {
   const dias = Math.round(h / 24);
   return `há ${dias} dia${dias !== 1 ? 's' : ''}`;
 }
-function diasParaVencer(vencimento) {
-  if (!vencimento) return null;
-  const hoje = new Date(new Date().toDateString());
-  return Math.round((new Date(vencimento + 'T00:00:00') - hoje) / 86400000);
-}
 function fmtDias(dias) {
   if (dias == null) return null;
   if (dias === 0) return 'vence hoje';
@@ -163,19 +118,6 @@ function opcoesCompetencia(base, inicio = null) {
   const validas = opcoes.filter((c) => competenciaOrdinal(c) >= competenciaOrdinal(primeira));
   return validas.length ? validas : [primeira];
 }
-function competenciaOrdinal(c) {
-  if (!c) return 0;
-  const [mes, ano] = c.split('/').map(Number);
-  return ano * 100 + mes;
-}
-// Relatórios extraídos antes do campo "competencia" existir só trazem o
-// período dentro do texto do tributo (ex: "1099-01 - CP-SEGUR. 06/2026").
-function competenciaDoTexto(texto) {
-  const m = /(\d{2})\/(\d{4})/.exec(texto || '');
-  return m ? `${m[1]}/${m[2]}` : null;
-}
-const somaValores = (itens) => itens.reduce((s, it) => s + (Number(it.valor) || 0), 0);
-const temValor = (itens) => itens.some((it) => it.valor != null);
 const plural = (n, s, p) => `${n} ${n === 1 ? s : p}`;
 // Número digitado no modo de edição: aceita "1.234,56" e "1234.56". Vazio
 // vira null (apaga o valor); texto que não é número devolve undefined.
@@ -537,36 +479,10 @@ function PainelCompartilhado({ clienteId, competencia: competenciaInicial, admin
   const idsDoCliente = new Set((dados?.tarefasCliente || []).map((t) => t.id));
   const itensArea = dados && montarObrigacoesTarefas(dados, competencia).filter((it) => !idsDoCliente.has(it.id));
   const honorarios = dados ? montarHonorarios(dados.honorarios) : [];
-  // Seção oculta pro cliente também sai da soma dos cards de vencidos/a
-  // vencer — senão o total mostraria um valor que ele não tem como conferir
-  // "Aguardando guia" fica só na lista de impostos: sem valor nem guia, não entra nos cards
-  // de vencidos / a vencer nem na conta de "tudo quitado".
-  const guiasCard = guias && !oculta('impostos') ? guias.filter((g) => !g.aguardandoGuia && !itemOculto(g.id)) : [];
-  const honorariosCard = oculta('honorarios') ? [] : honorarios.filter((h) => !itemOculto(h.id));
-  const pendenciasCard = pendencias && !oculta('pendencias') ? pendencias : [];
-  const honorariosAVencer = honorariosCard.filter((h) => !h.concluida && !(h.dias != null && h.dias < 0));
-  const honorariosVencidos = honorariosCard.filter(alertaVencida);
-  // Débito que o relatório da Receita já lista mas ainda está no prazo (ex:
-  // INSS declarado na DCTFWeb antes do dia 20) é "a vencer", não vencido. Se
-  // a guia do mesmo tributo/competência já está anexada, ela é que entra na
-  // soma — o débito do relatório ficaria contado em dobro.
-  const guiasAVencer = guiasCard.filter((g) => !g.semMovimento && !g.paga && !alertaVencida(g) && !(g.concluida && g.dias != null && g.dias < 0));
-  const pendenciasVencidas = pendenciasCard.filter((p) => !p.aVencer);
-  const pendenciasAVencer = pendenciasCard.filter((p) => p.aVencer
-    && !guiasCard.some((g) => g.competencia === p.competencia && nomeTributo(g.titulo) === p.nome));
-  const aVencer = [
-    ...guiasAVencer,
-    ...honorariosAVencer,
-    ...pendenciasAVencer,
-  ].sort((a, b) => (a.vencimento || '9999').localeCompare(b.vencimento || '9999'));
-  const guiasVencidas = guiasCard.filter(alertaVencida);
-  // Total da lista de impostos: só o que ainda falta pagar, com a mesma regra
-  // dos cards — guia vencida em que o escritório já deu baixa não conta
-  const guiasEmAberto = (guias || []).filter((g) => !itemOculto(g.id) && !g.semMovimento && !g.paga && !(g.concluida && g.dias != null && g.dias < 0));
-  // "Vencidos" junta as guias vencidas sem baixa, os honorários atrasados e
-  // os débitos do Relatório de Situação Fiscal (que por definição já
-  // passaram do prazo)
-  const vencidos = [...guiasVencidas, ...honorariosVencidos, ...pendenciasVencidas];
+  // Cards de vencidos / a vencer e total da lista de impostos (regras em painelRegras.js)
+  const {
+    honorariosCard, guiasVencidas, honorariosVencidos, pendenciasVencidas, aVencer, vencidos, guiasEmAberto,
+  } = indicadoresPainel({ guias, honorarios, pendencias, oculta, itemOculto });
   // Tudo quitado: toda guia com valor a pagar da competência está paga, e não
   // sobrou honorário em aberto, débito vencido na Receita nem tarefa do cliente
   const guiasAPagar = guias ? guias.filter((g) => !g.semMovimento && g.anexo) : [];
@@ -914,99 +830,6 @@ function PainelCompartilhado({ clienteId, competencia: competenciaInicial, admin
 // que ainda pede ação do cliente. Imposto só com a guia anexada e não paga;
 // obrigação e tarefa só se ainda não foram concluídas. Os da competência de
 // referência (e os sem competência) seguem como sempre.
-function filtrarOutrasCompetencias({ impostos, outrasObrigacoes, tarefasArea, anexos }, competencia) {
-  const outra = (item) => !!item.competencia && item.competencia !== competencia;
-  const concluida = (o) => o.status === 'concluido' || o.status === 'nao_aplica';
-  return {
-    impostos: impostos.filter((o) => !outra(o) || (anexos[o.id] && !anexos[o.id].pago_em)),
-    outrasObrigacoes: outrasObrigacoes.filter((o) => !outra(o) || !concluida(o)),
-    tarefasArea: tarefasArea.filter((t) => !outra(t) || !t.concluida),
-  };
-}
-
-// Impostos da competência: com guia anexada, ou "aguardando guia" se ainda não concluídos. Exceção: o DAS de um mês
-// com faturamento zerado na Declaração do Simples não tem guia (não há o
-// que pagar) — entra como "Sem movimento" pro cliente saber que está ok.
-function montarGuias({ impostos, anexos, gerenciais, gerenciaisPorComp = {} }, competencia) {
-  const zerado = (g) => g != null && g.faturamento_periodo != null && Number(g.faturamento_periodo) === 0;
-  const semMovimento = zerado(gerenciais);
-  // painel consolidado: cada DAS olha a Declaração do Simples da própria competência
-  const gerDe = (o) => (!o.competencia || o.competencia === competencia ? gerenciais : gerenciaisPorComp[o.competencia]) || null;
-  const guias = impostos
-    // Sem guia anexada ainda: aparece como "aguardando guia" (com o vencimento), a não ser que a
-    // obrigação já esteja concluída / não se aplique (ex.: apurado sem valor a pagar).
-    .filter((o) => anexos[o.id] || (zerado(gerDe(o)) && ehDas(o)) || !(o.status === 'concluido' || o.status === 'nao_aplica'))
-    .map((o) => {
-      const das = ehDas(o);
-      const ger = gerDe(o);
-      const semMovimento = zerado(ger);
-      const anexo = anexos[o.id] || null;
-      const aguardandoGuia = !anexo && !(das && semMovimento);
-      // valor lido da própria guia (IA) tem prioridade — já vem com multa/
-      // juros se for o caso; o DAS cai no valor da declaração enquanto a
-      // guia não foi lida
-      const valorGuia = anexo?.valor_guia != null ? Number(anexo.valor_guia) : null;
-      // vencimento impresso na guia é o que vale pro pagamento — o da
-      // obrigação às vezes está cadastrado errado (ex: FGTS Digital)
-      const vencimento = anexo?.vencimento_guia || o.vencimento || null;
-      return {
-        id: o.id,
-        titulo: o.titulo || o.tipo,
-        competencia: o.competencia || competencia,
-        area: o.departamentos?.nome || null,
-        vencimento,
-        // vencida + concluída = o escritório já deu baixa, não é alerta
-        dias: diasParaVencer(vencimento),
-        concluida: o.status === 'concluido' || o.status === 'nao_aplica',
-        // pagamento confirmado pelo comprovante (ou marcado na mão no modo de edição)
-        paga: !!anexo?.pago_em,
-        pagoEm: anexo?.pago_em || null,
-        semMovimento: das && semMovimento,
-        aguardandoGuia,
-        valor: (das && semMovimento) || aguardandoGuia ? null
-          : valorGuia ?? (das && ger?.valor_das != null ? Number(ger.valor_das) : null),
-        anexo,
-      };
-    });
-  if (semMovimento && !impostos.some((o) => ehDas(o) && (!o.competencia || o.competencia === competencia))) {
-    guias.push({ id: 'das-sem-movimento', titulo: 'DAS — Simples Nacional', competencia, area: 'Fiscal',
-      vencimento: null, dias: null, concluida: true, semMovimento: true, valor: null, anexo: null });
-  }
-  return guias.sort((a, b) => (a.vencimento || '9999-99-99').localeCompare(b.vencimento || '9999-99-99'));
-}
-
-// Débitos (RFB) + inscrições em Dívida Ativa (PGFN) do relatório mais
-// recente, ordenados por competência. `valor` já é o saldo atualizado
-// (ver extrair-situacao-fiscal.js).
-// Exportada para o painel completo (PainelClientePage) ocultar as mesmas linhas.
-export function montarPendencias(situacaoFiscal) {
-  if (!situacaoFiscal) return [];
-  const debitos = (situacaoFiscal.debitos || []).map((d, i) => ({
-    id: `deb-${i}`, origem: 'Receita Federal', nome: nomeTributo(d.tributo), codigo: d.tributo || null,
-    competencia: d.competencia || competenciaDoTexto(d.tributo), vencimento: d.vencimento || null,
-    valorOriginal: d.valorOriginal ?? null, valor: d.valor ?? null, situacao: d.situacao || null,
-  }));
-  const dividas = (situacaoFiscal.dividas_ativas || []).map((d, i) => ({
-    id: `pgfn-${i}`, origem: 'Dívida Ativa (PGFN)', nome: d.tributo ? nomeTributo(d.tributo) : 'Dívida ativa',
-    codigo: [d.tributo, d.inscricao ? `Inscrição ${d.inscricao}` : null].filter(Boolean).join(' · ') || null,
-    competencia: d.competencia || competenciaDoTexto(d.tributo), vencimento: null,
-    valorOriginal: null, valor: d.valor ?? null, situacao: d.situacao || null,
-  }));
-  // "A vencer": o vencimento do relatório ainda não passou; relatório lido
-  // antes do campo vencimento existir só tem o texto da situação ("A VENCER")
-  return [...debitos, ...dividas].map((p) => {
-    const dias = diasParaVencer(p.vencimento);
-    // `chave` identifica o débito pro recado da linha — o id é só a posição
-    // no relatório e mudaria a cada relatório novo enviado
-    const chave = `pend-${p.id.split('-')[0]}-${p.codigo || p.nome}-${p.competencia || ''}`;
-    return { ...p, chave, dias, aVencer: dias != null ? dias >= 0 : /a\s*vencer/i.test(p.situacao || '') };
-  }).sort((a, b) => competenciaOrdinal(a.competencia) - competenciaOrdinal(b.competencia));
-}
-
-// Chave da linha de parcelamento do relatório (só o painel completo mostra);
-// sem o nº de parcelas, que muda a cada relatório.
-export const chaveParcelamentoFiscal = (p) => `pend-parc-${p?.modalidade || ''}`;
-
 // Obrigações (não-imposto) e tarefas de Fiscal/Folha do mês. Concluída sem
 // anexo não interessa ao cliente (não há nada pra ele ver/baixar) — só
 // entra concluída se tiver documento anexado; pendente entra sempre.
@@ -1028,24 +851,6 @@ function montarObrigacoesTarefas({ outrasObrigacoes, tarefasArea, anexos, anexos
   // consolidado pela data de vencimento (a competência fica só como referência)
   return [...obrigacoes, ...tarefas].sort((a, b) => (a.vencimento || '9999').localeCompare(b.vencimento || '9999'));
 }
-
-// Honorário como "obrigação a pagar" — mesmo formato das guias pra entrar
-// nos cards de vencidos/a vencer. Avulso usa a descrição como título.
-function montarHonorarios(honorarios) {
-  return (honorarios || []).map((h) => ({
-    id: `hon-${h.id}`,
-    titulo: h.tipo === 'avulso' ? (h.descricao || 'Honorário avulso') : 'Honorário contábil',
-    competencia: h.competencia,
-    vencimento: h.vencimento,
-    dias: diasParaVencer(h.vencimento),
-    concluida: h.status === 'pago',
-    dataPagamento: h.data_pagamento,
-    valor: h.valor != null ? Number(h.valor) : null,
-  }));
-}
-
-const alertaVencida = (g) => !g.semMovimento && !g.concluida && !g.paga && g.dias != null && g.dias < 0;
-const alertaUrgente = (g) => !g.semMovimento && !g.paga && g.dias != null && g.dias >= 0 && g.dias <= 3;
 
 const LISTA = { display: 'flex', flexDirection: 'column', gap: 6 };
 const COR_S = { ok: 'var(--ok)', warn: 'var(--warn)', danger: 'var(--danger)', neutral: 'var(--text1)' };
@@ -1072,14 +877,9 @@ function ChipCabecalho({ children }) {
 // Federal: CND federal válida enviada na mesma competência do relatório ou
 // depois vale mais que o relatório. Certidão vencida não conta.
 function ChipSituacao({ situacaoFiscal, cndManual, soAVencer }) {
-  const cnd = (esfera) => (cndManual && !cndManual[`vencida_${esfera}`] ? cndManual[`situacao_${esfera}`] : null);
-  const relatorio = soAVencer && situacaoFiscal?.situacao_geral === 'pendente' ? 'regular' : situacaoFiscal?.situacao_geral;
-  const cndFederalMaisNova = cnd('federal') && (!situacaoFiscal
-    || competenciaOrdinal(cndManual.competencia_federal) >= competenciaOrdinal(situacaoFiscal.competencia));
-  const federal = cndFederalMaisNova ? cnd('federal') : relatorio;
-  const esferas = [federal, cnd('estadual'), cnd('municipal')].filter(Boolean);
-  if (esferas.length === 0) return null;
-  const pendente = esferas.includes('pendente');
+  const situacao = situacaoFiscalGeral({ situacaoFiscal, cndManual, soAVencer });
+  if (!situacao) return null;
+  const pendente = situacao === 'pendente';
   return (
     <span style={{ fontSize: 10.5, fontWeight: 700, borderRadius: 99, padding: '3px 9px', color: '#fff',
       background: pendente ? 'var(--danger)' : 'var(--ok)' }}>
@@ -1923,3 +1723,6 @@ function LinhaObrigacao({ it, onBaixar }) {
       )} />
   );
 }
+
+// O painel completo (PainelClientePage) importa daqui.
+export { montarPendencias, chaveParcelamentoFiscal };
