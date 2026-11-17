@@ -72,4 +72,11 @@ function hojeBrasilia(agora = new Date()) {
   return new Date(agora.getTime() - 3 * 3600 * 1000).toISOString().slice(0, 10)
 }
 
-module.exports = { PRONTO, PENDENTE, INVALIDO, cpfValido, cnpjValido, validar, chaveDuplicidade, hojeBrasilia }
+// CPF (11 dígitos, pessoa física) ou CNPJ (14, pessoa jurídica) do tomador — o campo cpf da nota
+// guarda qualquer um dos dois (a DPS usa a tag CPF ou CNPJ pelo tamanho, ver dps.js).
+function documentoValido(doc) {
+  const d = String(doc || '').replace(/\D/g, '')
+  return d.length === 14 ? cnpjValido(d) : cpfValido(d)
+}
+
+module.exports = { PRONTO, PENDENTE, INVALIDO, cpfValido, cnpjValido, documentoValido, validar, chaveDuplicidade, hojeBrasilia }

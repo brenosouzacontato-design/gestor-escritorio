@@ -1,5 +1,5 @@
 // Nota ainda não emitida, no painel do cliente: mostra a situação e deixa o cliente preencher o que
-// falta (nome, CPF, data, descrição, endereço) ou decidir a nota parecida com outra já emitida
+// falta (nome, CPF ou CNPJ, data, descrição, endereço) ou decidir a nota parecida com outra já emitida
 // (emitir só a diferença, emitir o valor cheio por ser outro serviço, ou ficar ciente de que já foi
 // emitida — aí ela sai da lista). Usada no painel mensal e no link "todas as notas". Ver painel-nfse.js.
 import { useState } from 'react';
@@ -21,6 +21,8 @@ export const fmtDoc = (d) => {
   if (s.length === 14) return `${s.slice(0, 2)}.${s.slice(2, 5)}.${s.slice(5, 8)}/${s.slice(8, 12)}-${s.slice(12)}`;
   return s;
 };
+// "CPF 123.456.789-09" ou "CNPJ 12.345.678/0001-90" (o campo cpf da nota guarda os dois)
+const rotuloDoc = (d) => `${String(d).replace(/\D/g, '').length === 14 ? 'CNPJ' : 'CPF'} ${fmtDoc(d)}`;
 const ROTULO = { pronta: 'Pronta para emitir', ja_emitida: 'Já emitida antes', complementar: 'Decidir', invalida: 'Precisa de correção', falta: 'Falta informação' };
 
 // Valor que de fato falta emitir: na complementar, só a diferença sugerida
@@ -55,7 +57,7 @@ export default function NfsePendenteLinha({ n, onSalvar, largo = false, emTabela
   const [erro, setErro] = useState(null);
   const pede = {
     nome: falta('Nome'),
-    cpf: falta('CPF') || n.erros.some((e) => /^CPF/.test(e)),
+    cpf: falta('CPF') || n.erros.some((e) => /^(CPF|CNPJ)/.test(e)),
     data: falta('Data'),
     descricao: falta('Descrição'),
     endereco: falta('Endereço'),
@@ -93,7 +95,7 @@ export default function NfsePendenteLinha({ n, onSalvar, largo = false, emTabela
         <div style={{ display: 'grid', gridTemplateColumns: COLUNAS_LINHA, gap: 12, alignItems: 'start' }}>
           <div style={{ minWidth: 0 }}>
             <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text1)' }}>{n.nome || 'Paciente sem nome'}</div>
-            <div style={{ fontSize: 11, color: n.cpf ? 'var(--text3)' : 'var(--warn)' }}>{n.cpf ? `CPF ${fmtDoc(n.cpf)}` : 'Sem CPF'}</div>
+            <div style={{ fontSize: 11, color: n.cpf ? 'var(--text3)' : 'var(--warn)' }}>{n.cpf ? rotuloDoc(n.cpf) : 'Sem CPF/CNPJ'}</div>
           </div>
           <div style={{ fontSize: 11.5, color: 'var(--text2)' }}>
             {n.data ? fmtData(n.data) : <span style={{ color: 'var(--warn)' }}>sem data</span>}
@@ -114,7 +116,7 @@ export default function NfsePendenteLinha({ n, onSalvar, largo = false, emTabela
             {n.data && <span style={{ fontSize: 11, color: 'var(--text3)', display: 'flex', alignItems: 'center', gap: 3 }}><CalendarIcon size={10} /> {fmtData(n.data)}</span>}
             <span style={{ fontSize: 14, fontWeight: 800, color: 'var(--text1)' }}>{n.valor != null ? fmt(n.valor) : '—'}</span>
           </div>
-          {(n.cpf || n.endereco) && <span style={{ fontSize: 11, color: 'var(--text3)' }}>{[n.cpf && `CPF ${fmtDoc(n.cpf)}`, n.endereco].filter(Boolean).join(' · ')}</span>}
+          {(n.cpf || n.endereco) && <span style={{ fontSize: 11, color: 'var(--text3)' }}>{[n.cpf && rotuloDoc(n.cpf), n.endereco].filter(Boolean).join(' · ')}</span>}
           {n.descricao && <span style={{ fontSize: 11, color: 'var(--text3)' }}>{n.descricao}</span>}
         </>
       )}
@@ -165,13 +167,13 @@ export default function NfsePendenteLinha({ n, onSalvar, largo = false, emTabela
       {(situacao === 'falta' || situacao === 'invalida') && (
         <>
           <span style={{ fontSize: 11, color: n.erros.length ? 'var(--danger)' : 'var(--warn)', fontWeight: 600 }}>
-            {[...n.erros, ...(n.pendencias.length ? [`Falta: ${n.pendencias.join(', ')}`] : [])].join(' · ')}
+            {[...n.erros, ...(n.pendencias.length ? [`Falta: ${n.pendencias.map((x) => (x === 'CPF' ? 'CPF ou CNPJ' : x)).join(', ')}`] : [])].join(' · ')}
           </span>
           {n.avisos.length > 0 && <span style={{ fontSize: 10.5, color: 'var(--text3)' }}>{n.avisos.join(' · ')}</span>}
           {temCampos && (
             <form onSubmit={salvar} style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
               {pede.nome && <input placeholder="Nome completo do paciente" value={valores.nome} onChange={mudar('nome')} aria-label="Nome" style={{ ...campo, flex: '2 1 200px' }} />}
-              {pede.cpf && <input placeholder="CPF do paciente" inputMode="numeric" value={valores.cpf} onChange={mudar('cpf')} aria-label="CPF" style={{ ...campo, flex: '1 1 150px' }} />}
+              {pede.cpf && <input placeholder="CPF ou CNPJ" inputMode="numeric" value={valores.cpf} onChange={mudar('cpf')} aria-label="CPF ou CNPJ" title="CPF (pessoa física) ou CNPJ (empresa que pagou o serviço)" style={{ ...campo, flex: '1 1 170px' }} />}
               {pede.data && <input placeholder="Data do atendimento (dd/mm/aaaa)" inputMode="numeric" value={valores.data} onChange={mudar('data')} aria-label="Data do atendimento" style={{ ...campo, flex: '1 1 170px' }} />}
               {pede.descricao && <input placeholder="Descrição do serviço" value={valores.descricao} onChange={mudar('descricao')} aria-label="Descrição" style={{ ...campo, flex: '2 1 200px' }} />}
               {pede.endereco && <input placeholder="Endereço completo (rua, número, bairro, cidade)" value={valores.endereco} onChange={mudar('endereco')} aria-label="Endereço" style={{ ...campo, flex: '3 1 260px' }} />}

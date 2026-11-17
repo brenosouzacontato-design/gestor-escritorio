@@ -13,7 +13,7 @@
 // mais de uma pessoa vira lista para escolher; nada é emitido sem conferência na tela.
 
 const { semAcento, parseValor, montarData } = require('./importador')
-const { cpfValido } = require('./validador')
+const { documentoValido } = require('./validador')
 
 // Créditos que não são pagamento de cliente (aparecem na lista, desmarcados)
 const NAO_RECEITA = /\b(REND|RENDIMENTO|DIVIDENDO|JCP|JUROS|APLIC|RESGATE|ESTORNO|DEVOL|SALDO|CASHBACK)\b/
@@ -383,7 +383,11 @@ async function responderPedido(db, clienteId, id, corpo = {}) {
     const nome = limpar(corpo.nome, 150)
     const cpf = String(corpo.cpf || '').replace(/\D/g, '')
     if (nome.length < 3) throw new ErroPedido('Escreva o nome completo de quem pagou.')
-    if (cpf && !cpfValido(cpf)) throw new ErroPedido('CPF inválido — confira os números.')
+    // quem pagou pode ser pessoa física (CPF) ou empresa (CNPJ)
+    if (cpf && !documentoValido(cpf)) {
+      throw new ErroPedido(cpf.length === 14 ? 'CNPJ inválido — confira os números.'
+        : cpf.length === 11 ? 'CPF inválido — confira os números.' : 'Informe o CPF (11 dígitos) ou o CNPJ (14 dígitos).')
+    }
     resposta = { nome, cpf, observacao }
   }
   const respondidoEm = new Date().toISOString()
