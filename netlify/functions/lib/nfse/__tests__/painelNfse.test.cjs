@@ -141,6 +141,22 @@ test('cliente completa o CPF: a nota fica pronta e o paciente entra no cadastro'
   assert.deepEqual(cadastro.map((t) => [t.cpf, t.nome]), [[CPF_FICTICIO, 'Paciente Sem Cpf']])
 })
 
+test('cliente informa CNPJ (serviço pago por empresa): a nota fica pronta, sem entrar no cadastro de pessoas', async () => {
+  const { chamar, supa } = await montarComPendentes()
+  const r = await chamar({ acao: 'completar', nota_id: 'cccccccc-0000-4000-8000-000000000001', cpf: '11.222.333/0001-81' }, { 'x-painel-token': 'tokA' })
+  assert.equal(r.status, 200)
+  assert.equal(r.corpo.nota.cpf, '11222333000181')
+  assert.equal(r.corpo.nota.pronta, true)
+  const { data: cadastro } = await supa.from('nfse_tomadores').select('*').eq('cliente_id', A)
+  assert.deepEqual(cadastro, [])
+  const errado = await chamar({ acao: 'completar', nota_id: 'cccccccc-0000-4000-8000-000000000001', cpf: '11222333000100' }, { 'x-painel-token': 'tokA' })
+  assert.equal(errado.status, 400)
+  assert.match(errado.corpo.error, /CNPJ inválido/)
+  const curto = await chamar({ acao: 'completar', nota_id: 'cccccccc-0000-4000-8000-000000000001', cpf: '123456' }, { 'x-painel-token': 'tokA' })
+  assert.equal(curto.status, 400)
+  assert.match(curto.corpo.error, /CPF \(11 dígitos\) ou o CNPJ \(14 dígitos\)/)
+})
+
 test('CPF com dígito errado é recusado; nota de outro cliente ou já emitida não muda', async () => {
   const { chamar } = await montarComPendentes()
   const errado = await chamar({ acao: 'completar', nota_id: 'cccccccc-0000-4000-8000-000000000001', cpf: '52998224700' }, { 'x-painel-token': 'tokA' })

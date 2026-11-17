@@ -257,6 +257,12 @@ test('pedir ao cliente: o PIX aparece no painel, o cliente diz quem pagou e a re
   const r1 = await doPainel('tokA', { acao: 'pix_responder', id: carla.lancamentoId, nome: 'Carla  Santos', cpf: CARLA })
   assert.equal(r1.status, 200)
   assert.deepEqual(r1.pix.resposta, { nome: 'Carla Santos', cpf: CARLA, observacao: '' })
+  // quem pagou pode ser uma empresa (CNPJ); CNPJ com dígito errado é recusado
+  assert.equal((await doPainel('tokA', { acao: 'pix_responder', id: carla.lancamentoId, nome: 'Loja da Carla', cpf: '11222333000100' })).status, 400)
+  const rCnpj = await doPainel('tokA', { acao: 'pix_responder', id: carla.lancamentoId, nome: 'Loja da Carla', cpf: '11.222.333/0001-81' })
+  assert.equal(rCnpj.status, 200)
+  assert.equal(rCnpj.pix.resposta.cpf, '11222333000181')
+  await doPainel('tokA', { acao: 'pix_responder', id: carla.lancamentoId, nome: 'Carla  Santos', cpf: CARLA })
   const r2 = await doPainel('tokA', { acao: 'pix_responder', id: ze.lancamentoId, nao_servico: true, observacao: 'Transferência minha' })
   assert.deepEqual(r2.pix.resposta, { nao_servico: true, observacao: 'Transferência minha' })
 

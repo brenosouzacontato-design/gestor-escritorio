@@ -8,7 +8,7 @@
 //   POST { acao: 'pdf', nota_id, cliente_id? }   → o DANFSe em PDF (lib/nfse/danfse, NT 008/2026)
 //   POST { acao: 'xml', nota_id, cliente_id? }   → o XML da NFS-e autorizada (o documento com validade)
 //   POST { acao: 'pendentes', cliente_id? }       → notas ainda não emitidas, com o que falta preencher
-//   POST { acao: 'completar', nota_id, cpf?, nome?, descricao?, data?, endereco?, cep?, observacao? } → o cliente
+//   POST { acao: 'completar', nota_id, cpf? (CPF ou CNPJ), nome?, descricao?, data?, endereco?, cep?, observacao? } → o cliente
 //        completa a nota; o CPF também vai para o cadastro de clientes do prestador (nfse_tomadores)
 //   POST { acao: 'completar', nota_id, complementar: true } → o cliente confirma que falta só a
 //        diferença de uma nota já emitida: a nota vira a complementar (valor da diferença)
@@ -40,7 +40,7 @@ const crypto = require('crypto')
 const { gerarDanfse } = require('./lib/nfse/danfse/danfse')
 const { RepositorioSupabase, EDITAVEIS } = require('./lib/nfse/repositorio')
 const lotes = require('./lib/nfse/lotes')
-const { cpfValido } = require('./lib/nfse/validador')
+const { cpfValido, documentoValido } = require('./lib/nfse/validador')
 const { PREFIXO_JA_EMITIDA, PREFIXO_COMPLEMENTAR } = require('./lib/nfse/duplicidade')
 const { listarPedidosCliente, responderPedido, ErroPedido, montarPessoas } = require('./lib/nfse/extrato')
 
@@ -223,7 +223,7 @@ async function pessoasDaEmpresa(clienteId) {
   return montarPessoas({ tomadores, notasGestor, notasNacionais })
 }
 
-// O cliente completa CPF / nome / descrição. Valida de novo o lote (fica "pronta" se não faltar
+// O cliente completa CPF ou CNPJ / nome / descrição. Valida de novo o lote (fica "pronta" se não faltar
 // nada) e guarda o CPF no cadastro de clientes do prestador, para as próximas notas virem completas.
 async function completar(acesso, corpo) {
   if (!UUID.test(corpo.nota_id || '')) return null
@@ -258,13 +258,19 @@ async function completar(acesso, corpo) {
   if (typeof campos.data === 'string' && !campos.data.trim()) delete campos.data // não apaga a data por engano
   if ('cpf' in campos) {
     const cpf = campos.cpf.replace(/\D/g, '')
-    if (cpf && !cpfValido(cpf)) throw new ErroCliente('CPF inválido — confira os números.')
+    // pessoa física (CPF) ou empresa (CNPJ) — ex.: atendimento pago por uma empresa
+    if (cpf && !documentoValido(cpf)) {
+      throw new ErroCliente(cpf.length === 14 ? 'CNPJ inválido — confira os números.'
+        : cpf.length === 11 ? 'CPF inválido — confira os números.' : 'Informe o CPF (11 dígitos) ou o CNPJ (14 dígitos).')
+    }
   }
   const salva = await lotes.atualizarNota(repo, empresa, nota.id, campos)
   await guardarTomador(repo, acesso.clienteId, salva)
   return resumoPendente(salva)
 }
 
+// Só CPF: o cadastro de clientes do prestador (nfse_tomadores) guarda pessoa física. Nota com CNPJ
+// é salva normalmente, só não vira cadastro.
 async function guardarTomador(repo, clienteId, nota) {
   if (!nota.cpf || !cpfValido(nota.cpf) || !nota.nome) return
   try {

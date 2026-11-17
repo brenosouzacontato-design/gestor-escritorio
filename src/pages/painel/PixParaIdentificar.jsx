@@ -13,8 +13,10 @@ import { listarPixPedidos, responderPix } from './nfsePainelApi';
 const fmt = (v) => Number(v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 const fmtData = (iso) => (iso ? String(iso).slice(0, 10).split('-').reverse().join('/') : '');
 const soDig = (v) => String(v || '').replace(/\D/g, '');
+// CPF (11 dígitos) ou CNPJ (14), formatado enquanto digita
 const fmtCpf = (c) => {
-  const d = soDig(c).slice(0, 11);
+  const d = soDig(c).slice(0, 14);
+  if (d.length > 11) return d.replace(/^(\d{2})(\d{3})(\d{3})(\d{0,4})(\d{0,2}).*/, (_, a, b, e, f, g) => `${a}.${b}.${e}/${f}${g ? `-${g}` : ''}`);
   return d.replace(/^(\d{3})(\d)/, '$1.$2').replace(/^(\d{3})\.(\d{3})(\d)/, '$1.$2.$3').replace(/\.(\d{3})(\d{1,2})$/, '.$1-$2');
 };
 const total = (lista) => lista.reduce((s, p) => s + Number(p.valor || 0), 0);
@@ -52,7 +54,7 @@ export default function PixParaIdentificar({ pix, onResponder }) {
   return (
     <div>
       <p style={{ fontSize: 12.5, color: 'var(--text2)', margin: '0 0 10px', lineHeight: 1.45 }}>
-        Recebemos estes PIX e o banco não mostra o nome completo de quem pagou. Diga o nome e o CPF de cada um para emitirmos a nota,
+        Recebemos estes PIX e o banco não mostra o nome completo de quem pagou. Diga o nome e o CPF (ou o CNPJ, se foi uma empresa) de cada um para emitirmos a nota,
         ou avise se não foi atendimento (ex.: transferência entre contas, reembolso).
         {pendentes.length > 0 ? <b> Faltam {pendentes.length}.</b> : <b style={{ color: 'var(--ok)' }}> Tudo respondido, obrigado!</b>}
       </p>
@@ -167,7 +169,7 @@ function LinhaPix({ p, onResponder }) {
           <CheckCircleIcon size={14} style={{ color: 'var(--ok)' }} />
           {r.nao_servico
             ? <span>Você informou que <b>não é atendimento</b>{r.observacao ? ` (${r.observacao})` : ''}</span>
-            : <span>Você informou: <b>{r.nome}</b>{r.cpf ? ` · CPF ${fmtCpf(r.cpf)}` : ' · sem CPF'}{r.observacao ? ` · ${r.observacao}` : ''}</span>}
+            : <span>Você informou: <b>{r.nome}</b>{r.cpf ? ` · ${soDig(r.cpf).length === 14 ? 'CNPJ' : 'CPF'} ${fmtCpf(r.cpf)}` : ' · sem CPF/CNPJ'}{r.observacao ? ` · ${r.observacao}` : ''}</span>}
           <button type="button" onClick={() => setEditando(true)}
             style={{ border: 'none', background: 'none', color: 'var(--accent, var(--info))', cursor: 'pointer', fontSize: 12, padding: 0, textDecoration: 'underline' }}>alterar</button>
         </div>
@@ -200,7 +202,7 @@ function FormResposta({ inicial = null, onEnviar, onCancelar = null, rotuloEnvia
     <div style={{ marginTop: 8 }}>
       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
         <input value={nome} onChange={(e) => setNome(e.target.value)} placeholder="Nome completo de quem pagou" aria-label="Nome de quem pagou" style={{ ...campo, flex: '2 1 220px' }} />
-        <input value={fmtCpf(cpf)} onChange={(e) => setCpf(soDig(e.target.value).slice(0, 11))} placeholder="CPF" inputMode="numeric" aria-label="CPF de quem pagou" style={{ ...campo, flex: '1 1 140px' }} />
+        <input value={fmtCpf(cpf)} onChange={(e) => setCpf(soDig(e.target.value).slice(0, 14))} placeholder="CPF ou CNPJ" inputMode="numeric" aria-label="CPF ou CNPJ de quem pagou" style={{ ...campo, flex: '1 1 160px' }} />
         <input value={obs} onChange={(e) => setObs(e.target.value)} placeholder="Observação (opcional)" aria-label="Observação" style={{ ...campo, flex: '2 1 200px' }} />
       </div>
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', marginTop: 6 }}>
