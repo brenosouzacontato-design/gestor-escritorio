@@ -5,12 +5,15 @@
 // mouse numa etapa aparece a data/hora e o histórico. Entrega pelo WhatsApp do
 // escritório (uma, ou várias selecionadas) ou marcada por fora. Aba Empresas: o
 // WhatsApp de entrega de cada uma e o painel ligado/desligado.
+// Ordenado por empresa, cada empresa vira um grupo recolhível ("Agrupar por
+// empresa", ligado por padrão): recolhido mostra só o resumo das entregas
+// (situação, total, próximo vencimento e quais obrigações); clicando, abre.
 import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   SendIcon, RefreshCwIcon, ChevronLeftIcon, ChevronRightIcon, SearchIcon, ExternalLinkIcon,
   CheckIcon, EyeIcon, AlertTriangleIcon, MonitorOffIcon, MonitorIcon, Undo2Icon, BellIcon, BellOffIcon,
   ClockIcon, XIcon, HandIcon, HistoryIcon,
-  ClipboardListIcon, CheckSquareIcon, LayersIcon, PaperclipIcon, UsersIcon,
+  ClipboardListIcon, CheckSquareIcon, LayersIcon, PaperclipIcon, UsersIcon, ChevronDownIcon, ListIcon,
 } from 'lucide-react'
 import { useStore } from '../../store'
 import { useToast } from '../../components/shared'
@@ -60,6 +63,8 @@ export default function CentralEntregasPage({ clienteFixo = null } = {}) {
   const [progresso, setProgresso] = useState(null) // { feitas, total }
   const [painelDe, setPainelDe] = useState(null) // empresa com a janela "Enviar painel" aberta
   const [progressoPainel, setProgressoPainel] = useState(null) // { feitas, total }
+  const [agrupar, setAgrupar] = useState(true) // empresas recolhidas, só com o resumo
+  const [abertas, setAbertas] = useState(() => new Set()) // grupos abertos à mão, com "agrupar" ligado
 
   const carregar = async ({ silencioso = false } = {}) => {
     if (!silencioso) setGuias(null)
@@ -106,6 +111,11 @@ export default function CentralEntregasPage({ clienteFixo = null } = {}) {
   }, [daEmpresa, filtro, busca])
 
   const secoes = useMemo(() => montarSecoes(visiveis, ordem), [visiveis, ordem])
+  // recolhe só os grupos de empresa, e não quando uma empresa foi escolhida
+  // ou há busca (aí o que importa é ver as linhas)
+  const podeRecolher = ordem === 'empresa' && !empresaSel && !busca.trim()
+  const recolhida = (sec) => podeRecolher && agrupar && !abertas.has(sec.chave)
+  const alternarGrupo = (chave) => setAbertas((a) => { const n = new Set(a); n.has(chave) ? n.delete(chave) : n.add(chave); return n })
 
   const atualizarGuia = (id, patch) => setGuias((lista) => lista.map((g) => (g.id === id ? { ...g, ...patch } : g)))
 
@@ -273,6 +283,12 @@ ${lista.map((c) => '• ' + nomeCurto(c.nome)).join('\n')}`)) return
                 {Object.entries(ORDENS).map(([id, o]) => <option key={id} value={id}>{o.label}</option>)}
               </select>
             </Campo>
+            {podeRecolher && (
+              <button className={`btn btn-sm ${agrupar ? 'btn-accent' : 'btn-ghost'}`} onClick={() => { setAgrupar((v) => !v); setAbertas(new Set()) }}
+                title={agrupar ? 'Abrir todas as empresas, mostrando cada guia' : 'Recolher cada empresa num resumo das entregas'}>
+                {agrupar ? <><ListIcon size={13} /> Abrir todas</> : <><LayersIcon size={13} /> Agrupar por empresa</>}
+              </button>
+            )}
             <div style={{ position: 'relative', flex: '1 1 180px' }}>
               <SearchIcon size={14} style={{ position: 'absolute', left: 10, top: 10, color: 'var(--text3)' }} />
               <input className="input" placeholder="Buscar obrigação, tarefa ou empresa" value={busca} onChange={(e) => setBusca(e.target.value)} style={{ paddingLeft: 30 }} />
@@ -312,13 +328,21 @@ ${lista.map((c) => '• ' + nomeCurto(c.nome)).join('\n')}`)) return
                   </span>
                   <span style={{ flex: '0 0 196px', textAlign: 'right' }}>Ações</span>
                 </div>
-                {secoes.map((sec) => (
+                {secoes.map((sec) => {
+                  const fechada = recolhida(sec)
+                  const podeAbrir = podeRecolher && agrupar
+                  return (
                   <div key={sec.chave}>
                     {sec.titulo && (
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '7px 14px', borderTop: '1px solid var(--border)', background: 'var(--surface)', flexWrap: 'wrap' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: fechada ? '10px 14px' : '7px 14px', borderTop: '1px solid var(--border)', background: 'var(--surface)', flexWrap: 'wrap' }}>
                         <input type="checkbox" checked={sec.guias.every((g) => selecionadas.has(g.id))} onChange={() => alternarVarias(sec.guias)} title="Selecionar o grupo" />
-                        <span style={{ fontWeight: 700, fontSize: 12.5, color: 'var(--text1)', flex: '1 1 200px', display: 'flex', alignItems: 'center', gap: 6 }}>
-                          {sec.Icone && <sec.Icone size={13} style={{ color: 'var(--text3)' }} />} {sec.titulo}
+                        <span onClick={podeAbrir ? () => alternarGrupo(sec.chave) : undefined} title={podeAbrir ? (fechada ? 'Mostrar as guias' : 'Recolher no resumo') : undefined}
+                          style={{ flex: '1 1 200px', minWidth: 0, cursor: podeAbrir ? 'pointer' : 'default' }}>
+                          <span style={{ fontWeight: 700, fontSize: 12.5, color: 'var(--text1)', display: 'flex', alignItems: 'center', gap: 6 }}>
+                            {podeAbrir && <ChevronDownIcon size={14} style={{ color: 'var(--text3)', transform: fechada ? 'rotate(-90deg)' : 'none', transition: 'transform .15s', flexShrink: 0 }} />}
+                            {sec.Icone && <sec.Icone size={13} style={{ color: 'var(--text3)' }} />} {sec.titulo}
+                          </span>
+                          {fechada && <ResumoGrupoEntregas lista={sec.guias} />}
                         </span>
                         <ResumoEmpresa lista={sec.guias} />
                         {sec.cliente && !empresaSel && <InfoEmpresa cliente={sec.cliente} />}
@@ -327,7 +351,7 @@ ${lista.map((c) => '• ' + nomeCurto(c.nome)).join('\n')}`)) return
                         )}
                       </div>
                     )}
-                    {sec.guias.map((g) => (
+                    {!fechada && sec.guias.map((g) => (
                       <LinhaGuia key={g.id} g={g} mostrarEmpresa={ordem !== 'empresa' && !empresaSel}
                         marcada={selecionadas.has(g.id)} enviando={enviando.has(g.id)}
                         onMarcar={() => alternar(g.id)} onEntregar={() => entregar(g)} onAbrir={() => abrir(g)}
@@ -335,7 +359,8 @@ ${lista.map((c) => '• ' + nomeCurto(c.nome)).join('\n')}`)) return
                         semDestino={!destinoDe(g.clientes)} />
                     ))}
                   </div>
-                ))}
+                  )
+                })}
               </div>
             )}
         </>
@@ -457,6 +482,45 @@ export function ResumoEmpresa({ lista }) {
         {partes.map(([k, cor]) => n[k] > 0 && <span key={k} style={{ width: `${(n[k] / lista.length) * 100}%`, background: cor }} />)}
       </span>
       <span><b style={{ color: 'var(--text2)' }}>{lista.length} guia{lista.length > 1 ? 's' : ''}</b>{texto && ` · ${texto}`}</span>
+    </span>
+  )
+}
+
+// Resumo do grupo recolhido: total das guias, próximo vencimento do que
+// ainda não foi entregue, última entrega e quais obrigações estão no grupo.
+export function resumoGrupo(lista, hoje = new Date().toISOString().slice(0, 10)) {
+  const comValor = lista.filter((g) => g.valor_guia != null)
+  const total = comValor.reduce((s, g) => s + Number(g.valor_guia || 0), 0)
+  const pendentes = lista.filter((g) => ['a_entregar', 'falhou'].includes(situacaoGuia(g)))
+  const vencimentos = pendentes.map((g) => String(g.vencimento || '').slice(0, 10)).filter(Boolean).sort()
+  const proximo = vencimentos.find((v) => v >= hoje) || null
+  const vencidas = vencimentos.filter((v) => v < hoje).length
+  const entregas = lista.map((g) => g.entregue_em).filter(Boolean).sort()
+  const nomes = []
+  for (const g of [...lista].sort(porTipo)) {
+    const n = g.grupo === 'obrigacao' || !g.grupo ? (g.obrigacoes?.tipo || g.titulo) : g.titulo
+    if (n && !nomes.includes(n)) nomes.push(n)
+  }
+  return { total: comValor.length ? total : null, proximo, vencidas, ultimaEntrega: entregas[entregas.length - 1] || null, nomes }
+}
+
+function ResumoGrupoEntregas({ lista }) {
+  const r = resumoGrupo(lista)
+  const partes = [
+    r.total != null && fmtMoeda(r.total),
+    r.vencidas > 0 && <span key="v" style={{ color: 'var(--danger)', fontWeight: 600 }}>{r.vencidas} vencida{r.vencidas > 1 ? 's' : ''} sem entregar</span>,
+    r.proximo && `próximo venc. a entregar ${fmtData(r.proximo)}`,
+    r.ultimaEntrega && `última entrega ${fmtQuando(r.ultimaEntrega)}`,
+  ].filter(Boolean)
+  const nomes = r.nomes.length > 6 ? [...r.nomes.slice(0, 6), `+${r.nomes.length - 6}`] : r.nomes
+  return (
+    <span style={{ display: 'block', marginTop: 3, paddingLeft: 20, fontSize: 11.5, color: 'var(--text3)', fontWeight: 400 }}>
+      {partes.map((p, i) => <span key={i}>{i > 0 && ' · '}{p}</span>)}
+      {nomes.length > 0 && (
+        <span style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 4 }}>
+          {nomes.map((n) => <span key={n} style={{ ...selo, padding: '1px 7px', fontSize: 10, fontWeight: 600, color: 'var(--text2)', background: 'var(--surface2)' }}>{n}</span>)}
+        </span>
+      )}
     </span>
   )
 }
