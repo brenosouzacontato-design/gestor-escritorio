@@ -275,3 +275,58 @@ test('pedir ao cliente: o PIX aparece no painel, o cliente diz quem pagou e a re
   assert.deepEqual(await chamar({ acao: 'extrato_pedir_cliente', ids: [carla.lancamentoId], cancelar: true }), { status: 200, pedidos: 1 })
   assert.deepEqual((await doPainel('tokA', { acao: 'pix_pendentes' })).pix, [])
 })
+
+test('painel: PIX pedido ao cliente que já tem nota (emitida por qualquer caminho) sai da lista', async () => {
+  const { supa, chamar } = montar()
+  const CLIENTE = '11111111-1111-4111-8111-111111111111'
+  const gabarito = fs.readFileSync(path.join(__dirname, 'golden', 'gabarito_dps.xml'), 'utf8')
+  await chamar({ acao: 'salvar_empresa', gabarito_xml: gabarito })
+  for (const t of [{ nome: 'Bruno Alves', cpf: BRUNO }, { nome: 'Carla Santos', cpf: CARLA }]) await chamar({ acao: 'tomador_salvar', tomador: t })
+  const a = await chamar({ acao: 'extrato_analisar', texto: ITAU, arquivo: 'out.pdf' })
+  const ids = (nome) => a.lancamentos.filter((l) => l.nomeExtrato === nome).map((l) => l.lancamentoId)
+  await chamar({ acao: 'extrato_pedir_cliente', ids: [...ids('BRUNO'), ...ids('CARLA S'), ...ids('ZEZINHO')] })
+
+  const painel = require('../../../painel-nfse')
+  painel._deps.supabase = supa
+  painel._deps.usuarioEscritorio = async () => null
+  painel._deps.clienteDoPainel = async () => ({ id: CLIENTE })
+  const lista = async () => {
+    const r = await painel.handler({ httpMethod: 'POST', headers: { 'x-painel-token': 't' }, body: JSON.stringify({ acao: 'pix_pendentes' }) })
+    return JSON.parse(r.body).pix.map((x) => `${x.nomeExtrato} ${x.data}`)
+  }
+  const ambiente = supa.db.nfse_empresas[0].ambiente
+  const nota = (cpf, nome, valor, data) => supa.db.nfse_notas.push({ id: crypto.randomUUID(), cliente_id: CLIENTE, ambiente, estado: 'autorizada', cpf, nome, valor, data, competencia: data })
+
+  assert.deepEqual(await lista(), ['BRUNO 2026-09-30', 'CARLA S 2026-10-03', 'BRUNO 2026-10-05', 'ZEZINHO 2026-10-05'])
+
+  // nota da Carla emitida fora do extrato (ex.: completada no painel): o PIX dela sai
+  nota(CARLA, 'Carla Santos', '1000.00', '2026-10-03')
+  assert.deepEqual(await lista(), ['BRUNO 2026-09-30', 'BRUNO 2026-10-05', 'ZEZINHO 2026-10-05'])
+
+  // Bruno pagou duas vezes R$ 300 em outubro e só tem uma nota de outubro: só um PIX sai
+  nota(BRUNO, 'Bruno Alves', '300.00', '2026-10-05')
+  assert.deepEqual(await lista(), ['BRUNO 2026-09-30', 'ZEZINHO 2026-10-05'])
+
+  // Zezinho não está no cadastro: vale o CPF que o cliente respondeu
+  const ze = ids('ZEZINHO')[0]
+  await painel.handler({ httpMethod: 'POST', headers: { 'x-painel-token': 't' }, body: JSON.stringify({ acao: 'pix_responder', id: ze, nome: 'José Novo', cpf: NOVO }) })
+  assert.deepEqual(await lista(), ['BRUNO 2026-09-30', 'ZEZINHO 2026-10-05'])
+  nota(NOVO, 'José Novo', '90.00', '2026-10-05')
+  assert.deepEqual(await lista(), ['BRUNO 2026-09-30'])
+
+  // nada foi gravado: na conferência o PIX continua pendente (com a sugestão "já tem nota")
+  assert.ok(supa.db.nfse_extrato_lancamentos.filter((r) => r.pedido_cliente_em).every((r) => r.situacao === 'pendente'))
+})
+
+test('pendentesComNota: o PIX já em lote gasta a nota dele antes do pendente', () => {
+  const { pendentesComNota } = require('../extrato')
+  const pessoas = montarPessoas({ tomadores: [{ nome: 'Bruno Alves', cpf: BRUNO }],
+    notasGestor: [{ estado: 'autorizada', cpf: BRUNO, nome: 'Bruno Alves', valor: '300.00', data: '2026-10-05' }] })
+  const linha = (id, data, situacao, extra = {}) => ({ id, data, data_pix: data, descricao: `PIX TRANSF BRUNO ${data.slice(8, 10)}/10`, valor: '300.00', chave: id, situacao, ...extra })
+  // o primeiro foi para o lote (a nota é dele); o segundo, pendente, continua sem nota
+  assert.deepEqual([...pendentesComNota([linha('a', '2026-10-01', 'em_lote', { cpf: BRUNO }), linha('b', '2026-10-05', 'pendente')], pessoas)], [])
+  // sem o lote, a única nota cobre o pendente
+  assert.deepEqual([...pendentesComNota([linha('b', '2026-10-05', 'pendente')], pessoas)], ['b'])
+  // "não é atendimento" respondido pelo cliente nunca é cruzado
+  assert.deepEqual([...pendentesComNota([linha('b', '2026-10-05', 'pendente', { resposta_cliente: { nao_servico: true } })], pessoas)], [])
+})

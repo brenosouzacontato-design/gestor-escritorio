@@ -17,7 +17,8 @@
 //   POST { acao: 'completar', nota_id, ciente: true } → a nota já tinha sido emitida e o cliente
 //        está ciente: sai do painel dele (devolve { ..., ciente: true })
 //   POST { acao: 'pix_pendentes' }                → PIX do extrato que o escritório pediu para o cliente
-//        identificar: [{ id, data, valor, nomeExtrato, resposta, respondidoEm }] (lib/nfse/extrato)
+//        identificar: [{ id, data, valor, nomeExtrato, resposta, respondidoEm }] (lib/nfse/extrato). O PIX
+//        que já tem nota (mesma pessoa, valor e mês, emitida por qualquer caminho) não vem
 //   POST { acao: 'pix_responder', id, nome, cpf?, observacao? } ou { acao: 'pix_responder', id, nao_servico: true,
 //        observacao? } → quem pagou o PIX (ou que não é serviço); o escritório confere e cria a nota
 //   POST { acao: 'link', nota_id }                → link público assinado do PDF (para mandar ao
@@ -41,7 +42,7 @@ const { RepositorioSupabase, EDITAVEIS } = require('./lib/nfse/repositorio')
 const lotes = require('./lib/nfse/lotes')
 const { cpfValido } = require('./lib/nfse/validador')
 const { PREFIXO_JA_EMITIDA, PREFIXO_COMPLEMENTAR } = require('./lib/nfse/duplicidade')
-const { listarPedidosCliente, responderPedido, ErroPedido } = require('./lib/nfse/extrato')
+const { listarPedidosCliente, responderPedido, ErroPedido, montarPessoas } = require('./lib/nfse/extrato')
 
 // Dependências externas (substituídas nos testes, ver lib/nfse/__tests__/painelNfse.test.cjs)
 const deps = {
@@ -75,7 +76,7 @@ exports.handler = async (event) => {
 
     if (corpo.acao === 'pendentes') return json(200, { notas: await pendentes(acesso) })
 
-    if (corpo.acao === 'pix_pendentes') return json(200, { pix: await listarPedidosCliente(db(), acesso.clienteId) })
+    if (corpo.acao === 'pix_pendentes') return json(200, { pix: await listarPedidosCliente(db(), acesso.clienteId, () => pessoasDaEmpresa(acesso.clienteId)) })
 
     if (corpo.acao === 'pix_responder') {
       const pix = await responderPedido(db(), acesso.clienteId, corpo.id, corpo)
@@ -207,6 +208,20 @@ const resumoPendente = (n) => ({
   pronta: n.status_validacao === 'pronto', situacao: situacaoPendente(n), liberada: !!n.duplicidade_liberada,
   pendencias: n.pendencias || [], erros: n.erros || [], avisos: n.avisos || [],
 })
+
+// Cadastro + notas da empresa (gestor e Ambiente Nacional), como na conferência do extrato
+// (nfse.js, conferirExtrato): para o PIX pedido ao cliente que já tem nota sair do painel.
+async function pessoasDaEmpresa(clienteId) {
+  const repo = new RepositorioSupabase(db())
+  const empresa = await repo.obterEmpresa(clienteId)
+  if (!empresa) return null
+  const [tomadores, notasGestor, notasNacionais] = await Promise.all([
+    repo.listarTomadores(clienteId),
+    repo.listarNotasEmpresa(clienteId, empresa.ambiente),
+    empresa.ambiente === 'producao' ? repo.listarNotasNacionais(clienteId) : [],
+  ])
+  return montarPessoas({ tomadores, notasGestor, notasNacionais })
+}
 
 // O cliente completa CPF / nome / descrição. Valida de novo o lote (fica "pronta" se não faltar
 // nada) e guarda o CPF no cadastro de clientes do prestador, para as próximas notas virem completas.
