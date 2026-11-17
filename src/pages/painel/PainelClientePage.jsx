@@ -1097,6 +1097,15 @@ function ImpostosAVencer({ itens, onBaixarAnexo }) {
                 </button>
               )}
             </div>
+            {/* guia paga pelo comprovante: o comprovante fica disponível no painel da competência */}
+            {pago && it.anexo?.comprovante_path && (
+              <button onClick={() => onBaixarAnexo({ id: it.anexo.id, storage_path: it.anexo.comprovante_path, nome_arquivo: it.anexo.comprovante_nome || `Comprovante ${it.titulo}` })}
+                title="Baixar o comprovante de pagamento"
+                style={{ marginTop: 6, width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4, fontSize: 10, fontWeight: 700,
+                  color: 'var(--ok)', background: 'var(--ok-dim)', border: 'none', borderRadius: 99, padding: '3px 8px', cursor: 'pointer' }}>
+                <DownloadIcon size={10} /> Comprovante
+              </button>
+            )}
           </div>
         );
       })}

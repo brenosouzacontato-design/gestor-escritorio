@@ -231,3 +231,16 @@ export function situacaoFiscalGeral({ situacaoFiscal, cndManual, soAVencer = fal
   if (esferas.length === 0) return null;
   return esferas.includes('pendente') ? 'pendente' : 'regular';
 }
+
+// Guia que sai da lista de impostos do cliente (no modo de edição o escritório
+// ainda vê, esmaecida):
+//   - paga de competência ANTERIOR: já foi resolvida, não precisa aparecer na atual;
+//   - concluída e vencida sem pagamento registrado (o escritório já deu baixa).
+// Paga da PRÓPRIA competência do painel continua na lista, como "Paga", com o
+// comprovante para baixar — o cliente vê o que pagou naquele mês.
+// (Paga de outra competência normalmente nem chega aqui: filtrarOutrasCompetencias
+// já a tira; a regra vale também para o caso de a guia vir sem competência.)
+export function guiaSaiDaLista(g, competencia) {
+  if (g.paga) return !!g.competencia && g.competencia !== competencia;
+  return !!g.concluida && g.dias != null && g.dias < 0;
+}
