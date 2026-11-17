@@ -24,7 +24,7 @@ import { calcularAliquotaNominal } from '../../lib/simplesNacional';
 import {
   ehImposto, ehDas, diasParaVencer, competenciaOrdinal, somaValores, temValor,
   filtrarOutrasCompetencias, montarGuias, montarPendencias, chaveParcelamentoFiscal, montarHonorarios,
-  alertaVencida, alertaUrgente, indicadoresPainel, situacaoFiscalGeral,
+  alertaVencida, alertaUrgente, indicadoresPainel, situacaoFiscalGeral, guiaSaiDaLista,
 } from './painelRegras';
 import {
   obterItensConsolidados, obterGerenciaisPorCompetencia, obterDadosGerenciais, obterDocumentosPorObrigacao,
@@ -461,12 +461,13 @@ function PainelCompartilhado({ clienteId, competencia: competenciaInicial, admin
       && /\binss\b|dctf\s*web/i.test(g.titulo || '') && !/parcelamento|rec[aá]lculo/i.test(g.titulo || ''));
     return doMes.length ? somaValores(doMes) : null;
   })();
-  // O cliente só vê o que está em aberto, de qualquer competência (as da
-  // competência costumam ser pagas no mês seguinte; o que ficou pra trás e
-  // não foi pago continua aparecendo). Pago/concluído some da lista dele; no
-  // modo de edição o escritório ainda vê, esmaecido. Débito que a Receita
-  // ainda cobra aparece em Pendências pelo Relatório de Situação Fiscal.
-  const guiaResolvida = (g) => g.paga || (g.concluida && g.dias != null && g.dias < 0);
+  // O cliente vê o que está em aberto, de qualquer competência (o que ficou pra
+  // trás e não foi pago continua aparecendo), e as guias da própria
+  // competência já pagas, com o comprovante. Paga de competência anterior e
+  // concluída-vencida saem da lista (guiaSaiDaLista); no modo de edição o
+  // escritório ainda vê, esmaecido. Débito que a Receita ainda cobra aparece
+  // em Pendências pelo Relatório de Situação Fiscal.
+  const guiaResolvida = (g) => guiaSaiDaLista(g, competencia);
   const itemResolvido = (it) => (it.status === 'concluido' || it.status === 'nao_aplica')
     // documento entregue na própria competência (ex: holerite, recibo) continua pra baixar
     && !(it.anexo && it.competencia === competencia);
