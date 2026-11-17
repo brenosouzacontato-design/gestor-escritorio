@@ -1,7 +1,8 @@
 import { useState, useEffect, useMemo } from 'react'
-import { BanknoteIcon, SearchIcon, SendIcon, SettingsIcon, RefreshCwIcon, PencilIcon, InfoIcon, PlusIcon, BarChart3Icon, XIcon, ListChecksIcon, ReceiptIcon, QrCodeIcon, CopyIcon, DownloadIcon, CheckIcon, MessageCircleIcon } from 'lucide-react'
+import { BanknoteIcon, SearchIcon, SendIcon, SettingsIcon, RefreshCwIcon, PencilIcon, InfoIcon, PlusIcon, BarChart3Icon, XIcon, ListChecksIcon, ReceiptIcon, QrCodeIcon, CopyIcon, DownloadIcon, CheckIcon, MessageCircleIcon, FileTextIcon } from 'lucide-react'
 import QRCode from 'qrcode'
 import { montarPixCopiaCola } from '../../lib/pixBrCode'
+import { gerarCobrancaPdf } from '../../lib/cobrancaPdf'
 import { Modal, useToast } from '../../components/shared'
 import { useStore } from '../../store'
 import EmpresaCombobox from '../../components/EmpresaCombobox'
@@ -1099,9 +1100,33 @@ function AbaPorCarteira({ carteiras }) {
 // em aberto dele (de qualquer mês), pra agrupar o atrasado com o do mês.
 // O escritório copia o código / a mensagem ou baixa a imagem e manda pro
 // cliente; nada é gravado — a baixa continua sendo feita como hoje.
+// "Baixar cobrança (PDF)" gera o documento estilo boleto (cobrancaPdf.js)
+// com a mensagem de referência e a data pra pagar escolhidas aqui.
 function nomeDe(h) { return h.clientes?.nome || h.nome_avulso || 'Cliente' }
 function rotuloHonorario(h) {
   return h.tipo === 'avulso' && h.descricao ? `${h.descricao} (${h.competencia})` : `Honorário ${h.competencia}`
+}
+function hojeIso() {
+  const d = new Date()
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+function listarComE(itens) {
+  return itens.length <= 1 ? (itens[0] || '') : `${itens.slice(0, -1).join(', ')} e ${itens[itens.length - 1]}`
+}
+// "Referente aos honorários contábeis de 09/2026 e 11/2026 e ao serviço de alteração contratual."
+function referenciaPadrao(escolhidos) {
+  const mensais = Array.from(new Set(escolhidos.filter((h) => !(h.tipo === 'avulso' && h.descricao)).map((h) => h.competencia)))
+  const avulsos = escolhidos.filter((h) => h.tipo === 'avulso' && h.descricao).map((h) => h.descricao.charAt(0).toLowerCase() + h.descricao.slice(1))
+  const partes = []
+  if (mensais.length) partes.push(`aos honorários contábeis de ${listarComE(mensais)}`)
+  if (avulsos.length) partes.push(`${avulsos.length > 1 ? 'aos serviços' : 'ao serviço'} de ${listarComE(avulsos)}`)
+  return partes.length ? `Referente ${partes.join(' e ')}.` : ''
+}
+// data padrão pra pagar: o vencimento mais próximo que ainda não passou; tudo vencido → hoje
+function pagarAtePadrao(escolhidos) {
+  const hoje = hojeIso()
+  const futuros = escolhidos.map((h) => String(h.vencimento || '').slice(0, 10)).filter((v) => v >= hoje).sort()
+  return futuros[0] || hoje
 }
 function linkWhatsapp(telefone, texto) {
   let d = String(telefone || '').replace(/\D/g, '')
@@ -1116,6 +1141,9 @@ function ModalQrCodePix({ honorarios, onClose, onConfigurar }) {
   const [marcados, setMarcados] = useState(() => new Set(honorarios.map((h) => h.id)))
   const [qr, setQr] = useState(null)
   const [copiado, setCopiado] = useState(null) // 'codigo' | 'mensagem'
+  const [referenciaEditada, setReferenciaEditada] = useState(null) // null = texto automático
+  const [pagarAteEditado, setPagarAteEditado] = useState(null)
+  const [gerandoPdf, setGerandoPdf] = useState(false)
   const { show } = useToast()
 
   const clientes = Array.from(new Set(honorarios.map((h) => h.cliente_id || `avulso:${h.id}`)))
@@ -1139,6 +1167,8 @@ function ModalQrCodePix({ honorarios, onClose, onConfigurar }) {
   const escolhidos = opcoes.filter((h) => marcados.has(h.id))
   const total = Math.round(escolhidos.reduce((s, h) => s + Number(h.valor), 0) * 100) / 100
   const competencias = Array.from(new Set(escolhidos.map((h) => h.competencia).filter(Boolean)))
+  const referencia = referenciaEditada ?? referenciaPadrao(escolhidos)
+  const pagarAte = pagarAteEditado || pagarAtePadrao(escolhidos)
 
   let pix = null
   let erroPix = null
@@ -1164,8 +1194,10 @@ function ModalQrCodePix({ honorarios, onClose, onConfigurar }) {
 
   const mensagem = pix ? [
     `Olá${nomeCliente ? `, ${nomeCliente}` : ''}! Segue o PIX dos honorários:`,
+    referencia.trim() || null,
     ...escolhidos.map((h) => `• ${rotuloHonorario(h)}: ${fmt(h.valor)}`),
     escolhidos.length > 1 ? `Total: ${fmt(total)}` : null,
+    `Pagar até: ${fmtData(pagarAte)}`,
     '',
     'PIX copia e cola:',
     pix,
@@ -1186,6 +1218,29 @@ function ModalQrCodePix({ honorarios, onClose, onConfigurar }) {
     return n
   })
   const nomeImagem = `PIX honorarios - ${nomeCliente || 'clientes'}${competencias.length ? ` - ${competencias.join(' ').replace(/\//g, '-')}` : ''}.png`
+  const baixarPdf = async () => {
+    if (!pix || !qr) return
+    setGerandoPdf(true)
+    try {
+      const bytes = await gerarCobrancaPdf({
+        favorecido: config.favorecido, chavePix: config.chavePix,
+        cliente: clientes.length === 1 ? nomeCliente : Array.from(new Set(escolhidos.map(nomeDe))).join(', '),
+        referencia: referencia.trim(), pagarAte, total, pixCopiaCola: pix, qrPng: qr,
+        itens: escolhidos.map((h) => ({ descricao: clientes.length > 1 ? `${rotuloHonorario(h)} — ${nomeDe(h)}` : rotuloHonorario(h), vencimento: h.vencimento, valor: h.valor })),
+      })
+      const url = URL.createObjectURL(new Blob([bytes], { type: 'application/pdf' }))
+      const a = document.createElement('a')
+      a.href = url
+      a.download = nomeImagem.replace(/^PIX honorarios/, 'Cobranca honorarios').replace(/\.png$/, '.pdf')
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+      setTimeout(() => URL.revokeObjectURL(url), 10000)
+    } catch (e) {
+      show?.('Erro ao gerar o PDF: ' + e.message)
+    }
+    setGerandoPdf(false)
+  }
 
   return (
     <Modal onClose={onClose}>
@@ -1228,6 +1283,25 @@ function ModalQrCodePix({ honorarios, onClose, onConfigurar }) {
         <span style={{ fontSize: 18, fontWeight: 800, color: 'var(--text1)' }}>{fmt(total)}</span>
       </div>
 
+      {escolhidos.length > 0 && (
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 150px', gap: 8, marginBottom: 12 }}>
+          <div className="form-field" style={{ margin: 0 }}>
+            <label className="form-label" style={{ display: 'flex', justifyContent: 'space-between' }}>
+              Mensagem de referência
+              {referenciaEditada !== null && (
+                <button type="button" onClick={() => setReferenciaEditada(null)}
+                  style={{ fontSize: 10.5, color: 'var(--accent)', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>voltar ao automático</button>
+              )}
+            </label>
+            <textarea rows={2} value={referencia} onChange={(e) => setReferenciaEditada(e.target.value)} style={{ width: '100%', resize: 'vertical', fontSize: 12 }} />
+          </div>
+          <div className="form-field" style={{ margin: 0 }}>
+            <label className="form-label">Pagar até</label>
+            <input type="date" value={pagarAte} onChange={(e) => setPagarAteEditado(e.target.value)} />
+          </div>
+        </div>
+      )}
+
       {!config && <p style={{ fontSize: 12, color: 'var(--text3)' }}>Carregando...</p>}
       {config && escolhidos.length === 0 && <p style={{ fontSize: 12, color: 'var(--text3)', textAlign: 'center' }}>Marque ao menos um honorário.</p>}
       {erroPix && (
@@ -1250,8 +1324,12 @@ function ModalQrCodePix({ honorarios, onClose, onConfigurar }) {
           </div>
           <textarea readOnly value={pix} rows={3} onFocus={(e) => e.target.select()}
             style={{ width: '100%', fontSize: 11, fontFamily: 'monospace', resize: 'none', marginBottom: 10, wordBreak: 'break-all' }} />
+          <button className="btn btn-accent" style={{ width: '100%', marginBottom: 8 }} onClick={baixarPdf} disabled={!qr || gerandoPdf}
+            title="Documento estilo boleto: honorários, total, data pra pagar, referência, QR Code e PIX copia e cola">
+            <FileTextIcon size={14} /> {gerandoPdf ? 'Gerando PDF...' : 'Baixar cobrança (PDF estilo boleto)'}
+          </button>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-            <button className="btn btn-accent btn-sm" onClick={() => copiar(pix, 'codigo')}>
+            <button className="btn btn-ghost btn-sm" onClick={() => copiar(pix, 'codigo')}>
               {copiado === 'codigo' ? <CheckIcon size={13} /> : <CopyIcon size={13} />} {copiado === 'codigo' ? 'Copiado!' : 'Copiar PIX copia e cola'}
             </button>
             <a className="btn btn-ghost btn-sm" href={qr || undefined} download={nomeImagem} style={{ justifyContent: 'center', textDecoration: 'none', pointerEvents: qr ? 'auto' : 'none' }}>
@@ -1265,7 +1343,7 @@ function ModalQrCodePix({ honorarios, onClose, onConfigurar }) {
             </a>
           </div>
           <p style={{ fontSize: 11, color: 'var(--text3)', margin: '8px 0 0' }}>
-            O WhatsApp abre com a mensagem e o código copia e cola{telefone ? '' : ' (sem telefone cadastrado: escolha o contato lá)'}; a imagem do QR você anexa se quiser.
+            O WhatsApp abre com a mensagem e o código copia e cola{telefone ? '' : ' (sem telefone cadastrado: escolha o contato lá)'}; o PDF ou a imagem do QR você anexa se quiser.
           </p>
         </>
       )}
