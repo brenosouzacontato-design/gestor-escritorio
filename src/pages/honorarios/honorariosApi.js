@@ -167,22 +167,40 @@ export async function atualizarConfigCliente(clienteId, { valorHonorario, diaVen
   if (error) throw error;
 }
 
+// Todos os honorários em aberto de um cliente, de qualquer competência —
+// opções pra agrupar num QR Code PIX só (ex.: o atrasado + o do mês).
+export async function listarPendentesDoCliente(clienteId) {
+  const { data, error } = await supabase
+    .from('honorarios')
+    .select('*, clientes(nome, telefone, carteira)')
+    .eq('cliente_id', clienteId)
+    .eq('status', 'pendente')
+    .order('vencimento');
+  if (error) throw error;
+  return data;
+}
+
 // ---------- Configuração da chave PIX (tabela configuracoes, chave/valor) ----------
 
 export async function obterConfigPix() {
   const { data, error } = await supabase
     .from('configuracoes')
     .select('chave, valor')
-    .in('chave', ['honorarios_pix_chave', 'honorarios_pix_favorecido']);
+    .in('chave', ['honorarios_pix_chave', 'honorarios_pix_favorecido', 'honorarios_pix_cidade']);
   if (error) throw error;
   const porChave = Object.fromEntries((data || []).map((r) => [r.chave, r.valor]));
-  return { chavePix: porChave.honorarios_pix_chave || '', favorecido: porChave.honorarios_pix_favorecido || '' };
+  return {
+    chavePix: porChave.honorarios_pix_chave || '',
+    favorecido: porChave.honorarios_pix_favorecido || '',
+    cidade: porChave.honorarios_pix_cidade || '', // só pro QR Code PIX (campo obrigatório do BR Code)
+  };
 }
 
-export async function salvarConfigPix({ chavePix, favorecido }) {
+export async function salvarConfigPix({ chavePix, favorecido, cidade }) {
   const { error } = await supabase.from('configuracoes').upsert([
     { chave: 'honorarios_pix_chave', valor: chavePix || null },
     { chave: 'honorarios_pix_favorecido', valor: favorecido || null },
+    { chave: 'honorarios_pix_cidade', valor: cidade || null },
   ], { onConflict: 'chave' });
   if (error) throw error;
 }
