@@ -304,14 +304,67 @@ const resumoPedido = (r) => ({
   respondidoEm: r.respondido_em || null,
 })
 
+// Quais dos lançamentos guardados ainda pendentes já têm nota, emitida por qualquer caminho (lote do
+// extrato, nota que o cliente completou no painel, recorrente, WhatsApp, avulsa, emissor nacional).
+// Mesma regra da conferência (marcarJaEmitidas): mesma pessoa, mesmo valor, nota do mesmo mês, uma
+// nota cobre um PIX. Quem é a pessoa: o CPF do lote (em_lote), o CPF que o cliente respondeu, ou a
+// sugestão pelo nome do extrato. Os já tratados (em lote / já tem nota) "gastam" as notas deles
+// primeiro: quem pagou duas vezes o mesmo valor no mês e só tem uma nota não some com o segundo PIX.
+// guardados: linhas de nfse_extrato_lancamentos do cliente (todas as situações). Devolve Set de ids.
+function pendentesComNota(guardados, pessoas) {
+  const ativos = guardados.filter((r) => r.situacao !== 'ignorado')
+  const sugestoes = sugerirNotas(ativos.map(deGuardado), pessoas)
+  const porCpf = new Map(pessoas.map((p) => [p.cpf, p]))
+  const itens = sugestoes.map((s) => {
+    const r = s.guardado
+    const resp = r.resposta_cliente || null
+    let cpf = null
+    if (r.situacao === 'em_lote' && r.cpf) cpf = r.cpf
+    else if (resp && resp.nao_servico) cpf = null
+    else if (resp && resp.cpf) cpf = resp.cpf
+    else cpf = s.sugerido ? s.sugerido.cpf : null
+    return { r, cpf, dataPix: s.dataPix, valor: s.valor }
+  }).filter((x) => x.cpf)
+  itens.sort((a, b) => (a.r.situacao === 'pendente') - (b.r.situacao === 'pendente') || a.dataPix.localeCompare(b.dataPix))
+  const usadas = new Map()
+  const comNota = new Set()
+  for (const x of itens) {
+    const chave = `${x.cpf}|${mes(x.dataPix)}|${centavos(x.valor)}`
+    const notas = (porCpf.get(x.cpf)?.notas || []).filter((n) => mes(n.data) === mes(x.dataPix) && centavos(n.valor) === centavos(x.valor))
+    const ja = usadas.get(chave) || 0
+    if (ja >= notas.length) continue
+    usadas.set(chave, ja + 1)
+    if (x.r.situacao === 'pendente') comNota.add(x.r.id)
+  }
+  return comNota
+}
+
 // Os PIX que o escritório pediu e que ainda estão pendentes (respondidos ou não). Sem a tabela ou
 // sem as colunas, lista vazia: o painel só não mostra a seção.
-async function listarPedidosCliente(db, clienteId) {
+// carregarPessoas (opcional): async () => pessoas de montarPessoas (cadastro + notas da empresa), ou
+// null. Com ele, o PIX que já tem nota sai da lista do cliente (pendentesComNota); nada é gravado:
+// o escritório continua vendo o PIX na conferência do extrato, já marcado "Já tem NFS-e".
+// Se carregar as notas falhar, a lista vai sem esse filtro.
+async function listarPedidosCliente(db, clienteId, carregarPessoas = null) {
   const { data, error } = await db.from('nfse_extrato_lancamentos').select('*')
     .eq('cliente_id', clienteId).eq('situacao', 'pendente').not('pedido_cliente_em', 'is', null)
   if (semTabela(error) || semColunaPedido(error)) return []
   checar(error)
-  return (data || []).sort((a, b) => String(a.data_pix || a.data).localeCompare(String(b.data_pix || b.data))).map(resumoPedido)
+  let pedidos = data || []
+  if (pedidos.length && carregarPessoas) {
+    try {
+      const pessoas = await carregarPessoas()
+      if (pessoas) {
+        const { data: todos, error: e2 } = await db.from('nfse_extrato_lancamentos').select('*').eq('cliente_id', clienteId)
+        checar(e2)
+        const comNota = pendentesComNota(todos || [], pessoas)
+        pedidos = pedidos.filter((r) => !comNota.has(r.id))
+      }
+    } catch (e) {
+      console.warn('painel: PIX pedidos sem o cruzamento com as notas:', e.message)
+    }
+  }
+  return pedidos.sort((a, b) => String(a.data_pix || a.data).localeCompare(String(b.data_pix || b.data))).map(resumoPedido)
 }
 
 // Resposta do cliente: { nome, cpf?, observacao? } (quem pagou) ou { nao_servico: true, observacao? }.
@@ -343,5 +396,5 @@ async function responderPedido(db, clienteId, id, corpo = {}) {
 module.exports = {
   lerExtrato, nomeDoPagador, montarPessoas, sugerirNotas, comecaCom, norm, numerar,
   guardarLancamentos, listarGuardados, marcarGuardados, SemTabelaExtrato, AVISO_SEM_TABELA, MOTIVO_AUTOMATICO,
-  pedirAoCliente, listarPedidosCliente, responderPedido, ErroPedido,
+  pedirAoCliente, listarPedidosCliente, responderPedido, ErroPedido, pendentesComNota,
 }
