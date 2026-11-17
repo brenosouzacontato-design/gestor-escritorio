@@ -10,7 +10,7 @@ import { calcularAliquotaNominal } from '../../lib/simplesNacional';
 import { calcularPessoaFisica, PARAMETROS_PF } from '../../lib/carneLeao';
 import { listarLancamentosAIdentificar } from '../contabil/contabilApi';
 import LancamentosIdentificar from '../contabil/LancamentosIdentificar';
-import { abrirLinkAssinado } from '../documentos/documentosApi';
+import { abrirLinkAssinado, baixarComNome } from '../documentos/documentosApi';
 // import circular de propósito (só usado na renderização): as chaves das linhas
 // do relatório são as mesmas do painel novo, então ocultar lá oculta aqui também
 import { montarPendencias, chaveParcelamentoFiscal } from './PainelCompartilhadoPage';
@@ -254,7 +254,11 @@ function PainelCliente({ clienteId, competencia: competenciaInicial, admin = fal
   const baixarAnexo = async (documento) => {
     // download feito pelo cliente (link público) avisa o escritório
     if (!admin) avisarEventoPainel(clienteId, 'download', { descricao: documento.nome_arquivo, competencia, documentoId: documento.id });
-    await abrirLinkAssinado(documento.storage_path).catch(() => null);
+    // baixa com o nome original do arquivo, quando ele é conhecido
+    const pedido = documento.nome_arquivo
+      ? baixarComNome(documento.storage_path, documento.nome_arquivo)
+      : abrirLinkAssinado(documento.storage_path);
+    await pedido.catch(() => null);
   };
 
   const secoesOcultas = cliente?.painel_secoes_ocultas || [];

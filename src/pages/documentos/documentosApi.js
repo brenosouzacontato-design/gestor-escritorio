@@ -263,9 +263,13 @@ export async function pagarGuiaComComprovante(documentoId, guiaId) {
 // No link público do painel o cliente não acessa o Storage (só o escritório
 // tem policy no bucket): a URL sai da function painel-arquivo, que confere se
 // o arquivo é do cliente do token. Ver docs/seguranca-rls.md.
-export async function criarLinkAssinado(storagePath, segundos = 60 * 5) {
-  if (tokenPainelAtivo()) return assinarPeloServidor({ storagePath, segundos });
-  const { data, error } = await supabase.storage.from(BUCKET).createSignedUrl(storagePath, segundos);
+//
+// `nomeArquivo` (opcional): a URL baixa o arquivo com esse nome (o nome
+// original do anexo) em vez de abrir com o uuid do Storage.
+export async function criarLinkAssinado(storagePath, segundos = 60 * 5, nomeArquivo = null) {
+  if (tokenPainelAtivo()) return assinarPeloServidor({ storagePath, segundos, ...(nomeArquivo ? { nomeArquivo } : {}) });
+  const opcoes = nomeArquivo ? { download: nomeArquivo } : undefined;
+  const { data, error } = await supabase.storage.from(BUCKET).createSignedUrl(storagePath, segundos, opcoes);
   if (error) throw error;
   return data.signedUrl;
 }
@@ -289,6 +293,20 @@ export async function abrirLinkAssinado(storagePath, segundos = 60 * 5) {
     aba?.close();
     throw e;
   }
+}
+
+// Baixa o anexo já com o nome original do arquivo (a URL assinada vem com
+// Content-Disposition: attachment). Não precisa abrir aba: download não é
+// pop-up, então pode acontecer depois do await, sem sair da página.
+export async function baixarComNome(storagePath, nomeArquivo, segundos = 60 * 5) {
+  const url = await criarLinkAssinado(storagePath, segundos, nomeArquivo);
+  const a = document.createElement('a');
+  a.href = url;
+  a.rel = 'noopener';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  return url;
 }
 
 // Usado pela página pública de compartilhamento (DocumentoCompartilhadoPage,
