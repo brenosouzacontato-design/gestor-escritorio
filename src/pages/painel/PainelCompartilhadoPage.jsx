@@ -13,7 +13,13 @@ import { descreverAparelho } from './aparelho';
 import { abrirLinkAssinado, criarLinkAssinado } from '../documentos/documentosApi';
 import { lerCodigosDaGuia } from './codigosGuia';
 import AvisoPainelModal from '../../components/AvisoPainelModal';
-import { GraficoFaturamento, ComparativoDas, NotasEntrada, TarefasDoCliente } from './PainelClientePage';
+import { GraficoFaturamento, ComparativoDas, ComparativoPjPf, NotasEntrada, TarefasDoCliente } from './PainelClientePage';
+
+// Comparativo PJ x PF (carnê-leão): só para alguns clientes, ligado pelo
+// escritório no modo de edição. Fica na mesma coluna das seções ocultas
+// (clientes.painel_secoes_ocultas), mas ao contrário: presente = mostra.
+// Assim chega ao link público sem coluna nova no banco.
+const CHAVE_COMPARATIVO_PF = 'mostrar:comparativo_pf';
 import { calcularAliquotaNominal } from '../../lib/simplesNacional';
 import {
   obterItensConsolidados, obterGerenciaisPorCompetencia, obterDadosGerenciais, obterDocumentosPorObrigacao,
@@ -687,7 +693,10 @@ function PainelCompartilhado({ clienteId, competencia: competenciaInicial, admin
                 // Simples "cheio" (alíquota da tabela pelo RBT12/anexo) x DAS real pago — mostra a economia
                 const aliquotaCheia = g ? calcularAliquotaNominal(g.anexo, g.rbt12) : null;
                 const temComparativo = !semMovimento && aliquotaCheia != null && Number(g.faturamento_periodo) > 0 && g.valor_das != null;
-                const algoVisivel = (g && !oculta('kpis')) || (temComparativo && !oculta('comparativo')) || (temGrafico && !oculta('grafico'));
+                // PJ x PF: precisa do faturamento e do DAS do mês; aparece só se o escritório ligou pro cliente
+                const temBasePf = !semMovimento && g != null && Number(g.faturamento_periodo) > 0 && g.valor_das != null;
+                const comparativoPf = temBasePf && oculta(CHAVE_COMPARATIVO_PF);
+                const algoVisivel = (g && !oculta('kpis')) || (temComparativo && !oculta('comparativo')) || comparativoPf || (temGrafico && !oculta('grafico'));
                 if (!(g || temGrafico) || !(editando || algoVisivel)) return null;
                 return (
                   <Secao titulo={`Fiscal — competência ${competencia}`} icone={<TrendingUpIcon size={14} />}
@@ -718,6 +727,12 @@ function PainelCompartilhado({ clienteId, competencia: competenciaInicial, admin
                         <Ocultavel chave="comparativo" {...propsOc}>
                           <ComparativoDas aliquotaReal={aliquotaCheia} faturamento={Number(g.faturamento_periodo)} dasPago={Number(g.valor_das)} />
                         </Ocultavel>
+                      )}
+                      {temBasePf && (editando || comparativoPf) && (
+                        <AtivavelPorCliente ativo={comparativoPf} editando={editando} onToggle={() => toggleSecao(CHAVE_COMPARATIVO_PF)}
+                          rotulo="Comparativo empresa x pessoa física (carnê-leão)">
+                          <ComparativoPjPf faturamento={Number(g.faturamento_periodo)} dasPago={Number(g.valor_das)} />
+                        </AtivavelPorCliente>
                       )}
                       {temGrafico && (
                         <Ocultavel chave="grafico" {...propsOc}>
@@ -1177,6 +1192,24 @@ function Ocultavel({ chave, secoesOcultas, editando, onToggle, children }) {
         {oculta ? 'Oculto pro cliente — clique pra mostrar' : 'Visível pro cliente — clique pra ocultar'}
       </button>
       <div style={{ opacity: oculta ? 0.4 : 1 }}>{children}</div>
+    </div>
+  );
+}
+
+// Contrário do Ocultavel: seção que só aparece para os clientes em que o
+// escritório liga. Fora do modo de edição, `ativo` decide; no modo de edição
+// aparece sempre (esmaecida quando desligada) com o botão de ligar/desligar.
+function AtivavelPorCliente({ ativo, editando, onToggle, rotulo, children }) {
+  if (!editando) return ativo ? children : null;
+  return (
+    <div style={{ border: '1px dashed var(--border2)', borderRadius: 'var(--r-md)', padding: 10 }}>
+      <button type="button" onClick={onToggle}
+        style={{ display: 'inline-flex', alignItems: 'center', gap: 5, marginBottom: 10, fontSize: 11, fontWeight: 700, border: 'none', borderRadius: 99,
+          padding: '4px 10px', cursor: 'pointer', background: ativo ? 'var(--accent-dim)' : 'var(--surface3)', color: ativo ? 'var(--accent)' : 'var(--text3)' }}>
+        {ativo ? <EyeIcon size={12} /> : <EyeOffIcon size={12} />}
+        {ativo ? `${rotulo}: ligado pra este cliente — clique pra desligar` : `${rotulo}: desligado — clique pra mostrar a este cliente`}
+      </button>
+      <div style={{ opacity: ativo ? 1 : 0.4 }}>{children}</div>
     </div>
   );
 }

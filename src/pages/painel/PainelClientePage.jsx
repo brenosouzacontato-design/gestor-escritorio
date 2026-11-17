@@ -7,6 +7,7 @@ import {
 import { chavePainelPorId, urlPublica } from '../../lib/linksPublicos';
 import AcessoPainel, { obterClientePagina } from './AcessoPainel';
 import { calcularAliquotaNominal } from '../../lib/simplesNacional';
+import { calcularPessoaFisica, PARAMETROS_PF } from '../../lib/carneLeao';
 import { listarLancamentosAIdentificar } from '../contabil/contabilApi';
 import LancamentosIdentificar from '../contabil/LancamentosIdentificar';
 import { abrirLinkAssinado } from '../documentos/documentosApi';
@@ -976,6 +977,57 @@ export function ComparativoDas({ aliquotaReal, faturamento, dasPago }) {
           {fmt(-economia)} a mais que o "cheio" nessa competência.
         </div>
       )}
+    </div>
+  );
+}
+
+// Impostos como empresa (DAS da Declaração do Simples) x o que pagaria como
+// pessoa física recolhendo carnê-leão + INSS de autônomo (src/lib/carneLeao.js).
+// Só nos clientes em que o escritório liga (ver CHAVE_COMPARATIVO_PF no
+// painel compartilhado). Exportado pro PainelCompartilhadoPage.jsx.
+export function ComparativoPjPf({ faturamento, dasPago }) {
+  const pf = calcularPessoaFisica(faturamento);
+  if (!pf) return null;
+  const pj = Number(dasPago) || 0;
+  const max = Math.max(pf.total, pj, 1);
+  const economia = pf.total - pj;
+  const pctEconomia = pf.total > 0 ? (economia / pf.total) * 100 : 0;
+  const aliquotaPj = faturamento > 0 ? (pj / faturamento) * 100 : null;
+  return (
+    <div style={{ background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: '12px 14px' }}>
+      <div style={{ fontSize: 10, color: 'var(--text3)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.03em', marginBottom: 9 }}>
+        Empresa (PJ) x Pessoa física (carnê-leão)
+      </div>
+      <BarraComparativa label={`Como pessoa física (${fmtPct(pf.aliquotaEfetiva)})`} valor={pf.total} pct={(pf.total / max) * 100} cor="var(--danger)" />
+      <div style={{ fontSize: 10.5, color: 'var(--text3)', margin: '-5px 0 9px' }}>
+        IR carnê-leão {fmt(pf.irpf)} + INSS autônomo {fmt(pf.inss)}
+      </div>
+      <BarraComparativa label={`Como empresa — DAS${aliquotaPj != null ? ` (${fmtPct(aliquotaPj)})` : ''}`} valor={pj} pct={(pj / max) * 100} cor="var(--ok)" />
+      {economia > 0.01 && (
+        <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 10, marginTop: 10, padding: '10px 12px', borderRadius: 'var(--r-md)', background: 'var(--ok-dim)' }}>
+          <div style={{ width: 32, height: 32, borderRadius: '50%', background: 'var(--ok)', color: '#fff', flexShrink: 0,
+            display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <PiggyBankIcon size={17} />
+          </div>
+          <div style={{ flex: 1, minWidth: 140 }}>
+            <div style={{ fontSize: 10, color: 'var(--ok)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.03em' }}>Economia por ter empresa</div>
+            <div style={{ fontSize: 11, color: 'var(--text2)', marginTop: 1 }}>Nesta competência, comparado à pessoa física</div>
+          </div>
+          <div style={{ textAlign: 'right', marginLeft: 'auto' }}>
+            <div style={{ fontSize: 17, fontWeight: 800, color: 'var(--ok)', whiteSpace: 'nowrap' }}>{fmt(economia)}</div>
+            <div style={{ fontSize: 10.5, fontWeight: 700, color: 'var(--ok)' }}>{fmtPct(pctEconomia)} a menos</div>
+          </div>
+        </div>
+      )}
+      {economia < -0.01 && (
+        <div style={{ fontSize: 11.5, color: 'var(--text2)', fontWeight: 600, marginTop: 9 }}>
+          Nesta competência, como pessoa física pagaria {fmt(-economia)} a menos.
+        </div>
+      )}
+      <div style={{ fontSize: 9.5, color: 'var(--text3)', marginTop: 9, lineHeight: 1.4 }}>
+        Estimativa com as regras de {PARAMETROS_PF.ano}: receita recebida de pessoas físicas, INSS de 20% (até o teto),
+        tabela mensal do IR com a redução da Lei 15.270/2025, sem despesas de livro-caixa e sem ISS de autônomo.
+      </div>
     </div>
   );
 }
