@@ -981,14 +981,19 @@ export function ComparativoDas({ aliquotaReal, faturamento, dasPago }) {
   );
 }
 
-// Impostos como empresa (DAS da Declaração do Simples) x o que pagaria como
-// pessoa física recolhendo carnê-leão + INSS de autônomo (src/lib/carneLeao.js).
+// Impostos como empresa (DAS da Declaração do Simples + INSS das guias da
+// competência, ex.: pró-labore/DCTFWeb) x o que pagaria como pessoa física
+// recolhendo carnê-leão + INSS de autônomo (src/lib/carneLeao.js).
+// `inssEmpresa`: soma das guias de INSS da competência com valor; null =
+// nenhuma guia de INSS com valor (o lado da empresa fica só com o DAS).
 // Só nos clientes em que o escritório liga (ver CHAVE_COMPARATIVO_PF no
 // painel compartilhado). Exportado pro PainelCompartilhadoPage.jsx.
-export function ComparativoPjPf({ faturamento, dasPago }) {
+export function ComparativoPjPf({ faturamento, dasPago, inssEmpresa = null }) {
   const pf = calcularPessoaFisica(faturamento);
   if (!pf) return null;
-  const pj = Number(dasPago) || 0;
+  const das = Number(dasPago) || 0;
+  const inssPj = inssEmpresa != null ? Number(inssEmpresa) || 0 : null;
+  const pj = das + (inssPj || 0);
   const max = Math.max(pf.total, pj, 1);
   const economia = pf.total - pj;
   const pctEconomia = pf.total > 0 ? (economia / pf.total) * 100 : 0;
@@ -1002,7 +1007,12 @@ export function ComparativoPjPf({ faturamento, dasPago }) {
       <div style={{ fontSize: 10.5, color: 'var(--text3)', margin: '-5px 0 9px' }}>
         IR carnê-leão {fmt(pf.irpf)} + INSS autônomo {fmt(pf.inss)}
       </div>
-      <BarraComparativa label={`Como empresa — DAS${aliquotaPj != null ? ` (${fmtPct(aliquotaPj)})` : ''}`} valor={pj} pct={(pj / max) * 100} cor="var(--ok)" />
+      <BarraComparativa label={`Como empresa${aliquotaPj != null ? ` (${fmtPct(aliquotaPj)})` : ''}`} valor={pj} pct={(pj / max) * 100} cor="var(--ok)" />
+      <div style={{ fontSize: 10.5, color: 'var(--text3)', margin: '-5px 0 9px' }}>
+        {inssPj != null
+          ? <>DAS {fmt(das)} + INSS {fmt(inssPj)}</>
+          : <>DAS {fmt(das)} · sem guia de INSS com valor nesta competência</>}
+      </div>
       {economia > 0.01 && (
         <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 10, marginTop: 10, padding: '10px 12px', borderRadius: 'var(--r-md)', background: 'var(--ok-dim)' }}>
           <div style={{ width: 32, height: 32, borderRadius: '50%', background: 'var(--ok)', color: '#fff', flexShrink: 0,

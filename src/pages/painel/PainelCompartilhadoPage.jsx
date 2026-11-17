@@ -508,6 +508,14 @@ function PainelCompartilhado({ clienteId, competencia: competenciaInicial, admin
   };
 
   const guias = dados && montarGuias(dados, competencia).map((g) => ({ ...g, lendo: g.anexo && lendoGuias.has(g.anexo.id) }));
+  // INSS da empresa na competência (pró-labore/folha — guia do INSS ou da
+  // DCTFWeb), pro comparativo PJ x PF. Parcelamento e recálculo não entram:
+  // não são custo do mês. null = nenhuma guia de INSS com valor.
+  const inssEmpresa = (() => {
+    const doMes = (guias || []).filter((g) => g.competencia === competencia && g.valor != null
+      && /\binss\b|dctf\s*web/i.test(g.titulo || '') && !/parcelamento|rec[aá]lculo/i.test(g.titulo || ''));
+    return doMes.length ? somaValores(doMes) : null;
+  })();
   // O cliente só vê o que está em aberto, de qualquer competência (as da
   // competência costumam ser pagas no mês seguinte; o que ficou pra trás e
   // não foi pago continua aparecendo). Pago/concluído some da lista dele; no
@@ -731,7 +739,7 @@ function PainelCompartilhado({ clienteId, competencia: competenciaInicial, admin
                       {temBasePf && (editando || comparativoPf) && (
                         <AtivavelPorCliente ativo={comparativoPf} editando={editando} onToggle={() => toggleSecao(CHAVE_COMPARATIVO_PF)}
                           rotulo="Comparativo empresa x pessoa física (carnê-leão)">
-                          <ComparativoPjPf faturamento={Number(g.faturamento_periodo)} dasPago={Number(g.valor_das)} />
+                          <ComparativoPjPf faturamento={Number(g.faturamento_periodo)} dasPago={Number(g.valor_das)} inssEmpresa={inssEmpresa} />
                         </AtivavelPorCliente>
                       )}
                       {temGrafico && (
