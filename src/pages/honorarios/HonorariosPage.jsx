@@ -1,5 +1,7 @@
 import { useState, useEffect, useMemo } from 'react'
-import { BanknoteIcon, SearchIcon, SendIcon, SettingsIcon, RefreshCwIcon, PencilIcon, InfoIcon, PlusIcon, BarChart3Icon, XIcon, ListChecksIcon, ReceiptIcon } from 'lucide-react'
+import { BanknoteIcon, SearchIcon, SendIcon, SettingsIcon, RefreshCwIcon, PencilIcon, InfoIcon, PlusIcon, BarChart3Icon, XIcon, ListChecksIcon, ReceiptIcon, QrCodeIcon, CopyIcon, DownloadIcon, CheckIcon, MessageCircleIcon } from 'lucide-react'
+import QRCode from 'qrcode'
+import { montarPixCopiaCola } from '../../lib/pixBrCode'
 import { Modal, useToast } from '../../components/shared'
 import { useStore } from '../../store'
 import EmpresaCombobox from '../../components/EmpresaCombobox'
@@ -8,7 +10,7 @@ import {
   listarHonorariosDoMes, gerarHonorariosDoMes, marcarStatusHonorario,
   atualizarHonorario, atualizarConfigCliente, obterConfigPix, salvarConfigPix,
   enviarLembreteAgora, obterPreviaLembrete, criarHonorarioAvulso, listarClientesConfigurados,
-  atualizarHonorariosEmLote, listarHonorariosDasCompetencias,
+  atualizarHonorariosEmLote, listarHonorariosDasCompetencias, listarPendentesDoCliente,
 } from './honorariosApi'
 
 function competenciaAtual() {
@@ -68,6 +70,7 @@ export default function HonorariosPage({ clienteFixo = null } = {}) {
   const [showNovoAvulso, setShowNovoAvulso] = useState(false)
   const [editando, setEditando] = useState(null)
   const [previaLembrete, setPreviaLembrete] = useState(null) // honorário aberto na prévia
+  const [qrHonorarios, setQrHonorarios] = useState(null) // honorários do QR Code PIX aberto
   const { show } = useToast()
 
   const carregar = () => {
@@ -227,6 +230,13 @@ export default function HonorariosPage({ clienteFixo = null } = {}) {
               </span>
               <span style={{ color: 'var(--text3)' }}>· {fmt(selecionadosVisiveis.reduce((s, h) => s + Number(h.valor), 0))}</span>
               <div style={{ flex: 1 }} />
+              <button className="btn btn-ghost btn-sm" onClick={() => {
+                const pendentes = selecionadosVisiveis.filter((h) => h.status === 'pendente')
+                if (pendentes.length === 0) show?.('Selecione ao menos um honorário pendente pra gerar o QR Code.')
+                else setQrHonorarios(pendentes)
+              }} title="Um QR Code PIX só, com a soma dos honorários pendentes selecionados">
+                <QrCodeIcon size={13} /> QR Code PIX
+              </button>
               <button className="btn btn-accent btn-sm" onClick={() => setShowEditarLote(true)}>
                 <PencilIcon size={13} /> Editar em grupo
               </button>
@@ -302,6 +312,11 @@ export default function HonorariosPage({ clienteFixo = null } = {}) {
                             <PencilIcon size={13} />
                           </button>
                           {h.status === 'pendente' && (
+                            <button className="btn btn-ghost btn-sm" onClick={() => setQrHonorarios([h])} title="Gerar QR Code PIX pra enviar ao cliente">
+                              <QrCodeIcon size={13} />
+                            </button>
+                          )}
+                          {h.status === 'pendente' && (
                             <button className="btn btn-ghost btn-sm" onClick={() => setPreviaLembrete(h)} title="Conferir e enviar lembrete">
                               <SendIcon size={13} /> Lembrete
                             </button>
@@ -329,6 +344,10 @@ export default function HonorariosPage({ clienteFixo = null } = {}) {
       {showNovoAvulso && (
         <ModalNovoAvulso onClose={() => setShowNovoAvulso(false)}
           onSalvo={() => { setShowNovoAvulso(false); carregar() }} />
+      )}
+      {qrHonorarios && (
+        <ModalQrCodePix honorarios={qrHonorarios} onClose={() => setQrHonorarios(null)}
+          onConfigurar={() => { setQrHonorarios(null); setShowConfigPix(true) }} />
       )}
       {previaLembrete && (
         <ModalPreviaLembrete honorario={previaLembrete} onClose={() => setPreviaLembrete(null)}
@@ -408,13 +427,14 @@ function AbaConfigClientes() {
 function ModalConfigPix({ onClose }) {
   const [chavePix, setChavePix] = useState('')
   const [favorecido, setFavorecido] = useState('')
+  const [cidade, setCidade] = useState('')
   const [carregando, setCarregando] = useState(true)
   const [salvando, setSalvando] = useState(false)
   const { show } = useToast()
 
   useEffect(() => {
     obterConfigPix()
-      .then((cfg) => { setChavePix(cfg.chavePix); setFavorecido(cfg.favorecido) })
+      .then((cfg) => { setChavePix(cfg.chavePix); setFavorecido(cfg.favorecido); setCidade(cfg.cidade) })
       .catch(() => {})
       .finally(() => setCarregando(false))
   }, [])
@@ -422,7 +442,7 @@ function ModalConfigPix({ onClose }) {
   const salvar = async () => {
     setSalvando(true)
     try {
-      await salvarConfigPix({ chavePix: chavePix.trim(), favorecido: favorecido.trim() })
+      await salvarConfigPix({ chavePix: chavePix.trim(), favorecido: favorecido.trim(), cidade: cidade.trim() })
       show?.('Chave PIX salva')
       onClose()
     } catch (e) {
@@ -447,9 +467,16 @@ function ModalConfigPix({ onClose }) {
             <input value={chavePix} onChange={(e) => setChavePix(e.target.value)} placeholder="CNPJ, e-mail, telefone ou chave aleatória" />
           </div>
           <div className="form-field">
-            <label className="form-label">Nome do favorecido (opcional)</label>
+            <label className="form-label">Nome do favorecido</label>
             <input value={favorecido} onChange={(e) => setFavorecido(e.target.value)} placeholder="Nome do escritório" />
           </div>
+          <div className="form-field">
+            <label className="form-label">Cidade do favorecido</label>
+            <input value={cidade} onChange={(e) => setCidade(e.target.value)} placeholder="Ex.: São Paulo" />
+          </div>
+          <p style={{ fontSize: 11, color: 'var(--text3)', margin: '-4px 0 12px' }}>
+            Nome e cidade são obrigatórios pro QR Code PIX (aparecem no app do banco do cliente).
+          </p>
           <button className="btn btn-accent" style={{ width: '100%' }} onClick={salvar} disabled={salvando}>
             {salvando ? 'Salvando...' : 'Salvar'}
           </button>
@@ -1063,5 +1090,186 @@ function AbaPorCarteira({ carteiras }) {
         </div>
       )}
     </div>
+  )
+}
+
+// ── QR Code PIX ──────────────────────────────────────────────────────────────
+// Um PIX só (BR Code estático, com valor) pra um ou mais honorários
+// pendentes. Do mesmo cliente, o modal oferece também os outros honorários
+// em aberto dele (de qualquer mês), pra agrupar o atrasado com o do mês.
+// O escritório copia o código / a mensagem ou baixa a imagem e manda pro
+// cliente; nada é gravado — a baixa continua sendo feita como hoje.
+function nomeDe(h) { return h.clientes?.nome || h.nome_avulso || 'Cliente' }
+function rotuloHonorario(h) {
+  return h.tipo === 'avulso' && h.descricao ? `${h.descricao} (${h.competencia})` : `Honorário ${h.competencia}`
+}
+function linkWhatsapp(telefone, texto) {
+  let d = String(telefone || '').replace(/\D/g, '')
+  if (d.length === 10 || d.length === 11) d = '55' + d
+  const destino = d.length >= 12 ? d : ''
+  return `https://wa.me/${destino}?text=${encodeURIComponent(texto)}`
+}
+
+function ModalQrCodePix({ honorarios, onClose, onConfigurar }) {
+  const [config, setConfig] = useState(null)
+  const [opcoes, setOpcoes] = useState(honorarios)
+  const [marcados, setMarcados] = useState(() => new Set(honorarios.map((h) => h.id)))
+  const [qr, setQr] = useState(null)
+  const [copiado, setCopiado] = useState(null) // 'codigo' | 'mensagem'
+  const { show } = useToast()
+
+  const clientes = Array.from(new Set(honorarios.map((h) => h.cliente_id || `avulso:${h.id}`)))
+  const umCliente = clientes.length === 1 && honorarios[0].cliente_id
+  const nomeCliente = clientes.length === 1 ? nomeDe(honorarios[0]) : null
+  const telefone = clientes.length === 1 ? (honorarios[0].clientes?.telefone || honorarios[0].telefone_avulso) : null
+
+  useEffect(() => {
+    obterConfigPix().then(setConfig).catch(() => setConfig({ chavePix: '', favorecido: '', cidade: '' }))
+    if (umCliente) {
+      listarPendentesDoCliente(honorarios[0].cliente_id)
+        .then((lista) => {
+          const ids = new Set(honorarios.map((h) => h.id))
+          setOpcoes([...honorarios, ...lista.filter((h) => !ids.has(h.id))]
+            .sort((a, b) => (a.vencimento || '').localeCompare(b.vencimento || '')))
+        })
+        .catch(() => {})
+    }
+  }, [])
+
+  const escolhidos = opcoes.filter((h) => marcados.has(h.id))
+  const total = Math.round(escolhidos.reduce((s, h) => s + Number(h.valor), 0) * 100) / 100
+  const competencias = Array.from(new Set(escolhidos.map((h) => h.competencia).filter(Boolean)))
+
+  let pix = null
+  let erroPix = null
+  if (config && escolhidos.length > 0) {
+    try {
+      pix = montarPixCopiaCola({
+        chave: config.chavePix, nome: config.favorecido, cidade: config.cidade, valor: total,
+        txid: `HON${competencias.map((c) => c.replace('/', '')).join('').slice(0, 20)}`,
+        descricao: `Honorarios ${competencias.join(' ')}`,
+      })
+    } catch (e) { erroPix = e.message }
+  }
+
+  useEffect(() => {
+    setQr(null)
+    if (!pix) return
+    let vivo = true
+    QRCode.toDataURL(pix, { width: 320, margin: 2, errorCorrectionLevel: 'M' })
+      .then((url) => { if (vivo) setQr(url) })
+      .catch(() => {})
+    return () => { vivo = false }
+  }, [pix])
+
+  const mensagem = pix ? [
+    `Olá${nomeCliente ? `, ${nomeCliente}` : ''}! Segue o PIX dos honorários:`,
+    ...escolhidos.map((h) => `• ${rotuloHonorario(h)}: ${fmt(h.valor)}`),
+    escolhidos.length > 1 ? `Total: ${fmt(total)}` : null,
+    '',
+    'PIX copia e cola:',
+    pix,
+  ].filter((l) => l !== null).join('\n') : ''
+
+  const copiar = async (texto, qual) => {
+    try {
+      await navigator.clipboard.writeText(texto)
+      setCopiado(qual)
+      setTimeout(() => setCopiado(null), 2500)
+    } catch {
+      show?.('Não foi possível copiar — selecione o texto e copie manualmente.')
+    }
+  }
+  const alternar = (id) => setMarcados((prev) => {
+    const n = new Set(prev)
+    if (n.has(id)) n.delete(id); else n.add(id)
+    return n
+  })
+  const nomeImagem = `PIX honorarios - ${nomeCliente || 'clientes'}${competencias.length ? ` - ${competencias.join(' ').replace(/\//g, '-')}` : ''}.png`
+
+  return (
+    <Modal onClose={onClose}>
+      <p className="modal-title" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <QrCodeIcon size={16} /> QR Code PIX{nomeCliente ? ` — ${nomeCliente}` : ''}
+      </p>
+
+      {clientes.length > 1 && (
+        <div className="notice notice-warn" style={{ marginBottom: 10 }}>
+          <InfoIcon size={14} />
+          <span>Os honorários selecionados são de clientes diferentes — o QR Code vai sair com a soma de todos.</span>
+        </div>
+      )}
+
+      <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.03em', marginBottom: 6 }}>
+        Honorários no PIX {umCliente && opcoes.length > 1 && <span style={{ textTransform: 'none', fontWeight: 400 }}>· marque os que quer agrupar</span>}
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 12, maxHeight: 200, overflowY: 'auto' }}>
+        {opcoes.map((h) => {
+          const atraso = diasAtraso(h.vencimento)
+          return (
+            <label key={h.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 10px', border: '1px solid var(--border)',
+              borderRadius: 'var(--r-md)', background: marcados.has(h.id) ? 'var(--accent-dim)' : 'var(--surface)', cursor: 'pointer', fontSize: 12.5 }}>
+              <input type="checkbox" checked={marcados.has(h.id)} onChange={() => alternar(h.id)} />
+              <span style={{ flex: 1, minWidth: 0 }}>
+                <span style={{ color: 'var(--text1)', fontWeight: 600 }}>{rotuloHonorario(h)}</span>
+                {clientes.length > 1 && <span style={{ color: 'var(--text3)' }}> · {nomeDe(h)}</span>}
+                <span style={{ display: 'block', fontSize: 11, color: atraso > 0 ? 'var(--danger)' : 'var(--text3)' }}>
+                  vence {fmtData(h.vencimento)}{atraso > 0 ? ` · ${atraso}d atraso` : ''}
+                </span>
+              </span>
+              <span style={{ fontWeight: 700, color: 'var(--text1)', whiteSpace: 'nowrap' }}>{fmt(h.valor)}</span>
+            </label>
+          )
+        })}
+      </div>
+
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', padding: '0 2px 10px', borderBottom: '1px solid var(--border)', marginBottom: 12 }}>
+        <span style={{ fontSize: 12, color: 'var(--text2)' }}>{escolhidos.length} honorário{escolhidos.length !== 1 ? 's' : ''}</span>
+        <span style={{ fontSize: 18, fontWeight: 800, color: 'var(--text1)' }}>{fmt(total)}</span>
+      </div>
+
+      {!config && <p style={{ fontSize: 12, color: 'var(--text3)' }}>Carregando...</p>}
+      {config && escolhidos.length === 0 && <p style={{ fontSize: 12, color: 'var(--text3)', textAlign: 'center' }}>Marque ao menos um honorário.</p>}
+      {erroPix && (
+        <div className="notice notice-warn" style={{ alignItems: 'center' }}>
+          <InfoIcon size={14} />
+          <span style={{ flex: 1 }}>{erroPix}</span>
+          <button className="btn btn-ghost btn-sm" onClick={onConfigurar}><SettingsIcon size={13} /> Configurar PIX</button>
+        </div>
+      )}
+
+      {pix && (
+        <>
+          <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 10 }}>
+            {qr
+              ? <img src={qr} alt="QR Code PIX" style={{ width: 220, height: 220, borderRadius: 8, border: '1px solid var(--border)', background: '#fff' }} />
+              : <div style={{ width: 220, height: 220 }} />}
+          </div>
+          <div style={{ fontSize: 10.5, color: 'var(--text3)', textAlign: 'center', marginBottom: 6 }}>
+            {config.favorecido} · chave {config.chavePix}
+          </div>
+          <textarea readOnly value={pix} rows={3} onFocus={(e) => e.target.select()}
+            style={{ width: '100%', fontSize: 11, fontFamily: 'monospace', resize: 'none', marginBottom: 10, wordBreak: 'break-all' }} />
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+            <button className="btn btn-accent btn-sm" onClick={() => copiar(pix, 'codigo')}>
+              {copiado === 'codigo' ? <CheckIcon size={13} /> : <CopyIcon size={13} />} {copiado === 'codigo' ? 'Copiado!' : 'Copiar PIX copia e cola'}
+            </button>
+            <a className="btn btn-ghost btn-sm" href={qr || undefined} download={nomeImagem} style={{ justifyContent: 'center', textDecoration: 'none', pointerEvents: qr ? 'auto' : 'none' }}>
+              <DownloadIcon size={13} /> Baixar imagem do QR
+            </a>
+            <button className="btn btn-ghost btn-sm" onClick={() => copiar(mensagem, 'mensagem')}>
+              {copiado === 'mensagem' ? <CheckIcon size={13} /> : <CopyIcon size={13} />} {copiado === 'mensagem' ? 'Mensagem copiada!' : 'Copiar mensagem'}
+            </button>
+            <a className="btn btn-ghost btn-sm" href={linkWhatsapp(telefone, mensagem)} target="_blank" rel="noopener noreferrer" style={{ justifyContent: 'center', textDecoration: 'none' }}>
+              <MessageCircleIcon size={13} /> Abrir no WhatsApp
+            </a>
+          </div>
+          <p style={{ fontSize: 11, color: 'var(--text3)', margin: '8px 0 0' }}>
+            O WhatsApp abre com a mensagem e o código copia e cola{telefone ? '' : ' (sem telefone cadastrado: escolha o contato lá)'}; a imagem do QR você anexa se quiser.
+          </p>
+        </>
+      )}
+      <button className="btn btn-ghost" style={{ width: '100%', marginTop: 10 }} onClick={onClose}>Fechar</button>
+    </Modal>
   )
 }
