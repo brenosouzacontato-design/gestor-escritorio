@@ -1291,19 +1291,32 @@ function BotaoGuia({ anexo, onBaixar, label = 'Guia', descricao }) {
   );
 }
 
-// Anexos de uma obrigação/tarefa. Um só: o botão de sempre (label fixo).
-// Mais de um (guia recalculada, recibo + holerite…): um botão por arquivo,
-// com o nome do arquivo — e não a competência do painel — no botão e no
-// aviso de download pro escritório.
-function BotoesAnexos({ anexo, onBaixar, label, descricao }) {
-  const arquivos = anexo.arquivos || [];
-  if (arquivos.length <= 1) return <BotaoGuia anexo={anexo} onBaixar={onBaixar} label={label} descricao={descricao} />;
+// Anexos de uma obrigação/tarefa. Com mais de um (guia recalculada,
+// recibo + holerite…), a obrigação vira um grupo: ela é o cabeçalho e cada
+// arquivo anexado é uma linha embaixo, com o nome do arquivo — e não a
+// competência do painel — na linha, no download e no aviso pro escritório.
+const variosAnexos = (anexo) => (anexo?.arquivos?.length || 0) > 1;
+
+function LinhasArquivos({ arquivos, onBaixar }) {
   return (
-    <span style={{ display: 'inline-flex', flexWrap: 'wrap', gap: 6, justifyContent: 'flex-end' }}>
+    <div style={{ flexBasis: '100%', width: '100%', minWidth: 0, display: 'flex', flexDirection: 'column', gap: 6, marginTop: 2 }}>
       {arquivos.map((a) => (
-        <BotaoGuia key={a.id} anexo={a} onBaixar={onBaixar} descricao={a.nome_arquivo}
-          label={<span style={{ maxWidth: 190, overflow: 'hidden', textOverflow: 'ellipsis' }}>{a.nome_arquivo || label}</span>} />
+        <div key={a.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', background: 'var(--surface)',
+          border: '1px solid var(--border)', borderLeft: '3px solid var(--accent)', borderRadius: 'var(--r-md)', minWidth: 0 }}>
+          <FileTextIcon size={14} style={{ color: 'var(--text3)', flexShrink: 0 }} />
+          <span title={a.nome_arquivo} style={{ flex: 1, minWidth: 0, fontSize: 12.5, fontWeight: 600, color: 'var(--text1)',
+            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.nome_arquivo || 'Arquivo'}</span>
+          <BotaoGuia anexo={a} onBaixar={onBaixar} label="Baixar" descricao={a.nome_arquivo} />
+        </div>
       ))}
+    </div>
+  );
+}
+
+function SeloQtdArquivos({ n }) {
+  return (
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, fontWeight: 700, color: 'var(--accent)', background: 'var(--accent-dim)', borderRadius: 99, padding: '1px 7px' }}>
+      <PaperclipIcon size={10} /> {n} arquivos
     </span>
   );
 }
@@ -1391,7 +1404,7 @@ function RecadoLinha({ chave }) {
   );
 }
 
-function Linha({ chave, corBorda, titulo, competencia, detalhes, direita }) {
+function Linha({ chave, corBorda, titulo, competencia, detalhes, direita, filhos = null }) {
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', background: 'var(--bg)', border: '1px solid var(--border)',
       borderLeft: `3px solid ${corBorda}`, borderRadius: 'var(--r-md)', flexWrap: 'wrap' }}>
@@ -1402,6 +1415,7 @@ function Linha({ chave, corBorda, titulo, competencia, detalhes, direita }) {
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 2, flexWrap: 'wrap', fontSize: 10.5 }}>{detalhes}</div>
       </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginLeft: 'auto', flexWrap: 'wrap', justifyContent: 'flex-end', minWidth: 0 }}>{direita}</div>
+      {filhos}
       {chave && <RecadoLinha key={chave} chave={chave} />}
     </div>
   );
@@ -1416,8 +1430,10 @@ function LinhaGuia({ g, onBaixar, onCopiar, editando, onSalvarValor, onMarcarPag
   const corBorda = g.semMovimento || g.paga ? 'var(--ok)' : vencida ? 'var(--danger)' : urgente ? 'var(--warn)' : g.aguardandoGuia ? 'var(--border)' : 'var(--accent)';
   return (
     <Linha chave={g.id} corBorda={corBorda} titulo={g.titulo} competencia={g.competencia}
+      filhos={variosAnexos(g.anexo) && <LinhasArquivos arquivos={g.anexo.arquivos} onBaixar={onBaixar} />}
       detalhes={(
         <>
+          {variosAnexos(g.anexo) && <SeloQtdArquivos n={g.anexo.arquivos.length} />}
           {g.area && <span style={{ color: 'var(--text3)' }}>{g.area}</span>}
           {g.vencimento && !g.semMovimento && (
             <span style={{ color: vencida ? 'var(--danger)' : urgente ? 'var(--warn)' : 'var(--text3)', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 3 }}>
@@ -1456,7 +1472,7 @@ function LinhaGuia({ g, onBaixar, onCopiar, editando, onSalvarValor, onMarcarPag
           {g.paga && (
             <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--ok)', background: 'var(--ok-dim)', borderRadius: 99, padding: '3px 9px', whiteSpace: 'nowrap' }}>Paga</span>
           )}
-          {g.anexo && <BotoesAnexos anexo={g.anexo} onBaixar={onBaixar} label="Guia" descricao={`Guia — ${g.titulo} ${g.competencia || ''}`.trim()} />}
+          {g.anexo && !variosAnexos(g.anexo) && <BotaoGuia anexo={g.anexo} onBaixar={onBaixar} descricao={`Guia — ${g.titulo} ${g.competencia || ''}`.trim()} />}
           {/* pagar sem baixar a guia: código de barras e PIX copia e cola lidos da própria guia */}
           {!g.paga && !g.semMovimento && g.anexo?.linha_digitavel && (
             <BotaoCopiar texto={g.anexo.linha_digitavel} icone={<BarcodeIcon size={13} />} label="Código de barras"
@@ -1872,8 +1888,10 @@ function LinhaObrigacao({ it, onBaixar }) {
   const aberta = it.status === 'pendente' || it.status === 'vencido';
   return (
     <Linha chave={it.id} corBorda={cor} titulo={it.titulo} competencia={it.competencia}
+      filhos={variosAnexos(it.anexo) && <LinhasArquivos arquivos={it.anexo.arquivos} onBaixar={onBaixar} />}
       detalhes={(
         <>
+          {variosAnexos(it.anexo) && <SeloQtdArquivos n={it.anexo.arquivos.length} />}
           {it.tipo === 'tarefa' && (
             <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, fontWeight: 700, color: 'var(--info)', background: 'var(--info-dim)', borderRadius: 99, padding: '1px 7px' }}>
               <CheckSquareIcon size={10} /> Tarefa
@@ -1897,7 +1915,7 @@ function LinhaObrigacao({ it, onBaixar }) {
       )}
       direita={(
         <>
-          {it.anexo && <BotoesAnexos anexo={it.anexo} onBaixar={onBaixar} label="Baixar" descricao={`${it.titulo} ${it.competencia || ''}`.trim()} />}
+          {it.anexo && !variosAnexos(it.anexo) && <BotaoGuia anexo={it.anexo} onBaixar={onBaixar} label="Baixar" descricao={`${it.titulo} ${it.competencia || ''}`.trim()} />}
           <span style={{ fontSize: 10, fontWeight: 700, color: cor, background: dim, borderRadius: 99, padding: '3px 9px', whiteSpace: 'nowrap' }}>
             {STATUS_LABEL[it.status] || it.status}
           </span>
