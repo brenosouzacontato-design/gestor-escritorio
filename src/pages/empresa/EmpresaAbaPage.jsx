@@ -8,7 +8,7 @@ import { useEffect, useMemo, useState } from 'react'
 import {
   ListChecksIcon, MonitorIcon, SettingsIcon, SendIcon, FileSignatureIcon, LayersIcon, BanknoteIcon, CalculatorIcon,
   ClipboardCheckIcon, CheckSquareIcon, PaperclipIcon, PlusIcon, ChevronLeftIcon, ChevronRightIcon,
-  CheckCircle2Icon, AlertCircleIcon, StickyNoteIcon, XIcon,
+  CheckCircle2Icon, AlertCircleIcon, StickyNoteIcon, XIcon, CalendarClockIcon, ZapIcon,
 } from 'lucide-react'
 import { useStore } from '../../store'
 import { supabase } from '../../lib/supabase'
@@ -27,6 +27,9 @@ import { useAcoesEmpresa, AcoesItem } from './AcoesItemEmpresa'
 import PainelUploadsEmpresa from './PainelUploadsEmpresa'
 import { listarGuias, situacaoGuia } from '../entregas/entregasApi'
 import { listarNfsePendentes } from '../painel/nfsePainelApi'
+import { NovaObrigacaoModal, ModalObrigacoesLote } from '../andamento/modaisObrigacao'
+import { listarDepartamentos } from '../andamento/andamentoApi'
+import { useToast } from '../../components/shared'
 
 const MODULOS = [
   { id: 'resumo', rotulo: 'Para fechar', Icon: ListChecksIcon },
@@ -69,7 +72,14 @@ export default function EmpresaAbaPage({ clienteId, onAddTarefa, onFecharAba }) 
   const obrigacoes = useStore((s) => s.obrigacoes || [])
   const competencia = useStore((s) => s.competenciaSelecionada)
   const setCompetencia = useStore((s) => s.setCompetenciaSelecionada)
+  const fetchObrigacoes = useStore((s) => s.fetchObrigacoes)
+  const { show } = useToast()
   const cliente = clientes.find((c) => c.id === clienteId)
+
+  // Programar obrigação (uma ou em lote) direto da aba — mesmos modais da ficha do cliente
+  const [departamentos, setDepartamentos] = useState([])
+  const [novaObrigacao, setNovaObrigacao] = useState(null) // null | 'uma' | 'lote'
+  useEffect(() => { listarDepartamentos().then(setDepartamentos).catch(() => {}) }, [])
 
   const salvo = useMemo(() => lerAba(clienteId), [clienteId])
   const [modulo, setModulo] = useState(MODULOS.some((m) => m.id === salvo.modulo) ? salvo.modulo : 'resumo')
@@ -128,7 +138,10 @@ export default function EmpresaAbaPage({ clienteId, onAddTarefa, onFecharAba }) 
       case 'resumo': return (
         <Resumo {...{ cliente, competencia, trilha, obsAbertas, obsComp, guias, guiasPendentes, guiasSemAbrir, tarefasAbertas, nfsePend, totalFalta, lembrete, setLembrete, setModulo, acoes }} />
       )
-      case 'obrigacoes': return <ModuloObrigacoes obrigacoes={obsComp} competencia={competencia} acoes={acoes} onCadastro={() => setModulo('cadastro')} />
+      case 'obrigacoes': return (
+        <ModuloObrigacoes obrigacoes={obsComp} competencia={competencia} acoes={acoes}
+          podeProgramar={departamentos.length > 0} onNova={() => setNovaObrigacao('uma')} onLote={() => setNovaObrigacao('lote')} />
+      )
       case 'tarefas': return <Tarefas clienteFixo={clienteId} onAddTarefa={() => onAddTarefa(clienteId)} />
       case 'documentos': return (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
@@ -171,6 +184,10 @@ export default function EmpresaAbaPage({ clienteId, onAddTarefa, onFecharAba }) 
           <button type="button" className="btn btn-sm" onClick={() => setModulo('documentos')} title="Documentos diversos, Declaração do Simples, Situação Fiscal e CND para o painel do cliente">
             <PaperclipIcon size={14} /> Enviar ao painel
           </button>
+          <button type="button" className="btn btn-sm" onClick={() => setNovaObrigacao('uma')} disabled={departamentos.length === 0}
+            title="Programar uma obrigação para esta empresa (departamento, tipo e vencimento)">
+            <PlusIcon size={14} /> Obrigação
+          </button>
           <button type="button" className="btn btn-sm btn-accent" onClick={() => onAddTarefa(clienteId)}><PlusIcon size={14} /> Tarefa</button>
         </div>
       </div>
@@ -189,6 +206,20 @@ export default function EmpresaAbaPage({ clienteId, onAddTarefa, onFecharAba }) 
         <div key={m.id} className="empresa-aba-conteudo" style={{ display: m.id === modulo ? 'block' : 'none' }}>{renderModulo(m.id)}</div>
       ))}
       {acoes.modais}
+      {novaObrigacao === 'uma' && (
+        <NovaObrigacaoModal cliente={cliente} dept={null} departamentos={departamentos} competencia={competencia}
+          onClose={() => setNovaObrigacao(null)}
+          onSaved={async () => { setNovaObrigacao(null); await fetchObrigacoes(); show('Obrigação programada!') }} />
+      )}
+      {novaObrigacao === 'lote' && (
+        <ModalObrigacoesLote departamentos={departamentos} clientes={[cliente]} competenciaInicial={competencia}
+          onClose={() => setNovaObrigacao(null)}
+          onSaved={async (resultado) => {
+            setNovaObrigacao(null)
+            await fetchObrigacoes()
+            show(`${resultado.criadas} programada${resultado.criadas !== 1 ? 's' : ''}${resultado.jaExistiam ? `, ${resultado.jaExistiam} já existia${resultado.jaExistiam !== 1 ? 'm' : ''}` : ''}`)
+          }} />
+      )}
     </div>
   )
 }
@@ -300,7 +331,7 @@ function LinhaObrigacao({ o, acoes }) {
 }
 
 // Módulo Obrigações: todas as da competência (a entregar e entregues), com as ações
-function ModuloObrigacoes({ obrigacoes, competencia, acoes, onCadastro }) {
+function ModuloObrigacoes({ obrigacoes, competencia, acoes, podeProgramar, onNova, onLote }) {
   const ordenar = (l) => ordenarPorVencimento(l, acoes.vencimentoDe)
   const abertas = ordenar(obrigacoes.filter((o) => !feita(o)))
   const entregues = ordenar(obrigacoes.filter(feita))
@@ -314,11 +345,18 @@ function ModuloObrigacoes({ obrigacoes, competencia, acoes, onCadastro }) {
   )
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+        <button type="button" className="btn btn-sm" style={{ background: 'var(--navy)', color: '#fff', border: 'none' }}
+          onClick={onNova} disabled={!podeProgramar} title="Departamento, tipo de obrigação, vencimento e recorrência">
+          <CalendarClockIcon size={13} /> Nova obrigação
+        </button>
+        <button type="button" className="btn btn-sm btn-ghost" onClick={onLote} disabled={!podeProgramar}
+          title="Várias obrigações de uma vez para esta empresa">
+          <ZapIcon size={13} /> Programar em lote
+        </button>
+      </div>
       {lista(`A entregar em ${competencia}`, abertas, 'Nada pendente nesta competência.')}
       {lista('Entregues', entregues, 'Nenhuma entregue ainda.')}
-      <p style={{ fontSize: 11.5, color: 'var(--text3)', margin: 0 }}>
-        Para criar obrigações ou gerar em lote, use <button type="button" className="btn btn-sm btn-ghost" onClick={onCadastro}>Cadastro e obrigações</button>.
-      </p>
     </div>
   )
 }
