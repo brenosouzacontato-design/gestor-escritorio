@@ -27,6 +27,7 @@ import {
   acharContaPendente, periodoDoExtrato,
 } from '../../../src/lib/contabilExtrato.js'
 import { agruparEmLinhas, pareceExtratoNubank, interpretarExtratoNubank } from '../../../src/lib/extratoNubankRegras.js'
+import { pareceExtratoVendasMercadoPago, interpretarExtratoVendasMercadoPago } from '../../../src/lib/extratoMercadoPagoRegras.js'
 
 const { extrairTransacoesIA } = extrairExtratoIA
 
@@ -59,7 +60,8 @@ async function lerLinhasPdfServidor(bytes) {
   return paginas
 }
 
-// Extrato Nubank lido por regra; null quando não é Nubank (ou não deu pra ler).
+// Extrato Nubank ou Extrato de Vendas do Mercado Pago lido por regra; null
+// quando não é nenhum dos dois (ou não deu pra ler) — aí segue pela IA.
 export async function lerExtratoNubank(bytes) {
   let paginas
   try {
@@ -67,6 +69,11 @@ export async function lerExtratoNubank(bytes) {
   } catch (e) {
     console.warn('importarExtrato: pdf.js não abriu o PDF, seguindo pela IA:', e.message)
     return null
+  }
+  if (pareceExtratoVendasMercadoPago(paginas)) {
+    const r = interpretarExtratoVendasMercadoPago(paginas)
+    if (!r.transacoes.length) return null
+    return { transacoes: r.transacoes, leitura: 'mercadopago', avisos: r.avisos.slice(0, 3) }
   }
   if (!pareceExtratoNubank(paginas)) return null
   const { transacoes, totais, avisos } = interpretarExtratoNubank(paginas)
@@ -215,7 +222,7 @@ export async function importarExtrato({ supabase, empresaId, pdfBytes, nomeArqui
 
   const { contas, planoCriado } = await garantirPlanoDeContas(supabase, empresaId)
   const { conta: contaBanco, criada: contaBancoCriada } = await garantirContaBanco(
-    supabase, empresaId, contas, banco || (lido.leitura === 'nubank' ? 'Nubank' : null),
+    supabase, empresaId, contas, banco || ({ nubank: 'Nubank', mercadopago: 'Mercado Pago' })[lido.leitura] || null,
   )
   const contaPendente = acharContaPendente(contas)
   if (!contaPendente) throw new Error('O plano de contas da empresa não tem a conta "Valores a Identificar".')
