@@ -3,6 +3,7 @@ import { useStore } from '../../store';
 import EmpresaCombobox from '../../components/EmpresaCombobox';
 import './contabil.css';
 import ResumoTab from './ResumoTab';
+import RelatorioFinanceiroTab from './RelatorioFinanceiroTab';
 import LancamentosTab from './LancamentosTab';
 import LancarOneflowTab from './LancarOneflowTab';
 import ImportarExtratoTab from './ImportarExtratoTab';
@@ -13,6 +14,7 @@ import RegrasTab from './RegrasTab';
 // OneFlow, onde ficam DRE, balancete e demais demonstrações.
 const TABS = [
   { id: 'resumo', label: 'Resumo' },
+  { id: 'relatorio', label: 'Relatório' },
   { id: 'lancamentos', label: 'Lançamentos' },
   { id: 'oneflow', label: 'Lançar no OneFlow' },
   { id: 'extrato', label: 'Importar Extrato' },
@@ -68,6 +70,7 @@ export default function ContabilPage({ clienteFixo = null } = {}) {
         <>
           {abaAtiva === 'resumo' && <ResumoTab empresaId={empresaIdAtual} periodo={periodo}
             onPeriodo={(p) => { setDataInicio(p.dataInicio); setDataFim(p.dataFim); }} onIrPara={setAbaAtiva} />}
+          {abaAtiva === 'relatorio' && <RelatorioFinanceiroTab empresaId={empresaIdAtual} periodo={periodo} empresaNome={empresaNome} onIrPara={setAbaAtiva} />}
           {abaAtiva === 'lancamentos' && <LancamentosTab empresaId={empresaIdAtual} periodo={periodo} empresaNome={empresaNome} />}
           {abaAtiva === 'oneflow' && <LancarOneflowTab empresaId={empresaIdAtual} periodo={periodo} empresaNome={empresaNome} onIrPara={setAbaAtiva} />}
           {abaAtiva === 'extrato' && <ImportarExtratoTab empresaId={empresaIdAtual} />}
