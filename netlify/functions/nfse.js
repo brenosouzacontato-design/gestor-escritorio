@@ -31,10 +31,11 @@
 //   { acao: 'extrato_marcar', cliente_id, ids, situacao: 'ignorado'|'pendente'|'ja_tem_nota', motivo? }
 //   { acao: 'extrato_pedir_cliente', cliente_id, ids, cancelar? }  ← os PIX aparecem no painel do cliente e no
 //        link "todas as notas" para ele dizer quem pagou; a resposta volta na conferência (pedido.resposta)
-//   { acao: 'recorrentes_listar', cliente_id }  ← modelos de nota recorrente (semanal) com as semanas a emitir
+//   { acao: 'recorrentes_listar', cliente_id }  ← modelos de nota recorrente (semanal ou mensal) com os períodos a emitir
 //   { acao: 'recorrentes_hoje' }  ← semanas a emitir de todas as empresas (tela Hoje), com o ambiente de cada uma
-//   { acao: 'recorrente_salvar', cliente_id, recorrente: { id?, nome, cpf (CPF ou CNPJ), endereco?, cep?, descricao, valor?, inicio?, ativo? } }
+//   { acao: 'recorrente_salvar', cliente_id, recorrente: { id?, nome, cpf (CPF ou CNPJ), endereco?, cep?, descricao, valor?, inicio?, periodicidade? ('semanal' | 'mensal'), ativo? } }
 //   { acao: 'recorrente_excluir', cliente_id, id }
+//   (semana = primeiro dia do período: a segunda-feira no semanal, o dia 1º no mensal)
 //   { acao: 'recorrente_pular', cliente_id, id, semana, desfazer? }  ← semana sem serviço (sai de "a emitir")
 //   { acao: 'recorrente_emitir', cliente_id, id, semana, valor, ambiente, data?, descricao?, nome?, cpf?, endereco? }
 //        ← cria a nota da semana com o valor e emite na hora (ver lib/nfse/recorrentes.js). Os campos opcionais
@@ -355,7 +356,7 @@ Valor: ${brl(nota.valor)}`
 
   // ---------------------------------------------------------------- emissão por extrato bancário
 
-  // ------------------------------------------------------------------ notas recorrentes (semanal)
+  // ------------------------------------------------------------------ notas recorrentes (semanal ou mensal)
   async recorrentes_listar({ db, repo }, p) {
     const empresa = await repo.obterEmpresa(uuid(p.cliente_id, 'cliente_id'))
     exigir(empresa, 'Empresa sem configuração de NFS-e', 409)
@@ -374,7 +375,7 @@ Valor: ${brl(nota.valor)}`
     return {
       recorrentes: modelos.map((m) => ({
         id: m.id, nome: m.nome, cpf: m.cpf, endereco: m.endereco || '', cep: m.cep || '', descricao: m.descricao, valor: m.valor === null ? null : Number(m.valor),
-        inicio: m.inicio, ativo: m.ativo,
+        inicio: m.inicio, ativo: m.ativo, periodicidade: m.periodicidade || 'semanal',
         semanas: m.inicio ? recorrentes.semanasDoModelo(m, notas.filter((x) => x.recorrente_id === m.id), hoje) : [],
       })),
     }
@@ -382,7 +383,7 @@ Valor: ${brl(nota.valor)}`
 
   // Tela "Hoje": todas as semanas a emitir, de todas as empresas (modelos ativos)
   async recorrentes_hoje({ db }) {
-    const { data, error } = await db.from('nfse_recorrentes').select('*').eq('periodicidade', 'semanal').eq('ativo', true)
+    const { data, error } = await db.from('nfse_recorrentes').select('*').in('periodicidade', recorrentes.PERIODICIDADES).eq('ativo', true)
     if (semColunasRecorrentes(error) || /nfse_recorrentes/i.test(error?.message || '')) return { semanas: [] }
     if (error) throw new Error(error.message)
     const modelos = (data || []).filter((m) => m.inicio)
@@ -407,7 +408,7 @@ Valor: ${brl(nota.valor)}`
         if (s.situacao !== 'a_emitir') continue
         semanas.push({
           cliente_id: m.cliente_id, empresa: nome.get(m.cliente_id) || '', ambiente: amb,
-          modelo: { id: m.id, nome: m.nome, cpf: m.cpf, endereco: m.endereco || '', valor: m.valor === null ? null : Number(m.valor) },
+          modelo: { id: m.id, nome: m.nome, cpf: m.cpf, endereco: m.endereco || '', valor: m.valor === null ? null : Number(m.valor), periodicidade: m.periodicidade },
           inicio: s.inicio, fim: s.fim, emAndamento: s.emAndamento, data: s.data, descricao: s.descricao, nota: s.nota,
         })
       }
@@ -463,11 +464,12 @@ Valor: ${brl(nota.valor)}`
     exigir(modelo.ativo, 'Modelo desativado')
     const semana = semanaDoModelo(modelo, p.semana)
     const valor = parseValor(String(p.valor ?? '').trim())
-    exigir(valor !== null && Number(valor) > 0, 'Informe o valor da semana')
+    const mensal = recorrentes.ehMensal(modelo)
+    exigir(valor !== null && Number(valor) > 0, `Informe o valor ${mensal ? 'do mês' : 'da semana'}`)
     const hoje = hojeBrasilia()
     const data = String(p.data || '').trim() || recorrentes.dataSugerida(semana, hoje)
     exigir(/^\d{4}-\d{2}-\d{2}$/.test(data) && recorrentes.naSemana(data, semana) && data <= hoje,
-      `A data precisa ser um dia da semana de ${semana.inicio.split('-').reverse().join('/')} a ${semana.fim.split('-').reverse().join('/')}, até hoje`)
+      `A data precisa ser um dia ${mensal ? 'do mês' : 'da semana'} de ${semana.inicio.split('-').reverse().join('/')} a ${semana.fim.split('-').reverse().join('/')}, até hoje`)
     // ajustes só desta nota (o modelo fica igual)
     const texto = (v, max) => String(v ?? '').replace(/\s+/g, ' ').trim().slice(0, max)
     const nome = texto(p.nome, 150) || modelo.nome
@@ -480,7 +482,7 @@ Valor: ${brl(nota.valor)}`
       .eq('recorrente_id', modelo.id).eq('ambiente', empresa.ambiente)
     if (error) throw new Error(error.message)
     const daSemana = (doModelo || []).filter((x) => recorrentes.naSemana(x.data, semana))
-    exigir(!daSemana.some((x) => recorrentes.FEITAS.includes(x.estado)), 'Esta semana já tem nota emitida (ou em emissão)', 409)
+    exigir(!daSemana.some((x) => recorrentes.FEITAS.includes(x.estado)), `${mensal ? 'Este mês' : 'Esta semana'} já tem nota emitida (ou em emissão)`, 409)
 
     const campos = { nome, cpf, endereco, cep: modelo.cep || '', data, valor, descricao }
     const aberta = daSemana.find((x) => recorrentes.ABERTAS.includes(x.estado))
@@ -492,7 +494,9 @@ Valor: ${brl(nota.valor)}`
     } else {
       const loteId = await lotes.criarLote(repo, {
         empresa, origem: 'recorrente', recorrenteId: modelo.id,
-        descricao: `${modelo.nome} · semana ${semana.inicio.split('-').reverse().join('/')} a ${semana.fim.split('-').reverse().join('/')}`,
+        descricao: mensal
+          ? `${modelo.nome} · mês ${semana.inicio.slice(5, 7)}/${semana.inicio.slice(0, 4)}`
+          : `${modelo.nome} · semana ${semana.inicio.split('-').reverse().join('/')} a ${semana.fim.split('-').reverse().join('/')}`,
         registros: [novoRegistro({ ...campos, origem: 'recorrente' })],
       })
       notaId = (await repo.listarNotasLote(loteId))[0].id
@@ -683,28 +687,31 @@ async function conferirExtrato(repo, empresa, lancamentos) {
 }
 
 // ---------------------------------------------------------------------- notas recorrentes
-const AVISO_RECORRENTES = 'Para usar notas recorrentes semanais, falta rodar supabase-schema-nfse-recorrentes-semanal.sql no SQL Editor do Supabase.'
+const AVISO_RECORRENTES = 'Para usar notas recorrentes, falta rodar supabase-schema-nfse-recorrentes-semanal.sql no SQL Editor do Supabase.'
 const semColunasRecorrentes = (error) => error && /periodicidade|inicio|puladas|nfse_recorrentes_cpf_check|nfse_recorrentes_valor_check|42703/i.test(`${error.code || ''} ${error.message || ''}`)
 
-// Modelos semanais da empresa; null se o banco ainda não tiver as colunas novas
+// Modelos (semanais e mensais) da empresa; null se o banco ainda não tiver as colunas novas.
+// Mensais sem início são da versão antiga da tabela (nunca usada) e ficam de fora.
 async function listarModelos(db, clienteId) {
-  const { data, error } = await db.from('nfse_recorrentes').select('*').eq('cliente_id', clienteId).eq('periodicidade', 'semanal')
+  const { data, error } = await db.from('nfse_recorrentes').select('*').eq('cliente_id', clienteId).in('periodicidade', recorrentes.PERIODICIDADES)
   if (semColunasRecorrentes(error)) return null
   if (error) throw new Error(error.message)
-  return (data || []).sort((a, b) => String(a.criado_em).localeCompare(String(b.criado_em)))
+  return (data || []).filter((m) => m.periodicidade === 'semanal' || m.inicio).sort((a, b) => String(a.criado_em).localeCompare(String(b.criado_em)))
 }
 
 async function modeloDaEmpresa(db, empresa, id) {
   uuid(id, 'id')
   const { data, error } = await db.from('nfse_recorrentes').select('*').eq('id', id).maybeSingle()
   if (error) throw new Error(error.message)
-  exigir(data && data.cliente_id === empresa.cliente_id && data.periodicidade === 'semanal', 'Modelo não encontrado', 404)
+  exigir(data && data.cliente_id === empresa.cliente_id && recorrentes.PERIODICIDADES.includes(data.periodicidade) && (data.periodicidade === 'semanal' || data.inicio), 'Modelo não encontrado', 404)
   return data
 }
 
 function semanaDoModelo(modelo, inicio) {
-  const semana = recorrentes.semanasAte(modelo.inicio, hojeBrasilia()).find((s) => s.inicio === inicio)
-  exigir(semana, 'Semana inválida (desde o início do modelo até a semana atual)')
+  const semana = recorrentes.periodosAte(modelo, hojeBrasilia()).find((s) => s.inicio === inicio)
+  exigir(semana, recorrentes.ehMensal(modelo)
+    ? 'Mês inválido (desde o início do modelo até o mês atual)'
+    : 'Semana inválida (desde o início do modelo até a semana atual)')
   return semana
 }
 

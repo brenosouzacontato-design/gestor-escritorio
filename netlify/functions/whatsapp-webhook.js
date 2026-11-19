@@ -598,12 +598,13 @@ async function processarComandoNfse(resto, mensagem, body, remoteJid) {
       if (errNotas) throw new Error(errNotas.message)
       const semanas = recorrentes.semanasDoModelo(item, notas || [], hoje)
       const semana = nfseWpp.escolherSemana(semanas, r.data)
+      const periodo = item.periodicidade === 'mensal' ? { um: 'o mês', varios: 'os meses', todos: 'Todos os meses' } : { um: 'a semana', varios: 'as semanas', todos: 'Todas as semanas' }
       if (!semana) {
-        await enviarMensagem(remoteJid, `⚠️ ${r.data ? `A data ${r.data.split('-').reverse().join('/')} está fora das semanas de ${item.nome}.` : `Todas as semanas de ${item.nome} já têm nota.`}`)
+        await enviarMensagem(remoteJid, `⚠️ ${r.data ? `A data ${r.data.split('-').reverse().join('/')} está fora d${periodo.varios} de ${item.nome}.` : `${periodo.todos} de ${item.nome} já têm nota.`}`)
         return { statusCode: 200, body: 'NFS-e no week' }
       }
       if (semana.situacao !== 'a_emitir') {
-        await enviarMensagem(remoteJid, `⚠️ A semana de ${semana.inicio.split('-').reverse().join('/')} a ${semana.fim.split('-').reverse().join('/')} de ${item.nome} ${semana.situacao === 'pulada' ? 'foi marcada como sem serviço' : 'já tem nota'}. Veja em Emitir NFS-e → Notas recorrentes.`)
+        await enviarMensagem(remoteJid, `⚠️ ${periodo.um[0].toUpperCase()}${periodo.um.slice(1)} de ${semana.inicio.split('-').reverse().join('/')} a ${semana.fim.split('-').reverse().join('/')} de ${item.nome} ${semana.situacao === 'pulada' ? 'foi marcada como sem serviço' : 'já tem nota'}. Veja em Emitir NFS-e → Notas recorrentes.`)
         return { statusCode: 200, body: 'NFS-e week taken' }
       }
       const data = r.data && r.data <= hoje ? r.data : semana.data

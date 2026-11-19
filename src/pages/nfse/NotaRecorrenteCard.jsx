@@ -18,10 +18,15 @@ export const docFmt = (d) => {
   return d || ''
 }
 
+// "Semana 26/10 a 01/11/2026" ou "Mês 10/2026" (modelo mensal)
+export const rotuloPeriodo = (periodicidade, inicio, fim) => (periodicidade === 'mensal'
+  ? `Mês ${dataBR(inicio).slice(3)}`
+  : `Semana ${dataBR(inicio).slice(0, 5)} a ${dataBR(fim)}`)
+
 const rotulo = { fontSize: 11, color: 'var(--text3)', fontWeight: 600 }
 const campo = { width: '100%', padding: '6px 8px', fontSize: 13, boxSizing: 'border-box' }
 
-// clienteId, empresa (nome, opcional), ambiente, modelo {id, nome, cpf, endereco, valor},
+// clienteId, empresa (nome, opcional), ambiente, modelo {id, nome, cpf, endereco, valor, periodicidade},
 // s {inicio, fim, emAndamento, data, descricao, nota}; onPronto({ok, texto}) após cada tentativa;
 // onPular(s) opcional ("sem serviço").
 export default function NotaRecorrenteCard({ clienteId, empresa, ambiente, modelo, s, onPronto, onPular }) {
@@ -33,6 +38,8 @@ export default function NotaRecorrenteCard({ clienteId, empresa, ambiente, model
   const [enviando, setEnviando] = useState(false)
   const [msg, setMsg] = useState(null)
   const teste = ambiente !== 'producao'
+  const mensal = modelo.periodicidade === 'mensal'
+  const periodo = rotuloPeriodo(modelo.periodicidade, s.inicio, s.fim)
   const problema = s.nota && (s.nota.estado === 'rejeitada' ? s.nota.mensagem : (s.nota.erros || []).join('; '))
   const dataMax = s.emAndamento ? (s.data || s.fim) : s.fim
   const mudou = (k) => String(nota[k]).trim() !== String(original[k]).trim()
@@ -79,8 +86,8 @@ export default function NotaRecorrenteCard({ clienteId, empresa, ambiente, model
     <div style={{ border: '1px solid var(--border)', borderRadius: 10, padding: '10px 12px', margin: '8px 0', background: 'var(--surface)', fontSize: 13 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
         {empresa && <b>{empresa}</b>}
-        <span style={{ color: 'var(--text2)' }}>{empresa ? '· ' : ''}Semana {dataBR(s.inicio).slice(0, 5)} a {dataBR(s.fim)}</span>
-        {s.emAndamento && <span className="badge" style={{ fontSize: 10 }}>semana em andamento</span>}
+        <span style={{ color: 'var(--text2)' }}>{empresa ? '· ' : ''}{periodo}</span>
+        {s.emAndamento && <span className="badge" style={{ fontSize: 10 }}>{mensal ? 'mês em andamento' : 'semana em andamento'}</span>}
         {teste && <span className="badge badge-warn" style={{ fontSize: 10 }}>homologação</span>}
         {ajustada && <span className="badge" style={{ fontSize: 10 }}>ajustada só nesta nota</span>}
       </div>
@@ -123,13 +130,13 @@ export default function NotaRecorrenteCard({ clienteId, empresa, ambiente, model
           <button type="button" className="btn btn-ghost" disabled={enviando} onClick={() => setEditando(!editando)}>
             <PencilIcon size={13} /> {editando ? 'Fechar edição' : 'Editar'}
           </button>
-          {onPular && <button type="button" className="btn btn-ghost" style={{ fontSize: 11 }} disabled={enviando} onClick={() => onPular(s)} title="Não teve serviço nesta semana">sem serviço</button>}
+          {onPular && <button type="button" className="btn btn-ghost" style={{ fontSize: 11 }} disabled={enviando} onClick={() => onPular(s)} title={mensal ? 'Não teve serviço neste mês' : 'Não teve serviço nesta semana'}>sem serviço</button>}
         </div>
       )}
 
       {confirmando && (
         <div style={{ marginTop: 8 }}>
-          <ConfirmarEmissao empresa={empresa} tomador={nota.nome} documento={nota.cpf} inicio={s.inicio} fim={s.fim} data={nota.data}
+          <ConfirmarEmissao empresa={empresa} tomador={nota.nome} documento={nota.cpf} inicio={s.inicio} fim={s.fim} periodo={periodo} data={nota.data}
             valor={valor} descricao={nota.descricao} ambiente={ambiente} enviando={enviando}
             onConfirmar={emitir} onCancelar={() => setConfirmando(false)} />
         </div>
