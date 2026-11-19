@@ -119,8 +119,8 @@ function extrairDataValor(texto, hoje) {
   return { data, valor, resto: resto.replace(/\s+/g, ' ').trim() }
 }
 
-// Semana da nota recorrente: a da data informada; senão a última semana já
-// fechada ainda sem nota; senão a semana em andamento.
+// Semana (ou mês, no modelo mensal) da nota recorrente: a da data informada; senão o último período já
+// fechado ainda sem nota; senão o período em andamento.
 // semanas: recorrentes.semanasDoModelo(...)
 function escolherSemana(semanas, data) {
   if (data) return semanas.find((s) => recorrentes.naSemana(data, s)) || null
@@ -168,7 +168,7 @@ function interpretarPedido(texto, { empresas, cadastros, hoje }) {
   }
 
   const cad = (cadastros || {})[empresa.cliente_id] || {}
-  const modelos = (cad.modelos || []).filter((m) => m.ativo !== false && m.periodicidade === 'semanal')
+  const modelos = (cad.modelos || []).filter((m) => m.ativo !== false && (m.periodicidade === 'semanal' || (m.periodicidade === 'mensal' && m.inicio)))
   const tomadores = (cad.tomadores || []).filter((t) => t.ativo !== false)
   // MEI (Emissor Nacional, nfse_mei_modelos): o "tomador" é o do modelo
   const modelosMei = (cad.mei || []).filter((m) => m.ativo !== false)
@@ -179,7 +179,7 @@ function interpretarPedido(texto, { empresas, cadastros, hoje }) {
     ...modelosMei.map((m) => ({ tipo: 'mei', item: m, nomes: [m.nome] })),
   ]
   const nomesListados = [
-    ...modelos.map((m) => `${m.nome} (recorrente semanal)`),
+    ...modelos.map((m) => `${m.nome} (recorrente ${m.periodicidade === 'mensal' ? 'mensal' : 'semanal'})`),
     ...tomadores.map((t) => t.nome),
     ...modelosMei.map((m) => `${m.nome} (modelo MEI${m.valor != null ? ` — ${brl(m.valor)}` : ''})`),
   ].slice(0, 30)

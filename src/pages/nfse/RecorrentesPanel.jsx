@@ -4,9 +4,10 @@ import { useToast } from '../../components/shared'
 import { chamarNfse } from './nfseApi'
 import NotaRecorrenteCard from './NotaRecorrenteCard'
 
-// Notas recorrentes semanais: mesmo tomador (CNPJ ou CPF), mesma descrição e serviço toda semana; só
-// o valor muda (ex.: ponto de coleta que emite toda semana para a Shopee). Cada semana (segunda a
-// domingo), inclusive a em andamento, aparece "a emitir" como um cartão da nota (NotaRecorrenteCard):
+// Notas recorrentes semanais ou mensais: mesmo tomador (CNPJ ou CPF), mesma descrição e serviço todo
+// período; só o valor muda (ex.: ponto de coleta que emite toda semana para a Shopee; contrato faturado
+// todo mês). Cada período (semana de segunda a domingo, ou mês do dia 1º ao último), inclusive o em
+// andamento, aparece "a emitir" como um cartão da nota (NotaRecorrenteCard):
 // o escritório confere, ajusta se precisar, digita o valor e a nota é emitida na hora.
 // Servidor: ações recorrente* (netlify/functions/nfse.js, lib/nfse/recorrentes.js).
 
@@ -24,7 +25,8 @@ const docFmt = (d) => {
   if (s.length === 11) return s.replace(/^(\d{3})(\d{3})(\d{3})(\d{2})$/, '$1.$2.$3-$4')
   return d || ''
 }
-const VAZIO = { nome: '', cpf: '', endereco: '', cep: '', descricao: 'Serviços prestados no período de {inicio} a {fim}', valor: '', inicio: '' }
+const VAZIO = { nome: '', cpf: '', endereco: '', cep: '', descricao: 'Serviços prestados no período de {inicio} a {fim}', valor: '', inicio: '', periodicidade: 'semanal' }
+const mesBR = (iso) => dataBR(iso).slice(3)
 
 export default function RecorrentesPanel({ clienteId, ambiente, onEmitida }) {
   const { show } = useToast()
@@ -68,16 +70,18 @@ export default function RecorrentesPanel({ clienteId, ambiente, onEmitida }) {
   }
 
   const aEmitir = (lista || []).reduce((n, m) => n + m.semanas.filter((s) => s.situacao === 'a_emitir').length, 0)
+  const periodicidades = new Set((lista || []).map((m) => m.periodicidade))
+  const titulo = periodicidades.size === 1 ? (periodicidades.has('mensal') ? ' (mensais)' : ' (semanais)') : ''
 
   return (
     <div style={card}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-        <RepeatIcon size={16} /><b style={{ fontSize: 14 }}>Notas recorrentes (semanais)</b>
-        {aEmitir > 0 && <span style={{ background: 'var(--warn-dim)', color: 'var(--warn)', borderRadius: 99, padding: '1px 8px', fontSize: 11, fontWeight: 700 }}>{aEmitir} semana(s) a emitir</span>}
+        <RepeatIcon size={16} /><b style={{ fontSize: 14 }}>Notas recorrentes{titulo}</b>
+        {aEmitir > 0 && <span style={{ background: 'var(--warn-dim)', color: 'var(--warn)', borderRadius: 99, padding: '1px 8px', fontSize: 11, fontWeight: 700 }}>{aEmitir} nota(s) a emitir</span>}
         {!form && !aviso && <button className="btn btn-ghost" style={{ marginLeft: 'auto' }} onClick={() => setForm({ ...VAZIO })}><PlusIcon size={14} /> Novo modelo</button>}
       </div>
       <p style={{ ...suave, margin: '6px 0 10px' }}>
-        Mesmo tomador e mesma descrição toda semana (segunda a domingo); só o valor muda. A semana atual já aparece aqui:
+        Mesmo tomador e mesma descrição toda semana (segunda a domingo) ou todo mês; só o valor muda. O período atual já aparece aqui:
         confira a nota, ajuste se precisar (só aquela nota), digite o valor e emita.
       </p>
       {aviso && <div style={{ fontSize: 12, padding: '6px 10px', borderRadius: 8, background: 'var(--warn-dim)', color: 'var(--warn)' }}>{aviso}</div>}
@@ -85,7 +89,7 @@ export default function RecorrentesPanel({ clienteId, ambiente, onEmitida }) {
       {form && <FormModelo form={form} setForm={setForm} onSalvar={salvar} onCancelar={() => setForm(null)} ocupado={ocupado} />}
 
       {lista === null && <div style={suave}>Carregando…</div>}
-      {lista?.length === 0 && !form && !aviso && <div style={suave}>Nenhum modelo. Use “Novo modelo” para cadastrar (ex.: Shopee, toda semana).</div>}
+      {lista?.length === 0 && !form && !aviso && <div style={suave}>Nenhum modelo. Use “Novo modelo” para cadastrar (ex.: Shopee, toda semana; contrato de serviço, todo mês).</div>}
       {(lista || []).map((m) => (
         <Modelo key={m.id} m={m} ambiente={ambiente} onEditar={() => setForm({ ...VAZIO, ...m, valor: valorBR(m.valor) })}
           onExcluir={() => excluir(m)} onPular={(s, d) => pular(m, s, d)} clienteId={clienteId} onPronto={emitida} />
@@ -103,11 +107,13 @@ function FormModelo({ form, setForm, onSalvar, onCancelar, ocupado }) {
         <div><label className="form-label">CNPJ (ou CPF)</label><input value={docFmt(form.cpf)} onChange={(e) => setForm({ ...form, cpf: soDig(e.target.value).slice(0, 14) })} placeholder="00.000.000/0000-00" /></div>
         <div><label className="form-label">Endereço do tomador</label><input {...campo('endereco')} /></div>
         <div><label className="form-label">CEP</label><input {...campo('cep')} /></div>
-        <div><label className="form-label">Primeira semana (qualquer dia dela)</label><input type="date" {...campo('inicio')} /></div>
+        <div><label className="form-label">Periodicidade</label>
+          <select {...campo('periodicidade')}><option value="semanal">Semanal (segunda a domingo)</option><option value="mensal">Mensal (dia 1º ao último dia)</option></select></div>
+        <div><label className="form-label">{form.periodicidade === 'mensal' ? 'Primeiro mês (qualquer dia dele)' : 'Primeira semana (qualquer dia dela)'}</label><input type="date" {...campo('inicio')} /></div>
         <div><label className="form-label">Valor sugerido (opcional)</label><input {...campo('valor')} placeholder="0,00" /></div>
       </div>
       <div style={{ marginTop: 10 }}>
-        <label className="form-label">Descrição da nota — {'{inicio}'} e {'{fim}'} viram as datas da semana</label>
+        <label className="form-label">Descrição da nota — {'{inicio}'} e {'{fim}'} viram as datas {form.periodicidade === 'mensal' ? <>do mês e {'{mes}'} vira MM/AAAA</> : 'da semana'}</label>
         <textarea rows={2} {...campo('descricao')} />
       </div>
       <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
@@ -122,12 +128,13 @@ function FormModelo({ form, setForm, onSalvar, onCancelar, ocupado }) {
 function Modelo({ m, ambiente, clienteId, onEditar, onExcluir, onPular, onPronto }) {
   const [historico, setHistorico] = useState(false)
   const [excluindo, setExcluindo] = useState(false)
+  const mensal = m.periodicidade === 'mensal'
   const pendentes = m.semanas.filter((s) => s.situacao === 'a_emitir').reverse()
   const feitas = m.semanas.filter((s) => s.situacao !== 'a_emitir').reverse()
   return (
     <div style={{ border: '1px solid var(--border)', borderRadius: 8, padding: '10px 12px', marginBottom: 10 }}>
       <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap' }}>
-        <b>{m.nome}</b><span style={suave}>{docFmt(m.cpf)} · desde {dataBR(m.inicio)}</span>
+        <b>{m.nome}</b><span style={suave}>{docFmt(m.cpf)} · {mensal ? 'mensal' : 'semanal'} · desde {mensal ? mesBR(m.inicio) : dataBR(m.inicio)}</span>
         <span style={{ marginLeft: 'auto', display: 'flex', gap: 4 }}>
           <button className="btn btn-icon btn-ghost" title="Editar modelo" onClick={onEditar}><PencilIcon size={13} /></button>
           <button className="btn btn-icon btn-ghost" title="Excluir modelo" onClick={() => setExcluindo(true)}><Trash2Icon size={13} /></button>
@@ -141,20 +148,20 @@ function Modelo({ m, ambiente, clienteId, onEditar, onExcluir, onPular, onPronto
         </div>
       )}
       {pendentes.length === 0
-        ? <div style={{ ...suave, marginTop: 6 }}>Nenhuma semana a emitir. A próxima aparece na segunda-feira.</div>
+        ? <div style={{ ...suave, marginTop: 6 }}>{mensal ? 'Nenhum mês a emitir. O próximo aparece no dia 1º.' : 'Nenhuma semana a emitir. A próxima aparece na segunda-feira.'}</div>
         : pendentes.map((s) => (
           <NotaRecorrenteCard key={s.inicio} clienteId={clienteId} ambiente={ambiente} modelo={m} s={s} onPronto={onPronto} onPular={onPular} />
         ))}
       {feitas.length > 0 && (
         <div style={{ marginTop: 8 }}>
           <button className="btn btn-ghost" style={{ padding: 0, fontSize: 12 }} onClick={() => setHistorico(!historico)}>
-            {historico ? <ChevronDownIcon size={13} /> : <ChevronRightIcon size={13} />} Semanas anteriores ({feitas.length})
+            {historico ? <ChevronDownIcon size={13} /> : <ChevronRightIcon size={13} />} {mensal ? 'Meses anteriores' : 'Semanas anteriores'} ({feitas.length})
           </button>
           {historico && (
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12, marginTop: 4 }}>
               <tbody>{feitas.map((s) => (
                 <tr key={s.inicio}>
-                  <td style={td}>{curta(s.inicio)} a {dataBR(s.fim)}</td>
+                  <td style={td}>{mensal ? mesBR(s.inicio) : `${curta(s.inicio)} a ${dataBR(s.fim)}`}</td>
                   <td style={td}>{s.situacao === 'emitida' ? `NFS-e nº ${s.nota?.numero || '?'}` : s.situacao === 'pulada' ? 'Sem serviço' : 'Em emissão — confira no lote'}</td>
                   <td style={{ ...td, textAlign: 'right' }}>{s.nota ? brl(s.nota.valor) : ''}</td>
                   <td style={td}>{s.situacao === 'pulada' && <button className="btn btn-ghost" style={{ padding: 0, fontSize: 11 }} onClick={() => onPular(s, true)}>desfazer</button>}</td>

@@ -15,7 +15,7 @@ const funcao = require('../../../nfse')
 const { criarSupabaseFalso } = require('./supabaseFalso.cjs')
 const { criarCliente, comprimir } = require('../sefin')
 const { cnpjValido, validar, hojeBrasilia } = require('../validador')
-const { semanasFechadas, segundaDa, somarDias, descricaoDa } = require('../recorrentes')
+const { semanasFechadas, segundaDa, somarDias, descricaoDa, mesesAte, validarModelo, primeiroDoMes } = require('../recorrentes')
 const { montarDps, carregarGabarito } = require('../dps')
 const { serializar } = require('../xml')
 
@@ -189,4 +189,77 @@ test('function: modelo semanal com CNPJ, emite a semana com o valor digitado, pu
 
   // modelo inexistente (ou de outra empresa) não é encontrado
   assert.equal((await chamar({ acao: 'recorrente_emitir', id: '99999999-9999-4999-8999-999999999999', semana: s3.inicio, valor: '1', ambiente: 'homologacao' })).status, 404)
+})
+
+test('meses: do dia 1º ao último dia, desde o início, o atual em andamento', () => {
+  assert.deepEqual(mesesAte('2026-09-15', '2026-11-19'), [
+    { inicio: '2026-09-01', fim: '2026-09-30' }, { inicio: '2026-10-01', fim: '2026-10-31' }, { inicio: '2026-11-01', fim: '2026-11-30' }])
+  assert.deepEqual(mesesAte('2027-01-31', '2027-03-01'), [
+    { inicio: '2027-01-01', fim: '2027-01-31' }, { inicio: '2027-02-01', fim: '2027-02-28' }, { inicio: '2027-03-01', fim: '2027-03-31' }])
+  assert.deepEqual(mesesAte('2026-12-10', '2027-01-05').map((m) => m.inicio), ['2026-12-01', '2027-01-01'])
+  assert.equal(mesesAte('2020-01-01', '2026-11-19').length, 12) // no máximo 12 meses
+  assert.equal(descricaoDa({ descricao: 'Contrato - medição {mes} ({inicio} a {fim})' }, { inicio: '2026-10-01', fim: '2026-10-31' }),
+    'Contrato - medição 10/2026 (01/10/2026 a 31/10/2026)')
+  // modelo: início vira o dia 1º; sem início, o mês anterior; periodicidade desconhecida é recusada
+  const base = { nome: 'Tomador', cpf: MARKET }
+  assert.equal(validarModelo({ ...base, periodicidade: 'mensal', inicio: '2026-10-22' }, '2026-11-19').campos.inicio, '2026-10-01')
+  assert.deepEqual(Object.values((({ inicio, periodicidade }) => ({ inicio, periodicidade }))(validarModelo({ ...base, periodicidade: 'mensal' }, '2026-01-10').campos)), ['2025-12-01', 'mensal'])
+  assert.equal(validarModelo(base, '2026-11-19').campos.periodicidade, 'semanal')
+  assert.ok(validarModelo({ ...base, periodicidade: 'anual' }, '2026-11-19').erro)
+})
+
+test('function: modelo mensal emite uma nota por mês, com data no mês e até hoje', async () => {
+  const { supa, chamar, enviados } = montar()
+  const gabarito = fs.readFileSync(path.join(G, 'gabarito_dps.xml'), 'utf8')
+  const simples = { regApIBSCBSSN: '1', cAtvSN: '7', cNBS: '123012300', cIndOp: '030101', CST: '200', cClassTrib: '200028' }
+  assert.equal((await chamar({ acao: 'salvar_empresa', gabarito_xml: gabarito, servico_padrao: simples })).status, 200)
+  const pfx = fs.readFileSync(path.join(G, 'teste.pfx')).toString('base64')
+  assert.equal((await chamar({ acao: 'salvar_certificado', pfx_base64: pfx, senha: 'teste' })).status, 200)
+
+  const hoje = hojeBrasilia()
+  const mesAtual = primeiroDoMes(hoje)
+  const mesPassado = primeiroDoMes(somarDias(mesAtual, -1))
+  const s = await chamar({ acao: 'recorrente_salvar', recorrente: {
+    nome: 'Market Ltda', cpf: MARKET, endereco: 'Av. Teste, 100 - Centro', cep: '30000-000', periodicidade: 'mensal',
+    descricao: 'Gerenciamento de projetos - medição {mes}', valor: '28.366,80', inicio: somarDias(mesPassado, 9) } })
+  assert.equal(s.status, 200, JSON.stringify(s))
+  assert.deepEqual([supa.db.nfse_recorrentes[0].inicio, supa.db.nfse_recorrentes[0].periodicidade], [mesPassado, 'mensal'])
+
+  const [modelo] = (await chamar({ acao: 'recorrentes_listar' })).recorrentes
+  assert.equal(modelo.periodicidade, 'mensal')
+  const [m1, m2] = modelo.semanas
+  assert.deepEqual(modelo.semanas.map((x) => [x.inicio, x.situacao, x.emAndamento]), [[mesPassado, 'a_emitir', false], [mesAtual, 'a_emitir', true]])
+  assert.equal(m1.data, m1.fim) // mês fechado: último dia
+  assert.equal(m2.data, hoje) // mês em andamento: hoje
+
+  // mês fora do modelo, data de outro mês ou futura: nada sai
+  assert.equal((await chamar({ acao: 'recorrente_emitir', id: modelo.id, semana: primeiroDoMes(somarDias(m2.fim, 1)), valor: '10', ambiente: 'homologacao' })).status, 400)
+  const fora = await chamar({ acao: 'recorrente_emitir', id: modelo.id, semana: m1.inicio, valor: '10', data: m2.inicio, ambiente: 'homologacao' })
+  assert.equal(fora.status, 400)
+  assert.match(fora.erro || fora.mensagem || JSON.stringify(fora), /dia do mês/)
+  assert.equal((await chamar({ acao: 'recorrente_emitir', id: modelo.id, semana: m2.inicio, valor: '10', data: somarDias(hoje, 1), ambiente: 'homologacao' })).status, 400)
+  assert.equal(enviados.length, 0)
+
+  // qualquer dia do mês serve de data (ex.: 22, como no contrato faturado na medição)
+  const dia22 = `${m1.inicio.slice(0, 8)}22`
+  const e1 = await chamar({ acao: 'recorrente_emitir', id: modelo.id, semana: m1.inicio, valor: '28.366,80', data: dia22, ambiente: 'homologacao' })
+  assert.equal(e1.status, 200, JSON.stringify(e1))
+  assert.equal(e1.resultado.estado, 'autorizada')
+  assert.deepEqual([e1.nota.data, Number(e1.nota.valor), e1.nota.cpf], [dia22, 28366.8, MARKET])
+  assert.equal(e1.nota.descricao, `Gerenciamento de projetos - medição ${m1.inicio.slice(5, 7)}/${m1.inicio.slice(0, 4)}`)
+  assert.match(supa.db.nfse_lotes.find((l) => l.id === e1.nota.lote_id).descricao, new RegExp(`mês ${m1.inicio.slice(5, 7)}/${m1.inicio.slice(0, 4)}`))
+  assert.match(e1.nota.xml_enviado, new RegExp(`<dCompet>${dia22}</dCompet>`))
+
+  // o mesmo mês não sai de novo
+  const repetida = await chamar({ acao: 'recorrente_emitir', id: modelo.id, semana: m1.inicio, valor: '50', ambiente: 'homologacao' })
+  assert.equal(repetida.status, 409)
+  assert.match(JSON.stringify(repetida), /Este mês já tem nota/)
+
+  // mês sem serviço e tela Hoje
+  assert.equal((await chamar({ acao: 'recorrente_pular', id: modelo.id, semana: m2.inicio })).status, 200)
+  assert.deepEqual((await chamar({ acao: 'recorrentes_listar' })).recorrentes[0].semanas.map((x) => x.situacao), ['emitida', 'pulada'])
+  await chamar({ acao: 'recorrente_pular', id: modelo.id, semana: m2.inicio, desfazer: true })
+  const h = await chamar({ acao: 'recorrentes_hoje' })
+  assert.deepEqual(h.semanas.map((x) => [x.inicio, x.fim, x.modelo.periodicidade]), [[m2.inicio, m2.fim, 'mensal']])
+  assert.equal(enviados.length, 1)
 })
