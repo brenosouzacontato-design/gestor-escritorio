@@ -156,13 +156,15 @@ async function extrairTransacoesComDivisao(arquivo) {
 // corrigirTipoPelaDescricao: em src/lib/contabilExtrato.js (vale também pro
 // extrato que chega pelo WhatsApp).
 
-// Extrato do Nubank e Extrato de Vendas do Mercado Pago: lidos por regra
-// direto do texto do PDF (ver extratoNubank.js e
-// src/lib/extratoMercadoPagoRegras.js) — devolve null se não for nenhum dos dois, pra cair na
+// Extrato do Nubank, Extrato de Vendas do Mercado Pago e extrato da Stone:
+// lidos por regra direto do texto do PDF (ver extratoNubank.js,
+// src/lib/extratoMercadoPagoRegras.js e src/lib/extratoStoneRegras.js) —
+// devolve null se não for nenhum deles, pra cair na
 // extração por IA. O módulo (pdf.js) só é baixado quando um PDF é importado.
 async function extrairExtratoNubankSeFor(arquivo) {
   const { lerLinhasPdf, pareceExtratoNubank, interpretarExtratoNubank } = await import('./extratoNubank');
   const { pareceExtratoVendasMercadoPago, interpretarExtratoVendasMercadoPago } = await import('../../lib/extratoMercadoPagoRegras');
+  const { pareceExtratoStone, interpretarExtratoStone } = await import('../../lib/extratoStoneRegras');
   let paginas;
   try {
     paginas = await lerLinhasPdf(await arquivo.arrayBuffer());
@@ -173,6 +175,11 @@ async function extrairExtratoNubankSeFor(arquivo) {
     const r = interpretarExtratoVendasMercadoPago(paginas);
     if (r.transacoes.length === 0) return null;
     return { transacoes: r.transacoes, truncado: false, mercadoPago: r };
+  }
+  if (pareceExtratoStone(paginas)) {
+    const r = interpretarExtratoStone(paginas);
+    if (r.transacoes.length === 0) return null;
+    return { transacoes: r.transacoes, truncado: false, stone: r };
   }
   if (!pareceExtratoNubank(paginas)) return null;
   const { transacoes, totais, avisos } = interpretarExtratoNubank(paginas);
@@ -313,6 +320,14 @@ export default function ImportarExtratoTab({ empresaId }) {
           ? `✓ Extrato de Vendas do Mercado Pago lido direto do PDF: ${lido.qtd} movimentações — vendas brutas ${brl(lido.brutas)} conferem com o extrato; taxas (${brl(Math.abs(lido.taxas))}) e devoluções vêm em linhas separadas, saldo líquido ${brl(lido.liquido)}.`
           : `⚠ Extrato de Vendas do Mercado Pago lido direto do PDF, mas as vendas brutas (${brl(lido.brutas)}) NÃO batem com o extrato${totais?.brutas != null ? ` (${brl(totais.brutas)})` : ''}. Confira antes de gerar os lançamentos.`);
         if (avisosMp.length > 0) avisos.push(`⚠ ${avisosMp.slice(0, 3).join(' ')}`);
+      }
+      if (extracao.stone) {
+        const { lido, saldos, avisos: avisosStone } = extracao.stone;
+        const brl = (v) => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+        avisos.push(saldos?.confere
+          ? `✓ Extrato Stone lido direto do PDF: ${lido.qtd} movimentações — entradas ${brl(lido.entradas)} e saídas ${brl(lido.saidas)} conferem com o saldo do extrato (${brl(saldos.inicial)} → ${brl(saldos.final)}).`
+          : `⚠ Extrato Stone lido direto do PDF, mas a soma (entradas ${brl(lido.entradas)}, saídas ${brl(lido.saidas)}) NÃO bate com o saldo do extrato${saldos ? ` (${brl(saldos.inicial)} → ${brl(saldos.final)})` : ''}. Confira antes de gerar os lançamentos.`);
+        if (avisosStone.length > 0) avisos.push(`⚠ ${avisosStone.slice(0, 3).join(' ')}`);
       }
       if (extracao.falhas) {
         avisos.push(`⚠ Não consegui processar ${extracao.falhas.length} trecho${extracao.falhas.length === 1 ? '' : 's'} do extrato (${extracao.falhas.join('; ')}). As transações desses trechos não vieram — tente reimportar o período correspondente separado.`);
