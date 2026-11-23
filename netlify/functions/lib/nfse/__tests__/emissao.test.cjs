@@ -47,7 +47,7 @@ function sefinFalsa() {
       if (s.emitidas[id]) return { status: 200, dados: { chaveAcesso: s.emitidas[id] }, texto: '' }
       return { status: 404, dados: { erro: { codigo: 'E2404', descricao: 'Não foi gerada uma NFS-e' } }, texto: '' }
     }
-    if (metodo === 'GET' && caminho.startsWith('/nfse/')) return { status: 200, dados: { nfseXmlGZipB64: comprimir(nfseXml()) }, texto: '' }
+    if (metodo === 'GET' && caminho.startsWith('/nfse/')) return { status: 200, dados: { nfseXmlGZipB64: comprimir(s.nfseConsultada || nfseXml()) }, texto: '' }
     return { status: 404, dados: {}, texto: '' }
   }
   return s
@@ -139,6 +139,34 @@ test('rejeição, cópia para corrigir e numeração que não volta', async () =
   // a rejeitada refeita sai dos totais
   assert.deepEqual(totais(await repo.listarNotasLote((await repo.obterNota(a)).lote_id)),
     { servico: '1950.00', emitido: '1950.00', faltando: '0.00' })
+})
+
+// Caso A.T.O.S (23/11/2026): a série 900 nº 1 já tinha sido usada pelo Emissor
+// Web do portal em 30/12/2025. A Sefin recusa a DPS; a consulta pela DPS acha a
+// NFS-e antiga — que não pode virar a desta nota.
+const nfseDeOutraDps = (dhEmi, n = '1') => '<NFSe xmlns="http://www.sped.fazenda.gov.br/nfse"><infNFSe Id="NFS' + CHAVE + '">' +
+  `<nNFSe>${n}</nNFSe><DPS><infDPS Id="DPS1"><dhEmi>${dhEmi}</dhEmi></infDPS></DPS><valores><vServ>1070.00</vServ></valores></infNFSe></NFSe>`
+
+test('DPS já usada por outra emissão (portal): rejeita com aviso, não grava a NFS-e antiga', async () => {
+  const { repo, sefin, emissor, a } = await ambiente()
+  sefin.post = [[400, { erros: [{ Codigo: 'E0014', Descricao: 'DPS já utilizada' }] }]]
+  sefin.emitidas['DPS315460624761925000017800900000000000000001'] = CHAVE // a do portal
+  sefin.nfseConsultada = nfseDeOutraDps('2025-12-30T11:51:15-03:00')
+  const r = await emissor.emitir(a)
+  assert.equal(r.estado, 'rejeitada')
+  assert.match(r.mensagem, /série 900 nº 1.*já tinha sido usado.*nº 1.*30\/12\/2025.*R\$ 1\.070,00.*NÃO foi emitida/)
+  const n = await repo.obterNota(a)
+  assert.deepEqual([n.estado, n.chave_acesso, n.numero_nfse, n.xml_retorno], ['rejeitada', null, null, null])
+})
+
+test('DPS que já existia e é a nossa (mesmo dhEmi): autoriza normalmente', async () => {
+  const { repo, sefin, emissor, a } = await ambiente()
+  sefin.post = ['timeout_depois_de_gerar']
+  await emissor.emitir(a)
+  const nossa = (await repo.obterNota(a)).xml_enviado.match(/<dhEmi>([^<]+)<\/dhEmi>/)[1]
+  sefin.nfseConsultada = nfseDeOutraDps(nossa, '13')
+  const r = await emissor.emitir(a)
+  assert.deepEqual([r.estado, r.numero_nfse], ['autorizada', '13'])
 })
 
 test('erro 500 fica indeterminada e depois reconsulta e reenvia', async () => {
