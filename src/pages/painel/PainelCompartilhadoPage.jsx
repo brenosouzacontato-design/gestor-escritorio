@@ -462,12 +462,13 @@ function PainelCompartilhado({ clienteId, competencia: competenciaInicial, admin
     return doMes.length ? somaValores(doMes) : null;
   })();
   // O cliente vê o que está em aberto, de qualquer competência (o que ficou pra
-  // trás e não foi pago continua aparecendo), e as guias da própria
-  // competência já pagas, com o comprovante. Paga de competência anterior e
-  // concluída-vencida saem da lista (guiaSaiDaLista); no modo de edição o
+  // trás e não foi pago continua aparecendo), e as guias pagas que vencem na
+  // janela do painel (da competência ou anteriores, ex.: FGTS/INSS da 09 pagos
+  // em outubro), com o comprovante. Concluída-vencida sem pagamento sai da
+  // lista (guiaSaiDaLista); no modo de edição o
   // escritório ainda vê, esmaecido. Débito que a Receita ainda cobra aparece
   // em Pendências pelo Relatório de Situação Fiscal.
-  const guiaResolvida = (g) => guiaSaiDaLista(g, competencia);
+  const guiaResolvida = (g) => guiaSaiDaLista(g);
   const itemResolvido = (it) => (it.status === 'concluido' || it.status === 'nao_aplica')
     // documento entregue na própria competência (ex: holerite, recibo) continua pra baixar
     && !(it.anexo && it.competencia === competencia);

@@ -5,16 +5,16 @@ import { guiaSaiDaLista, filtrarOutrasCompetencias, montarGuias, indicadoresPain
 
 const COMP = '10/2026';
 
-test('guia paga da própria competência continua na lista; paga de competência anterior sai', () => {
+test('guia paga continua na lista, da competência ou de competência anterior', () => {
   assert.equal(guiaSaiDaLista({ paga: true, competencia: '10/2026', dias: -3, concluida: true }, COMP), false);
-  assert.equal(guiaSaiDaLista({ paga: true, competencia: '09/2026', dias: -30 }, COMP), true);
+  assert.equal(guiaSaiDaLista({ paga: true, competencia: '09/2026', dias: -30, concluida: true }, COMP), false);
   // em aberto continua; concluída e vencida sem pagamento (baixa do escritório) sai, como antes
   assert.equal(guiaSaiDaLista({ paga: false, competencia: '09/2026', dias: -30 }, COMP), false);
   assert.equal(guiaSaiDaLista({ paga: false, concluida: true, competencia: COMP, dias: -2 }, COMP), true);
   assert.equal(guiaSaiDaLista({ paga: false, concluida: true, competencia: COMP, dias: 5 }, COMP), false);
 });
 
-test('do banco até a lista: a guia paga da competência fica com o comprovante; a anterior paga nem entra', () => {
+test('do banco até a lista: guias pagas (da competência e anteriores que vencem na janela) ficam com o comprovante', () => {
   const imp = { eh_imposto: true };
   const impostos = [
     { id: 'das10', titulo: 'PGDAS', tipo: 'PGDAS', status: 'concluido', competencia: '10/2026', vencimento: '2026-11-20', tipos_obrigacao: imp },
@@ -29,7 +29,10 @@ test('do banco até a lista: a guia paga da competência fica com o comprovante;
   const { impostos: visiveis } = filtrarOutrasCompetencias({ impostos, outrasObrigacoes: [], tarefasArea: [], anexos }, COMP);
   const guias = montarGuias({ impostos: visiveis, anexos, gerenciais: null }, COMP);
   const naLista = guias.filter((g) => !guiaSaiDaLista(g, COMP));
-  assert.deepEqual(naLista.map((g) => g.id).sort(), ['das10', 'fgts09']);
+  assert.deepEqual(naLista.map((g) => g.id).sort(), ['das09', 'das10', 'fgts09']);
+  const das09 = naLista.find((g) => g.id === 'das09');
+  assert.equal(das09.paga, true);
+  assert.equal(das09.anexo.comprovante_path, 'comp/das09.pdf');
   const das10 = naLista.find((g) => g.id === 'das10');
   assert.equal(das10.paga, true);
   assert.equal(das10.anexo.comprovante_path, 'comp/das10.pdf');
