@@ -1,13 +1,15 @@
 import { useEffect, useState } from 'react';
 import {
   AlertTriangleIcon, ClockIcon, TrendingUpIcon, Building2Icon, CalendarIcon, FileTextIcon, ChevronRightIcon, LayersIcon,
+  CheckCircle2Icon, DownloadIcon,
 } from 'lucide-react';
 import { supabase, clienteComToken } from '../../lib/supabase';
 import { sessaoDoToken } from './AcessoPainel';
 import {
   obterItensConsolidados, obterDocumentosPorObrigacao, obterGerenciaisPorCompetencia, obterDadosGerenciais,
-  obterHistoricoFaturamento, obterSituacaoFiscalMaisRecente, obterCndVigente, obterHonorariosPainel,
+  obterHistoricoFaturamento, obterSituacaoFiscalMaisRecente, obterCndVigente, obterHonorariosPainel, avisarEventoPainel,
 } from './painelApi';
+import { baixarArquivoDaEmpresa } from '../documentos/documentosApi';
 import { ehImposto, ehDas, filtrarOutrasCompetencias, montarGuias } from './painelRegras';
 import { resumirEmpresa, consolidarGrupo } from './consolidadoGrupo';
 import { GraficoFaturamento } from './PainelClientePage';
@@ -94,6 +96,26 @@ export default function ConsolidadoGrupo({ empresas, competencia: competenciaIni
     return () => { ativo = false; };
   }, [chaveEmpresas, competencia, admin]);
 
+  // Guia / comprovante de uma empresa do grupo: no link público vai com o
+  // token daquela empresa (empresaId é o token), e o escritório é avisado do
+  // download como no painel dela.
+  const [baixando, setBaixando] = useState(null);
+  const [erroDownload, setErroDownload] = useState(null);
+  const baixar = async (empresaId, arquivo) => {
+    const chave = `${empresaId}:${arquivo.storage_path}`;
+    setBaixando(chave);
+    setErroDownload(null);
+    if (!admin) avisarEventoPainel(empresaId, 'download', { descricao: arquivo.nome_arquivo, competencia, documentoId: arquivo.id, token: empresaId });
+    try {
+      await baixarArquivoDaEmpresa(arquivo.storage_path, arquivo.nome_arquivo, admin ? null : empresaId);
+    } catch (e) {
+      setErroDownload(e.message || 'Não foi possível baixar o arquivo.');
+    } finally {
+      setBaixando(null);
+    }
+  };
+  const acoes = { baixar, baixando };
+
   const ok = (resumos || []).filter((r) => !r.erro);
   const comErro = (resumos || []).filter((r) => r.erro);
   const total = resumos && consolidarGrupo(ok);
@@ -136,8 +158,14 @@ export default function ConsolidadoGrupo({ empresas, competencia: competenciaIni
                 </div>
               )}
 
-              {/* ── Vencidos / a vencer do grupo ── */}
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 10 }}>
+              {erroDownload && (
+                <div style={{ fontSize: 12, color: 'var(--danger)', background: 'var(--danger-dim)', borderRadius: 'var(--r-md)', padding: '8px 12px' }}>
+                  {erroDownload}
+                </div>
+              )}
+
+              {/* ── Vencidos / a vencer / pagos do grupo ── */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10 }}>
                 <Indicador icone={<AlertTriangleIcon size={13} />} titulo="Vencidos — grupo"
                   valor={total.vencidos.qtd === 0 ? 'Nenhum' : total.vencidos.temValor ? fmt(total.vencidos.valor) : 'Valor na guia'}
                   sub={total.vencidos.qtd === 0 ? 'Nada vencido em nenhuma empresa'
@@ -148,6 +176,11 @@ export default function ConsolidadoGrupo({ empresas, competencia: competenciaIni
                   sub={total.aVencer.qtd === 0 ? 'Nada a vencer'
                     : `${plural(total.aVencer.qtd, 'item', 'itens')}${total.aVencer.proximo ? ` · próximo: ${fmtData(total.aVencer.proximo)}` : ''}${total.aVencer.semValor && total.aVencer.temValor ? ' · + valores nas guias' : ''}`}
                   s={total.aVencer.qtd === 0 ? 'ok' : 'neutral'} />
+                <Indicador icone={<CheckCircle2Icon size={13} />} titulo={`Pagos — ${competencia}`}
+                  valor={total.pagos.qtd === 0 ? 'Nenhum' : total.pagos.temValor ? fmt(total.pagos.valor) : plural(total.pagos.qtd, 'guia', 'guias')}
+                  sub={total.pagos.qtd === 0 ? 'Nenhum pagamento confirmado na competência'
+                    : `${plural(total.pagos.qtd, 'imposto', 'impostos')} em ${plural(total.pagos.empresas, 'empresa', 'empresas')}`}
+                  s={total.pagos.qtd > 0 ? 'ok' : 'neutral'} />
               </div>
 
               {/* ── Faturamento do grupo ── */}
@@ -202,7 +235,21 @@ export default function ConsolidadoGrupo({ empresas, competencia: competenciaIni
                 {total.guiasAbertas.length === 0
                   ? <Vazio>Nenhum imposto em aberto nas empresas do grupo.</Vazio>
                   : <div style={LISTA}>{total.guiasAbertas.map((g) => (
-                    <LinhaGuiaGrupo key={`${g.empresaId}-${g.id}`} g={g} onAbrir={() => onAbrirEmpresa(g.empresaId)} />
+                    <LinhaGuiaGrupo key={`${g.empresaId}-${g.id}`} g={g} acoes={acoes} onAbrir={() => onAbrirEmpresa(g.empresaId)} />
+                  ))}</div>}
+              </Secao>
+
+              {/* ── Impostos pagos de todas as empresas, com guia e comprovante ── */}
+              <Secao titulo={`Impostos pagos — competência ${competencia}`} icone={<CheckCircle2Icon size={14} />}
+                extra={total.pagos.temValor && (
+                  <span style={{ fontSize: 12, fontWeight: 800, color: 'var(--ok)' }}>{fmt(total.pagos.valor)}</span>
+                )}>
+                {total.guiasPagas.length === 0
+                  ? <div style={{ fontSize: 12, color: 'var(--text3)', background: 'var(--surface2)', borderRadius: 'var(--r-md)', padding: '10px 12px' }}>
+                    Nenhum pagamento de imposto confirmado nas empresas do grupo em {competencia}.
+                  </div>
+                  : <div style={LISTA}>{total.guiasPagas.map((g) => (
+                    <LinhaGuiaGrupo key={`${g.empresaId}-${g.id}`} g={g} acoes={acoes} onAbrir={() => onAbrirEmpresa(g.empresaId)} />
                   ))}</div>}
               </Secao>
 
@@ -227,7 +274,7 @@ export default function ConsolidadoGrupo({ empresas, competencia: competenciaIni
               )}
 
               <div style={{ fontSize: 11, color: 'var(--text3)', textAlign: 'center' }}>
-                Toque numa empresa para ver o painel completo dela, com as guias para baixar e pagar.
+                Baixe a guia ou o comprovante direto aqui, ou toque numa empresa para ver o painel completo dela.
               </div>
             </div>
           )}
@@ -273,25 +320,52 @@ function LinhaEmpresa({ r, onAbrir }) {
   );
 }
 
-function LinhaGuiaGrupo({ g, onAbrir }) {
-  const vencida = g.dias != null && g.dias < 0;
-  const urgente = g.dias != null && g.dias >= 0 && g.dias <= 3;
-  const cor = vencida ? 'var(--danger)' : urgente ? 'var(--warn)' : 'var(--accent)';
+// Linha de imposto (em aberto ou pago) de uma empresa do grupo. A parte de
+// texto abre o painel da empresa; os botões baixam a guia e o comprovante.
+function LinhaGuiaGrupo({ g, acoes, onAbrir }) {
+  const vencida = !g.paga && g.dias != null && g.dias < 0;
+  const urgente = !g.paga && g.dias != null && g.dias >= 0 && g.dias <= 3;
+  const cor = g.paga ? 'var(--ok)' : vencida ? 'var(--danger)' : urgente ? 'var(--warn)' : 'var(--accent)';
+  const anexo = g.anexo;
+  const guia = anexo?.storage_path
+    ? { id: anexo.id, storage_path: anexo.storage_path, nome_arquivo: anexo.nome_arquivo || `Guia ${g.titulo}` } : null;
+  const comprovante = g.paga && anexo?.comprovante_path
+    ? { id: anexo.id, storage_path: anexo.comprovante_path, nome_arquivo: anexo.comprovante_nome || `Comprovante ${g.titulo}` } : null;
   return (
-    <button type="button" onClick={onAbrir} style={estiloLinha(cor)}>
-      <div style={{ minWidth: 0 }}>
+    <div style={{ ...estiloLinha(cor), cursor: 'default', flexWrap: 'wrap' }}>
+      <button type="button" onClick={onAbrir} title="Abrir o painel da empresa"
+        style={{ flex: '1 1 220px', minWidth: 0, textAlign: 'left', background: 'none', border: 'none', padding: 0, cursor: 'pointer', font: 'inherit' }}>
         <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--text1)' }}>
           {g.titulo} <span style={{ fontWeight: 500, color: 'var(--text3)' }}>{g.competencia}</span>
         </div>
         <div style={{ fontSize: 11, color: 'var(--text2)', display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 2 }}>
           <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3 }}><LayersIcon size={10} /> {g.empresa}</span>
-          {g.vencimento && <span style={{ color: vencida ? 'var(--danger)' : 'var(--text3)' }}>· {fmtData(g.vencimento)} ({fmtDias(g.dias)})</span>}
+          {g.paga
+            ? <span style={{ color: 'var(--ok)', fontWeight: 600 }}>· paga{g.pagoEm ? ` em ${fmtData(String(g.pagoEm).slice(0, 10))}` : ''}</span>
+            : g.vencimento && <span style={{ color: vencida ? 'var(--danger)' : 'var(--text3)' }}>· {fmtData(g.vencimento)} ({fmtDias(g.dias)})</span>}
           {g.aguardandoGuia && <span style={{ color: 'var(--text3)' }}>· aguardando guia</span>}
         </div>
+      </button>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0, marginLeft: 'auto', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+        <div style={{ fontSize: 13, fontWeight: 800, color: g.paga ? 'var(--ok)' : vencida ? 'var(--danger)' : 'var(--text1)', whiteSpace: 'nowrap' }}>
+          {g.valor != null ? fmt(g.valor) : g.aguardandoGuia ? '—' : 'na guia'}
+        </div>
+        {guia && <BotaoArquivo rotulo="Guia" arquivo={guia} empresaId={g.empresaId} acoes={acoes} />}
+        {comprovante && <BotaoArquivo rotulo="Comprovante" arquivo={comprovante} empresaId={g.empresaId} acoes={acoes} cor="ok" />}
       </div>
-      <div style={{ fontSize: 13, fontWeight: 800, color: vencida ? 'var(--danger)' : 'var(--text1)', whiteSpace: 'nowrap' }}>
-        {g.valor != null ? fmt(g.valor) : g.aguardandoGuia ? '—' : 'na guia'}
-      </div>
+    </div>
+  );
+}
+
+function BotaoArquivo({ rotulo, arquivo, empresaId, acoes, cor = 'accent' }) {
+  const ocupado = acoes.baixando === `${empresaId}:${arquivo.storage_path}`;
+  return (
+    <button type="button" disabled={ocupado} onClick={() => acoes.baixar(empresaId, arquivo)}
+      title={`Baixar ${arquivo.nome_arquivo}`} aria-label={`Baixar ${rotulo.toLowerCase()}: ${arquivo.nome_arquivo}`}
+      style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 10.5, fontWeight: 700, whiteSpace: 'nowrap',
+        color: `var(--${cor})`, background: `var(--${cor}-dim)`, border: 'none', borderRadius: 99, padding: '4px 9px',
+        cursor: ocupado ? 'wait' : 'pointer', opacity: ocupado ? 0.6 : 1 }}>
+      <DownloadIcon size={11} /> {ocupado ? 'Baixando...' : rotulo}
     </button>
   );
 }

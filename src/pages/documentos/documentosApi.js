@@ -309,6 +309,21 @@ export async function baixarComNome(storagePath, nomeArquivo, segundos = 60 * 5)
   return url;
 }
 
+// Baixa um arquivo do painel de uma empresa do grupo (aba Consolidado): no
+// link público assina com o token daquela empresa (a function confere que o
+// arquivo é dela); dentro do app (token null) segue o caminho normal.
+export async function baixarArquivoDaEmpresa(storagePath, nomeArquivo, token = null) {
+  if (!token) return baixarComNome(storagePath, nomeArquivo);
+  const url = await assinarPeloServidor({ storagePath, segundos: 60 * 5, ...(nomeArquivo ? { nomeArquivo } : {}) }, token);
+  const a = document.createElement('a');
+  a.href = url;
+  a.rel = 'noopener';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  return url;
+}
+
 // Usado pela página pública de compartilhamento (DocumentoCompartilhadoPage,
 // acessada via ?doc=<id> — ver main.jsx). Gera uma signed URL nova a cada
 // acesso (o bucket é privado, não dá pra usar getPublicUrl) — o link
@@ -349,10 +364,10 @@ export async function obterDocumentoPublico(documentoId) {
 
 // netlify/functions/painel-arquivo.js — { storagePath } (link do painel, com
 // o token no cabeçalho) ou { documentoId } (link ?doc=). Devolve a URL assinada.
-async function assinarPeloServidor(corpo) {
+async function assinarPeloServidor(corpo, token = null) {
   const resp = await fetch('/.netlify/functions/painel-arquivo', {
     method: 'POST',
-    headers: await cabecalhosFunctions(),
+    headers: await cabecalhosFunctions({}, token),
     body: JSON.stringify(corpo),
   });
   const dados = await resp.json().catch(() => ({}));

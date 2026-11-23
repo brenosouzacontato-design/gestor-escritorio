@@ -3,7 +3,7 @@ import { Building2Icon, LayersIcon } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import PainelClientePage from './PainelClientePage';
 import PainelCompartilhadoPage from './PainelCompartilhadoPage';
-import ConsolidadoGrupo from './ConsolidadoGrupo';
+import ConsolidadoGrupo from './ConsolidadoGrupo.jsx';
 import { registrarVisualizacaoPainel, avisarEventoPainel } from './painelApi';
 import { sessaoDoToken } from './AcessoPainel';
 import { useTelaNoHistorico } from '../../lib/historico';

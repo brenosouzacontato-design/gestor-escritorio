@@ -51,6 +51,9 @@ test('resumo da empresa bate com os cartões do painel dela', () => {
   assert.equal(r.situacao, 'pendente'); // CND estadual com pendência
   assert.deepEqual(r.certidoes, { federal: 'regular', estadual: 'pendente', municipal: null });
   assert.deepEqual(r.guiasAbertas.map((g) => g.id), ['das', 'fgts']);
+  // INSS pago: sai dos abertos e entra nos pagos, com o anexo (guia/comprovante)
+  assert.deepEqual(r.guiasPagas.map((g) => [g.id, g.empresaId, g.pagoEm, g.anexo.id]), [['inss', 'tokA', '2026-11-01', 'a-inss']]);
+  assert.deepEqual(r.pagos, { qtd: 1, valor: 80, temValor: true });
 });
 
 test('o que o escritório escondeu do cliente fica fora do consolidado', () => {
@@ -62,6 +65,12 @@ test('o que o escritório escondeu do cliente fica fora do consolidado', () => {
   assert.equal(a.faturamento, null);
   assert.equal(a.vencidos.valor, 500); // só o honorário: DAS oculto
   assert.deepEqual(a.guiasAbertas.map((g) => g.id), ['fgts']);
+  const semInss = empresaA();
+  semInss.cliente.painel_secoes_ocultas = ['item:inss'];
+  assert.deepEqual(resumirEmpresa('tokA', semInss).guiasPagas, []);
+  const semImpostos = empresaA();
+  semImpostos.cliente.painel_secoes_ocultas = ['impostos'];
+  assert.deepEqual(resumirEmpresa('tokA', semImpostos).guiasPagas, []);
   assert.equal(a.certidoes.estadual, null);
 });
 
@@ -81,6 +90,8 @@ test('grupo somado', () => {
     { competencia: '10/2026', faturamento_periodo: 15000, empresas: 2, parcial: false },
   ]);
   assert.equal(t.comPendencia, 1);
+  assert.deepEqual(t.guiasPagas.map((g) => [g.id, g.empresa]), [['inss', 'LOJA A LTDA']]);
+  assert.deepEqual(t.pagos, { qtd: 1, valor: 80, temValor: true, empresas: 1 });
 });
 
 test('grupo sem declaração e nome sem CNPJ na frente', () => {

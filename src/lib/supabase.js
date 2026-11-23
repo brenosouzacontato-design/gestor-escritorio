@@ -43,10 +43,12 @@ export function tokenPainelAtivo() {
 
 // Cabeçalhos pras chamadas às Netlify Functions: no painel vai o token do
 // cliente; dentro do app vai o login do escritório (JWT do Supabase Auth).
-export async function cabecalhosFunctions(extra = {}) {
+// `token`: token de uma empresa específica — o consolidado do painel de grupo
+// baixa a guia de cada empresa com o token dela, não com o da página.
+export async function cabecalhosFunctions(extra = {}, token = null) {
   const headers = { 'Content-Type': 'application/json', ...extra }
-  if (tokenPainel) {
-    headers['x-painel-token'] = tokenPainel
+  if (token || tokenPainel) {
+    headers['x-painel-token'] = token || tokenPainel
     return headers
   }
   const { data } = await clienteEscritorio.auth.getSession()

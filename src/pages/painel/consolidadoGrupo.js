@@ -46,6 +46,10 @@ export function resumirEmpresa(id, dados) {
 
   // Impostos em aberto (a lista que o cliente vê), com o nome da empresa
   const guiasAbertas = oculta('impostos') ? [] : ind.guiasEmAberto.map((gu) => ({ ...gu, empresaId: id }));
+  // Impostos já pagos (pagamento confirmado pelo comprovante), com a guia e o
+  // comprovante para baixar — os mesmos que o painel da empresa mostra como "Paga"
+  const guiasPagas = oculta('impostos') ? []
+    : (dados.guias || []).filter((gu) => gu.paga && !itemOculto(gu.id)).map((gu) => ({ ...gu, empresaId: id }));
 
   return {
     id,
@@ -64,6 +68,8 @@ export function resumirEmpresa(id, dados) {
       proximo: ind.aVencer.find((v) => v.vencimento && v.dias >= 0)?.vencimento || null,
     },
     guiasAbertas,
+    guiasPagas,
+    pagos: { qtd: guiasPagas.length, valor: somaValores(guiasPagas), temValor: temValor(guiasPagas) },
     situacao: oculta('certidoes') && oculta('pendencias') ? null : situacaoFiscalGeral({
       situacaoFiscal: oculta('pendencias') ? null : dados.situacaoFiscal,
       cndManual: cnd,
@@ -101,6 +107,8 @@ export function consolidarGrupo(resumos) {
 
   const guiasAbertas = lista.flatMap((r) => r.guiasAbertas.map((g) => ({ ...g, empresa: r.nome })))
     .sort((a, b) => (a.vencimento || '9999').localeCompare(b.vencimento || '9999'));
+  const guiasPagas = lista.flatMap((r) => (r.guiasPagas || []).map((g) => ({ ...g, empresa: r.nome })))
+    .sort((a, b) => (a.pagoEm || '').localeCompare(b.pagoEm || '') || (a.vencimento || '9999').localeCompare(b.vencimento || '9999'));
   const somaCard = (campo) => ({
     qtd: lista.reduce((s, r) => s + r[campo].qtd, 0),
     valor: lista.reduce((s, r) => s + r[campo].valor, 0),
@@ -120,6 +128,8 @@ export function consolidarGrupo(resumos) {
     vencidos: somaCard('vencidos'),
     aVencer: { ...somaCard('aVencer'), proximo: proximos[0] || null },
     guiasAbertas,
+    guiasPagas,
+    pagos: { qtd: guiasPagas.length, valor: somaValores(guiasPagas), temValor: temValor(guiasPagas), empresas: new Set(guiasPagas.map((g) => g.empresaId)).size },
     comPendencia: lista.filter((r) => r.situacao === 'pendente').length,
     regulares: lista.filter((r) => r.situacao === 'regular').length,
     historico,
