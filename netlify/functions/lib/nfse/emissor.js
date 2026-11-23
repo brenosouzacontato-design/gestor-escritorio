@@ -57,6 +57,13 @@ function mensagemErros(erros) {
   }).join(' | ')
 }
 
+// dhEmi da DPS (o que nós assinamos, ou a DPS de dentro da NFS-e): identifica a emissão
+const emissaoDaDps = (xml) => ((xml.match(/<infDPS\b[^>]*>[\s\S]*?<dhEmi>([^<]+)<\/dhEmi>/) || [])[1]) || null
+const valorDaNfse = (xml) => {
+  const v = (xml.match(/<vServ>([^<]+)<\/vServ>/) || [])[1]
+  return v ? Number(v).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : null
+}
+const dataBr = (iso) => iso.slice(0, 10).split('-').reverse().join('/')
 const numeroDaNfse = (xml) => ((xml.match(/<infNFSe\b[^>]*>[\s\S]*?<nNFSe>(\d+)<\/nNFSe>/) || [])[1]) || null
 
 // contexto: { repo, empresa (linha de nfse_empresas), certificado (lerPfx), cliente (criarCliente), usuario,
@@ -96,7 +103,11 @@ function criarEmissor({ repo, empresa, certificado, cliente, usuario = null, bus
     return nota
   }
 
-  async function autorizar(nota, chave, nfseB64, detalhe) {
+  // conferir: a chave veio da consulta "já existe NFS-e para esta DPS". O número
+  // da DPS pode ter sido usado antes por outra emissão (ex.: o Emissor Web do
+  // portal, que também usa a série 900): aí a NFS-e encontrada é a antiga, de
+  // outro serviço, e não pode virar a desta nota.
+  async function autorizar(nota, chave, nfseB64, detalhe, { conferir = false } = {}) {
     if (!nfseB64) {
       try {
         const r = await cliente.consultarNfse(chave)
@@ -105,6 +116,18 @@ function criarEmissor({ repo, empresa, certificado, cliente, usuario = null, bus
     }
     const xml = nfseB64 ? descomprimir(nfseB64).toString('utf8') : null
     const numero = xml ? numeroDaNfse(xml) : null
+    if (conferir && xml && nota.xml_enviado) {
+      const nossa = emissaoDaDps(nota.xml_enviado)
+      const achada = emissaoDaDps(xml)
+      if (nossa && achada && nossa !== achada) {
+        const msg = `O número da DPS (série ${nota.serie} nº ${nota.n_dps}) já tinha sido usado por outra NFS-e` +
+          ` (nº ${numero || '?'}, emitida em ${dataBr(achada)}${valorDaNfse(xml) ? `, R$ ${valorDaNfse(xml)}` : ''}),` +
+          ' provavelmente pelo Emissor Web do portal. Esta nota NÃO foi emitida. Ajuste o próximo número da série' +
+          " para depois das notas emitidas no portal e use 'copiar para corrigir'."
+        await repo.mudarEstado(nota.id, nota.estado, 'rejeitada', msg, { mensagem_sefin: msg }, usuario)
+        return { estado: 'rejeitada', mensagem: msg }
+      }
+    }
     await repo.mudarEstado(nota.id, nota.estado, 'autorizada', detalhe,
       { chave_acesso: chave, numero_nfse: numero, xml_retorno: xml, mensagem_sefin: detalhe || null }, usuario)
     return { estado: 'autorizada', mensagem: detalhe, chave_acesso: chave, numero_nfse: numero }
@@ -121,7 +144,7 @@ function criarEmissor({ repo, empresa, certificado, cliente, usuario = null, bus
       if (nota.estado === 'enviada') await repo.mudarEstado(nota.id, 'enviada', 'indeterminada', msg, { mensagem_sefin: msg }, usuario)
       return { estado: 'indeterminada', mensagem: msg }
     }
-    if (ok(r) && r.dados.chaveAcesso) return autorizar(nota, r.dados.chaveAcesso, null, 'NFS-e já existia (encontrada na reconsulta)')
+    if (ok(r) && r.dados.chaveAcesso) return autorizar(nota, r.dados.chaveAcesso, null, 'NFS-e já existia (encontrada na reconsulta)', { conferir: true })
     if (r.status === 404 && errosDaResposta(r).some(([c]) => c === CODIGO_DPS_INEXISTENTE)) return null
     const msg = `Reconsulta inconclusiva: ${mensagemErros(errosDaResposta(r))}`
     if (nota.estado === 'enviada') await repo.mudarEstado(nota.id, 'enviada', 'indeterminada', msg, { mensagem_sefin: msg }, usuario)
@@ -187,7 +210,7 @@ function criarEmissor({ repo, empresa, certificado, cliente, usuario = null, bus
     const msg = mensagemErros(errosDaResposta(r))
     try {
       const c = await cliente.consultarDps(nota.id_dps)
-      if (ok(c) && c.dados.chaveAcesso) return autorizar(nota, c.dados.chaveAcesso, null, 'NFS-e já existia para esta DPS')
+      if (ok(c) && c.dados.chaveAcesso) return autorizar(nota, c.dados.chaveAcesso, null, 'NFS-e já existia para esta DPS', { conferir: true })
     } catch (e) { if (!(e instanceof ErroRede)) throw e }
     await repo.mudarEstado(notaId, 'enviada', 'rejeitada', msg, { mensagem_sefin: msg }, usuario)
     return { estado: 'rejeitada', mensagem: msg }
