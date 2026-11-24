@@ -25,6 +25,7 @@ import Tarefas from '../Tarefas'
 import { AbaAnexosEmpresa } from '../Empresas'
 import { useAcoesEmpresa, AcoesItem } from './AcoesItemEmpresa'
 import PainelUploadsEmpresa from './PainelUploadsEmpresa'
+import RelatorioDoDia from './RelatorioDoDia'
 import { listarGuias, situacaoGuia } from '../entregas/entregasApi'
 import { listarNfsePendentes } from '../painel/nfsePainelApi'
 import { NovaObrigacaoModal, ModalObrigacoesLote } from '../andamento/modaisObrigacao'
@@ -229,6 +230,7 @@ function Resumo({ cliente, competencia, trilha, obsAbertas, obsComp, guias, guia
   const carregando = guias === null || nfsePend === null
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      <RelatorioDoDia clienteId={cliente.id} onAbrirModulo={setModulo} />
       <div className="empresa-aba-bloco">
         <h4><StickyNoteIcon size={14} /> O que pretendo fazer nesta empresa</h4>
         <textarea value={lembrete} onChange={(e) => setLembrete(e.target.value)} rows={2}
