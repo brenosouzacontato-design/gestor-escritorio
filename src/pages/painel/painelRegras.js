@@ -123,6 +123,9 @@ export function montarGuias({ impostos, anexos, gerenciais, gerenciaisPorComp = 
         // pagamento confirmado pelo comprovante (ou marcado na mão no modo de edição)
         paga: !!anexo?.pago_em,
         pagoEm: anexo?.pago_em || null,
+        // baixa sem comprovante (marcada à mão pelo escritório): o painel avisa, com a justificativa
+        baixaManual: !!anexo?.pago_em && (!!anexo.baixa_manual || !anexo.comprovante_path),
+        baixaJustificativa: anexo?.pago_em ? (anexo.baixa_justificativa || null) : null,
         semMovimento: das && semMovimento,
         aguardandoGuia,
         valor: (das && semMovimento) || aguardandoGuia ? null
@@ -237,11 +240,14 @@ export function situacaoFiscalGeral({ situacaoFiscal, cndManual, soAVencer = fal
 }
 
 // Guia que sai da lista de impostos do cliente (no modo de edição o escritório
-// ainda vê, esmaecida): concluída e vencida sem pagamento registrado (o
-// escritório já deu baixa). Guia paga continua na lista, como "Paga", com o
-// comprovante para baixar. Só chegam aqui guias da própria competência do
-// painel (filtrarOutrasCompetencias tira as das outras).
+// ainda vê, esmaecida). Guia ANEXADA da competência nunca sai: o cliente
+// escolhe a competência e vê todas as guias dela — em aberto, vencida ou paga
+// (com o comprovante, ou com a observação de baixa manual). Antes, a guia de
+// obrigação concluída e vencida sem pagamento registrado sumia (ex.: DAS e
+// INSS da 10 entregues e vencidos em 20/11). Sai só a obrigação concluída e
+// vencida que nem tem guia anexada. Só chegam aqui guias da própria
+// competência do painel (filtrarOutrasCompetencias tira as das outras).
 export function guiaSaiDaLista(g) {
-  if (g.paga) return false;
+  if (g.paga || g.anexo) return false;
   return !!g.concluida && g.dias != null && g.dias < 0;
 }

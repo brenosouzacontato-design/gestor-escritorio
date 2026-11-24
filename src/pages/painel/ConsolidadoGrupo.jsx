@@ -341,7 +341,8 @@ function LinhaGuiaGrupo({ g, acoes, onAbrir }) {
         <div style={{ fontSize: 11, color: 'var(--text2)', display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 2 }}>
           <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3 }}><LayersIcon size={10} /> {g.empresa}</span>
           {g.paga
-            ? <span style={{ color: 'var(--ok)', fontWeight: 600 }}>· paga{g.pagoEm ? ` em ${fmtData(String(g.pagoEm).slice(0, 10))}` : ''}</span>
+            ? <span style={{ color: 'var(--ok)', fontWeight: 600 }}>· paga{g.pagoEm ? ` em ${fmtData(String(g.pagoEm).slice(0, 10))}` : ''}
+              {g.baixaManual && <span style={{ color: 'var(--text2)', fontWeight: 400, fontStyle: 'italic' }}> · baixa manual{g.baixaJustificativa ? `: ${g.baixaJustificativa}` : ''}</span>}</span>
             : g.vencimento && <span style={{ color: vencida ? 'var(--danger)' : 'var(--text3)' }}>· {fmtData(g.vencimento)} ({fmtDias(g.dias)})</span>}
           {g.aguardandoGuia && <span style={{ color: 'var(--text3)' }}>· aguardando guia</span>}
         </div>

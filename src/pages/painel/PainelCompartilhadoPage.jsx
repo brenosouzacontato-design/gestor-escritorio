@@ -1245,6 +1245,15 @@ function LinhaGuia({ g, onBaixar, onCopiar, editando, onSalvarValor, onMarcarPag
               <CheckCircleIcon size={10} /> Paga em {new Date(g.pagoEm).toLocaleDateString('pt-BR')}
             </span>
           )}
+          {g.paga && g.baixaManual && (
+            <span title="O pagamento foi registrado pelo escritório, sem comprovante anexado"
+              style={{ color: 'var(--text2)', fontStyle: 'italic' }}>
+              Baixa manual pelo escritório{g.baixaJustificativa ? `: ${g.baixaJustificativa}` : ' (sem comprovante)'}
+            </span>
+          )}
+          {!g.paga && !g.semMovimento && g.anexo && g.concluida && g.dias != null && g.dias < 0 && (
+            <span style={{ color: 'var(--text3)' }}>pagamento não registrado</span>
+          )}
         </>
       )}
       direita={(
