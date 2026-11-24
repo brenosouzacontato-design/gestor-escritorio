@@ -656,6 +656,11 @@ export default function NfseEmissaoPage({ clienteFixo = null } = {}) {
                         {n.estado === 'cancelada' && <>
                           <div style={{ color: 'var(--text3)', textDecoration: 'line-through' }}>NFS-e nº {n.numero_nfse || '?'}</div>
                           <div style={suave}>{n.mensagem_sefin || 'Cancelada no portal nacional'}</div>
+                          {n.copiada_para ? <div style={suave}>Refeita em outra nota</div>
+                            : <button className="btn" style={{ marginTop: 6 }} disabled={ocupado}
+                              title="Cria uma cópia editável desta nota no lote: corrija o que precisar na linha e emita de novo"
+                              onClick={async () => { await acao(() => chamarNfse('copiar', { nota_id: n.id }), 'Cópia criada: corrija na linha nova e emita'); await carregarNotas() }}>
+                              <CopyIcon size={12} /> Editar e emitir de novo</button>}
                         </>}
                         {n.estado === 'rejeitada' && <>
                           <MensagemSefin texto={n.mensagem_sefin} cor="var(--danger)" />

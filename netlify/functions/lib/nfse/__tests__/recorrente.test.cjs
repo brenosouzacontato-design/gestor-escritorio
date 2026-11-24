@@ -187,6 +187,37 @@ test('function: modelo semanal com CNPJ, emite a semana com o valor digitado, pu
   assert.equal((await chamar({ acao: 'recorrente_emitir', id: modelo.id, semana: s4.inicio, valor: '1', ambiente: 'homologacao' })).status, 409)
   assert.deepEqual((await chamar({ acao: 'recorrentes_hoje' })).semanas, [])
 
+  // nota avulsa do modelo: segunda nota na semana que já tem nota, fora da conta das semanas
+  assert.equal((await chamar({ acao: 'recorrente_emitir', avulsa: true, id: modelo.id, valor: '10', data: somarDias(hoje, 1), ambiente: 'homologacao' })).status, 400)
+  assert.equal((await chamar({ acao: 'recorrente_emitir', avulsa: true, id: modelo.id, valor: '', ambiente: 'homologacao' })).status, 400)
+  const av = await chamar({ acao: 'recorrente_emitir', avulsa: true, id: modelo.id, valor: '33,00', data: s2.inicio, ambiente: 'homologacao' })
+  assert.equal(av.status, 200, JSON.stringify(av))
+  assert.equal(av.resultado.estado, 'autorizada')
+  assert.deepEqual([av.nota.nome, av.nota.data, Number(av.nota.valor), av.nota.recorrente_id || null], ['Market Ltda', s2.inicio, 33, null])
+  assert.equal(av.nota.descricao, `Ponto de coleta de ${s2.inicio.split('-').reverse().join('/')} a ${s2.fim.split('-').reverse().join('/')}`)
+  assert.match(supa.db.nfse_lotes.find((l) => l.id === av.nota.lote_id).descricao, /nota avulsa/)
+  // a mesma nota de novo (CPF + data + valor) é bloqueada
+  const repetida = await chamar({ acao: 'recorrente_emitir', avulsa: true, id: modelo.id, valor: '33,00', data: s2.inicio, ambiente: 'homologacao' })
+  assert.notEqual(repetida.resultado?.estado, 'autorizada')
+  // as semanas continuam iguais (a avulsa não é a nota da semana)
+  assert.deepEqual((await chamar({ acao: 'recorrentes_listar' })).recorrentes[0].semanas.map((x) => [x.situacao, x.nota?.valor ?? null]),
+    [['emitida', 1234.56], ['emitida', 1234.56], ['emitida', 80], ['emitida', 75.5]])
+
+  // nota cancelada no portal: copiar, editar e emitir de novo
+  assert.equal((await chamar({ acao: 'marcar_cancelada', nota_id: e4.nota.id, motivo: 'valor errado' })).status, 200)
+  assert.equal((await chamar({ acao: 'recorrentes_listar' })).recorrentes[0].semanas[3].situacao, 'a_emitir')
+  const copia = await chamar({ acao: 'copiar', nota_id: e4.nota.id })
+  assert.equal(copia.status, 200, JSON.stringify(copia))
+  assert.equal((await chamar({ acao: 'copiar', nota_id: e4.nota.id })).status, 409) // só uma cópia
+  const nova = supa.db.nfse_notas.find((n) => n.id === copia.nota_id)
+  assert.deepEqual([nova.estado, nova.nome, nova.descricao, nova.recorrente_id, nova.lote_id], ['validada', 'Market Filial', 'Coleta extra', modelo.id, e4.nota.lote_id])
+  assert.match(nova.avisos[0], /cancelada/)
+  assert.equal((await chamar({ acao: 'editar', nota_id: nova.id, campos: { valor: '70,00' } })).status, 200)
+  const re = await chamar({ acao: 'emitir', nota_id: nova.id, ambiente: 'homologacao' })
+  assert.equal(re.resultado.estado, 'autorizada', JSON.stringify(re))
+  assert.equal(Number(re.nota.valor), 70)
+  assert.deepEqual((await chamar({ acao: 'recorrentes_listar' })).recorrentes[0].semanas[3].nota.valor, 70)
+
   // modelo inexistente (ou de outra empresa) não é encontrado
   assert.equal((await chamar({ acao: 'recorrente_emitir', id: '99999999-9999-4999-8999-999999999999', semana: s3.inicio, valor: '1', ambiente: 'homologacao' })).status, 404)
 })

@@ -137,6 +137,13 @@ export default function HojePage({ onNavigate, onAddTarefa, onCapturar }) {
                   if (!ok) return
                   show(texto)
                   setNotasRec(l => l.filter(x => !(x.modelo.id === s.modelo.id && x.inicio === s.inicio)))
+                }}
+                onPular={async () => {
+                  try {
+                    await chamarNfse('recorrente_pular', { cliente_id: s.cliente_id, id: s.modelo.id, semana: s.inicio })
+                    setNotasRec(l => l.filter(x => !(x.modelo.id === s.modelo.id && x.inicio === s.inicio)))
+                    show(`${s.empresa}: ${s.modelo.periodicidade === 'mensal' ? 'mês' : 'semana'} marcada sem serviço (desfaz na tela Emitir NFS-e)`)
+                  } catch (e) { show(e.message) }
                 }} />
             ))}
           </Bloco>
