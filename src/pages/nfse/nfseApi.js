@@ -37,6 +37,19 @@ export async function listarLotes(clienteId, ambiente) {
   return data || []
 }
 
+// Notas ainda não emitidas da empresa, de qualquer lote (o aviso "Esperando o escritório" da tela
+// de emissão): a tela abre no lote mais recente e as de lotes antigos ficavam escondidas.
+// ciente_em: o cliente disse que a nota já tinha sido emitida — não conta.
+export async function listarNotasNaoEmitidas(clienteId, ambiente) {
+  const ler = (campos) => supabase.from('nfse_notas').select(campos)
+    .eq('cliente_id', clienteId).eq('ambiente', ambiente).in('estado', ['importada', 'validada']).limit(1000)
+  const base = 'id,lote_id,estado,status_validacao,erros,valor,observacao_cliente,atualizado_em'
+  let { data, error } = await ler(`${base},ciente_em`)
+  if (error && /ciente_em|column/i.test(error.message || '')) ({ data, error } = await ler(base))
+  if (error) throw new Error(error.message)
+  return (data || []).filter((n) => !n.ciente_em)
+}
+
 // duplicidade_liberada / ciente_em: supabase-schema-nfse-conferencia.sql (sem ele, lê sem as duas)
 export async function listarNotas(loteId) {
   const ler = (campos) => supabase.from('nfse_notas').select(campos).eq('lote_id', loteId).order('criado_em').order('id')

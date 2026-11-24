@@ -541,7 +541,16 @@ Valor: ${brl(nota.valor)}`
       if (e instanceof SemTabelaExtrato) return { lancamentos: [], pessoas: [], total: 0, valor: 0, aviso: e.message }
       throw e
     }
-    if (p.so_contar) return { total: guardados.length, valor: guardados.reduce((s, l) => s + Number(l.valor), 0) }
+    if (p.so_contar) {
+      // respondidos: PIX que o cliente identificou no painel e esperam o escritório criar a nota
+      const respondidos = guardados.filter((l) => l.guardado.respondido_em && l.guardado.resposta_cliente)
+      return {
+        total: guardados.length,
+        valor: guardados.reduce((s, l) => s + Number(l.valor), 0),
+        respondidos: respondidos.length,
+        valorRespondidos: respondidos.reduce((s, l) => s + Number(l.valor), 0),
+      }
+    }
     return conferirExtrato(repo, empresa, guardados)
   },
 

@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState } from 'react'
-import { FileSignatureIcon, LandmarkIcon, UploadIcon, ShieldCheckIcon, SendIcon, RefreshCwIcon, CopyIcon, Trash2Icon, FileCodeIcon, SettingsIcon, CheckCircleIcon, AlertTriangleIcon } from 'lucide-react'
+import { FileSignatureIcon, LandmarkIcon, UploadIcon, ShieldCheckIcon, SendIcon, RefreshCwIcon, CopyIcon, Trash2Icon, FileCodeIcon, SettingsIcon, CheckCircleIcon, AlertTriangleIcon, InboxIcon } from 'lucide-react'
 import { useStore } from '../../store'
 import EmpresaCombobox from '../../components/EmpresaCombobox'
 import { Modal, useToast } from '../../components/shared'
-import { chamarNfse, listarLotes, listarNotas, baixarXml, arquivoParaBase64, totais, enviarNfseWhatsapp } from './nfseApi'
+import { chamarNfse, listarLotes, listarNotas, listarNotasNaoEmitidas, baixarXml, arquivoParaBase64, totais, enviarNfseWhatsapp } from './nfseApi'
 import { baixarNfse } from '../painel/nfsePainelApi'
 import TomadoresPanel from './TomadoresPanel'
 import ExtratoPanel from './ExtratoPanel'
@@ -298,6 +298,63 @@ function Configuracao({ clienteId, status, onAtualizado }) {
   )
 }
 
+// ---------------------------------------------------------------- esperando o escritório
+
+const dataHora = (iso) => new Date(iso).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })
+
+// Agrupa as notas não emitidas por lote: prontas (dá para emitir), com dado faltando, e quantas o
+// cliente mexeu no painel. "Já emitida" sem decisão fica de fora (o cliente ou o escritório decide no lote).
+function resumirNaoEmitidas(notas, lotes) {
+  const porLote = new Map()
+  for (const n of notas) {
+    if ((n.erros || []).some((e) => e.startsWith(JA_EMITIDA))) continue
+    const r = porLote.get(n.lote_id) || { loteId: n.lote_id, prontas: 0, faltam: 0, valorProntas: 0, doCliente: 0 }
+    if (n.estado === 'validada' || n.status_validacao === 'pronto') { r.prontas += 1; r.valorProntas += Number(n.valor) || 0 } else r.faltam += 1
+    if (n.observacao_cliente) r.doCliente += 1
+    porLote.set(n.lote_id, r)
+  }
+  const ordem = new Map(lotes.map((l, i) => [l.id, i]))
+  return [...porLote.values()]
+    .map((r) => ({ ...r, lote: lotes.find((l) => l.id === r.loteId) || null }))
+    .sort((a, b) => (ordem.get(a.loteId) ?? 999) - (ordem.get(b.loteId) ?? 999))
+}
+
+// Aviso no topo: o que o cliente respondeu no painel (PIX identificados) e as notas que ficaram
+// paradas em lotes (a tela abre no lote mais recente; as antigas não apareciam).
+function AvisoEsperando({ esperando, lotes, loteAtual, onConferirRespostas, onAbrirLote }) {
+  if (!esperando) return null
+  const grupos = resumirNaoEmitidas(esperando.notas || [], lotes)
+  if (!esperando.respondidos && !grupos.length) return null
+  const linha = { display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', padding: '8px 10px', borderRadius: 8, background: 'var(--warn-dim)', fontSize: 13 }
+  return (
+    <div style={{ ...card, borderColor: 'var(--warn)' }}>
+      <h3 style={titulo}><InboxIcon size={16} /> Esperando o escritório</h3>
+      <div style={{ display: 'grid', gap: 8 }}>
+        {esperando.respondidos > 0 && (
+          <div style={linha}>
+            <span><b>{esperando.respondidos}</b> PIX que o cliente identificou no painel ({brl(esperando.valorRespondidos)}): confira e crie as notas</span>
+            <button className="btn btn-accent" style={{ marginLeft: 'auto' }} onClick={onConferirRespostas}>Conferir respostas</button>
+          </div>
+        )}
+        {grupos.map((g) => (
+          <div key={g.loteId} style={linha}>
+            <span>
+              Lote {g.lote ? `${dataHora(g.lote.criado_em)} · ${g.lote.descricao || g.lote.origem}` : 'sem nome'}:{' '}
+              {g.prontas > 0 && <><b>{g.prontas}</b> pronta(s) para emitir ({brl(g.valorProntas)})</>}
+              {g.prontas > 0 && g.faltam > 0 && ' · '}
+              {g.faltam > 0 && <><b>{g.faltam}</b> com dado faltando</>}
+              {g.doCliente > 0 && <> · {g.doCliente} com recado do cliente</>}
+            </span>
+            {g.loteId === loteAtual
+              ? <span style={{ ...suave, marginLeft: 'auto' }}>lote aberto abaixo</span>
+              : <button className="btn" style={{ marginLeft: 'auto' }} onClick={() => onAbrirLote(g.loteId)}>Abrir lote</button>}
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 // ---------------------------------------------------------------- página
 
 // clienteFixo: aberta dentro da aba da empresa (EmpresaAbaPage) — sem trocar de
@@ -320,6 +377,8 @@ export default function NfseEmissaoPage({ clienteFixo = null } = {}) {
   const [confirmar, setConfirmar] = useState(false)
   const [previa, setPrevia] = useState(null)
   const [extratoAberto, setExtratoAberto] = useState(false)
+  const [extratoPendentes, setExtratoPendentes] = useState(false) // abrir o extrato já nos pendentes
+  const [esperando, setEsperando] = useState(null) // { respondidos, valorRespondidos, notas }
 
   const ambiente = status?.empresa?.ambiente
   const podeEmitir = status?.configurada && status.certificado && !status.certificado.bloqueios.length
@@ -352,6 +411,17 @@ export default function NfseEmissaoPage({ clienteFixo = null } = {}) {
   }, [clienteId])
   useEffect(() => { carregarLotes().catch((e) => show(e.message)) }, [clienteId, ambiente])
   useEffect(() => { carregarNotas().catch((e) => show(e.message)) }, [loteId])
+
+  // O que o cliente respondeu no painel e as notas paradas em lotes antigos (aviso no topo)
+  async function carregarEsperando() {
+    if (!clienteId || !ambiente) { setEsperando(null); return }
+    const [extrato, naoEmitidas] = await Promise.all([
+      chamarNfse('extrato_pendentes', { cliente_id: clienteId, so_contar: true }).catch(() => null),
+      listarNotasNaoEmitidas(clienteId, ambiente).catch(() => []),
+    ])
+    setEsperando({ respondidos: extrato?.respondidos || 0, valorRespondidos: extrato?.valorRespondidos || 0, notas: naoEmitidas })
+  }
+  useEffect(() => { carregarEsperando() }, [clienteId, ambiente, lotes, notas])
 
   async function acao(fn, msgOk) {
     setOcupado(true)
@@ -519,6 +589,12 @@ export default function NfseEmissaoPage({ clienteFixo = null } = {}) {
       {status?.configurada && ambiente && <RecorrentesPanel clienteId={clienteId} ambiente={ambiente} onEmitida={() => carregarLotes().catch(() => {})} />}
 
       {status?.configurada && (
+        <AvisoEsperando esperando={esperando} lotes={lotes} loteAtual={loteId}
+          onConferirRespostas={() => { setExtratoPendentes(true); setExtratoAberto(true) }}
+          onAbrirLote={(id) => { setLoteId(id); setTimeout(() => document.getElementById('nfse-conferir')?.scrollIntoView({ behavior: 'smooth' }), 50) }} />
+      )}
+
+      {status?.configurada && (
         <div style={card}>
           <h3 style={titulo}><UploadIcon size={16} /> Importar atendimentos</h3>
           <textarea value={texto} onChange={(e) => setTexto(e.target.value)} rows={texto ? 5 : 2}
@@ -530,22 +606,22 @@ export default function NfseEmissaoPage({ clienteFixo = null } = {}) {
             <input type="file" accept=".xlsx,.xls,.csv" style={{ width: 'auto' }} disabled={ocupado}
               onChange={(e) => { importarPlanilha(e.target.files[0]); e.target.value = '' }} />
             {!extratoAberto && (
-              <button className="btn" style={{ marginLeft: 'auto' }} onClick={() => setExtratoAberto(true)} title="Cada PIX recebido no extrato vira uma sugestão de nota">
+              <button className="btn" style={{ marginLeft: 'auto' }} onClick={() => { setExtratoPendentes(false); setExtratoAberto(true) }} title="Cada PIX recebido no extrato vira uma sugestão de nota">
                 <LandmarkIcon size={14} /> Emitir pelo extrato bancário
               </button>
             )}
           </div>
           {extratoAberto && (
             <div style={{ marginTop: 12 }}>
-              <ExtratoPanel clienteId={clienteId} onFechar={() => setExtratoAberto(false)}
-                onLoteCriado={async (id) => { setExtratoAberto(false); await carregarLotes(id) }} />
+              <ExtratoPanel clienteId={clienteId} abrirPendentes={extratoPendentes} onFechar={() => { setExtratoAberto(false); carregarEsperando() }}
+                onLoteCriado={async (id) => { setExtratoAberto(false); setExtratoPendentes(false); await carregarLotes(id) }} />
             </div>
           )}
         </div>
       )}
 
       {status?.configurada && lotes.length > 0 && (
-        <div style={card}>
+        <div style={card} id="nfse-conferir">
           <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', marginBottom: 12 }}>
             <h3 style={{ ...titulo, margin: 0 }}><SendIcon size={16} /> Conferir e emitir</h3>
             <select value={loteId} onChange={(e) => setLoteId(e.target.value)} style={{ width: 'auto', minWidth: 260, marginLeft: 'auto' }} title="Lote (cada importação vira um lote)">

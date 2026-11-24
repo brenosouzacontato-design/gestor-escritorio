@@ -205,7 +205,7 @@ test('function: lançamentos ficam guardados; o que não virou nota fica pendent
   const p = await chamar({ acao: 'extrato_pendentes' })
   assert.equal(p.lancamentos.length, 5) // 9 - 2 ignorados - 2 em lote
   assert.ok(!p.lancamentos.some((l) => l.nomeExtrato === 'BRUNO'))
-  assert.deepEqual(await chamar({ acao: 'extrato_pendentes', so_contar: true }), { status: 200, total: 5, valor: 1920 })
+  assert.deepEqual(await chamar({ acao: 'extrato_pendentes', so_contar: true }), { status: 200, total: 5, valor: 1920, respondidos: 0, valorRespondidos: 0 })
 
   // "não é nota" pede motivo; depois sai dos pendentes; dá para desfazer
   const ze = p.lancamentos.find((l) => l.nomeExtrato === 'ZEZINHO')
@@ -271,6 +271,10 @@ test('pedir ao cliente: o PIX aparece no painel, o cliente diz quem pagou e a re
   assert.deepEqual(b.lancamentos.find((l) => l.lancamentoId === carla.lancamentoId).pedido.resposta.cpf, CARLA)
   assert.equal(b.lancamentos.find((l) => l.lancamentoId === ze.lancamentoId).pedido.resposta.nao_servico, true)
   assert.equal(b.lancamentos.find((l) => l.nomeExtrato === 'BRUNO').pedido, null)
+  // a tela de emissão avisa o escritório que o cliente respondeu (contagem leve)
+  const conta = await chamar({ acao: 'extrato_pendentes', so_contar: true })
+  assert.equal(conta.respondidos, 2)
+  assert.equal(conta.valorRespondidos, b.lancamentos.filter((l) => l.pedido?.resposta).reduce((s, l) => s + Number(l.valor), 0))
 
   // tratado no gestor: sai do painel
   await chamar({ acao: 'extrato_marcar', ids: [ze.lancamentoId], situacao: 'ignorado', motivo: 'Cliente: transferência minha' })
