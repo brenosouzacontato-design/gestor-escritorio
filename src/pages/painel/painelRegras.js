@@ -76,10 +76,11 @@ export function filtrarOutrasCompetencias({ impostos, outrasObrigacoes, tarefasA
   const outra = (item) => !!item.competencia && item.competencia !== competencia;
   const concluida = (o) => o.status === 'concluido' || o.status === 'nao_aplica';
   return {
-    // imposto de outra competência que chegou aqui (vence na janela do painel ou
-    // ainda está em aberto) aparece se tem guia: em aberto pra pagar, paga com o
-    // comprovante (ex.: FGTS/INSS da 09 pagos em outubro, no painel da 10)
-    impostos: impostos.filter((o) => !outra(o) || !!anexos[o.id]),
+    // guia de imposto só aparece no painel da própria competência: as da 09
+    // (pagas ou não, mesmo vencendo em outubro) ficam no painel da 09 e não
+    // aparecem no da 10. Débito antigo que a Receita ainda cobra aparece em
+    // Pendências, pelo Relatório de Situação Fiscal.
+    impostos: impostos.filter((o) => !outra(o)),
     outrasObrigacoes: outrasObrigacoes.filter((o) => !outra(o) || !concluida(o)),
     tarefasArea: tarefasArea.filter((t) => !outra(t) || !t.concluida),
   };
@@ -238,9 +239,8 @@ export function situacaoFiscalGeral({ situacaoFiscal, cndManual, soAVencer = fal
 // Guia que sai da lista de impostos do cliente (no modo de edição o escritório
 // ainda vê, esmaecida): concluída e vencida sem pagamento registrado (o
 // escritório já deu baixa). Guia paga continua na lista, como "Paga", com o
-// comprovante para baixar — da própria competência ou de uma anterior que
-// venceu na janela do painel (ex.: FGTS/INSS da 09 pagos em outubro aparecem
-// no painel da 10). O que entra na janela é decidido em obterItensConsolidados.
+// comprovante para baixar. Só chegam aqui guias da própria competência do
+// painel (filtrarOutrasCompetencias tira as das outras).
 export function guiaSaiDaLista(g) {
   if (g.paga) return false;
   return !!g.concluida && g.dias != null && g.dias < 0;
