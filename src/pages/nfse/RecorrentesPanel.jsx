@@ -1,14 +1,16 @@
 import { useEffect, useState } from 'react'
-import { RepeatIcon, PlusIcon, PencilIcon, Trash2Icon, ChevronDownIcon, ChevronRightIcon } from 'lucide-react'
+import { RepeatIcon, PlusIcon, PencilIcon, Trash2Icon, ChevronDownIcon, ChevronRightIcon, FilePlusIcon } from 'lucide-react'
 import { useToast } from '../../components/shared'
 import { chamarNfse } from './nfseApi'
-import NotaRecorrenteCard from './NotaRecorrenteCard'
+import NotaRecorrenteCard, { descricaoNaData } from './NotaRecorrenteCard'
 
 // Notas recorrentes semanais ou mensais: mesmo tomador (CNPJ ou CPF), mesma descrição e serviço todo
 // período; só o valor muda (ex.: ponto de coleta que emite toda semana para a Shopee; contrato faturado
 // todo mês). Cada período (semana de segunda a domingo, ou mês do dia 1º ao último), inclusive o em
 // andamento, aparece "a emitir" como um cartão da nota (NotaRecorrenteCard):
 // o escritório confere, ajusta se precisar, digita o valor e a nota é emitida na hora.
+// "Sem serviço" tira o período de "a emitir"; "Nota avulsa" emite uma nota extra com os dados do
+// modelo, em qualquer data, sem contar como a nota do período.
 // Servidor: ações recorrente* (netlify/functions/nfse.js, lib/nfse/recorrentes.js).
 
 const card = { background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, padding: 16, marginBottom: 14 }
@@ -59,7 +61,12 @@ export default function RecorrentesPanel({ clienteId, ambiente, onEmitida }) {
   }
 
   async function pular(m, s, desfazer = false) {
-    try { await chamarNfse('recorrente_pular', { cliente_id: clienteId, id: m.id, semana: s.inicio, desfazer }); await carregar() } catch (e) { show(e.message) }
+    try {
+      await chamarNfse('recorrente_pular', { cliente_id: clienteId, id: m.id, semana: s.inicio, desfazer })
+      await carregar()
+      const periodo = m.periodicidade === 'mensal' ? 'Mês' : 'Semana'
+      show(desfazer ? `${periodo} voltou para "a emitir"` : `${periodo} marcada sem serviço (desfaz em "${m.periodicidade === 'mensal' ? 'Meses' : 'Semanas'} anteriores")`)
+    } catch (e) { show(e.message) }
   }
 
   // a emissão é feita no cartão (NotaRecorrenteCard); aqui só recarrega depois
@@ -125,9 +132,13 @@ function FormModelo({ form, setForm, onSalvar, onCancelar, ocupado }) {
   )
 }
 
+// Hoje no fuso local, em AAAA-MM-DD
+const hojeIso = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}` }
+
 function Modelo({ m, ambiente, clienteId, onEditar, onExcluir, onPular, onPronto }) {
   const [historico, setHistorico] = useState(false)
   const [excluindo, setExcluindo] = useState(false)
+  const [avulsa, setAvulsa] = useState(null) // { data, descricao } da nota avulsa aberta
   const mensal = m.periodicidade === 'mensal'
   const pendentes = m.semanas.filter((s) => s.situacao === 'a_emitir').reverse()
   const feitas = m.semanas.filter((s) => s.situacao !== 'a_emitir').reverse()
@@ -136,6 +147,9 @@ function Modelo({ m, ambiente, clienteId, onEditar, onExcluir, onPular, onPronto
       <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap' }}>
         <b>{m.nome}</b><span style={suave}>{docFmt(m.cpf)} · {mensal ? 'mensal' : 'semanal'} · desde {mensal ? mesBR(m.inicio) : dataBR(m.inicio)}</span>
         <span style={{ marginLeft: 'auto', display: 'flex', gap: 4 }}>
+          <button className="btn btn-ghost btn-sm" title="Emitir uma nota extra com os dados deste modelo (não conta como a nota da semana)"
+            onClick={() => { const data = hojeIso(); setAvulsa(avulsa ? null : { data, descricao: descricaoNaData(m, data) }) }}>
+            <FilePlusIcon size={13} /> Nota avulsa</button>
           <button className="btn btn-icon btn-ghost" title="Editar modelo" onClick={onEditar}><PencilIcon size={13} /></button>
           <button className="btn btn-icon btn-ghost" title="Excluir modelo" onClick={() => setExcluindo(true)}><Trash2Icon size={13} /></button>
         </span>
@@ -146,6 +160,11 @@ function Modelo({ m, ambiente, clienteId, onEditar, onExcluir, onPular, onPronto
           <button className="btn btn-sm" onClick={() => { setExcluindo(false); onExcluir() }}>Sim, excluir</button>
           <button className="btn btn-ghost btn-sm" onClick={() => setExcluindo(false)}>Cancelar</button>
         </div>
+      )}
+      {avulsa && (
+        <NotaRecorrenteCard key={`avulsa-${avulsa.data}`} avulsa clienteId={clienteId} ambiente={ambiente} modelo={m} s={avulsa}
+          onFechar={() => setAvulsa(null)}
+          onPronto={(r) => { if (r.ok) setAvulsa(null); onPronto(r) }} />
       )}
       {pendentes.length === 0
         ? <div style={{ ...suave, marginTop: 6 }}>{mensal ? 'Nenhum mês a emitir. O próximo aparece no dia 1º.' : 'Nenhuma semana a emitir. A próxima aparece na segunda-feira.'}</div>

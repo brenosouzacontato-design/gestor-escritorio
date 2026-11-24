@@ -61,6 +61,11 @@ const periodosAte = (modelo, hoje) => (ehMensal(modelo) ? mesesAte : semanasAte)
 // Primeiro dia do período em que cai a data
 const inicioDoPeriodo = (iso, periodicidade) => (periodicidade === 'mensal' ? primeiroDoMes(iso) : segundaDa(iso))
 
+// Período (semana ou mês) em que cai a data — para a nota avulsa de um modelo
+const periodoDaData = (modelo, iso) => (ehMensal(modelo)
+  ? { inicio: primeiroDoMes(iso), fim: ultimoDoMes(iso) }
+  : { inicio: segundaDa(iso), fim: somarDias(segundaDa(iso), 6) })
+
 // Semanas (seg–dom) desde a de `inicio` até a de hoje (em andamento), em ordem; no máximo
 // LIMITE_SEMANAS (as mais recentes).
 function semanasAte(inicio, hoje) {
@@ -131,6 +136,6 @@ function validarModelo(m, hoje) {
 }
 
 module.exports = {
-  mesesAte, periodosAte, inicioDoPeriodo, ehMensal, primeiroDoMes, ultimoDoMes, PERIODICIDADES,
+  mesesAte, periodosAte, periodoDaData, inicioDoPeriodo, ehMensal, primeiroDoMes, ultimoDoMes, PERIODICIDADES,
   semanasAte, semanasFechadas, dataSugerida, naSemana, docValido, semanasDoModelo, descricaoDa, validarModelo, segundaDa, somarDias, DESCRICAO_PADRAO, FEITAS, ABERTAS,
 }

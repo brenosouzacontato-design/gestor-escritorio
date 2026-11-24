@@ -213,11 +213,15 @@ async function excluirNota(repo, empresa, id, hoje = hojeBrasilia()) {
 async function copiarNota(repo, empresa, id, hoje = hojeBrasilia()) {
   const nota = await repo.obterNota(id)
   if (!nota) throw new Error('Nota não encontrada')
-  if (nota.estado !== 'rejeitada') throw new NotaNaoEditavel('Só notas rejeitadas podem ser copiadas para correção')
+  // rejeitada: corrigir e emitir; cancelada no portal: editar e emitir de novo (a cancelada não trava)
+  if (!['rejeitada', 'cancelada'].includes(nota.estado)) throw new NotaNaoEditavel('Só notas rejeitadas ou canceladas podem ser copiadas')
   if (nota.copiada_para) throw new NotaNaoEditavel('Esta nota já foi copiada')
+  const origem = nota.estado === 'cancelada'
+    ? `Cópia da NFS-e nº ${nota.numero_nfse || '?'} cancelada (${nota.mensagem_sefin || 'cancelada no portal'})`
+    : `Cópia de nota rejeitada (${nota.mensagem_sefin || 'sem detalhe'})`
   const [nova] = await repo.inserirNotas([{
     lote_id: nota.lote_id, cliente_id: nota.cliente_id, ambiente: nota.ambiente,
-    avisos: [`Cópia de nota rejeitada (${nota.mensagem_sefin || 'sem detalhe'})`],
+    avisos: [origem],
     nome: nota.nome, cpf: nota.cpf, endereco: nota.endereco, cep: nota.cep, data: nota.data, valor: nota.valor,
     descricao: nota.descricao, autor: nota.autor, data_mensagem: nota.data_mensagem, origem: nota.origem,
     texto_original: nota.texto_original, competencia: nota.competencia, recorrente_id: nota.recorrente_id,

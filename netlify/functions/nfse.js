@@ -11,7 +11,7 @@
 //        "Complementar?" também contra as notas emitidas fora do gestor.
 //   { acao: 'editar', nota_id, campos }
 //   { acao: 'competencia', nota_ids, competencia }
-//   { acao: 'excluir', nota_id }  |  { acao: 'copiar', nota_id }
+//   { acao: 'excluir', nota_id }  |  { acao: 'copiar', nota_id }  ← copiar: nota rejeitada ou cancelada vira uma nova, editável, no mesmo lote
 //   { acao: 'previa', nota_id }
 //   { acao: 'emitir', nota_id, ambiente, confirmar_repetida? } ← ambiente confirmado na tela; se divergir, nada é enviado.
 //        Nota igual a outra já emitida (CPF+data+valor) é bloqueada; parecida (CPF+valor no mesmo mês)
@@ -41,6 +41,9 @@
 //        ← cria a nota da semana com o valor e emite na hora (ver lib/nfse/recorrentes.js). Os campos opcionais
 //        mudam só esta nota (o modelo fica igual); data: qualquer dia da semana até hoje. Cada semana é uma
 //        nota: o aviso de "parecida" não trava.
+//   { acao: 'recorrente_emitir', avulsa: true, cliente_id, id, data, valor, ambiente, ... }  ← nota avulsa com os
+//        dados do modelo, fora da conta das semanas (ex.: segunda nota na mesma semana): data qualquer até hoje,
+//        não marca o período como emitido. Nota igual (CPF+data+valor) continua bloqueada.
 //   { acao: 'enviar_whatsapp', nota_id, destino? }
 //        ← manda o PDF (DANFSe) e o XML da nota autorizada de produção no WhatsApp da empresa emissora
 //        (clientes.whatsapp_entrega ou telefone; destino troca o número). A tela chama logo depois de
@@ -462,6 +465,7 @@ Valor: ${brl(nota.valor)}`
     exigir(p.ambiente === empresa.ambiente, `Ambiente confirmado (${p.ambiente}) difere do configurado (${empresa.ambiente}). Nada foi enviado.`, 409)
     const modelo = await modeloDaEmpresa(db, empresa, p.id)
     exigir(modelo.ativo, 'Modelo desativado')
+    if (p.avulsa) return emitirAvulsa({ db, repo, usuario }, empresa, modelo, p)
     const semana = semanaDoModelo(modelo, p.semana)
     const valor = parseValor(String(p.valor ?? '').trim())
     const mensal = recorrentes.ehMensal(modelo)
@@ -713,6 +717,43 @@ function semanaDoModelo(modelo, inicio) {
     ? 'Mês inválido (desde o início do modelo até o mês atual)'
     : 'Semana inválida (desde o início do modelo até a semana atual)')
   return semana
+}
+
+// Nota avulsa com os dados de um modelo recorrente (ex.: segunda nota na mesma semana, ou fora da
+// agenda). Não conta como a nota do período: o lote não leva o recorrente_id. Data qualquer até hoje;
+// {inicio}/{fim}/{mes} da descrição viram o período em que a data cai. A trava de nota igual
+// (CPF + data + valor) continua; a de "parecida" não, porque a pessoa já confirmou na tela.
+async function emitirAvulsa({ db, repo, usuario }, empresa, modelo, p) {
+  const valor = parseValor(String(p.valor ?? '').trim())
+  exigir(valor !== null && Number(valor) > 0, 'Informe o valor da nota')
+  const hoje = hojeBrasilia()
+  const data = String(p.data || '').trim() || hoje
+  exigir(/^\d{4}-\d{2}-\d{2}$/.test(data) && data <= hoje, 'A data do serviço precisa ser uma data até hoje')
+  const periodo = recorrentes.periodoDaData(modelo, data)
+  const texto = (v, max) => String(v ?? '').replace(/\s+/g, ' ').trim().slice(0, max)
+  const cpf = String(p.cpf ?? '').replace(/\D/g, '') || modelo.cpf
+  exigir(recorrentes.docValido(cpf), `${cpf.length === 14 ? 'CNPJ' : 'CPF'} do tomador inválido`)
+  const campos = {
+    nome: texto(p.nome, 150) || modelo.nome,
+    cpf,
+    endereco: p.endereco === undefined ? (modelo.endereco || '') : texto(p.endereco, 300),
+    cep: modelo.cep || '',
+    data,
+    valor,
+    descricao: String(p.descricao ?? '').trim().slice(0, 2000) || recorrentes.descricaoDa(modelo, periodo),
+  }
+  const loteId = await lotes.criarLote(repo, {
+    empresa, origem: 'recorrente',
+    descricao: `${modelo.nome} · nota avulsa de ${data.split('-').reverse().join('/')}`,
+    registros: [novoRegistro({ ...campos, origem: 'recorrente' })],
+  })
+  const notaId = (await repo.listarNotasLote(loteId))[0].id
+  const nota = await repo.obterNota(notaId)
+  if (nota.status_validacao !== 'pronto') {
+    throw new ErroHttp(422, `A nota não foi emitida: ${[...(nota.erros || []), ...(nota.pendencias || []).map((x) => `falta ${x}`)].join('; ')}. Ela ficou no lote para conferir.`)
+  }
+  const resultado = await (await emissorDa(db, repo, empresa, usuario)).emitir(notaId, { confirmarRepetida: true })
+  return { resultado, nota: await repo.obterNota(notaId) }
 }
 
 async function clienteExistente(db, id) {
