@@ -12,6 +12,8 @@ test('guia paga continua na lista, da competência ou de competência anterior',
   assert.equal(guiaSaiDaLista({ paga: false, competencia: '09/2026', dias: -30 }, COMP), false);
   assert.equal(guiaSaiDaLista({ paga: false, concluida: true, competencia: COMP, dias: -2 }, COMP), true);
   assert.equal(guiaSaiDaLista({ paga: false, concluida: true, competencia: COMP, dias: 5 }, COMP), false);
+  // guia anexada, concluída e vencida sem pagamento registrado continua (DAS/INSS da 10 entregues, vencidos em 20/11)
+  assert.equal(guiaSaiDaLista({ paga: false, concluida: true, competencia: COMP, dias: -4, anexo: { id: 'g' } }, COMP), false);
 });
 
 test('do banco até a lista: só as guias da competência do painel; as da 09 ficam no painel da 09', () => {
@@ -43,4 +45,28 @@ test('do banco até a lista: só as guias da competência do painel; as da 09 fi
   const ind = indicadoresPainel({ guias, honorarios: [], pendencias: [] });
   assert.deepEqual(ind.guiasEmAberto.map((g) => g.id), ['fgts10']);
   assert.ok(!ind.aVencer.some((g) => g.id === 'das10'));
+});
+
+test('guia da competência anexada e concluída aparece mesmo vencida sem pagamento; baixa manual vem marcada', () => {
+  const imp = { eh_imposto: true };
+  const impostos = [
+    { id: 'das', titulo: 'PGDAS', tipo: 'PGDAS', status: 'concluido', competencia: COMP, vencimento: '2026-11-20', tipos_obrigacao: imp },
+    { id: 'inss', titulo: 'INSS Mensal', tipo: 'INSS MENSAL', status: 'concluido', competencia: COMP, vencimento: '2026-11-20', tipos_obrigacao: imp },
+    { id: 'fgts', titulo: 'FGTS', tipo: 'FGTS', status: 'concluido', competencia: COMP, vencimento: '2026-11-20', tipos_obrigacao: imp },
+    { id: 'irrf', titulo: 'IRRF', tipo: 'IRRF', status: 'concluido', competencia: COMP, vencimento: '2026-11-20', tipos_obrigacao: imp },
+  ];
+  const anexos = {
+    das: { id: 'a1', valor_guia: 1423.79, pago_em: null },
+    inss: { id: 'a2', valor_guia: 178.31, pago_em: '2026-11-19T10:00:00Z', comprovante_path: 'c/inss.pdf' },
+    fgts: { id: 'a3', valor_guia: 90, pago_em: '2026-11-18T10:00:00Z', baixa_manual: true, baixa_justificativa: 'Pago pelo app do banco' },
+  };
+  const guias = montarGuias({ impostos, anexos, gerenciais: null }, COMP);
+  const naLista = guias.filter((g) => !guiaSaiDaLista(g));
+  // IRRF concluído sem guia anexada nem entra (nada a mostrar); as 3 com guia ficam
+  assert.deepEqual(naLista.map((g) => g.id).sort(), ['das', 'fgts', 'inss']);
+  const por = Object.fromEntries(naLista.map((g) => [g.id, g]));
+  assert.equal(por.das.paga, false);
+  assert.equal(por.inss.baixaManual, false);
+  assert.equal(por.fgts.baixaManual, true);
+  assert.equal(por.fgts.baixaJustificativa, 'Pago pelo app do banco');
 });
