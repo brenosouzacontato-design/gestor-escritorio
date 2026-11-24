@@ -69,7 +69,8 @@ async function textoDoArquivo(arquivo) {
   return arquivo.text()
 }
 
-export default function ExtratoPanel({ clienteId, onLoteCriado, onFechar }) {
+// abrirPendentes: abre já nos pendentes de extratos anteriores (aviso "o cliente respondeu" da tela de emissão)
+export default function ExtratoPanel({ clienteId, onLoteCriado, onFechar, abrirPendentes = false }) {
   const { show } = useToast()
   const [arquivo, setArquivo] = useState('')
   const [lancamentos, setLancamentos] = useState(null)
@@ -85,6 +86,7 @@ export default function ExtratoPanel({ clienteId, onLoteCriado, onFechar }) {
     try { setAnteriores(await chamarNfse('extrato_pendentes', { cliente_id: clienteId, so_contar: true })) } catch { setAnteriores(null) }
   }
   useEffect(() => { contarAnteriores() }, [clienteId])
+  useEffect(() => { if (abrirPendentes) tratarAnteriores() }, [clienteId, abrirPendentes])
 
   function carregar(r, nome) {
     setArquivo(nome)
@@ -257,7 +259,8 @@ export default function ExtratoPanel({ clienteId, onLoteCriado, onFechar }) {
         {anteriores?.total > 0 && (
           <div style={{ marginTop: 12, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', padding: '8px 10px', borderRadius: 8, background: 'var(--warn-dim)' }}>
             <ClockIcon size={14} style={{ color: 'var(--warn)' }} />
-            <span style={{ fontSize: 12 }}><b>{anteriores.total}</b> lançamento(s) de extratos anteriores esperando tratamento ({brl(anteriores.valor)})</span>
+            <span style={{ fontSize: 12 }}><b>{anteriores.total}</b> lançamento(s) de extratos anteriores esperando tratamento ({brl(anteriores.valor)})
+              {anteriores.respondidos > 0 && <> · <b>{anteriores.respondidos}</b> com resposta do cliente</>}</span>
             <button className="btn" style={{ marginLeft: 'auto' }} disabled={ocupado} onClick={tratarAnteriores}>Tratar pendentes</button>
           </div>
         )}
