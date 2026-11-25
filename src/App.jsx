@@ -33,6 +33,7 @@ import PaineisPage from './pages/painel/PaineisPage'
 import NotasFiscaisPage from './pages/notasfiscais/NotasFiscaisPage'
 import NfseEmissaoPage from './pages/nfse/NfseEmissaoPage'
 import NfseMeiPage from './pages/nfse/NfseMeiPage'
+import NfseAgendamentosPage from './pages/nfse/NfseAgendamentosPage'
 import AssessorPage from './pages/assessor/AssessorPage'
 import AgendaPage from './pages/agenda/AgendaPage'
 import HojePage from './pages/hoje/HojePage'
@@ -230,6 +231,7 @@ export default function App() {
       case 'notasfiscais': return <NotasFiscaisPage />
       case 'nfse': return <NfseEmissaoPage />
       case 'nfsemei': return <NfseMeiPage />
+      case 'nfseagenda': return <NfseAgendamentosPage />
       case 'pedidosnfe': return <PedidosNfePage />
       case 'admissoes': return <AdmissoesPage />
       case 'assessor': return <AssessorPage onNavigate={navigate} />

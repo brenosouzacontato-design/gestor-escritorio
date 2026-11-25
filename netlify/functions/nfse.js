@@ -49,6 +49,7 @@
 //        ← emissão agendada a partir de um modelo recorrente; o robô nfse-agendamentos-cron emite na hora marcada
 //        (mesma ação recorrente_emitir) e manda a nota no WhatsApp da empresa. Ver lib/nfse/agendamentos.js.
 //   { acao: 'agendamentos_listar', cliente_id }  |  { acao: 'agendamento_cancelar', cliente_id, id }
+//   { acao: 'agendamentos_todos', dias? }  ← todas as empresas (gestor e MEI), para a tela Agendamentos NFS-e
 //   { acao: 'enviar_whatsapp', nota_id, destino? }
 //        ← manda o PDF (DANFSe) e o XML da nota autorizada de produção no WhatsApp da empresa emissora
 //        (clientes.whatsapp_entrega ou telefone; destino troca o número). A tela chama logo depois de
@@ -494,7 +495,8 @@ Valor: ${brl(nota.valor)}`
     const nome = texto(p.nome, 150) || modelo.nome
     const cpf = String(p.cpf ?? '').replace(/\D/g, '') || modelo.cpf
     exigir(recorrentes.docValido(cpf), `${cpf.length === 14 ? 'CNPJ' : 'CPF'} do tomador inválido`)
-    const descricao = String(p.descricao ?? '').trim().slice(0, 2000) || recorrentes.descricaoDa(modelo, semana)
+    // descrição só desta nota (tela, WhatsApp, agendamento): {inicio}/{fim}/{mes} viram as datas, como no modelo
+    const descricao = recorrentes.descricaoDa({ descricao: String(p.descricao ?? '').trim().slice(0, 2000) || modelo.descricao }, semana)
     const endereco = p.endereco === undefined ? (modelo.endereco || '') : texto(p.endereco, 300)
 
     const { data: doModelo, error } = await db.from('nfse_notas').select('id, estado, data')
@@ -543,6 +545,44 @@ Valor: ${brl(nota.valor)}`
     const empresa = await repo.obterEmpresa(uuid(p.cliente_id, 'cliente_id'))
     exigir(empresa, 'Empresa sem configuração de NFS-e', 409)
     return listarAgendamentos(db, empresa.cliente_id)
+  },
+
+  // Tela "Agendamentos NFS-e": de todas as empresas (gestor e MEI), com o nome da empresa e do
+  // tomador. dias: quantos dias para trás entram os já executados/cancelados (padrão 30, máx. 365).
+  async agendamentos_todos({ db }, p) {
+    const dias = Math.min(365, Math.max(1, Number(p.dias) || 30))
+    const { data, error } = await db.from('nfse_agendamentos').select('*')
+    if (agendamentos.semTabela(error)) return { agendamentos: [], aviso: agendamentos.SEM_TABELA }
+    if (error) throw new Error(error.message)
+    const corte = new Date(Date.now() - dias * 86400000).toISOString()
+    const lista = (data || [])
+      .filter((a) => ['agendada', 'processando'].includes(a.situacao) || String(a.executado_em || a.criado_em) >= corte)
+    const ids = (campo) => [...new Set(lista.map((a) => a[campo]).filter(Boolean))]
+    const busca = async (tabela, colunas, campo) => {
+      const v = ids(campo)
+      if (!v.length) return {}
+      const { data: linhas, error: e } = await db.from(tabela).select(colunas).in('id', v)
+      if (e) throw new Error(e.message)
+      return Object.fromEntries((linhas || []).map((x) => [x.id, x]))
+    }
+    const [clientes, recs, meis] = await Promise.all([
+      busca('clientes', 'id, nome', 'cliente_id'),
+      busca('nfse_recorrentes', 'id, nome, cpf', 'recorrente_id'),
+      busca('nfse_mei_modelos', 'id, tomador_nome, tomador_doc', 'mei_modelo_id'),
+    ])
+    return {
+      agendamentos: lista
+        .sort((a, b) => String(a.executar_em).localeCompare(String(b.executar_em)))
+        .map((a) => {
+          const rec = recs[a.recorrente_id]
+          const mei = meis[a.mei_modelo_id]
+          return {
+            ...agendamentos.resumo(a), cliente_id: a.cliente_id, criado_em: a.criado_em,
+            empresa_nome: clientes[a.cliente_id]?.nome || '—',
+            tomador_nome: rec ? rec.nome : mei ? (mei.tomador_nome || 'Tomador não identificado') : '—',
+          }
+        }),
+    }
   },
 
   async agendamento_cancelar({ db, repo, usuario }, p) {
@@ -916,7 +956,7 @@ async function emitirPedidoWhatsapp(dados, { remetente = null } = {}) {
     if (dados.tipo === 'recorrente') {
       return await acoes.recorrente_emitir({ db, repo, usuario }, {
         cliente_id: dados.cliente_id, id: dados.ref_id, semana: dados.semana, valor: dados.valor,
-        ambiente: dados.ambiente, data: dados.data,
+        ambiente: dados.ambiente, data: dados.data, descricao: dados.descricao || null,
       })
     }
     const empresa = await repo.obterEmpresa(uuid(dados.cliente_id, 'cliente_id'))

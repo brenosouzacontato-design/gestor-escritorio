@@ -90,6 +90,11 @@ function tomadoresDe(fluxo, empresa, cadastros) {
   ]
 }
 
+// Descrição (histórico) que a nota levaria sem mudança: a do modelo, a do tomador ou a padrão da empresa
+const descricaoAtual = (tom, empresa) => String((tom.tipo === 'tomador'
+  ? (tom.item.descricao_padrao || (empresa && empresa.descricao_padrao))
+  : tom.item.descricao) || '').trim()
+
 const valorSugerido = (item) => {
   const v = item.valor != null ? item.valor : item.valor_padrao
   return v != null && Number(v) > 0 ? Number(v).toFixed(2) : null
@@ -164,10 +169,29 @@ function passo(estado, texto, ctx) {
       const sug = valorSugerido(tom.item)
       const valor = sug && /^1$/.test(norm(t)) ? sug : parseValor(t.replace(/^r\$\s*/i, ''))
       if (!valor || !(Number(valor) > 0)) return { estado: s, mensagens: ['Não entendi o valor. Digite só o número, ex.: *1.250,00*'] }
-      const novo = { ...s, etapa: s.fluxo === 'agendar' ? 'quando' : 'data', valor }
+      const atual = descricaoAtual(tom, empresa())
+      return {
+        estado: { ...s, etapa: 'descricao', valor },
+        mensagens: [`💰 ${brl(valor)}\n📝 Descrição (histórico) da nota:\n_${atual ? atual.slice(0, 500) : '(sem descrição cadastrada)'}_\n\n*1* · manter essa\n_Ou digite a nova descrição_${tom.tipo === 'mei' ? '\n_{mes} vira o mês, ex.: novembro de 2026_' : tom.tipo === 'recorrente' ? '\n_{inicio}, {fim} e {mes} viram as datas do período_' : ''}${RODAPE.replace('Responda com o número. ', '')}`],
+      }
+    }
+
+    case 'descricao': {
+      const tom = tomador()
+      if (!tom) return perdeu()
+      let descricao = null
+      if (!/^(?:1|manter|ok|mesma)$/.test(norm(t))) {
+        if (t.length < 3) return { estado: s, mensagens: ['Responda *1* para manter a descrição ou digite a nova (pelo menos 3 letras).'] }
+        if (t.length > 2000) return { estado: s, mensagens: ['Descrição muito longa (máximo 2000 caracteres). Digite de novo.'] }
+        descricao = t
+      } else if (!descricaoAtual(tom, empresa()) && tom.tipo !== 'tomador') {
+        return { estado: s, mensagens: ['Esse modelo está sem descrição. Digite a descrição da nota.'] }
+      }
+      const novo = { ...s, etapa: s.fluxo === 'agendar' ? 'quando' : 'data', descricao }
+      const cab = descricao ? `📝 ${descricao.slice(0, 300)}\n` : '📝 Descrição mantida.\n'
       const pergunta = s.fluxo === 'agendar'
-        ? `💰 ${brl(valor)}\nQuando emitir? Dia e hora, ex.: *30/11 14:00* _(sem hora: 9h)_`
-        : `💰 ${brl(valor)}\nData do ${tom.tipo === 'mei' ? 'serviço (competência)' : 'atendimento'}?\n*1* · ${tom.tipo === 'recorrente' ? `a ${tom.item.periodicidade === 'mensal' ? 'do mês' : 'da semana'} sugerida` : 'hoje'}\n_Ou digite a data, ex.: 10/11_`
+        ? `${cab}Quando emitir? Dia e hora, ex.: *30/11 14:00* _(sem hora: 9h)_`
+        : `${cab}Data do ${tom.tipo === 'mei' ? 'serviço (competência)' : 'atendimento'}?\n*1* · ${tom.tipo === 'recorrente' ? `a ${tom.item.periodicidade === 'mensal' ? 'do mês' : 'da semana'} sugerida` : 'hoje'}\n_Ou digite a data, ex.: 10/11_`
       return { estado: novo, mensagens: [pergunta + RODAPE.replace('Responda com o número. ', '')] }
     }
 
@@ -180,7 +204,7 @@ function passo(estado, texto, ctx) {
         if (!data) return { estado: s, mensagens: ['Não entendi a data. Digite assim: *10/11* (ou *1* para a sugerida).'] }
         if (data > ctx.hoje) return { estado: s, mensagens: ['A data do atendimento não pode ser futura. Para emitir depois, use *voltar* → *Agendar NFS-e*.'] }
       }
-      const r = { empresa: empresa(), tipo: tom.tipo, item: tom.item, valor: s.valor, data, unico: false }
+      const r = { empresa: empresa(), tipo: tom.tipo, item: tom.item, valor: s.valor, data, unico: false, descricao: s.descricao || null }
       return { estado: null, mensagens: [], acao: { tipo: 'nfse', r } }
     }
 
@@ -190,7 +214,7 @@ function passo(estado, texto, ctx) {
       const q = nfseWpp.extrairQuando(t, { dia: ctx.hoje, hora: ctx.hora })
       if (q.erro) return { estado: s, mensagens: [`⚠️ ${q.erro} Digite assim: *30/11 14:00*`] }
       if (q.resto) return { estado: s, mensagens: ['Não entendi o dia e a hora. Digite assim: *30/11 14:00*'] }
-      const r = { empresa: empresa(), tipo: tom.tipo, item: tom.item, valor: s.valor, data: null, unico: false }
+      const r = { empresa: empresa(), tipo: tom.tipo, item: tom.item, valor: s.valor, data: null, unico: false, descricao: s.descricao || null }
       return { estado: null, mensagens: [], acao: { tipo: 'agendar', r, q } }
     }
 
