@@ -880,8 +880,9 @@ async function processarConfirmacaoNfse(pedido, confirmacao, remoteJid) {
     await enviarMensagem(remoteJid, `🚫 Ok, não emiti a NFS-e de ${d.nome} (${d.empresa_nome}).`)
     return { statusCode: 200, body: JSON.stringify({ success: true, cancelado: pedido.id }) }
   }
-  if (d.tipo === 'mei') return await enfileirarNotaMei(pedido, remoteJid)
+  // agendamento primeiro: um agendamento MEI não pode ir para a fila do robô agora
   if (d.agendar) return await gravarAgendamentoNfse(pedido, remoteJid)
+  if (d.tipo === 'mei') return await enfileirarNotaMei(pedido, remoteJid)
   try {
     await dispararBackground('nfse-whatsapp-background', { pedidoId: pedido.id, remoteJid })
     await enviarMensagem(remoteJid, `⏳ *Emitindo a NFS-e…*\n👤 ${d.nome} — ${fmtBRL(d.valor)}\nAviso aqui quando a Sefin responder.`)

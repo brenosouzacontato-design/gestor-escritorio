@@ -130,6 +130,11 @@ test('function: agenda pelo gestor, o robô emite na hora, cancela e não repete
   // semana passada, para daqui a 10 minutos; a mesma semana não pode ter dois agendamentos
   const a1 = await chamar({ ...base, executar_em: emBrasilia(10), data_servico: somarDias(semanaPassada, 2) })
   assert.equal(a1.status, 200, JSON.stringify(a1))
+  // a tela Agendamentos NFS-e vê todos, com o nome do tomador
+  const geral = await chamar({ acao: 'agendamentos_todos' })
+  assert.equal(geral.status, 200, JSON.stringify(geral))
+  assert.deepEqual(geral.agendamentos.map((x) => [x.tomador_nome, x.situacao, x.tipo]), [['Market Ltda', 'agendada', 'periodo']])
+  assert.ok(geral.agendamentos[0].empresa_nome)
   const dup = await chamar({ ...base, executar_em: emBrasilia(20), data_servico: semanaPassada })
   assert.equal(dup.status, 400)
   assert.match(dup.erro, /já tem emissão agendada/)
