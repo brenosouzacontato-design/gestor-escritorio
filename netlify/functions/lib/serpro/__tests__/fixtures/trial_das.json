@@ -1,0 +1,28 @@
+{
+ "contratante": {
+  "numero": "00000000000100",
+  "tipo": 2
+ },
+ "autorPedidoDados": {
+  "numero": "00000000000100",
+  "tipo": 2
+ },
+ "contribuinte": {
+  "numero": "00000000000100",
+  "tipo": 2
+ },
+ "pedidoDados": {
+  "idSistema": "PGDASD",
+  "idServico": "GERARDAS12",
+  "versaoSistema": "1.0",
+  "dados": "{ \"periodoApuracao\": \"201801\", \"dataConsolidacao\": \"20220831\" }"
+ },
+ "status": 200,
+ "dados": "[{\"pdf\": \"JVBERi0xLjUKJSB0ZXN0ZSByZWR1emlkbyBkbyB0cmlhbCBTRVJQUk8K\", \"cnpjCompleto\": \"00000000000100\", \"detalhamentoDas\": {\"periodoApuracao\": \"201801\", \"numeroDocumento\": \"07202221401801678\", \"dataVencimento\": \"20180220\", \"dataLimiteAcolhimento\": \"20220831\", \"valores\": {\"principal\": 40.0, \"multa\": 8.0, \"juros\": 10.15, \"total\": 58.15}, \"observacao1\": \"Esta empresa NÃO É OPTANTE pelo Simples Nacional.\", \"observacao2\": \"\", \"observacao3\": \"\", \"composicao\": [{\"periodoApuracao\": \"201801\", \"codigo\": \"1001\", \"denominacao\": \"01/2018\", \"valores\": {\"principal\": 2.2, \"multa\": 0.44, \"juros\": 0.56, \"total\": 3.2}}, {\"periodoApuracao\": \"201801\", \"codigo\": \"1002\", \"denominacao\": \"01/2018\", \"valores\": {\"principal\": 1.4, \"multa\": 0.28, \"juros\": 0.36, \"total\": 2.04}}, {\"periodoApuracao\": \"201801\", \"codigo\": \"1004\", \"denominacao\": \"01/2018\", \"valores\": {\"principal\": 5.1, \"multa\": 1.02, \"juros\": 1.29, \"total\": 7.41}}, {\"periodoApuracao\": \"201801\", \"codigo\": \"1005\", \"denominacao\": \"01/2018\", \"valores\": {\"principal\": 1.1, \"multa\": 0.22, \"juros\": 0.28, \"total\": 1.6}}, {\"periodoApuracao\": \"201801\", \"codigo\": \"1006\", \"denominacao\": \"01/2018\", \"valores\": {\"principal\": 16.6, \"multa\": 3.32, \"juros\": 4.21, \"total\": 24.13}}, {\"periodoApuracao\": \"201801\", \"codigo\": \"1007\", \"denominacao\": \"SP - 01/2018\", \"valores\": {\"principal\": 13.6, \"multa\": 2.72, \"juros\": 3.45, \"total\": 19.77}}]}}]",
+ "mensagens": [
+  {
+   "codigo": "[Sucesso-PGDASD]",
+   "texto": "Requisição efetuada com sucesso."
+  }
+ ]
+}

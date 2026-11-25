@@ -23,6 +23,7 @@ export const GRUPOS = [
     { id: 'documentos', label: 'Documentos',   desc: 'Arquivos recebidos',            Icon: PaperclipIcon,        secao: 'Recebidos e guias' },
     { id: 'pagamentos', label: 'Pagamentos',   desc: 'Guias e comprovantes',          Icon: CircleDollarSignIcon, secao: 'Recebidos e guias' },
     { id: 'parcelamentos', label: 'Parcelamentos', desc: 'Guias de PARCMEI e PGFN',   Icon: LayersIcon,           secao: 'Recebidos e guias' },
+    { id: 'integra',    label: 'Integra Contador', desc: 'Recalcular DARF/DAS e guias de parcelamento (SERPRO)', Icon: CalculatorIcon, secao: 'Recebidos e guias' },
     { id: 'notasfiscais', label: 'Notas Fiscais', desc: 'Notas das empresas',         Icon: ReceiptIcon,          secao: 'Notas fiscais' },
     { id: 'nfse',       label: 'Emitir NFS-e', desc: 'Nota de serviço',               Icon: FileSignatureIcon,    secao: 'Notas fiscais' },
     { id: 'nfsemei',    label: 'NFS-e MEI',    desc: 'MEI sem certificado: robô no Emissor Nacional', Icon: BadgeCheckIcon, secao: 'Notas fiscais' },

@@ -1,0 +1,28 @@
+{
+ "contratante": {
+  "numero": "00000000000000",
+  "tipo": 2
+ },
+ "autorPedidoDados": {
+  "numero": "00000000000000",
+  "tipo": 2
+ },
+ "contribuinte": {
+  "numero": "00000000000000",
+  "tipo": 2
+ },
+ "pedidoDados": {
+  "idSistema": "PARCSN",
+  "idServico": "GERARDAS161",
+  "versaoSistema": "1.0",
+  "dados": "{ \"parcelaParaEmitir\": 202306 }"
+ },
+ "status": "200",
+ "mensagens": [
+  {
+   "codigo": "[Sucesso-PARCSN]",
+   "texto": "Requisição efetuada com sucesso."
+  }
+ ],
+ "dados": "{\"docArrecadacaoPdfB64\": \"JVBERi0xLjUKJSB0ZXN0ZSByZWR1emlkbyBkbyB0cmlhbCBTRVJQUk8K\"}"
+}

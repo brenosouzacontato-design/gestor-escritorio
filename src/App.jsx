@@ -24,6 +24,7 @@ import DocumentosPage from './pages/documentos/DocumentosPage'
 import PagamentosPage from './pages/pagamentos/PagamentosPage'
 import ParcelamentosPage from './pages/parcelamentos/ParcelamentosPage'
 import EcacPage from './pages/ecac/EcacPage'
+import IntegraContadorPage from './pages/integra/IntegraContadorPage'
 import { contarComprovantesPendentes } from './pages/pagamentos/pagamentosApi'
 import MensagensPage from './pages/mensagens/MensagensPage'
 import { contarAguardando } from './pages/mensagens/mensagensApi'
@@ -219,6 +220,7 @@ export default function App() {
       case 'mensagens':  return <MensagensPage onAguardandoMudou={setMensagensAguardando} />
       case 'parcelamentos': return <ParcelamentosPage />
       case 'ecac': return <EcacPage />
+      case 'integra': return <IntegraContadorPage />
       case 'notificacoes': return <NotificacoesPage />
       case 'honorarios': return <HonorariosPage />
       case 'tarefas': return <Tarefas onAddTarefa={openNewTask} highlightTaskId={highlightTaskId} onHighlightConsumed={() => setHighlightTaskId(null)}
