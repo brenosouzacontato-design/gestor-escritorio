@@ -44,6 +44,11 @@
 //   { acao: 'recorrente_emitir', avulsa: true, cliente_id, id, data, valor, ambiente, ... }  ← nota avulsa com os
 //        dados do modelo, fora da conta das semanas (ex.: segunda nota na mesma semana): data qualquer até hoje,
 //        não marca o período como emitido. Nota igual (CPF+data+valor) continua bloqueada.
+//   { acao: 'agendamento_criar', cliente_id, recorrente_id, ambiente, executar_em ('AAAA-MM-DDTHH:mm', Brasília), valor,
+//        data_servico? (padrão: o dia da emissão), tipo? ('periodo' | 'avulsa'), descricao?, enviar_whatsapp? }
+//        ← emissão agendada a partir de um modelo recorrente; o robô nfse-agendamentos-cron emite na hora marcada
+//        (mesma ação recorrente_emitir) e manda a nota no WhatsApp da empresa. Ver lib/nfse/agendamentos.js.
+//   { acao: 'agendamentos_listar', cliente_id }  |  { acao: 'agendamento_cancelar', cliente_id, id }
 //   { acao: 'enviar_whatsapp', nota_id, destino? }
 //        ← manda o PDF (DANFSe) e o XML da nota autorizada de produção no WhatsApp da empresa emissora
 //        (clientes.whatsapp_entrega ou telefone; destino troca o número). A tela chama logo depois de
@@ -67,6 +72,7 @@ const { importarTexto, importarLinhas, parseValor, soDigitos } = require('./lib/
 const { completarComCadastro, lerPlanilhaTomadores, planejarImportacao } = require('./lib/nfse/tomadores')
 const { cpfValido, hojeBrasilia } = require('./lib/nfse/validador')
 const recorrentes = require('./lib/nfse/recorrentes')
+const agendamentos = require('./lib/nfse/agendamentos')
 const { criarClienteAdn, sincronizar } = require('./lib/nfse/adn')
 const { lerExtrato, montarPessoas, sugerirNotas, norm, guardarLancamentos, listarGuardados, marcarGuardados, SemTabelaExtrato, pedirAoCliente } = require('./lib/nfse/extrato')
 const { novoRegistro } = require('./lib/nfse/importador')
@@ -375,11 +381,15 @@ Valor: ${brl(nota.valor)}`
       notas = data || []
     }
     const hoje = hojeBrasilia()
+    // emissões agendadas de cada modelo (banco sem a tabela: só o aviso)
+    const { agendamentos: ags, aviso: avisoAgendamento } = await listarAgendamentos(db, empresa.cliente_id)
     return {
+      aviso_agendamento: avisoAgendamento || null,
       recorrentes: modelos.map((m) => ({
         id: m.id, nome: m.nome, cpf: m.cpf, endereco: m.endereco || '', cep: m.cep || '', descricao: m.descricao, valor: m.valor === null ? null : Number(m.valor),
         inicio: m.inicio, ativo: m.ativo, periodicidade: m.periodicidade || 'semanal',
-        semanas: m.inicio ? recorrentes.semanasDoModelo(m, notas.filter((x) => x.recorrente_id === m.id), hoje) : [],
+        semanas: m.inicio ? comAgendamento(recorrentes.semanasDoModelo(m, notas.filter((x) => x.recorrente_id === m.id), hoje), ags.filter((a) => a.recorrente_id === m.id)) : [],
+        agendamentos: ags.filter((a) => a.recorrente_id === m.id),
       })),
     }
   },
@@ -401,18 +411,23 @@ Valor: ${brl(nota.valor)}`
     for (const r of [empresas, clientes, notas]) if (r.error) throw new Error(r.error.message)
     const ambiente = new Map((empresas.data || []).map((e) => [e.cliente_id, e.ambiente]))
     const nome = new Map((clientes.data || []).map((c) => [c.id, c.nome]))
+    // emissões agendadas (a semana aparece com "agendada para …"); sem a tabela, nada muda
+    const { data: agsData, error: agsErro } = await db.from('nfse_agendamentos').select('*').eq('situacao', 'agendada')
+    if (agsErro && !agendamentos.semTabela(agsErro)) throw new Error(agsErro.message)
+    const ags = (agsErro ? [] : agsData || []).map(agendamentos.resumo)
     const hoje = hojeBrasilia()
     const semanas = []
     for (const m of modelos) {
       const amb = ambiente.get(m.cliente_id)
       if (!amb) continue // empresa sem configuração de NFS-e
       const daEmpresa = (notas.data || []).filter((x) => x.recorrente_id === m.id && x.ambiente === amb)
-      for (const s of recorrentes.semanasDoModelo(m, daEmpresa, hoje)) {
+      for (const s of comAgendamento(recorrentes.semanasDoModelo(m, daEmpresa, hoje), ags.filter((a) => a.recorrente_id === m.id))) {
         if (s.situacao !== 'a_emitir') continue
         semanas.push({
           cliente_id: m.cliente_id, empresa: nome.get(m.cliente_id) || '', ambiente: amb,
           modelo: { id: m.id, nome: m.nome, cpf: m.cpf, endereco: m.endereco || '', valor: m.valor === null ? null : Number(m.valor), periodicidade: m.periodicidade },
           inicio: s.inicio, fim: s.fim, emAndamento: s.emAndamento, data: s.data, descricao: s.descricao, nota: s.nota,
+          agendamento: s.agendamento || null,
         })
       }
     }
@@ -511,6 +526,35 @@ Valor: ${brl(nota.valor)}`
     }
     const resultado = await (await emissorDa(db, repo, empresa, usuario)).emitir(notaId, { confirmarRepetida: true })
     return { resultado, nota: await repo.obterNota(notaId) }
+  },
+
+  // ------------------------------------------------------------------ emissão agendada (lib/nfse/agendamentos.js)
+  async agendamento_criar({ db, repo, usuario }, p) {
+    const empresa = await repo.obterEmpresa(uuid(p.cliente_id, 'cliente_id'))
+    exigir(empresa, 'Empresa sem configuração de NFS-e', 409)
+    exigir(p.ambiente === empresa.ambiente, `Ambiente confirmado (${p.ambiente}) difere do configurado (${empresa.ambiente}). Nada foi agendado.`, 409)
+    const modelo = await modeloDaEmpresa(db, empresa, p.recorrente_id)
+    const ag = await agendamentos.criarAgendamento(db, { empresa, modelo, p, criadoPor: usuario.email })
+    return { id: ag.id, executar_em: ag.executar_em }
+  },
+
+  // Agendamentos da empresa: os que vão sair e os executados/cancelados nos últimos 30 dias
+  async agendamentos_listar({ db, repo }, p) {
+    const empresa = await repo.obterEmpresa(uuid(p.cliente_id, 'cliente_id'))
+    exigir(empresa, 'Empresa sem configuração de NFS-e', 409)
+    return listarAgendamentos(db, empresa.cliente_id)
+  },
+
+  async agendamento_cancelar({ db, repo, usuario }, p) {
+    const empresa = await repo.obterEmpresa(uuid(p.cliente_id, 'cliente_id'))
+    exigir(empresa, 'Empresa sem configuração de NFS-e', 409)
+    const { data, error } = await db.from('nfse_agendamentos')
+      .update({ situacao: 'cancelada', mensagem: `Cancelado por ${usuario.email}`, executado_em: new Date().toISOString() })
+      .eq('id', uuid(p.id, 'id')).eq('cliente_id', empresa.cliente_id).eq('situacao', 'agendada').select('id')
+    if (agendamentos.semTabela(error)) throw new ErroHttp(409, agendamentos.SEM_TABELA)
+    if (error) throw new Error(error.message)
+    exigir(data && data.length, 'Esse agendamento não está mais aguardando (já saiu ou foi cancelado)', 409)
+    return { ok: true }
   },
 
   async extrato_analisar({ db, repo }, p) {
@@ -765,6 +809,49 @@ async function emitirAvulsa({ db, repo, usuario }, empresa, modelo, p) {
   return { resultado, nota: await repo.obterNota(notaId) }
 }
 
+// ---------------------------------------------------------------------- emissão agendada
+const DIAS_HISTORICO_AGENDAMENTOS = 30
+
+// { agendamentos: [resumo], aviso? } — banco sem a tabela: lista vazia com o aviso
+async function listarAgendamentos(db, clienteId) {
+  const { data, error } = await db.from('nfse_agendamentos').select('*').eq('cliente_id', clienteId)
+  if (agendamentos.semTabela(error)) return { agendamentos: [], aviso: agendamentos.SEM_TABELA }
+  if (error) throw new Error(error.message)
+  const corte = new Date(Date.now() - DIAS_HISTORICO_AGENDAMENTOS * 86400000).toISOString()
+  const lista = (data || [])
+    .filter((a) => ['agendada', 'processando'].includes(a.situacao) || String(a.executado_em || a.criado_em) >= corte)
+    .sort((a, b) => String(a.executar_em).localeCompare(String(b.executar_em)))
+    .map(agendamentos.resumo)
+  return { agendamentos: lista }
+}
+
+// Período "a emitir" com emissão agendada (nota do período) ganha agendamento: { id, executar_em, valor }
+function comAgendamento(semanas, ags) {
+  return semanas.map((s) => {
+    const a = ags.find((x) => x.situacao === 'agendada' && x.tipo === 'periodo' && x.periodo === s.inicio)
+    return a ? { ...s, agendamento: { id: a.id, executar_em: a.executar_em, valor: a.valor } } : s
+  })
+}
+
+// Robô nfse-agendamentos-cron: emite os agendamentos vencidos com a mesma ação da tela
+// (recorrente_emitir) e manda a nota no WhatsApp da empresa, se marcado.
+//   avisar(ag, fim): opcional, avisa no grupo quem agendou pelo WhatsApp
+async function executarAgendamentos({ avisar, prazoMs } = {}) {
+  const db = deps.supabase()
+  const repo = new RepositorioSupabase(db)
+  return agendamentos.executarPendentes({
+    db, avisar, prazoMs,
+    emitir: async (ag) => {
+      const usuario = { email: `Agendamento${ag.criado_por ? ` (${String(ag.criado_por).slice(0, 80)})` : ''}` }
+      return acoes.recorrente_emitir({ db, repo, usuario }, {
+        cliente_id: ag.cliente_id, id: ag.recorrente_id, avulsa: ag.tipo === 'avulsa', semana: ag.periodo,
+        valor: Number(ag.valor).toFixed(2), ambiente: ag.ambiente, data: ag.data_servico, descricao: ag.descricao || '',
+      })
+    },
+    enviar: (notaId) => acoes.enviar_whatsapp({ db, repo }, { nota_id: notaId }),
+  })
+}
+
 async function clienteExistente(db, id) {
   const clienteId = uuid(id, 'cliente_id')
   const { data } = await db.from('clientes').select('id').eq('id', clienteId).maybeSingle()
@@ -809,6 +896,7 @@ exports.handler = responder(async (event) => {
     return await acao({ db, repo, usuario }, corpo)
   } catch (e) {
     if (e instanceof EmissaoBloqueada || e instanceof lotes.NotaNaoEditavel || e instanceof TransicaoInvalida) throw new ErroHttp(409, e.message)
+    if (e instanceof agendamentos.ErroAgendamento) throw new ErroHttp(e.message === agendamentos.SEM_TABELA ? 409 : 400, e.message)
     if (/^(Data|Valor|Competência) inválid/.test(e.message)) throw new ErroHttp(400, e.message)
     throw e
   }
@@ -863,5 +951,6 @@ async function enviarNotaWhatsappEmpresa(notaId) {
 
 exports.emitirPedidoWhatsapp = emitirPedidoWhatsapp
 exports.enviarNotaWhatsappEmpresa = enviarNotaWhatsappEmpresa
+exports.executarAgendamentos = executarAgendamentos
 exports._deps = deps // testes
 exports._analisarGabarito = analisarGabarito

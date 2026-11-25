@@ -183,3 +183,19 @@ incidência do ISSQN cai no domicílio do tomador, a Sefin exige `toma/end` e re
 Nota já rejeitada com E0234: "Copiar para corrigir" (o número rejeitado não volta), conferir se o
 endereço tem número e CEP, e emitir a cópia. A prévia da DPS (ícone ao lado da nota) mostra o `<end>`.
 Testes: `enderecoTomador.test.cjs` e o fluxo da function em `recorrente.test.cjs`.
+
+## Emissão agendada (25/11/2026)
+
+- **Pelo gestor:** Emitir NFS-e → Notas recorrentes → **Agendar** no modelo. Escolhe dia e hora (Brasília),
+  valor, data do serviço (padrão: o dia da emissão), se conta como a nota da semana/mês ou é avulsa, e se
+  vai no WhatsApp da empresa. A lista do modelo mostra os agendamentos (cancelar enquanto não saiu) e o
+  resultado dos últimos 30 dias; a semana agendada aparece com "⏰ Emissão agendada" (também na tela Hoje).
+- **Pelo grupo Documentos:** `agendar nfse <empresa> <modelo> <valor> <dd/mm> <hh:mm>` (sem hora: 9h).
+  Mostra a prévia e só agenda depois do "sim"; quando a nota sai (ou não), o robô avisa no grupo.
+  Só para modelos recorrentes.
+- **Robô:** `nfse-agendamentos-cron` (a cada 5 min) emite com a mesma ação da tela (`recorrente_emitir`):
+  ambiente, duplicidade e validação valem igual. Semana que já ganhou nota antes da hora: não sai outra
+  (o agendamento fica "Não saiu" com o motivo). Execução que caiu no meio vira erro e não é repetida
+  sozinha (confira a nota antes de emitir de novo).
+- **Banco:** rodar `supabase-schema-nfse-agendamentos.sql` (tabela `nfse_agendamentos`). Sem ela, o botão
+  avisa e o resto da tela segue normal. Código: `lib/nfse/agendamentos.js`.
