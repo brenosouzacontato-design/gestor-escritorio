@@ -39,6 +39,12 @@ export function descricaoNaData(modelo, data) {
   return String(modelo.descricao || '').replace(/\{inicio\}/g, dataBR(inicio)).replace(/\{fim\}/g, dataBR(fim)).replace(/\{mes\}/g, dataBR(inicio).slice(3))
 }
 
+// "25/11/2026 às 14:30" (Brasília)
+const agendadaBR = (iso) => {
+  const d = new Date(new Date(iso).getTime() - 3 * 3600 * 1000).toISOString()
+  return `${dataBR(d.slice(0, 10))} às ${d.slice(11, 16)}`
+}
+
 const rotulo = { fontSize: 11, color: 'var(--text3)', fontWeight: 600 }
 const campo = { width: '100%', padding: '6px 8px', fontSize: 13, boxSizing: 'border-box' }
 
@@ -131,6 +137,13 @@ export default function NotaRecorrenteCard({ clienteId, empresa, ambiente, model
         {teste && <span className="badge badge-warn" style={{ fontSize: 10 }}>homologação</span>}
         {ajustada && <span className="badge" style={{ fontSize: 10 }}>ajustada só nesta nota</span>}
       </div>
+
+      {s.agendamento && (
+        <div style={{ marginTop: 6, fontSize: 12, padding: '4px 8px', borderRadius: 6, background: 'var(--accent-dim, var(--surface2))', color: 'var(--accent)' }}>
+          ⏰ Emissão agendada para {agendadaBR(s.agendamento.executar_em)} · {brl(s.agendamento.valor)}. Ela sai sozinha
+          {' '}(cancele em Emitir NFS-e → Notas recorrentes se for emitir agora).
+        </div>
+      )}
 
       {!editando && (
         <div style={{ marginTop: 6, lineHeight: 1.5 }}>

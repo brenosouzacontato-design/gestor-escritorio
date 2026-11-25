@@ -2,7 +2,7 @@
 // Imita também a função SQL nfse_reservar_numero.
 
 function criarSupabaseFalso({ usuarios = {}, tabelas = {} } = {}) {
-  const db = { nfse_empresas: [], nfse_certificados: [], nfse_lotes: [], nfse_notas: [], nfse_sequencias: [], nfse_eventos: [], nfse_tomadores: [], nfse_adn_notas: [], nfse_adn_controle: [], nfse_extrato_lancamentos: [], nfse_recorrentes: [], clientes: [], ...tabelas }
+  const db = { nfse_empresas: [], nfse_certificados: [], nfse_lotes: [], nfse_notas: [], nfse_sequencias: [], nfse_eventos: [], nfse_tomadores: [], nfse_adn_notas: [], nfse_adn_controle: [], nfse_extrato_lancamentos: [], nfse_recorrentes: [], nfse_agendamentos: [], clientes: [], ...tabelas }
   let seq = 0
   const uid = () => `00000000-0000-4000-8000-${String(++seq).padStart(12, '0')}`
   const copia = (x) => JSON.parse(JSON.stringify(x))
@@ -19,6 +19,8 @@ function criarSupabaseFalso({ usuarios = {}, tabelas = {} } = {}) {
       select() { if (op !== 'select') retornar = true; return q },
       eq(c, v) { filtros.push((r) => r[c] === v); return q },
       neq(c, v) { filtros.push((r) => r[c] !== v); return q },
+      lte(c, v) { filtros.push((r) => r[c] != null && r[c] <= v); return q },
+      gte(c, v) { filtros.push((r) => r[c] != null && r[c] >= v); return q },
       in(c, vs) { filtros.push((r) => vs.includes(r[c])); return q },
       not(c, operador, v) { filtros.push((r) => (operador === 'is' && v === null ? r[c] != null : r[c] !== v)); return q },
       limit() { return q },

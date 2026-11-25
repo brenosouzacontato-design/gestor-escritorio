@@ -18,6 +18,11 @@
 [functions."mensagens-cron"]
   schedule = "*/5 * * * *"
 
+# Emissão agendada de NFS-e (Emitir NFS-e → Notas recorrentes → Agendar, ou "agendar nfse" no
+# grupo Documentos): emite as notas cuja hora chegou e manda no WhatsApp da empresa.
+[functions."nfse-agendamentos-cron"]
+  schedule = "*/5 * * * *"
+
 # 13:00 UTC = 10h em Brasília — depois do horário em que o escritório
 # costuma logar de novo no OneFlow de manhã (of_user_token dura ~23h e não
 # renova sozinho), pra ter mais chance de achar o token válido.

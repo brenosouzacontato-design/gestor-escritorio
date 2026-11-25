@@ -9,6 +9,9 @@
 //   emitir nota Simple Care Maria 150 10/11     → com a data do atendimento
 //   nfse Simple Care                            → lista os cadastrados da empresa
 //   nfse                                        → lista as empresas que emitem
+//   agendar nfse Simple Care Shopee 1.250,00 30/11 14:00
+//                                               → agenda a nota recorrente para 30/11 às 14h
+//                                                 (robô nfse-agendamentos-cron; lib/nfse/agendamentos.js)
 //
 // O robô monta a prévia e só emite depois do "sim" (citando a prévia ou em
 // até VALIDADE_HORAS). A emissão roda em nfse-whatsapp-background.js, com as
@@ -213,6 +216,70 @@ function interpretarPedido(texto, { empresas, cadastros, hoje }) {
   return { empresa, tipo: achado.tipo, item: achado.item, valor: valorFinal, data, resto, unico }
 }
 
+// "agendar nfse ...", "agendar nota ...", "agendar emissão ...", "agendar: ..."
+const RE_AGENDAR = /^agendar\s*(?:(?:a\s+|uma\s+)?(?:emiss[aã]o(?:\s+d[ae])?\s+)?(?:nota(?:\s+fiscal)?|nfs-?e|nfse)?)(?![\p{L}\d])[\s:.\-–—]*([\s\S]*)$/iu
+
+function lerComandoAgendar(texto) {
+  const m = RE_AGENDAR.exec(String(texto || '').trim())
+  return m ? { resto: m[1].replace(/\s+/g, ' ').trim() } : null
+}
+
+const HORA_PADRAO = '09:00'
+
+// Dia e hora da emissão agendada: a primeira data (dd/mm[/aaaa]) e a hora (14:00, 14h, 14h30, às 9).
+// Data sem ano: este ano, ou o próximo se já passou. Sem data: hoje (ou amanhã, se a hora já passou).
+// Sem hora: HORA_PADRAO. agora: { dia: 'AAAA-MM-DD', hora: 'HH:mm' } em Brasília.
+// Devolve { dia, hora, horaPadrao, resto } ou { erro }.
+function extrairQuando(texto, agora) {
+  let resto = ` ${String(texto || '')} `
+  let hora = null
+  const mh = /\s(?:[àa]s\s+)?(\d{1,2})(?::(\d{2})|h(\d{2})?|\s*horas?)(?=\s)/i.exec(resto)
+    || /\s[àa]s\s+(\d{1,2})(?=\s)/i.exec(resto)
+  if (mh) {
+    const h = Number(mh[1])
+    const min = Number(mh[2] || mh[3] || 0)
+    if (h > 23 || min > 59) return { erro: 'Hora inválida (ex.: 14:00 ou 14h30).' }
+    hora = `${String(h).padStart(2, '0')}:${String(min).padStart(2, '0')}`
+    resto = resto.replace(mh[0], ' ')
+  }
+  let dia = null
+  const md = /\s(\d{1,2})\/(\d{1,2})(?:\/(\d{2,4}))?(?=\s)/.exec(resto)
+  if (md) {
+    let ano = md[3] ? Number(md[3].length === 2 ? `20${md[3]}` : md[3]) : Number(agora.dia.slice(0, 4))
+    const iso = (a) => `${a}-${String(md[2]).padStart(2, '0')}-${String(md[1]).padStart(2, '0')}`
+    if (!md[3] && iso(ano) < agora.dia) ano += 1
+    const d = new Date(`${iso(ano)}T12:00:00Z`)
+    if (Number.isNaN(d.getTime()) || d.toISOString().slice(0, 10) !== iso(ano)) return { erro: 'Data inválida (ex.: 30/11).' }
+    dia = iso(ano)
+    resto = resto.replace(md[0], ' ')
+  }
+  const horaPadrao = !hora
+  if (!hora) hora = HORA_PADRAO
+  if (!dia) {
+    dia = agora.dia
+    if (hora <= agora.hora) {
+      const d = new Date(`${dia}T12:00:00Z`)
+      d.setUTCDate(d.getUTCDate() + 1)
+      dia = d.toISOString().slice(0, 10)
+    }
+  }
+  if (`${dia} ${hora}` <= `${agora.dia} ${agora.hora}`) return { erro: `${dataBR(dia)} às ${hora} já passou.` }
+  return { dia, hora, horaPadrao, resto: resto.replace(/\s+/g, ' ').trim() }
+}
+
+// Prévia do agendamento enviada no grupo. dados: o que vai em nfse_whatsapp_pedidos.dados (com dados.agendar).
+function previaAgendamento(dados) {
+  const ag = dados.agendar || {}
+  const amb = dados.ambiente === 'producao' ? '' : '\n🧪 *Homologação (teste)* — a nota não tem validade.'
+  const doc = dados.cpf ? `\n🪪 ${dados.cpf.length === 14 ? 'CNPJ' : 'CPF'} ${dados.cpf}` : ''
+  const periodo = dados.semana ? `\n🗓️ ${dados.mensal ? `Mês ${dataBR(dados.semana).slice(3)}` : `Semana de ${dataBR(dados.semana)} a ${dataBR(dados.semana_fim)}`}` : ''
+  return `⏰ *Agendar NFS-e?*\n🕑 Emitir em *${dataBR(ag.dia)} às ${ag.hora}*${ag.horaPadrao ? ' _(sem hora no pedido: usei 9h)_' : ''}`
+    + `\n🏢 ${dados.empresa_nome}\n👤 ${dados.nome}${doc}\n💰 ${brl(dados.valor)}\n📅 Data do serviço ${dataBR(dados.data)}${periodo}`
+    + `${dados.descricao ? `\n📝 ${dados.descricao.slice(0, 300)}` : ''}${amb}`
+    + '\n📲 Depois de emitida, vai o PDF e o XML no WhatsApp da empresa e eu aviso aqui.'
+    + '\n\nResponda *sim* para agendar ou *não* para cancelar.'
+}
+
 const brl = (v) => Number(v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 const dataBR = (iso) => (iso ? iso.split('-').reverse().join('/') : '')
 
@@ -300,10 +367,11 @@ function textoLista(lista) {
 }
 
 function ajuda() {
-  return 'Exemplos:\n• *nfse Simple Care Shopee 1.250,00* (nota recorrente da semana)\n• *nfse Simple Care Maria Souza 150,00* (tomador cadastrado, data de hoje)\n• *nfse Simple Care Maria 150 10/11* (com a data do atendimento)\n• *nfse Monica Silva 8.000,00* (MEI: usa o modelo da empresa)'
+  return 'Exemplos:\n• *nfse Simple Care Shopee 1.250,00* (nota recorrente da semana)\n• *nfse Simple Care Maria Souza 150,00* (tomador cadastrado, data de hoje)\n• *nfse Simple Care Maria 150 10/11* (com a data do atendimento)\n• *nfse Monica Silva 8.000,00* (MEI: usa o modelo da empresa)\n• *agendar nfse Simple Care Shopee 1.250,00 30/11 14:00* (agenda a nota recorrente; cancela em Emitir NFS-e)'
 }
 
 module.exports = {
   VALIDADE_HORAS, ESTADOS, lerComandoNfse, lerConfirmacao, extrairDataValor, escolherSemana,
   interpretarPedido, previa, textoLista, ajuda, palavras, pareceNfse, modeloMensagem, respostaModelo, nomeCurto,
+  lerComandoAgendar, extrairQuando, previaAgendamento, HORA_PADRAO,
 }

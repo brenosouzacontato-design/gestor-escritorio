@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react'
-import { RepeatIcon, PlusIcon, PencilIcon, Trash2Icon, ChevronDownIcon, ChevronRightIcon, FilePlusIcon } from 'lucide-react'
+import { RepeatIcon, PlusIcon, PencilIcon, Trash2Icon, ChevronDownIcon, ChevronRightIcon, FilePlusIcon, AlarmClockIcon } from 'lucide-react'
 import { useToast } from '../../components/shared'
 import { chamarNfse } from './nfseApi'
 import NotaRecorrenteCard, { descricaoNaData } from './NotaRecorrenteCard'
+import AgendarEmissao, { ListaAgendamentos } from './AgendarEmissao'
 
 // Notas recorrentes semanais ou mensais: mesmo tomador (CNPJ ou CPF), mesma descrição e serviço todo
 // período; só o valor muda (ex.: ponto de coleta que emite toda semana para a Shopee; contrato faturado
@@ -11,6 +12,8 @@ import NotaRecorrenteCard, { descricaoNaData } from './NotaRecorrenteCard'
 // o escritório confere, ajusta se precisar, digita o valor e a nota é emitida na hora.
 // "Sem serviço" tira o período de "a emitir"; "Nota avulsa" emite uma nota extra com os dados do
 // modelo, em qualquer data, sem contar como a nota do período.
+// "Agendar" marca dia e hora para a nota sair sozinha (robô nfse-agendamentos-cron) e ir no WhatsApp
+// da empresa (AgendarEmissao.jsx); também dá para agendar pelo grupo Documentos ("agendar nfse ...").
 // Servidor: ações recorrente* (netlify/functions/nfse.js, lib/nfse/recorrentes.js).
 
 const card = { background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, padding: 16, marginBottom: 14 }
@@ -34,6 +37,7 @@ export default function RecorrentesPanel({ clienteId, ambiente, onEmitida }) {
   const { show } = useToast()
   const [lista, setLista] = useState(null)
   const [aviso, setAviso] = useState(null)
+  const [avisoAgendamento, setAvisoAgendamento] = useState(null)
   const [form, setForm] = useState(null) // modelo sendo criado/editado
   const [ocupado, setOcupado] = useState(false)
 
@@ -42,6 +46,7 @@ export default function RecorrentesPanel({ clienteId, ambiente, onEmitida }) {
       const r = await chamarNfse('recorrentes_listar', { cliente_id: clienteId })
       setLista(r.recorrentes)
       setAviso(r.aviso || null)
+      setAvisoAgendamento(r.aviso_agendamento || null)
     } catch (e) { show(e.message) }
   }
   useEffect(() => { setLista(null); setForm(null); carregar() }, [clienteId, ambiente])
@@ -99,7 +104,8 @@ export default function RecorrentesPanel({ clienteId, ambiente, onEmitida }) {
       {lista?.length === 0 && !form && !aviso && <div style={suave}>Nenhum modelo. Use “Novo modelo” para cadastrar (ex.: Shopee, toda semana; contrato de serviço, todo mês).</div>}
       {(lista || []).map((m) => (
         <Modelo key={m.id} m={m} ambiente={ambiente} onEditar={() => setForm({ ...VAZIO, ...m, valor: valorBR(m.valor) })}
-          onExcluir={() => excluir(m)} onPular={(s, d) => pular(m, s, d)} clienteId={clienteId} onPronto={emitida} />
+          onExcluir={() => excluir(m)} onPular={(s, d) => pular(m, s, d)} clienteId={clienteId} onPronto={emitida}
+          avisoAgendamento={avisoAgendamento} onAgendado={async (texto) => { if (texto) show(texto); await carregar() }} onErro={show} />
       ))}
     </div>
   )
@@ -135,10 +141,11 @@ function FormModelo({ form, setForm, onSalvar, onCancelar, ocupado }) {
 // Hoje no fuso local, em AAAA-MM-DD
 const hojeIso = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}` }
 
-function Modelo({ m, ambiente, clienteId, onEditar, onExcluir, onPular, onPronto }) {
+function Modelo({ m, ambiente, clienteId, onEditar, onExcluir, onPular, onPronto, avisoAgendamento, onAgendado, onErro }) {
   const [historico, setHistorico] = useState(false)
   const [excluindo, setExcluindo] = useState(false)
   const [avulsa, setAvulsa] = useState(null) // { data, descricao } da nota avulsa aberta
+  const [agendando, setAgendando] = useState(false)
   const mensal = m.periodicidade === 'mensal'
   const pendentes = m.semanas.filter((s) => s.situacao === 'a_emitir').reverse()
   const feitas = m.semanas.filter((s) => s.situacao !== 'a_emitir').reverse()
@@ -150,6 +157,10 @@ function Modelo({ m, ambiente, clienteId, onEditar, onExcluir, onPular, onPronto
           <button className="btn btn-ghost btn-sm" title="Emitir uma nota extra com os dados deste modelo (não conta como a nota da semana)"
             onClick={() => { const data = hojeIso(); setAvulsa(avulsa ? null : { data, descricao: descricaoNaData(m, data) }) }}>
             <FilePlusIcon size={13} /> Nota avulsa</button>
+          <button className="btn btn-ghost btn-sm" disabled={!m.ativo}
+            title={avisoAgendamento || 'Marcar dia e hora para a nota sair sozinha e ir no WhatsApp da empresa'}
+            onClick={() => { if (avisoAgendamento) onErro?.(avisoAgendamento); else setAgendando(!agendando) }}>
+            <AlarmClockIcon size={13} /> Agendar</button>
           <button className="btn btn-icon btn-ghost" title="Editar modelo" onClick={onEditar}><PencilIcon size={13} /></button>
           <button className="btn btn-icon btn-ghost" title="Excluir modelo" onClick={() => setExcluindo(true)}><Trash2Icon size={13} /></button>
         </span>
@@ -166,6 +177,11 @@ function Modelo({ m, ambiente, clienteId, onEditar, onExcluir, onPular, onPronto
           onFechar={() => setAvulsa(null)}
           onPronto={(r) => { if (r.ok) setAvulsa(null); onPronto(r) }} />
       )}
+      {agendando && (
+        <AgendarEmissao clienteId={clienteId} ambiente={ambiente} modelo={m} onFechar={() => setAgendando(false)}
+          onPronto={(texto) => { setAgendando(false); onAgendado?.(texto) }} />
+      )}
+      <ListaAgendamentos clienteId={clienteId} lista={m.agendamentos} onMudou={() => onAgendado?.('Agendamento cancelado')} onErro={onErro} />
       {pendentes.length === 0
         ? <div style={{ ...suave, marginTop: 6 }}>{mensal ? 'Nenhum mês a emitir. O próximo aparece no dia 1º.' : 'Nenhuma semana a emitir. A próxima aparece na segunda-feira.'}</div>
         : pendentes.map((s) => (
