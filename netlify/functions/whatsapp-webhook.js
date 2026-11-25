@@ -19,6 +19,8 @@ const nfseWpp = require('./lib/nfseWhatsapp')
 const recorrentes = require('./lib/nfse/recorrentes')
 const nfseMei = require('./lib/nfse/mei')
 const agendamentosNfse = require('./lib/nfse/agendamentos')
+const menuWpp = require('./lib/menuWhatsapp')
+const assistente = require('./lib/assistenteWhatsapp')
 const { cabecalhoInterno } = require('./lib/autenticacao')
 
 const supabase = createClient(
@@ -29,6 +31,7 @@ const supabase = createClient(
 const GRUPO_ID = process.env.WHATSAPP_GROUP_ID
 const DOCS_GRUPO_ID = process.env.WHATSAPP_DOCS_GROUP_ID // grupo "Documentos" — todo arquivo enviado aqui vai pro Drive
 const PAGAMENTOS_GRUPO_ID = process.env.WHATSAPP_PAGAMENTOS_GROUP_ID // grupo "Pagamentos" — comprovantes pra baixa das guias
+const ANALISTA_GRUPO_ID = process.env.WHATSAPP_ANALISTA_GROUP_ID // grupo "ANALISTA JR" — assistente guiado (lib/assistenteWhatsapp.js)
 const DRIVE_FOLDER_ID = process.env.GOOGLE_DRIVE_FOLDER_ID
 const EVOLUTION_URL = process.env.EVOLUTION_API_URL
 const EVOLUTION_KEY = process.env.EVOLUTION_API_KEY
@@ -511,11 +514,13 @@ async function processarEscolhaDocumento(doc, { opcao, complemento }, body, remo
 // ---------- NFS-e pelo grupo Documentos (lib/nfseWhatsapp.js) ----------
 
 // Prévia de NFS-e esperando "sim/não" (nfse_whatsapp_pedidos) ou null.
-async function pedidoNfsePendente(citado) {
+// doGrupo: sem citação, só os pedidos feitos naquele grupo (ANALISTA JR)
+async function pedidoNfsePendente(citado, doGrupo = null) {
   let q = supabase.from('nfse_whatsapp_pedidos').select('*').eq('estado', nfseWpp.ESTADOS.AGUARDANDO)
   q = citado
     ? q.eq('pergunta_id', citado)
     : q.gte('criado_em', new Date(Date.now() - nfseWpp.VALIDADE_HORAS * 3600e3).toISOString())
+  if (doGrupo && !citado) q = q.eq('remote_jid', doGrupo)
   const { data, error } = await q.order('criado_em', { ascending: false }).limit(1)
   if (error) {
     // tabela ainda não criada: o comando de NFS-e só fica desligado
@@ -576,62 +581,70 @@ async function processarComandoNfse(resto, mensagem, body, remoteJid) {
       return { statusCode: 200, body: 'NFS-e request incomplete' }
     }
 
-    const { empresa, item } = r
-    const base = { cliente_id: empresa.cliente_id, ref_id: item.id, ambiente: empresa.ambiente, empresa_nome: empresa.nome, valor: r.valor, texto_original: mensagem.slice(0, 2000) }
-    let dados
-    if (r.tipo === 'mei') {
-      // mesmas conferências da tela NFS-e MEI (lib/nfse/mei.js): valor, tomador, competência, nota repetida
-      const competencia = r.data || hoje
-      let nota
-      try {
-        nota = nfseMei.normalizarNota({ ...item, tomador_nome: item.tomador_nome, tomador_doc: item.tomador_doc, valor: r.valor, competencia })
-      } catch (e) {
-        await enviarMensagem(remoteJid, `⚠️ ${e.message}`)
-        return { statusCode: 200, body: 'NFS-e MEI invalid' }
-      }
-      const { data: existentes } = await supabase.from('nfse_mei_notas').select('id, status, tomador_doc, valor, competencia, numero').eq('cliente_id', empresa.cliente_id)
-      const repetida = nfseMei.notaRepetida(nota, existentes || [])
-      dados = { ...base, tipo: 'mei', nome: item.nome, cpf: item.tomador_doc || '', data: competencia, descricao: nota.descricao,
-        repetida: repetida ? { id: repetida.id, status: repetida.status, numero: repetida.numero || null } : null }
-    } else if (r.tipo === 'recorrente') {
-      const { data: notas, error: errNotas } = await supabase.from('nfse_notas').select('id, estado, data, valor, numero_nfse, lote_id')
-        .eq('recorrente_id', item.id).eq('ambiente', empresa.ambiente)
-      if (errNotas) throw new Error(errNotas.message)
-      const semanas = recorrentes.semanasDoModelo(item, notas || [], hoje)
-      const semana = nfseWpp.escolherSemana(semanas, r.data)
-      const periodo = item.periodicidade === 'mensal' ? { um: 'o mês', varios: 'os meses', todos: 'Todos os meses' } : { um: 'a semana', varios: 'as semanas', todos: 'Todas as semanas' }
-      if (!semana) {
-        await enviarMensagem(remoteJid, `⚠️ ${r.data ? `A data ${r.data.split('-').reverse().join('/')} está fora d${periodo.varios} de ${item.nome}.` : `${periodo.todos} de ${item.nome} já têm nota.`}`)
-        return { statusCode: 200, body: 'NFS-e no week' }
-      }
-      if (semana.situacao !== 'a_emitir') {
-        await enviarMensagem(remoteJid, `⚠️ ${periodo.um[0].toUpperCase()}${periodo.um.slice(1)} de ${semana.inicio.split('-').reverse().join('/')} a ${semana.fim.split('-').reverse().join('/')} de ${item.nome} ${semana.situacao === 'pulada' ? 'foi marcada como sem serviço' : 'já tem nota'}. Veja em Emitir NFS-e → Notas recorrentes.`)
-        return { statusCode: 200, body: 'NFS-e week taken' }
-      }
-      const data = r.data && r.data <= hoje ? r.data : semana.data
-      dados = { ...base, tipo: 'recorrente', nome: item.nome, cpf: item.cpf, endereco: item.endereco || '', cep: item.cep || '', data, descricao: recorrentes.descricaoDa(item, semana), semana: semana.inicio, semana_fim: semana.fim }
-    } else {
-      dados = { ...base, tipo: 'tomador', nome: item.nome, cpf: item.cpf || '', endereco: item.endereco || '', cep: item.cep || '', data: r.data || hoje, descricao: item.descricao_padrao || empresa.descricao_padrao || '' }
-    }
-
-    const remetente = body?.data?.pushName || participante(body) || null
-    const { data: pedido, error: errPedido } = await supabase.from('nfse_whatsapp_pedidos')
-      .insert({ cliente_id: empresa.cliente_id, dados, texto_original: dados.texto_original, remetente, remote_jid: remoteJid })
-      .select('id').single()
-    if (errPedido) {
-      throw new Error(/nfse_whatsapp_pedidos/.test(errPedido.message || '')
-        ? 'falta rodar supabase-schema-documentos-processamento-whatsapp.sql no SQL Editor do Supabase.'
-        : errPedido.message)
-    }
-    const envio = await enviarMensagem(remoteJid, nfseWpp.previa(dados))
-    const idPergunta = envio?.sucesso ? decisao.idMensagemEnviada(envio.corpo) : null
-    if (idPergunta) await supabase.from('nfse_whatsapp_pedidos').update({ pergunta_id: idPergunta }).eq('id', pedido.id)
-    return { statusCode: 200, body: JSON.stringify({ success: true, pedido: pedido.id }) }
+    return await prepararPedidoNfse(r, mensagem, body, remoteJid)
   } catch (e) {
     console.error('Comando NFS-e:', e.message)
     await enviarMensagem(remoteJid, `❌ Não consegui preparar a NFS-e: ${e.message}`)
     return { statusCode: 200, body: JSON.stringify({ success: false, error: e.message }) }
   }
+}
+
+// Prévia da NFS-e já interpretada (empresa, tomador/modelo, valor, data): confere a semana do modelo
+// recorrente ou a nota MEI repetida, grava o pedido e manda a prévia; a nota só sai depois do "sim".
+// r: como o de nfseWpp.interpretarPedido. Usado pelo comando "nfse" e pelo assistente do ANALISTA JR.
+async function prepararPedidoNfse(r, mensagem, body, remoteJid) {
+  const hoje = hojeSP()
+  const { empresa, item } = r
+  const base = { cliente_id: empresa.cliente_id, ref_id: item.id, ambiente: empresa.ambiente, empresa_nome: empresa.nome, valor: r.valor, texto_original: mensagem.slice(0, 2000) }
+  let dados
+  if (r.tipo === 'mei') {
+    // mesmas conferências da tela NFS-e MEI (lib/nfse/mei.js): valor, tomador, competência, nota repetida
+    const competencia = r.data || hoje
+    let nota
+    try {
+      nota = nfseMei.normalizarNota({ ...item, tomador_nome: item.tomador_nome, tomador_doc: item.tomador_doc, valor: r.valor, competencia })
+    } catch (e) {
+      await enviarMensagem(remoteJid, `⚠️ ${e.message}`)
+      return { statusCode: 200, body: 'NFS-e MEI invalid' }
+    }
+    const { data: existentes } = await supabase.from('nfse_mei_notas').select('id, status, tomador_doc, valor, competencia, numero').eq('cliente_id', empresa.cliente_id)
+    const repetida = nfseMei.notaRepetida(nota, existentes || [])
+    dados = { ...base, tipo: 'mei', nome: item.nome, cpf: item.tomador_doc || '', data: competencia, descricao: nota.descricao,
+      repetida: repetida ? { id: repetida.id, status: repetida.status, numero: repetida.numero || null } : null }
+  } else if (r.tipo === 'recorrente') {
+    const { data: notas, error: errNotas } = await supabase.from('nfse_notas').select('id, estado, data, valor, numero_nfse, lote_id')
+      .eq('recorrente_id', item.id).eq('ambiente', empresa.ambiente)
+    if (errNotas) throw new Error(errNotas.message)
+    const semanas = recorrentes.semanasDoModelo(item, notas || [], hoje)
+    const semana = nfseWpp.escolherSemana(semanas, r.data)
+    const periodo = item.periodicidade === 'mensal' ? { um: 'o mês', varios: 'os meses', todos: 'Todos os meses' } : { um: 'a semana', varios: 'as semanas', todos: 'Todas as semanas' }
+    if (!semana) {
+      await enviarMensagem(remoteJid, `⚠️ ${r.data ? `A data ${r.data.split('-').reverse().join('/')} está fora d${periodo.varios} de ${item.nome}.` : `${periodo.todos} de ${item.nome} já têm nota.`}`)
+      return { statusCode: 200, body: 'NFS-e no week' }
+    }
+    if (semana.situacao !== 'a_emitir') {
+      await enviarMensagem(remoteJid, `⚠️ ${periodo.um[0].toUpperCase()}${periodo.um.slice(1)} de ${semana.inicio.split('-').reverse().join('/')} a ${semana.fim.split('-').reverse().join('/')} de ${item.nome} ${semana.situacao === 'pulada' ? 'foi marcada como sem serviço' : 'já tem nota'}. Veja em Emitir NFS-e → Notas recorrentes.`)
+      return { statusCode: 200, body: 'NFS-e week taken' }
+    }
+    const data = r.data && r.data <= hoje ? r.data : semana.data
+    dados = { ...base, tipo: 'recorrente', nome: item.nome, cpf: item.cpf, endereco: item.endereco || '', cep: item.cep || '', data, descricao: recorrentes.descricaoDa(item, semana), semana: semana.inicio, semana_fim: semana.fim }
+  } else {
+    dados = { ...base, tipo: 'tomador', nome: item.nome, cpf: item.cpf || '', endereco: item.endereco || '', cep: item.cep || '', data: r.data || hoje, descricao: item.descricao_padrao || empresa.descricao_padrao || '' }
+  }
+
+  const remetente = body?.data?.pushName || participante(body) || null
+  const { data: pedido, error: errPedido } = await supabase.from('nfse_whatsapp_pedidos')
+    .insert({ cliente_id: empresa.cliente_id, dados, texto_original: dados.texto_original, remetente, remote_jid: remoteJid })
+    .select('id').single()
+  if (errPedido) {
+    throw new Error(/nfse_whatsapp_pedidos/.test(errPedido.message || '')
+      ? 'falta rodar supabase-schema-documentos-processamento-whatsapp.sql no SQL Editor do Supabase.'
+      : errPedido.message)
+  }
+  const envio = await enviarMensagem(remoteJid, nfseWpp.previa(dados))
+  const idPergunta = envio?.sucesso ? decisao.idMensagemEnviada(envio.corpo) : null
+  if (idPergunta) await supabase.from('nfse_whatsapp_pedidos').update({ pergunta_id: idPergunta }).eq('id', pedido.id)
+  return { statusCode: 200, body: JSON.stringify({ success: true, pedido: pedido.id }) }
 }
 
 // ---------- emissão agendada pelo grupo (lib/nfse/agendamentos.js) ----------
@@ -658,45 +671,52 @@ async function processarAgendarNfse(resto, mensagem, body, remoteJid) {
       await enviarMensagem(remoteJid, `⚠️ ${r.erro}${nfseWpp.textoLista(r.lista)}${exemplo}`)
       return { statusCode: 200, body: 'NFS-e schedule incomplete' }
     }
-    if (r.tipo !== 'recorrente') {
-      await enviarMensagem(remoteJid, `⚠️ O agendamento funciona só para as notas recorrentes; ${r.item.nome} não é um modelo recorrente de ${r.empresa.nome}. Cadastre em Emitir NFS-e → Notas recorrentes, ou peça a nota agora com *nfse*.`)
-      return { statusCode: 200, body: 'NFS-e schedule not recurring' }
-    }
-    const { empresa, item } = r
-    const p = { executar_em: `${q.dia}T${q.hora}`, valor: r.valor, data_servico: r.data || q.dia, tipo: 'periodo' }
-    let campos
-    try {
-      campos = await agendamentosNfse.criarAgendamento(supabase, { empresa, modelo: item, p, gravar: false })
-    } catch (e) {
-      if (!(e instanceof agendamentosNfse.ErroAgendamento)) throw e
-      await enviarMensagem(remoteJid, `⚠️ ${e.message}`)
-      return { statusCode: 200, body: 'NFS-e schedule rejected' }
-    }
-    const periodo = recorrentes.periodoDaData(item, campos.data_servico)
-    const dados = {
-      cliente_id: empresa.cliente_id, ref_id: item.id, ambiente: empresa.ambiente, empresa_nome: empresa.nome, valor: r.valor,
-      texto_original: mensagem.slice(0, 2000), tipo: 'recorrente', nome: item.nome, cpf: item.cpf, data: campos.data_servico,
-      descricao: recorrentes.descricaoDa(item, periodo), semana: periodo.inicio, semana_fim: periodo.fim, mensal: recorrentes.ehMensal(item),
-      agendar: { dia: q.dia, hora: q.hora, horaPadrao: q.horaPadrao, executar_em: p.executar_em },
-    }
-    const remetente = body?.data?.pushName || participante(body) || null
-    const { data: pedido, error: errPedido } = await supabase.from('nfse_whatsapp_pedidos')
-      .insert({ cliente_id: empresa.cliente_id, dados, texto_original: dados.texto_original, remetente, remote_jid: remoteJid })
-      .select('id').single()
-    if (errPedido) {
-      throw new Error(/nfse_whatsapp_pedidos/.test(errPedido.message || '')
-        ? 'falta rodar supabase-schema-documentos-processamento-whatsapp.sql no SQL Editor do Supabase.'
-        : errPedido.message)
-    }
-    const envio = await enviarMensagem(remoteJid, nfseWpp.previaAgendamento(dados))
-    const idPergunta = envio?.sucesso ? decisao.idMensagemEnviada(envio.corpo) : null
-    if (idPergunta) await supabase.from('nfse_whatsapp_pedidos').update({ pergunta_id: idPergunta }).eq('id', pedido.id)
-    return { statusCode: 200, body: JSON.stringify({ success: true, pedido: pedido.id }) }
+    return await prepararAgendamentoNfse(r, q, mensagem, body, remoteJid)
   } catch (e) {
     console.error('Agendar NFS-e:', e.message)
     await enviarMensagem(remoteJid, `❌ Não consegui agendar a NFS-e: ${e.message}`)
     return { statusCode: 200, body: JSON.stringify({ success: false, error: e.message }) }
   }
+}
+
+// Prévia do agendamento já interpretado (r: empresa, modelo, valor e data do serviço; q: dia e hora):
+// confere as regras (lib/nfse/agendamentos.js), grava o pedido e manda a prévia; só agenda depois do "sim".
+// Usado pelo comando "agendar nfse" e pelo assistente do ANALISTA JR.
+async function prepararAgendamentoNfse(r, q, mensagem, body, remoteJid) {
+  if (r.tipo !== 'recorrente') {
+    await enviarMensagem(remoteJid, `⚠️ O agendamento funciona só para as notas recorrentes; ${r.item.nome} não é um modelo recorrente de ${r.empresa.nome}. Cadastre em Emitir NFS-e → Notas recorrentes, ou peça a nota agora com *nfse*.`)
+    return { statusCode: 200, body: 'NFS-e schedule not recurring' }
+  }
+  const { empresa, item } = r
+  const p = { executar_em: `${q.dia}T${q.hora}`, valor: r.valor, data_servico: r.data || q.dia, tipo: 'periodo' }
+  let campos
+  try {
+    campos = await agendamentosNfse.criarAgendamento(supabase, { empresa, modelo: item, p, gravar: false })
+  } catch (e) {
+    if (!(e instanceof agendamentosNfse.ErroAgendamento)) throw e
+    await enviarMensagem(remoteJid, `⚠️ ${e.message}`)
+    return { statusCode: 200, body: 'NFS-e schedule rejected' }
+  }
+  const periodo = recorrentes.periodoDaData(item, campos.data_servico)
+  const dados = {
+    cliente_id: empresa.cliente_id, ref_id: item.id, ambiente: empresa.ambiente, empresa_nome: empresa.nome, valor: r.valor,
+    texto_original: mensagem.slice(0, 2000), tipo: 'recorrente', nome: item.nome, cpf: item.cpf, data: campos.data_servico,
+    descricao: recorrentes.descricaoDa(item, periodo), semana: periodo.inicio, semana_fim: periodo.fim, mensal: recorrentes.ehMensal(item),
+    agendar: { dia: q.dia, hora: q.hora, horaPadrao: q.horaPadrao, executar_em: p.executar_em },
+  }
+  const remetente = body?.data?.pushName || participante(body) || null
+  const { data: pedido, error: errPedido } = await supabase.from('nfse_whatsapp_pedidos')
+    .insert({ cliente_id: empresa.cliente_id, dados, texto_original: dados.texto_original, remetente, remote_jid: remoteJid })
+    .select('id').single()
+  if (errPedido) {
+    throw new Error(/nfse_whatsapp_pedidos/.test(errPedido.message || '')
+      ? 'falta rodar supabase-schema-documentos-processamento-whatsapp.sql no SQL Editor do Supabase.'
+      : errPedido.message)
+  }
+  const envio = await enviarMensagem(remoteJid, nfseWpp.previaAgendamento(dados))
+  const idPergunta = envio?.sucesso ? decisao.idMensagemEnviada(envio.corpo) : null
+  if (idPergunta) await supabase.from('nfse_whatsapp_pedidos').update({ pergunta_id: idPergunta }).eq('id', pedido.id)
+  return { statusCode: 200, body: JSON.stringify({ success: true, pedido: pedido.id }) }
 }
 
 // "sim" à prévia do agendamento: confere de novo (algo pode ter mudado) e grava em nfse_agendamentos.
@@ -723,6 +743,59 @@ async function gravarAgendamentoNfse(pedido, remoteJid) {
     console.error('Agendar NFS-e (sim):', e.message)
     await supabase.from('nfse_whatsapp_pedidos').update({ estado: nfseWpp.ESTADOS.ERRO, mensagem: String(e.message).slice(0, 1000) }).eq('id', pedido.id)
     await enviarMensagem(remoteJid, `❌ Não agendei a NFS-e de ${d.nome}: ${e.message}`)
+    return { statusCode: 200, body: JSON.stringify({ success: false, error: e.message }) }
+  }
+}
+
+// ---------- assistente guiado do grupo ANALISTA JR (lib/assistenteWhatsapp.js) ----------
+
+const SEM_TABELA_CONVERSAS = 'falta rodar supabase-schema-whatsapp-assistente.sql no SQL Editor do Supabase.'
+
+// Conversa em andamento de quem escreveu (null se não há, ou se está parada há mais de VALIDADE_MIN)
+async function conversaDe(remoteJid, quem) {
+  const { data, error } = await supabase.from('whatsapp_conversas').select('estado, atualizado_em')
+    .eq('remote_jid', remoteJid).eq('participante', quem).maybeSingle()
+  if (error) throw new Error(/whatsapp_conversas/.test(error.message || '') ? SEM_TABELA_CONVERSAS : error.message)
+  if (!data || !data.estado) return null
+  const parada = Date.now() - new Date(data.atualizado_em).getTime() > assistente.VALIDADE_MIN * 60000
+  return parada ? null : data.estado
+}
+
+async function guardarConversa(remoteJid, quem, estado) {
+  const q = estado
+    ? supabase.from('whatsapp_conversas').upsert({ remote_jid: remoteJid, participante: quem, estado, atualizado_em: new Date().toISOString() }, { onConflict: 'remote_jid,participante' })
+    : supabase.from('whatsapp_conversas').delete().eq('remote_jid', remoteJid).eq('participante', quem)
+  const { error } = await q
+  if (error) throw new Error(/whatsapp_conversas/.test(error.message || '') ? SEM_TABELA_CONVERSAS : error.message)
+}
+
+// Um passo da conversa: responde e, no fim do fluxo, faz o mesmo que os comandos do grupo
+// (prévia de NFS-e ou de agendamento, que esperam o "sim"; tarefa, lembrete, reunião, obrigação).
+async function processarAssistente(body, mensagem, remoteJid) {
+  const quem = participante(body) || remoteJid
+  try {
+    let estado = await conversaDe(remoteJid, quem)
+    // fora de uma conversa, "sim"/"não" responde à prévia de NFS-e feita aqui
+    if (!estado) {
+      const confirmacao = nfseWpp.lerConfirmacao(mensagem)
+      const pedido = confirmacao ? await pedidoNfsePendente(decisao.idCitado(body?.data?.message), remoteJid) : null
+      if (pedido) return await processarConfirmacaoNfse(pedido, confirmacao, remoteJid)
+    }
+    // sem conversa, qualquer mensagem abre o menu; as empresas só são lidas a partir da escolha no menu
+    const precisaCadastros = !!estado && estado.etapa !== 'texto'
+    const { empresas, cadastros } = precisaCadastros ? await carregarCadastrosNfse() : { empresas: [], cadastros: {} }
+    const r = assistente.passo(estado, mensagem, { empresas, cadastros, hoje: hojeSP(), hora: horaSP() })
+    await guardarConversa(remoteJid, quem, r.estado)
+    for (const texto of r.mensagens) await enviarMensagem(remoteJid, texto)
+    const a = r.acao
+    if (!a) return { statusCode: 200, body: `Assistant step: ${r.estado ? r.estado.etapa : 'fim'}` }
+    if (a.tipo === 'nfse') return await prepararPedidoNfse(a.r, mensagem, body, remoteJid)
+    if (a.tipo === 'agendar') return await prepararAgendamentoNfse(a.r, a.q, mensagem, body, remoteJid)
+    return await processarComando({ categoria: a.categoria, texto: a.texto }, `${ROTULO[a.categoria]}: ${a.texto}`, remoteJid)
+  } catch (e) {
+    console.error('Assistente ANALISTA JR:', e.message)
+    await guardarConversa(remoteJid, quem, null).catch(() => {})
+    await enviarMensagem(remoteJid, `❌ Não consegui seguir: ${e.message}\nMande *oi* para recomeçar.`)
     return { statusCode: 200, body: JSON.stringify({ success: false, error: e.message }) }
   }
 }
@@ -1078,6 +1151,28 @@ exports.handler = async (event) => {
   // no fluxo de tarefa abaixo.
   // Grupo "Pagamentos" — todo arquivo é comprovante de pagamento: vai pra
   // fila de baixa (tela Pagamentos do gestor). Texto sem arquivo é ignorado.
+  // Grupo "ANALISTA JR" — assistente guiado: "oi" abre o menu e o robô conduz
+  // passo a passo (NFS-e, agendar NFS-e, tarefa, lembrete, reunião, obrigação).
+  if (ANALISTA_GRUPO_ID && remoteJid === ANALISTA_GRUPO_ID) {
+    if (midia) {
+      await enviarMensagem(remoteJid, '📎 Arquivos vão no grupo *Documentos* (lá eu leio e mostro o que dá para fazer). Aqui é só conversa: mande *oi*.')
+      return { statusCode: 200, body: 'File in assistant group' }
+    }
+    return await processarAssistente(body, mensagem, remoteJid)
+  }
+
+  // Em qualquer um dos grupos, "opções" (ou "menu", "comandos", "ajuda")
+  // responde com os comandos daquele grupo (lib/menuWhatsapp.js).
+  if (!midia && menuWpp.pedeOpcoes(mensagem)) {
+    const grupo = PAGAMENTOS_GRUPO_ID && remoteJid === PAGAMENTOS_GRUPO_ID ? 'pagamentos'
+      : DOCS_GRUPO_ID && remoteJid === DOCS_GRUPO_ID ? 'documentos'
+        : (GRUPO_ID ? remoteJid === GRUPO_ID : remoteJid.endsWith('@g.us')) ? 'escritorio' : null
+    if (grupo) {
+      await enviarMensagem(remoteJid, menuWpp.textoOpcoes(grupo))
+      return { statusCode: 200, body: `Options sent (${grupo})` }
+    }
+  }
+
   if (PAGAMENTOS_GRUPO_ID && remoteJid === PAGAMENTOS_GRUPO_ID) {
     if (!midia) {
       return { statusCode: 200, body: 'No file in payments group message' }
