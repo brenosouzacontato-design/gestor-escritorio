@@ -23,9 +23,10 @@ ENV="$PASTA/.env"
 # shellcheck disable=SC1091
 . "$WPP/.env"   # DOMINIO, EVOLUTION_API_KEY, EVOLUTION_INSTANCE
 
-mkdir -p "$PASTA/dados/certificado" "$PASTA/dados/emissor"
-chmod 700 "$PASTA/dados/certificado" "$PASTA/dados/emissor"
+mkdir -p "$PASTA/dados/certificado" "$PASTA/dados/emissor" "$PASTA/dados/oneflow"
+chmod 700 "$PASTA/dados/certificado" "$PASTA/dados/emissor" "$PASTA/dados/oneflow"
 cp "$ORIGEM"/{Dockerfile,docker-compose.yml,requirements.txt,supervisord.conf,*.py,configurar-ecac.sh,configurar-emissor.sh} "$PASTA"/
+cp -r "$ORIGEM/roteiros" "$PASTA"/
 cd "$PASTA"
 
 # ── 1. Configuração (perguntada uma vez, guardada em .env) ─────────────
@@ -66,6 +67,8 @@ EMISSOR_ATIVO=${EMISSOR_ATIVO:-1}
 EMISSOR_TRANSMITIR=${EMISSOR_TRANSMITIR:-1}
 MEI_ATIVO=${MEI_ATIVO:-1}
 MEI_TRANSMITIR=${MEI_TRANSMITIR:-1}
+ONEFLOW_ATIVO=${ONEFLOW_ATIVO:-1}
+ONEFLOW_ENVIAR_PDF=${ONEFLOW_ENVIAR_PDF:-0}
 
 umask 077
 cat > "$ENV" <<EOF
@@ -91,6 +94,8 @@ EMISSOR_TRANSMITIR=$EMISSOR_TRANSMITIR
 NFSE_CERT_KEY=$NFSE_CERT_KEY
 MEI_ATIVO=$MEI_ATIVO
 MEI_TRANSMITIR=$MEI_TRANSMITIR
+ONEFLOW_ATIVO=$ONEFLOW_ATIVO
+ONEFLOW_ENVIAR_PDF=$ONEFLOW_ENVIAR_PDF
 ROBO_USUARIO=$ROBO_USUARIO
 ROBO_SENHA=$ROBO_SENHA
 TZ=America/Sao_Paulo
@@ -144,5 +149,6 @@ cat <<EOF
  Configurações:      $ENV (dias, hora, números, Telegram) — depois: docker compose up -d
  e-CAC (certificado): bash $PASTA/configurar-ecac.sh /caminho/certificado.pfx
  NF-e de venda (login do Emissor): bash $PASTA/configurar-emissor.sh
+ OneFlow (relatório da folha): cd $PASTA && docker compose exec robo python robo.py oneflow-gravar CNPJ MM/AAAA
 ========================================================================
 EOF

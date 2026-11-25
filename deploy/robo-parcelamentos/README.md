@@ -150,3 +150,17 @@ instalação e calibração em `docs/nfse-mei.md`.
 docker compose exec robo python robo.py mei                    # processa a fila agora
 docker compose exec robo python robo.py mei-explorar ID_NOTA   # preenche sem emitir; prints/HTML em dados/nfse-mei/
 ```
+
+## OneFlow: relatório da folha (`oneflow.py`)
+
+O escritório pede em **Fechamentos ERP** ("Gerar relatório" no cartão da empresa, ou "Relatórios da
+folha" para todas as vinculadas). O robô abre o OneFlow com a sessão salva (login pela tela remota quando
+cai), segue o roteiro `/dados/oneflow/roteiros/relatorio_folha.json` e guarda o PDF no gestor. Só lê o
+OneFlow. O roteiro é gravado uma vez fazendo o caminho à mão pela tela remota. Antes disso as tarefas
+ficam na fila com "Aguardando calibração". Detalhes em `docs/robo-oneflow.md`.
+
+```
+docker compose exec robo python robo.py oneflow-gravar CNPJ MM/AAAA   # grava o caminho → roteiro rascunho
+docker compose exec robo python robo.py oneflow-testar CNPJ MM/AAAA   # roda o roteiro sem tarefa; prints em dados/oneflow/teste/
+docker compose exec robo python robo.py oneflow                       # processa a fila agora
+```

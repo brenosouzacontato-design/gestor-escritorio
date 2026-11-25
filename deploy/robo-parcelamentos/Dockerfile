@@ -12,6 +12,7 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 COPY *.py supervisord.conf ./
+COPY roteiros ./roteiros
 
 EXPOSE 6080
 CMD ["supervisord", "-c", "/app/supervisord.conf"]

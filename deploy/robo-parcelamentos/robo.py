@@ -14,6 +14,9 @@ Uso (dentro do container):
   python robo.py mei-entregar NOTA         # nota já emitida que não chegou ao cliente: o gestor monta o PDF e manda (sem captcha)
   python robo.py mei-baixar NOTA           # nota já emitida: baixa PDF/XML (captcha pela tela remota) e o gestor manda no WhatsApp
   python robo.py mei-explorar NOTA         # calibração do Emissor Nacional: preenche sem emitir, prints/HTML em /dados/nfse-mei
+  python robo.py oneflow                   # OneFlow (relatório da folha): processa a fila agora (ver oneflow.py)
+  python robo.py oneflow-gravar CNPJ MM/AAAA  # grava pela tela remota o caminho até o relatório → roteiro rascunho
+  python robo.py oneflow-testar CNPJ MM/AAAA [ROTEIRO.json]  # roda o roteiro sem tarefa; prints em /dados/oneflow/teste
 
 Fluxo de uma execução:
   1. lê no Supabase os parcelamentos PGFN ativos com busca_automatica;
@@ -40,6 +43,7 @@ import ecac
 import emissor
 import emissor_importar
 import nfse_mei
+import oneflow
 import gestor_db as db
 import notificador as aviso
 import sispar
@@ -58,6 +62,8 @@ ECAC_HORA = os.environ.get("ECAC_HORA", "08:00")
 EMISSOR_ATIVO = os.environ.get("EMISSOR_ATIVO", "1") == "1"
 # NFS-e de MEI no Emissor Nacional (nfse_mei.py): olha a fila a cada minuto; MEI_ATIVO=0 desliga
 MEI_ATIVO = os.environ.get("MEI_ATIVO", "1") == "1"
+# Tarefas do OneFlow pedidas pelo gestor (oneflow.py): olha a fila a cada minuto; ONEFLOW_ATIVO=0 desliga
+ONEFLOW_ATIVO = os.environ.get("ONEFLOW_ATIVO", "1") == "1"
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 log = logging.getLogger("robo")
@@ -195,6 +201,7 @@ def agendar() -> None:
         log.warning("e-CAC desligado até configurar: %s", ecac.configurado())
     erro_nfe = ""
     erro_mei = ""
+    erro_oneflow = ""
     while True:
         agora = datetime.now(TZ)
         hoje = agora.date()
@@ -236,6 +243,15 @@ def agendar() -> None:
                 if str(e) != erro_mei:
                     aviso.texto(f"❌ Robô de NFS-e MEI falhou: {e}")
                 erro_mei = str(e)
+        if ONEFLOW_ATIVO:
+            try:
+                oneflow.rodar()
+                erro_oneflow = ""
+            except Exception as e:  # noqa: BLE001
+                log.exception("Robô do OneFlow falhou")
+                if str(e) != erro_oneflow:
+                    aviso.texto(f"❌ Robô do OneFlow falhou: {e}")
+                erro_oneflow = str(e)
         time.sleep(60)
 
 
@@ -270,6 +286,15 @@ if __name__ == "__main__":
         if len(sys.argv) < 3:
             sys.exit("Uso: python robo.py mei-baixar ID_DA_NOTA")
         nfse_mei.baixar(sys.argv[2])
+    elif cmd == "oneflow":
+        print(f"{oneflow.rodar()} tarefa(s) processada(s)")
+    elif cmd in ("oneflow-gravar", "oneflow-testar"):
+        if len(sys.argv) < 4:
+            sys.exit(f"Uso: python robo.py {cmd} CNPJ MM/AAAA" + (" [ROTEIRO.json]" if cmd == "oneflow-testar" else ""))
+        if cmd == "oneflow-gravar":
+            oneflow.gravar(sys.argv[2], sys.argv[3])
+        else:
+            oneflow.testar(sys.argv[2], sys.argv[3], arquivo=sys.argv[4] if len(sys.argv) > 4 else None)
     elif cmd == "emissor-importar":
         print(f"{emissor_importar.rodar()} empresa(s) importada(s)")
     elif cmd == "testar-aviso":

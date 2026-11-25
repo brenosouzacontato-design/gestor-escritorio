@@ -1,0 +1,29 @@
+{
+ "contratante": {
+  "numero": "99999999999999",
+  "tipo": 2
+ },
+ "autorPedidoDados": {
+  "numero": "99999999999",
+  "tipo": 1
+ },
+ "contribuinte": {
+  "numero": "99999999999",
+  "tipo": 1
+ },
+ "pedidoDados": {
+  "idSistema": "SICALC",
+  "idServico": "CONSOLIDARGERARDARF51",
+  "versaoSistema": "2.9",
+  "dados": "{\"uf\": \"SP\", \"municipio\": \"7107\", \"codigoReceita\": \"0190\", \"codigoReceitaExtensao\": \"01\", \"tipoPA\": \"ME\", \"dataPA\": \"12/2017\", \"vencimento\": \"2018-01-31T00:00:00\", \"valorImposto\": \"1000.00\", \"dataConsolidacao\": \"2022-08-08T00:00:00\", \"observacao\": \"Darf calculado\"}"
+ },
+ "status": 200,
+ "responseId": "4b3fc-3b37-4eb9-836b-d0255b047089",
+ "dados": "{\"consolidado\": {\"valorPrincipalMoedaCorrente\": 1000.0, \"valorTotalConsolidado\": 1458.3, \"valorMultaMora\": 200.0, \"percentualMultaMora\": 20.0, \"valorJuros\": 258.3, \"percentualJuros\": 25.83, \"termoInicialJuros\": \"2018-02-01T00:00:00\", \"dataArrecadacaoConsolidacao\": \"2022-08-08T00:00:00\", \"dataValidadeCalculo\": \"2022-08-31T00:00:00\"}, \"darf\": \"JVBERi0xLjUKJSB0ZXN0ZSByZWR1emlkbyBkbyB0cmlhbCBTRVJQUk8K\"}",
+ "mensagens": [
+  {
+   "codigo": "[Sucesso-SICALC]",
+   "texto": "Requisição efetuada com sucesso."
+  }
+ ]
+}

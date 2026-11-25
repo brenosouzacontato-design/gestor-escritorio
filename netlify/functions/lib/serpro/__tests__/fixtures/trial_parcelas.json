@@ -1,0 +1,28 @@
+{
+ "contratante": {
+  "numero": "00000000000000",
+  "tipo": 2
+ },
+ "autorPedidoDados": {
+  "numero": "00000000000000",
+  "tipo": 2
+ },
+ "contribuinte": {
+  "numero": "00000000000000",
+  "tipo": 2
+ },
+ "pedidoDados": {
+  "idSistema": "PARCSN",
+  "idServico": "PARCELASPARAGERAR162",
+  "versaoSistema": "1.0",
+  "dados": ""
+ },
+ "status": "200",
+ "mensagens": [
+  {
+   "codigo": "[Sucesso-PARCSN]",
+   "texto": "Requisição efetuada com sucesso."
+  }
+ ],
+ "dados": "{\"listaParcelas\": [{\"parcela\": 202304, \"valor\": 441.83}, {\"parcela\": 202305, \"valor\": 441.83}, {\"parcela\": 202306, \"valor\": 441.83}, {\"parcela\": 202307, \"valor\": 441.83}, {\"parcela\": 202308, \"valor\": 441.83}, {\"parcela\": 202309, \"valor\": 441.83}, {\"parcela\": 202310, \"valor\": 441.83}]}"
+}
