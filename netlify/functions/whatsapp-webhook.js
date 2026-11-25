@@ -602,7 +602,8 @@ async function prepararPedidoNfse(r, mensagem, body, remoteJid) {
     const competencia = r.data || hoje
     let nota
     try {
-      nota = nfseMei.normalizarNota({ ...item, tomador_nome: item.tomador_nome, tomador_doc: item.tomador_doc, valor: r.valor, competencia })
+      nota = nfseMei.normalizarNota({ ...item, tomador_nome: item.tomador_nome, tomador_doc: item.tomador_doc, valor: r.valor, competencia,
+        descricao: r.descricao || item.descricao })
     } catch (e) {
       await enviarMensagem(remoteJid, `⚠️ ${e.message}`)
       return { statusCode: 200, body: 'NFS-e MEI invalid' }
@@ -627,9 +628,9 @@ async function prepararPedidoNfse(r, mensagem, body, remoteJid) {
       return { statusCode: 200, body: 'NFS-e week taken' }
     }
     const data = r.data && r.data <= hoje ? r.data : semana.data
-    dados = { ...base, tipo: 'recorrente', nome: item.nome, cpf: item.cpf, endereco: item.endereco || '', cep: item.cep || '', data, descricao: recorrentes.descricaoDa(item, semana), semana: semana.inicio, semana_fim: semana.fim }
+    dados = { ...base, tipo: 'recorrente', nome: item.nome, cpf: item.cpf, endereco: item.endereco || '', cep: item.cep || '', data, descricao: r.descricao ? recorrentes.descricaoDa({ ...item, descricao: r.descricao }, semana) : recorrentes.descricaoDa(item, semana), semana: semana.inicio, semana_fim: semana.fim }
   } else {
-    dados = { ...base, tipo: 'tomador', nome: item.nome, cpf: item.cpf || '', endereco: item.endereco || '', cep: item.cep || '', data: r.data || hoje, descricao: item.descricao_padrao || empresa.descricao_padrao || '' }
+    dados = { ...base, tipo: 'tomador', nome: item.nome, cpf: item.cpf || '', endereco: item.endereco || '', cep: item.cep || '', data: r.data || hoje, descricao: r.descricao || item.descricao_padrao || empresa.descricao_padrao || '' }
   }
 
   const remetente = body?.data?.pushName || participante(body) || null
@@ -689,7 +690,7 @@ async function prepararAgendamentoNfse(r, q, mensagem, body, remoteJid) {
   }
   const { empresa, item } = r
   const mei = r.tipo === 'mei'
-  const p = { executar_em: `${q.dia}T${q.hora}`, valor: r.valor, data_servico: r.data || q.dia, tipo: 'periodo' }
+  const p = { executar_em: `${q.dia}T${q.hora}`, valor: r.valor, data_servico: r.data || q.dia, tipo: 'periodo', descricao: r.descricao || null }
   let campos
   try {
     campos = mei
@@ -703,7 +704,7 @@ async function prepararAgendamentoNfse(r, q, mensagem, body, remoteJid) {
   const base = {
     cliente_id: empresa.cliente_id, ref_id: item.id, empresa_nome: empresa.nome, valor: r.valor,
     texto_original: mensagem.slice(0, 2000), nome: item.nome, data: campos.data_servico,
-    agendar: { dia: q.dia, hora: q.hora, horaPadrao: q.horaPadrao, executar_em: p.executar_em },
+    agendar: { dia: q.dia, hora: q.hora, horaPadrao: q.horaPadrao, executar_em: p.executar_em, descricao: p.descricao },
   }
   let dados
   if (mei) {
@@ -712,7 +713,7 @@ async function prepararAgendamentoNfse(r, q, mensagem, body, remoteJid) {
   } else {
     const periodo = recorrentes.periodoDaData(item, campos.data_servico)
     dados = { ...base, tipo: 'recorrente', ambiente: empresa.ambiente, cpf: item.cpf,
-      descricao: recorrentes.descricaoDa(item, periodo), semana: periodo.inicio, semana_fim: periodo.fim, mensal: recorrentes.ehMensal(item) }
+      descricao: recorrentes.descricaoDa(p.descricao ? { ...item, descricao: p.descricao } : item, periodo), semana: periodo.inicio, semana_fim: periodo.fim, mensal: recorrentes.ehMensal(item) }
   }
   const remetente = body?.data?.pushName || participante(body) || null
   const { data: pedido, error: errPedido } = await supabase.from('nfse_whatsapp_pedidos')
@@ -739,7 +740,7 @@ async function gravarAgendamentoNfse(pedido, remoteJid) {
       const { data: modelo, error } = await supabase.from('nfse_mei_modelos').select('*').eq('id', d.ref_id).maybeSingle()
       if (error) throw new Error(error.message)
       ag = await agendamentosNfse.criarAgendamentoMei(supabase, {
-        modelo, p: { executar_em: d.agendar.executar_em, valor: d.valor, data_servico: d.data }, criadoPor, avisarJid: remoteJid,
+        modelo, p: { executar_em: d.agendar.executar_em, valor: d.valor, data_servico: d.data, descricao: d.agendar.descricao || null }, criadoPor, avisarJid: remoteJid,
       })
     } else {
       const [{ data: empresa, error: e1 }, { data: modelo, error: e2 }] = await Promise.all([
@@ -751,7 +752,7 @@ async function gravarAgendamentoNfse(pedido, remoteJid) {
       if (empresa.ambiente !== d.ambiente) throw new agendamentosNfse.ErroAgendamento(`o ambiente da empresa mudou para ${empresa.ambiente} depois da prévia. Peça de novo.`)
       ag = await agendamentosNfse.criarAgendamento(supabase, {
         empresa, modelo,
-        p: { executar_em: d.agendar.executar_em, valor: d.valor, data_servico: d.data, tipo: 'periodo' },
+        p: { executar_em: d.agendar.executar_em, valor: d.valor, data_servico: d.data, tipo: 'periodo', descricao: d.agendar.descricao || null },
         criadoPor, avisarJid: remoteJid,
       })
     }
@@ -847,7 +848,7 @@ async function enfileirarNotaMei(pedido, remoteJid) {
     const { data: modelo, error: errModelo } = await supabase.from('nfse_mei_modelos').select('*').eq('id', d.ref_id).maybeSingle()
     if (errModelo) throw new Error(errModelo.message)
     if (!modelo || modelo.ativo === false) throw new Error('o modelo da nota foi excluído.')
-    const nota = nfseMei.normalizarNota({ ...modelo, valor: d.valor, competencia: d.data })
+    const nota = nfseMei.normalizarNota({ ...modelo, valor: d.valor, competencia: d.data, descricao: d.descricao || modelo.descricao })
     const { data: nova, error } = await supabase.from('nfse_mei_notas').insert({
       ...nota, cliente_id: d.cliente_id, modelo_id: modelo.id, status: 'na_fila',
       criado_por: `WhatsApp${pedido.remetente ? ` (${String(pedido.remetente).slice(0, 60)})` : ''}`,

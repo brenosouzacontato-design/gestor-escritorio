@@ -494,7 +494,8 @@ Valor: ${brl(nota.valor)}`
     const nome = texto(p.nome, 150) || modelo.nome
     const cpf = String(p.cpf ?? '').replace(/\D/g, '') || modelo.cpf
     exigir(recorrentes.docValido(cpf), `${cpf.length === 14 ? 'CNPJ' : 'CPF'} do tomador inválido`)
-    const descricao = String(p.descricao ?? '').trim().slice(0, 2000) || recorrentes.descricaoDa(modelo, semana)
+    // descrição só desta nota (tela, WhatsApp, agendamento): {inicio}/{fim}/{mes} viram as datas, como no modelo
+    const descricao = recorrentes.descricaoDa({ descricao: String(p.descricao ?? '').trim().slice(0, 2000) || modelo.descricao }, semana)
     const endereco = p.endereco === undefined ? (modelo.endereco || '') : texto(p.endereco, 300)
 
     const { data: doModelo, error } = await db.from('nfse_notas').select('id, estado, data')
@@ -916,7 +917,7 @@ async function emitirPedidoWhatsapp(dados, { remetente = null } = {}) {
     if (dados.tipo === 'recorrente') {
       return await acoes.recorrente_emitir({ db, repo, usuario }, {
         cliente_id: dados.cliente_id, id: dados.ref_id, semana: dados.semana, valor: dados.valor,
-        ambiente: dados.ambiente, data: dados.data,
+        ambiente: dados.ambiente, data: dados.data, descricao: dados.descricao || null,
       })
     }
     const empresa = await repo.obterEmpresa(uuid(dados.cliente_id, 'cliente_id'))

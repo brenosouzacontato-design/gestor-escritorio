@@ -11,11 +11,11 @@ const empresas = [
 ]
 const cadastros = {
   e1: {
-    modelos: [{ id: 'm1', nome: 'Shopee', cpf: '11222333000181', periodicidade: 'semanal', inicio: '2026-11-02', valor: 1250, ativo: true }],
+    modelos: [{ id: 'm1', nome: 'Shopee', cpf: '11222333000181', periodicidade: 'semanal', inicio: '2026-11-02', valor: 1250, descricao: 'Serviços de {inicio} a {fim}', ativo: true }],
     tomadores: [{ id: 't1', nome: 'Maria Souza', cpf: '52998224725', valor_padrao: 150, ativo: true }, { id: 't2', nome: 'João Lima', cpf: '', ativo: false }],
   },
   e2: { modelos: [], tomadores: [{ id: 't3', nome: 'Carlos Dias', cpf: '52998224725', ativo: true }] },
-  e3: { mei: [{ id: 'k1', tomador_nome: 'Agência X', tomador_doc: '11222333000181', valor: 8000, ativo: true }] },
+  e3: { mei: [{ id: 'k1', tomador_nome: 'Agência X', tomador_doc: '11222333000181', valor: 8000, descricao: 'Serviços de {mes}', ativo: true }] },
 }
 const ctx = { empresas, cadastros, hoje: '2026-11-25', hora: '10:00' }
 
@@ -36,7 +36,7 @@ test('oi abre o menu; qualquer mensagem sem conversa também', () => {
   assert.equal(conversar('qualquer coisa').estado.etapa, 'menu')
 })
 
-test('emitir NFS-e: empresa → tomador → valor sugerido → data de hoje', () => {
+test('emitir NFS-e: empresa → tomador → valor sugerido → descrição → data de hoje', () => {
   let r = conversar('oi', '1')
   assert.equal(r.estado.etapa, 'empresa')
   // empresas em ordem alfabética, MEI marcada
@@ -49,19 +49,28 @@ test('emitir NFS-e: empresa → tomador → valor sugerido → data de hoje', ()
   assert.equal(r.estado.etapa, 'valor')
   assert.match(r.mensagens[0], /usar R\$\s150,00/)
   r = conversar('oi', '1', '3', '2', '1')
-  assert.equal(r.estado.etapa, 'data')
+  assert.equal(r.estado.etapa, 'descricao')
   assert.equal(r.estado.valor, '150.00')
+  assert.match(r.mensagens[0], /\*1\* · manter essa/)
   r = conversar('oi', '1', '3', '2', '1', '1')
+  assert.equal(r.estado.etapa, 'data')
+  assert.match(r.mensagens[0], /Descrição mantida/)
+  r = conversar('oi', '1', '3', '2', '1', '1', '1')
   assert.equal(r.estado, null)
   assert.equal(r.acao.tipo, 'nfse')
-  assert.deepEqual([r.acao.r.empresa.cliente_id, r.acao.r.tipo, r.acao.r.item.id, r.acao.r.valor, r.acao.r.data], ['e1', 'tomador', 't1', '150.00', null])
+  assert.deepEqual([r.acao.r.empresa.cliente_id, r.acao.r.tipo, r.acao.r.item.id, r.acao.r.valor, r.acao.r.data, r.acao.r.descricao],
+    ['e1', 'tomador', 't1', '150.00', null, null])
 })
 
-test('emitir NFS-e: valor e data digitados; data futura e valor errado pedem de novo', () => {
+test('emitir NFS-e: valor, descrição e data digitados; data futura e valor errado pedem de novo', () => {
   assert.match(conversar('oi', '1', '3', '1', 'abc').mensagens[0], /Não entendi o valor/)
-  const r = conversar('oi', '1', '3', '1', '1.300,50', '20/11')
-  assert.deepEqual([r.acao.r.tipo, r.acao.r.valor, r.acao.r.data], ['recorrente', '1300.50', '2026-11-20'])
-  const fut = conversar('oi', '1', '3', '1', '10', '30/12/2026')
+  // a descrição atual do modelo aparece para conferir
+  assert.match(conversar('oi', '1', '3', '1', '1.300,50').mensagens[0], /Serviços de \{inicio\} a \{fim\}/)
+  const r = conversar('oi', '1', '3', '1', '1.300,50', 'Consultoria em marketing de novembro', '20/11')
+  assert.deepEqual([r.acao.r.tipo, r.acao.r.valor, r.acao.r.data, r.acao.r.descricao],
+    ['recorrente', '1300.50', '2026-11-20', 'Consultoria em marketing de novembro'])
+  assert.match(conversar('oi', '1', '3', '1', '10', 'ab').mensagens[0], /manter a descrição ou digite a nova/)
+  const fut = conversar('oi', '1', '3', '1', '10', '1', '30/12/2026')
   assert.equal(fut.estado.etapa, 'data')
   assert.match(fut.mensagens[0], /não pode ser futura/)
 })
@@ -70,11 +79,11 @@ test('empresa com um tomador só já pula para o valor; MEI usa o modelo', () =>
   const r = conversar('oi', '1', 'padaria')
   assert.equal(r.estado.etapa, 'valor')
   assert.match(r.mensagens[0], /Carlos Dias/)
-  const mei = conversar('oi', '1', '1', '1', '1')
-  assert.deepEqual([mei.acao.r.tipo, mei.acao.r.valor], ['mei', '8000.00'])
+  const mei = conversar('oi', '1', '1', '1', '1', '1')
+  assert.deepEqual([mei.acao.r.tipo, mei.acao.r.valor, mei.acao.r.descricao], ['mei', '8000.00', null])
 })
 
-test('agendar NFS-e: empresas com modelo recorrente ou MEI; dia e hora', () => {
+test('agendar NFS-e: empresas com modelo recorrente ou MEI; descrição; dia e hora', () => {
   let r = conversar('oi', '2')
   assert.match(r.mensagens[0], /\*1\* · Monica Silva _\(MEI\)_\n\*2\* · Simple Care/)
   assert.doesNotMatch(r.mensagens[0], /Padaria/)
@@ -82,21 +91,27 @@ test('agendar NFS-e: empresas com modelo recorrente ou MEI; dia e hora', () => {
   r = conversar('oi', '2', '2')
   assert.equal(r.estado.etapa, 'valor')
   r = conversar('oi', '2', '2', '1')
+  assert.equal(r.estado.etapa, 'descricao')
+  r = conversar('oi', '2', '2', '1', '1')
   assert.equal(r.estado.etapa, 'quando')
-  assert.match(conversar('oi', '2', '2', '1', 'amanhã cedo').mensagens[0], /Digite assim/)
-  assert.match(conversar('oi', '2', '2', '1', '25/11 08:00').mensagens[0], /já passou/)
-  r = conversar('oi', '2', '2', '1', '30/11 14:00')
+  assert.match(conversar('oi', '2', '2', '1', '1', 'amanhã cedo').mensagens[0], /Digite assim/)
+  assert.match(conversar('oi', '2', '2', '1', '1', '25/11 08:00').mensagens[0], /já passou/)
+  r = conversar('oi', '2', '2', '1', '1', '30/11 14:00')
   assert.equal(r.acao.tipo, 'agendar')
-  assert.deepEqual([r.acao.r.item.id, r.acao.r.valor, r.acao.q.dia, r.acao.q.hora], ['m1', '1250.00', '2026-11-30', '14:00'])
+  assert.deepEqual([r.acao.r.item.id, r.acao.r.valor, r.acao.q.dia, r.acao.q.hora, r.acao.r.descricao], ['m1', '1250.00', '2026-11-30', '14:00', null])
 })
 
-test('agendar NFS-e de MEI: usa o modelo MEI', () => {
+test('agendar NFS-e de MEI: usa o modelo MEI, com descrição nova', () => {
   let r = conversar('oi', '2', 'monica')
   assert.equal(r.estado.etapa, 'valor')
   assert.match(r.mensagens[0], /Agência X/)
-  r = conversar('oi', '2', 'monica', '1', '01/12 09:30')
+  r = conversar('oi', '2', 'monica', '1')
+  assert.match(r.mensagens[0], /Serviços de \{mes\}/)
+  assert.match(r.mensagens[0], /\{mes\} vira o mês/)
+  r = conversar('oi', '2', 'monica', '1', 'Design de embalagens em {mes}', '01/12 09:30')
   assert.equal(r.acao.tipo, 'agendar')
-  assert.deepEqual([r.acao.r.tipo, r.acao.r.item.id, r.acao.r.valor, r.acao.q.dia, r.acao.q.hora], ['mei', 'k1', '8000.00', '2026-12-01', '09:30'])
+  assert.deepEqual([r.acao.r.tipo, r.acao.r.item.id, r.acao.r.valor, r.acao.q.dia, r.acao.q.hora, r.acao.r.descricao],
+    ['mei', 'k1', '8000.00', '2026-12-01', '09:30', 'Design de embalagens em {mes}'])
 })
 
 test('tarefa, lembrete, reunião e obrigação: descreve em uma mensagem', () => {
