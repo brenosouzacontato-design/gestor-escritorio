@@ -1,9 +1,14 @@
-import { useState } from 'react'
-import { RefreshCwIcon, InfoIcon } from 'lucide-react'
+import { useCallback, useEffect, useState } from 'react'
+import { RefreshCwIcon, InfoIcon, FileDownIcon, FileTextIcon } from 'lucide-react'
 import { useStore } from '../store'
 import { Avatar, ErpBadge } from '../components/shared'
 import { getFolhaStatus, getFiscalStatus, competenciaAtual, competenciaAnterior, tokenExpirado, getAppToken } from '../lib/oneflow'
 import { useToast } from '../components/shared'
+import { listarTarefas, criarTarefas, cancelarTarefa, tentarDeNovo, abrirArquivo, STATUS_ATIVOS, ROTULO_STATUS } from '../lib/tarefasRobo'
+
+const cnpjValido = (c) => String(c.cnpj || '').replace(/\D/g, '').length === 14
+const noOneflow = (c) => !!(c.oneflow_token || c.oneflow_app_hash || c.oneflow_hash)
+const corStatus = { ok: 'var(--accent)', erro: 'var(--danger, #c0392b)', cancelada: 'var(--text3)' }
 
 export default function FechamentosERP({ onOpenConfig }) {
   const clientes = useStore(s => s.clientes)
@@ -19,6 +24,50 @@ export default function FechamentosERP({ onOpenConfig }) {
   const [competencia, setCompetencia] = useState(competenciaAnterior())
 
   const isMockMode = !oneflowConfig.configurado
+
+  // Relatório da folha pelo robô do servidor (tela web do OneFlow) — ver docs/robo-oneflow.md
+  const [tarefas, setTarefas] = useState({})
+  const [pedindo, setPedindo] = useState(false)
+  const [semFila, setSemFila] = useState('')
+
+  const carregarTarefas = useCallback(async () => {
+    try {
+      setTarefas(await listarTarefas(competencia))
+      setSemFila('')
+    } catch (e) {
+      setSemFila(e.message)
+    }
+  }, [competencia])
+
+  useEffect(() => { carregarTarefas() }, [carregarTarefas])
+
+  // enquanto o robô trabalha, atualiza sozinho
+  const temAtiva = Object.values(tarefas).some(t => STATUS_ATIVOS.includes(t.status))
+  useEffect(() => {
+    if (!temAtiva) return
+    const id = setInterval(carregarTarefas, 15000)
+    return () => clearInterval(id)
+  }, [temAtiva, carregarTarefas])
+
+  const pedirRelatorios = async (lista) => {
+    const ids = lista.filter(cnpjValido).map(c => c.id)
+    if (!ids.length) { show('Nenhuma empresa com CNPJ para pedir'); return }
+    if (ids.length > 1 && !window.confirm(`Pedir ao robô o relatório da folha de ${ids.length} empresas (competência ${competencia})?`)) return
+    setPedindo(true)
+    try {
+      const r = await criarTarefas(ids, competencia)
+      show(`${r.criadas} pedido(s) na fila do robô` + (r.ja_na_fila ? ` · ${r.ja_na_fila} já estavam` : ''))
+      await carregarTarefas()
+    } catch (e) {
+      show(e.message)
+    } finally {
+      setPedindo(false)
+    }
+  }
+
+  const acaoTarefa = async (fn, t) => {
+    try { await fn(t.id); await carregarTarefas() } catch (e) { show(e.message) }
+  }
 
   const renovarToken = async (cliente) => {
     try {
@@ -157,6 +206,14 @@ export default function FechamentosERP({ onOpenConfig }) {
         </button>
       </div>
 
+      <div style={{ display:'flex', gap:8, alignItems:'center', marginBottom:14 }}>
+        <button className="btn" onClick={() => pedirRelatorios(clientes.filter(noOneflow))} disabled={pedindo || !!semFila}
+          title="O robô do servidor abre o OneFlow e baixa o relatório da folha de cada empresa vinculada">
+          <FileTextIcon size={14} /> {pedindo ? 'Pedindo…' : 'Relatórios da folha (todas vinculadas)'}
+        </button>
+        {semFila && <span style={{ fontSize:11, color:'var(--text3)' }}>Robô indisponível: {semFila}</span>}
+      </div>
+
       {syncing && syncProgress && (
         <div style={{ fontSize:12, color:'var(--text2)', marginBottom:8, fontStyle:'italic' }}>
           {syncProgress}
@@ -168,6 +225,7 @@ export default function FechamentosERP({ onOpenConfig }) {
         const fiscal = getFechamento(c.id, 'fiscal')
         const vinculado = !!c.oneflow_token
         const tokenExp = tokenExpirado(c.oneflow_token_expires_at)
+        const tarefa = tarefas[c.id]
 
         return (
           <div key={c.id} className="card" style={{ marginBottom:8 }}>
@@ -193,6 +251,38 @@ export default function FechamentosERP({ onOpenConfig }) {
                 {folha?.sincronizado_em && (
                   <div style={{ fontSize:10, color:'var(--text3)', marginTop:3 }}>
                     {new Date(folha.sincronizado_em).toLocaleDateString('pt-BR')}
+                  </div>
+                )}
+                {!semFila && cnpjValido(c) && (
+                  <div style={{ marginTop:6, fontSize:11, display:'flex', flexWrap:'wrap', gap:6, alignItems:'center' }}>
+                    {tarefa && (
+                      <span style={{ color: corStatus[tarefa.status] || 'var(--warn)' }} title={tarefa.robo_mensagem || ''}>
+                        {ROTULO_STATUS[tarefa.status] || tarefa.status}
+                      </span>
+                    )}
+                    {tarefa?.status === 'ok' && tarefa.arquivo_path && (
+                      <button className="btn btn-sm" onClick={() => abrirArquivo(tarefa.id).catch(e => show(e.message))}>
+                        <FileDownIcon size={12} /> Relatório
+                      </button>
+                    )}
+                    {tarefa?.status === 'na_fila' && (
+                      <button className="btn btn-sm" onClick={() => acaoTarefa(cancelarTarefa, tarefa)}>Cancelar</button>
+                    )}
+                    {tarefa?.status === 'erro' && (
+                      <button className="btn btn-sm" onClick={() => acaoTarefa(tentarDeNovo, tarefa)}>Tentar de novo</button>
+                    )}
+                    {(!tarefa || ['ok', 'cancelada'].includes(tarefa.status)) && (
+                      <button className="btn btn-sm" disabled={pedindo} onClick={() => pedirRelatorios([c])}
+                        title="Pedir ao robô do servidor o relatório da folha desta competência">
+                        <FileTextIcon size={12} /> {tarefa?.status === 'ok' ? 'Gerar de novo' : 'Gerar relatório'}
+                      </button>
+                    )}
+                    {tarefa?.status === 'erro' && tarefa.robo_mensagem && (
+                      <div style={{ width:'100%', color:'var(--text3)', fontSize:10 }}>{tarefa.robo_mensagem}</div>
+                    )}
+                    {tarefa?.status === 'na_fila' && tarefa.robo_mensagem && (
+                      <div style={{ width:'100%', color:'var(--text3)', fontSize:10 }}>{tarefa.robo_mensagem}</div>
+                    )}
                   </div>
                 )}
               </div>

@@ -1,0 +1,15 @@
+{
+  "_leia": "EXEMPLO, não calibrado. Os passos abaixo são suposições do caminho no OneFlow e precisam ser trocados pelos reais: grave com 'python robo.py oneflow-gravar CNPJ MM/AAAA', teste com 'oneflow-testar' e só então ponha \"calibrado\": true. Valores entre chaves: {competencia} (MM/AAAA), {mes}, {ano}, {competencia_iso} (AAAA-MM), {competencia_traco} (MM-AAAA), {cnpj}, {cnpj_fmt}, {empresa}.",
+  "calibrado": false,
+  "inicio": "https://app.omie.com.br/",
+  "login_se_url_contem": ["login", "signin"],
+  "passos": [
+    { "acao": "clicar", "texto": "AJUSTAR: trocar de empresa", "nota": "abrir a lista de empresas do escritório" },
+    { "acao": "preencher", "campo": "AJUSTAR: Pesquisar", "valor": "{cnpj_fmt}", "enter": true },
+    { "acao": "clicar", "texto": "{empresa}" },
+    { "acao": "clicar", "texto": "AJUSTAR: Folha" },
+    { "acao": "clicar", "texto": "AJUSTAR: Relatórios" },
+    { "acao": "preencher", "campo": "AJUSTAR: Competência", "valor": "{competencia}" },
+    { "acao": "baixar", "texto": "AJUSTAR: Gerar PDF" }
+  ]
+}
