@@ -51,7 +51,10 @@ test('DARF: monta os dados do Sicalc e lê o recálculo', () => {
 
 test('DAS: período AAAAMM, consolidação AAAAMMDD e leitura do detalhamento', () => {
   assert.deepStrictEqual(s.dadosDas({ periodo: '01/2018' }), { periodoApuracao: '201801' })
-  assert.deepStrictEqual(s.dadosDas({ periodo: '2018-01', data_consolidacao: '2022-08-31' }), { periodoApuracao: '201801', dataConsolidacao: '20220831' })
+  assert.deepStrictEqual(s.dadosDas({ periodo: '2018-01', data_consolidacao: '2022-08-31' }, '2022-08-30'), { periodoApuracao: '201801', dataConsolidacao: '20220831' })
+  // o PGDAS-D recusa data de hoje ou passada: vira o DAS para pagar hoje (sem a data)
+  assert.deepStrictEqual(s.dadosDas({ periodo: '10/2026', data_consolidacao: '2026-11-25' }, '2026-11-25'), { periodoApuracao: '202610' })
+  assert.deepStrictEqual(s.dadosDas({ periodo: '10/2026', data_consolidacao: '2026-11-01' }, '2026-11-25'), { periodoApuracao: '202610' })
   const r = s.resultadoDas(interpretarResposta(200, fixture('trial_das')).dados)
   assert.strictEqual(r.numero_documento, '07202221401801678')
   assert.deepStrictEqual([r.principal, r.multa, r.juros, r.total], [40, 8, 10.15, 58.15])

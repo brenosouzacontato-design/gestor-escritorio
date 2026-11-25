@@ -136,11 +136,18 @@ function resultadoDarf(dados) {
 
 // ---------------------------------------------------------------- DAS (PGDAS-D)
 // form: { periodo: 'MM/AAAA', data_consolidacao?: 'AAAA-MM-DD' (pagar depois do vencimento = recálculo) }
-function dadosDas(form) {
+// O PGDAS-D só aceita data de consolidação FUTURA ("anterior/igual à data atual" é recusada,
+// EntradaIncorreta-PGDASD-MSG_ISN_002). Hoje ou antes: manda sem a data, que é o DAS para pagar hoje.
+const hojeBrasilia = () => new Date().toLocaleDateString('sv-SE', { timeZone: 'America/Sao_Paulo' })
+
+function dadosDas(form, hoje = hojeBrasilia()) {
   const f = form || {}
   const c = competencia(f.periodo, 'Período de apuração')
   const d = { periodoApuracao: `${c.ano}${c.mes}` }
-  if (f.data_consolidacao) d.dataConsolidacao = dataIso(f.data_consolidacao, 'Data de pagamento').slice(0, 10).replace(/-/g, '')
+  if (f.data_consolidacao) {
+    const data = dataIso(f.data_consolidacao, 'Data de pagamento').slice(0, 10)
+    if (data > hoje) d.dataConsolidacao = data.replace(/-/g, '')
+  }
   return d
 }
 

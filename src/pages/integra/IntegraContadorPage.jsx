@@ -26,6 +26,7 @@ const td = { padding: '6px 8px', borderTop: '1px solid var(--border)', fontSize:
 const brl = (v) => (v === null || v === undefined ? '—' : Number(v).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }))
 const dataBR = (iso) => (iso ? String(iso).slice(0, 10).split('-').reverse().join('/') : '—')
 const hoje = () => new Date().toLocaleDateString('sv-SE', { timeZone: 'America/Sao_Paulo' })
+const amanha = () => { const d = new Date(Date.now() + 86400000); return d.toLocaleDateString('sv-SE', { timeZone: 'America/Sao_Paulo' }) }
 const mesPassado = () => { const d = new Date(); d.setMonth(d.getMonth() - 1); return `${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}` }
 const TIPO = { darf: 'DARF', das: 'DAS', parcela: 'Parcela' }
 const TIPOS_PA = [['ME', 'Mensal (MM/AAAA)'], ['TR', 'Trimestral (T/AAAA)'], ['AN', 'Anual (AAAA)'], ['QZ', 'Quinzenal (QQ/MM/AAAA)'],
@@ -177,7 +178,7 @@ function FormDas({ clienteId, onGuia }) {
     <div>
       <div style={{ ...grade, alignItems: 'end' }}>
         <Campo label="Período de apuração (MM/AAAA)"><input style={campo} value={periodo} onChange={(e) => setPeriodo(e.target.value)} /></Campo>
-        <Campo label="Data do pagamento (vencido: recálculo)" dica="vazio = DAS no vencimento normal"><input type="date" style={campo} value={data} onChange={(e) => setData(e.target.value)} /></Campo>
+        <Campo label="Pagar em data futura (opcional)" dica="vazio = DAS para pagar até hoje (já com multa e juros, se vencido)"><input type="date" style={campo} value={data} min={amanha()} onChange={(e) => setData(e.target.value)} /></Campo>
         <div><button className="btn btn-accent" onClick={enviar} disabled={indo}><FileTextIcon size={14} /> {indo ? 'Gerando…' : 'Gerar DAS'}</button></div>
       </div>
       <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 6 }}>Precisa da declaração do PGDAS-D já transmitida para o período.</div>
