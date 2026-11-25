@@ -18,6 +18,7 @@ const { hojeBrasilia } = require('../validador')
 const { segundaDa, somarDias } = require('../recorrentes')
 const ag = require('../agendamentos')
 const nfseWpp = require('../../nfseWhatsapp')
+const nfseMeiLib = require('../mei')
 
 const G = path.join(__dirname, 'golden')
 const CLIENTE = '11111111-1111-4111-8111-111111111111'
@@ -219,4 +220,58 @@ test('function: banco sem a tabela de agendamentos avisa e não quebra a lista d
   assert.equal(lista.status, 200)
   assert.match(lista.aviso_agendamento, /supabase-schema-nfse-agendamentos\.sql/)
   assert.equal((await chamar({ acao: 'recorrentes_hoje' })).status, 200)
+})
+
+test('MEI: agenda um modelo MEI, na hora a nota entra na fila do robô e não repete', async () => {
+  const MEI = '22222222-2222-4222-8222-222222222222'
+  const MODELO = '33333333-3333-4333-8333-333333333333'
+  const modelo = { id: MODELO, cliente_id: MEI, ativo: true, tomador_nome: 'Carlos Dias', tomador_doc: '52998224725',
+    codigo_tributacao: '010701', municipio_prestacao: '', descricao: 'Serviços de {mes}', valor: 300 }
+  const db = criarSupabaseFalso({ tabelas: { nfse_mei_acessos: [], nfse_mei_modelos: [modelo], nfse_mei_notas: [] } })
+  const agora = new Date('2026-11-25T13:00:00Z') // 10h em Brasília
+  const p = { executar_em: '2026-11-30T14:00', valor: '350,00' }
+
+  await assert.rejects(ag.criarAgendamentoMei(db, { modelo, p, agora }), /senha do Emissor Nacional/)
+  await db.from('nfse_mei_acessos').insert({ cliente_id: MEI })
+  await assert.rejects(ag.criarAgendamentoMei(db, { modelo, p: { ...p, data_servico: '2026-12-01' }, agora }), /competência não pode ser depois/)
+  await assert.rejects(ag.criarAgendamentoMei(db, { modelo, p: { ...p, executar_em: '2026-11-25T09:00' }, agora }), /já passou/)
+
+  const previa = await ag.criarAgendamentoMei(db, { modelo, p, agora, gravar: false })
+  assert.deepEqual([previa.tipo, previa.mei_modelo_id, previa.recorrente_id, previa.data_servico, previa.periodo, previa.valor, previa.ambiente],
+    ['mei', MODELO, null, '2026-11-30', '2026-11-01', 350, 'producao'])
+  const criado = await ag.criarAgendamentoMei(db, { modelo, p, agora, criadoPor: 'WhatsApp (Breno)', avisarJid: 'g@g.us' })
+  assert.ok(criado.id)
+  await assert.rejects(ag.criarAgendamentoMei(db, { modelo, p: { ...p, executar_em: '2026-11-30T15:00' }, agora }), /já tem nota agendada para 11\/2026/)
+
+  // na hora: entra na fila do robô MEI (sem passar pela Sefin)
+  const { data: lista } = await db.from('nfse_agendamentos').select('*')
+  // (o robô roda hoje: a competência vira hoje para o teste valer em qualquer dia)
+  const hoje = hojeBrasilia()
+  await db.from('nfse_agendamentos').update({ executar_em: new Date(Date.now() - 60000).toISOString(), data_servico: hoje }).eq('id', criado.id)
+  const avisos = []
+  const r = await ag.executarPendentes({ db, emitir: () => { throw new Error('não devia emitir pela Sefin') }, avisar: async (a, fim) => avisos.push(fim) })
+  assert.equal(lista.length, 1)
+  assert.deepEqual([r.executados, r.emitidos, r.erros, avisos[0].mensagem], [1, 1, 0, avisos[0].mensagem])
+  assert.equal(avisos[0].situacao, 'emitida', avisos[0].mensagem)
+  const { data: notas } = await db.from('nfse_mei_notas').select('*')
+  assert.equal(notas.length, 1)
+  assert.deepEqual([notas[0].status, notas[0].valor, notas[0].competencia, notas[0].modelo_id, notas[0].descricao],
+    ['na_fila', 350, hoje, MODELO, nfseMeiLib.descricaoDoMes('Serviços de {mes}', hoje)])
+  const { data: [feito] } = await db.from('nfse_agendamentos').select('*').eq('id', criado.id)
+  assert.deepEqual([feito.situacao, feito.mei_nota_id], ['emitida', notas[0].id])
+  assert.match(avisos[0].mensagem, /fila do robô/)
+
+  // a mesma nota no mesmo mês já está na fila: um novo agendamento é recusado
+  await assert.rejects(ag.criarAgendamentoMei(db, { modelo, p: { executar_em: emBrasilia(60), valor: '350', data_servico: hoje } }), /Já existe nota MEI igual/)
+  assert.equal(ag.resumo(feito).mei_nota_id, notas[0].id)
+})
+
+test('WhatsApp: prévia do agendamento MEI', () => {
+  const t = nfseWpp.previaAgendamento({ tipo: 'mei', empresa_nome: 'Ana MEI', nome: 'Carlos Dias', cpf: '52998224725', valor: 350,
+    data: '2026-11-30', descricao: 'Serviços de novembro de 2026', agendar: { dia: '2026-11-30', hora: '14:00' } })
+  assert.match(t, /Agendar NFS-e MEI\?/)
+  assert.match(t, /30\/11\/2026 às 14:00/)
+  assert.match(t, /Competência 30\/11\/2026/)
+  assert.match(t, /robô MEI/)
+  assert.doesNotMatch(t, /Homologação/)
 })

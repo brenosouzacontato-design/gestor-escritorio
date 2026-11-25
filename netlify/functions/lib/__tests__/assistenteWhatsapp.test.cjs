@@ -74,20 +74,29 @@ test('empresa com um tomador só já pula para o valor; MEI usa o modelo', () =>
   assert.deepEqual([mei.acao.r.tipo, mei.acao.r.valor], ['mei', '8000.00'])
 })
 
-test('agendar NFS-e: só empresas e modelos recorrentes; dia e hora', () => {
+test('agendar NFS-e: empresas com modelo recorrente ou MEI; dia e hora', () => {
   let r = conversar('oi', '2')
-  assert.match(r.mensagens[0], /Simple Care/)
-  assert.doesNotMatch(r.mensagens[0], /Padaria|Monica/)
+  assert.match(r.mensagens[0], /\*1\* · Monica Silva _\(MEI\)_\n\*2\* · Simple Care/)
+  assert.doesNotMatch(r.mensagens[0], /Padaria/)
   // uma empresa e um modelo só: já pergunta o valor
-  r = conversar('oi', '2', '1')
+  r = conversar('oi', '2', '2')
   assert.equal(r.estado.etapa, 'valor')
-  r = conversar('oi', '2', '1', '1')
+  r = conversar('oi', '2', '2', '1')
   assert.equal(r.estado.etapa, 'quando')
-  assert.match(conversar('oi', '2', '1', '1', 'amanhã cedo').mensagens[0], /Digite assim/)
-  assert.match(conversar('oi', '2', '1', '1', '25/11 08:00').mensagens[0], /já passou/)
-  r = conversar('oi', '2', '1', '1', '30/11 14:00')
+  assert.match(conversar('oi', '2', '2', '1', 'amanhã cedo').mensagens[0], /Digite assim/)
+  assert.match(conversar('oi', '2', '2', '1', '25/11 08:00').mensagens[0], /já passou/)
+  r = conversar('oi', '2', '2', '1', '30/11 14:00')
   assert.equal(r.acao.tipo, 'agendar')
   assert.deepEqual([r.acao.r.item.id, r.acao.r.valor, r.acao.q.dia, r.acao.q.hora], ['m1', '1250.00', '2026-11-30', '14:00'])
+})
+
+test('agendar NFS-e de MEI: usa o modelo MEI', () => {
+  let r = conversar('oi', '2', 'monica')
+  assert.equal(r.estado.etapa, 'valor')
+  assert.match(r.mensagens[0], /Agência X/)
+  r = conversar('oi', '2', 'monica', '1', '01/12 09:30')
+  assert.equal(r.acao.tipo, 'agendar')
+  assert.deepEqual([r.acao.r.tipo, r.acao.r.item.id, r.acao.r.valor, r.acao.q.dia, r.acao.q.hora], ['mei', 'k1', '8000.00', '2026-12-01', '09:30'])
 })
 
 test('tarefa, lembrete, reunião e obrigação: descreve em uma mensagem', () => {

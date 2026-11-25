@@ -192,7 +192,11 @@ Testes: `enderecoTomador.test.cjs` e o fluxo da function em `recorrente.test.cjs
   resultado dos últimos 30 dias; a semana agendada aparece com "⏰ Emissão agendada" (também na tela Hoje).
 - **Pelo grupo Documentos:** `agendar nfse <empresa> <modelo> <valor> <dd/mm> <hh:mm>` (sem hora: 9h).
   Mostra a prévia e só agenda depois do "sim"; quando a nota sai (ou não), o robô avisa no grupo.
-  Só para modelos recorrentes.
+  Vale para modelos recorrentes e modelos MEI (também pelo assistente do grupo ANALISTA JR, opção 2).
+- **MEI:** NFS-e MEI → **Agendar** no modelo (dia e hora, valor, competência). Na hora marcada o robô põe a
+  nota na fila do robô MEI (`nfse_mei_notas`, "na fila"), com as mesmas conferências do botão Emitir
+  (senha cadastrada, nota repetida no mês); o robô MEI emite no portal e manda o PDF ao cliente. Um
+  agendamento pendente por modelo e mês. Banco: `supabase-schema-nfse-agendamentos-mei.sql`.
 - **Robô:** `nfse-agendamentos-cron` (a cada 5 min) emite com a mesma ação da tela (`recorrente_emitir`):
   ambiente, duplicidade e validação valem igual. Semana que já ganhou nota antes da hora: não sai outra
   (o agendamento fica "Não saiu" com o motivo). Execução que caiu no meio vira erro e não é repetida

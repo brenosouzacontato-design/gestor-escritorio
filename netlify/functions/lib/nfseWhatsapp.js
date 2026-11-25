@@ -270,6 +270,14 @@ function extrairQuando(texto, agora) {
 // Prévia do agendamento enviada no grupo. dados: o que vai em nfse_whatsapp_pedidos.dados (com dados.agendar).
 function previaAgendamento(dados) {
   const ag = dados.agendar || {}
+  if (dados.tipo === 'mei') {
+    const doc = dados.cpf ? `\n🪪 ${dados.cpf.length === 14 ? 'CNPJ' : 'CPF'} ${dados.cpf}` : ''
+    return `⏰ *Agendar NFS-e MEI?*\n🕑 Emitir em *${dataBR(ag.dia)} às ${ag.hora}*${ag.horaPadrao ? ' _(sem hora no pedido: usei 9h)_' : ''}`
+      + `\n🏢 ${dados.empresa_nome} _(MEI)_\n👤 ${dados.nome}${doc}\n💰 ${brl(dados.valor)}\n📅 Competência ${dataBR(dados.data)}`
+      + `${dados.descricao ? `\n📝 ${dados.descricao.slice(0, 300)}` : ''}`
+      + '\n🤖 Na hora marcada a nota entra na fila do robô MEI, que emite no Emissor Nacional e manda o PDF no WhatsApp do cliente. Eu aviso aqui.'
+      + '\n\nResponda *sim* para agendar ou *não* para cancelar.'
+  }
   const amb = dados.ambiente === 'producao' ? '' : '\n🧪 *Homologação (teste)* — a nota não tem validade.'
   const doc = dados.cpf ? `\n🪪 ${dados.cpf.length === 14 ? 'CNPJ' : 'CPF'} ${dados.cpf}` : ''
   const periodo = dados.semana ? `\n🗓️ ${dados.mensal ? `Mês ${dataBR(dados.semana).slice(3)}` : `Semana de ${dataBR(dados.semana)} a ${dataBR(dados.semana_fim)}`}` : ''

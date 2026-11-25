@@ -1,15 +1,17 @@
 import { useEffect, useRef, useState } from 'react'
-import { BadgeCheckIcon, KeyRoundIcon, PlusIcon, Building2Icon, FilePlusIcon, PencilIcon, Trash2Icon, SendIcon, RefreshCwIcon, FileTextIcon, FileCodeIcon, XIcon, AlertTriangleIcon } from 'lucide-react'
+import { AlarmClockIcon, BadgeCheckIcon, KeyRoundIcon, PlusIcon, Building2Icon, FilePlusIcon, PencilIcon, Trash2Icon, SendIcon, RefreshCwIcon, FileTextIcon, FileCodeIcon, XIcon, AlertTriangleIcon } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { useToast } from '../../components/shared'
 import { useStore } from '../../store'
+import { ListaAgendamentos, agoraBrasilia, amanhaAs9 } from './AgendarEmissao'
 
 // NFS-e de MEI pelo Emissor Nacional (portal, login com CPF/CNPJ e senha), para quem não tem certificado A1.
 // Cada empresa tem modelos (tomador, código do serviço, descrição, valor sugerido). "Emitir" põe a nota na fila;
 // o robô do servidor (deploy/robo-parcelamentos/nfse_mei.py) emite no portal e manda PDF/XML no WhatsApp
 // do cliente. Servidor: netlify/functions/nfse-mei.js. Ver docs/nfse-mei.md.
 // "Nova empresa MEI" cadastra o cliente (regime MEI) direto daqui; "Nota avulsa" emite para um tomador
-// sem modelo (dá para guardar como modelo na mesma hora).
+// sem modelo (dá para guardar como modelo na mesma hora). "Agendar" marca dia e hora: o robô
+// nfse-agendamentos-cron põe a nota na fila nessa hora (lib/nfse/agendamentos.js).
 
 async function chamar(acao, dados = {}) {
   const { data } = await supabase.auth.getSession()
@@ -221,11 +223,13 @@ function Modelos({ clienteId, dados, temSenha, onMudou }) {
         )}
       </div>
       <p style={{ ...suave, margin: '6px 0 10px' }}>O que se repete em toda nota: tomador, serviço e descrição. Na hora de emitir só confere o valor e a data.</p>
+      {dados.aviso_agendamento && <div style={{ ...suave, color: 'var(--warn)', marginBottom: 8 }}>⚠️ {dados.aviso_agendamento}</div>}
       {form && <FormModelo form={form} setForm={setForm} onSalvar={salvar} onCancelar={() => setForm(null)} ocupado={ocupado} />}
       {avulsa && <NotaAvulsa clienteId={clienteId} onFechar={() => setAvulsa(false)} onMudou={onMudou} />}
       {dados.modelos.length === 0 && !form && !avulsa && <div style={suave}>Nenhum modelo ainda. Para um tomador só desta vez, use Nota avulsa.</div>}
       {dados.modelos.map((m) => (
         <Modelo key={m.id} m={m} clienteId={clienteId} temSenha={temSenha} onMudou={onMudou}
+          agendamentos={(dados.agendamentos || []).filter((a) => a.mei_modelo_id === m.id)}
           onEditar={() => setForm({ ...m, tomador_doc: m.tomador_doc || '', valor: valorBR(m.valor), codigo_tributacao: codFmt(m.codigo_tributacao) })}
           onExcluir={() => excluir(m)} />
       ))}
@@ -258,11 +262,26 @@ function FormModelo({ form, setForm, onSalvar, onCancelar, ocupado, rotuloSalvar
   )
 }
 
-function Modelo({ m, clienteId, temSenha, onEditar, onExcluir, onMudou }) {
+function Modelo({ m, clienteId, temSenha, onEditar, onExcluir, onMudou, agendamentos = [] }) {
   const { show } = useToast()
   const [nota, setNota] = useState(null)
+  const [agenda, setAgenda] = useState(null)
   const [ocupado, setOcupado] = useState(false)
-  function abrir() { setNota({ valor: valorBR(m.valor), competencia: hoje(), descricao: m.descricao }) }
+  function abrir() { setAgenda(null); setNota({ valor: valorBR(m.valor), competencia: hoje(), descricao: m.descricao }) }
+  function abrirAgenda() {
+    const q = amanhaAs9()
+    setNota(null); setAgenda({ quando: q, valor: valorBR(m.valor), competencia: q.slice(0, 10), descricao: m.descricao, compEditada: false })
+  }
+  async function agendar() {
+    setOcupado(true)
+    try {
+      await chamar('agendar', {
+        cliente_id: clienteId, modelo_id: m.id, executar_em: agenda.quando, valor: agenda.valor,
+        competencia: agenda.competencia, descricao: agenda.descricao === m.descricao ? null : agenda.descricao,
+      })
+      setAgenda(null); show('Nota agendada'); onMudou()
+    } catch (e) { show(e.message) } finally { setOcupado(false) }
+  }
   async function emitir(confirmar = false) {
     setOcupado(true)
     try {
@@ -288,6 +307,7 @@ function Modelo({ m, clienteId, temSenha, onEditar, onExcluir, onMudou }) {
         <span style={suave}>{docFmt(m.tomador_doc)} · serviço {codFmt(m.codigo_tributacao)}{m.valor ? ` · ${brl(m.valor)}` : ''}</span>
         <span style={{ marginLeft: 'auto', display: 'flex', gap: 4 }}>
           {!nota && <button className="btn btn-accent btn-sm" disabled={!temSenha} title={temSenha ? '' : 'Cadastre a senha primeiro'} onClick={abrir}><SendIcon size={13} /> Emitir</button>}
+          {!agenda && <button className="btn btn-ghost btn-sm" disabled={!temSenha} title={temSenha ? 'Emitir num dia e hora marcados' : 'Cadastre a senha primeiro'} onClick={abrirAgenda}><AlarmClockIcon size={13} /> Agendar</button>}
           <button className="btn btn-icon btn-ghost" title="Editar modelo" onClick={onEditar}><PencilIcon size={13} /></button>
           <button className="btn btn-icon btn-ghost" title="Excluir modelo" onClick={onExcluir}><Trash2Icon size={13} /></button>
         </span>
@@ -307,6 +327,26 @@ function Modelo({ m, clienteId, temSenha, onEditar, onExcluir, onMudou }) {
           </div>
         </div>
       )}
+      {agenda && (
+        <div style={{ marginTop: 8, padding: 10, borderRadius: 8, background: 'var(--surface2)' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '200px 130px 160px 1fr', gap: 10 }}>
+            <div><label className="form-label">Emitir em (horário de Brasília)</label>
+              <input type="datetime-local" min={agoraBrasilia()} value={agenda.quando}
+                onChange={(e) => { const v = e.target.value; setAgenda({ ...agenda, quando: v, competencia: agenda.compEditada ? agenda.competencia : v.slice(0, 10) }) }} /></div>
+            <div><label className="form-label">Valor</label><input value={agenda.valor} onChange={(e) => setAgenda({ ...agenda, valor: e.target.value })} placeholder="0,00" /></div>
+            <div><label className="form-label">Competência</label><input type="date" max={agenda.quando.slice(0, 10)} value={agenda.competencia} onChange={(e) => setAgenda({ ...agenda, competencia: e.target.value, compEditada: true })} /></div>
+            <div><label className="form-label">Descrição (só desta nota)</label><input value={agenda.descricao} onChange={(e) => setAgenda({ ...agenda, descricao: e.target.value })} /></div>
+          </div>
+          {/\{mes\}/i.test(agenda.descricao) && <div style={{ ...suave, marginTop: 6 }}>Vai sair: {comMes(agenda.descricao, agenda.competencia)}</div>}
+          <div style={{ ...suave, marginTop: 6 }}>Na hora marcada a nota entra na fila do robô, que emite no portal e manda o PDF no WhatsApp do cliente.</div>
+          <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+            <button className="btn btn-accent" disabled={ocupado || !agenda.valor || !agenda.quando} onClick={agendar}>Agendar {agenda.valor ? `R$ ${agenda.valor}` : ''}</button>
+            <button className="btn btn-ghost" onClick={() => setAgenda(null)}>Cancelar</button>
+          </div>
+        </div>
+      )}
+      <ListaAgendamentos clienteId={clienteId} lista={agendamentos} onMudou={onMudou} onErro={show}
+        cancelarCom={(a) => chamar('cancelar_agendamento', { cliente_id: clienteId, id: a.id })} />
     </div>
   )
 }

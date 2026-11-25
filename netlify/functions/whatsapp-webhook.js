@@ -656,7 +656,7 @@ async function processarAgendarNfse(resto, mensagem, body, remoteJid) {
   const exemplo = '\nExemplo: *agendar nfse Simple Care Shopee 1.250,00 30/11 14:00*'
   try {
     if (!resto) {
-      await enviarMensagem(remoteJid, `⏰ *Agendar NFS-e pelo grupo*\nFunciona para as notas recorrentes (Emitir NFS-e → Notas recorrentes): diga a empresa, o modelo, o valor, o dia e a hora.${exemplo}\n_Sem hora, agendo para 9h. A data do serviço é o dia da emissão (ou mande uma segunda data)._`)
+      await enviarMensagem(remoteJid, `⏰ *Agendar NFS-e pelo grupo*\nFunciona para as notas recorrentes (Emitir NFS-e → Notas recorrentes) e os modelos MEI (NFS-e MEI): diga a empresa, o modelo, o valor, o dia e a hora.${exemplo}\n_Sem hora, agendo para 9h. A data do serviço é o dia da emissão (ou mande uma segunda data)._`)
       return { statusCode: 200, body: 'NFS-e schedule help' }
     }
     const q = nfseWpp.extrairQuando(resto, { dia: hojeSP(), hora: horaSP() })
@@ -683,26 +683,36 @@ async function processarAgendarNfse(resto, mensagem, body, remoteJid) {
 // confere as regras (lib/nfse/agendamentos.js), grava o pedido e manda a prévia; só agenda depois do "sim".
 // Usado pelo comando "agendar nfse" e pelo assistente do ANALISTA JR.
 async function prepararAgendamentoNfse(r, q, mensagem, body, remoteJid) {
-  if (r.tipo !== 'recorrente') {
-    await enviarMensagem(remoteJid, `⚠️ O agendamento funciona só para as notas recorrentes; ${r.item.nome} não é um modelo recorrente de ${r.empresa.nome}. Cadastre em Emitir NFS-e → Notas recorrentes, ou peça a nota agora com *nfse*.`)
+  if (r.tipo !== 'recorrente' && r.tipo !== 'mei') {
+    await enviarMensagem(remoteJid, `⚠️ O agendamento funciona para as notas recorrentes e os modelos MEI; ${r.item.nome} não é um modelo de ${r.empresa.nome}. Cadastre em Emitir NFS-e → Notas recorrentes (ou NFS-e MEI), ou peça a nota agora com *nfse*.`)
     return { statusCode: 200, body: 'NFS-e schedule not recurring' }
   }
   const { empresa, item } = r
+  const mei = r.tipo === 'mei'
   const p = { executar_em: `${q.dia}T${q.hora}`, valor: r.valor, data_servico: r.data || q.dia, tipo: 'periodo' }
   let campos
   try {
-    campos = await agendamentosNfse.criarAgendamento(supabase, { empresa, modelo: item, p, gravar: false })
+    campos = mei
+      ? await agendamentosNfse.criarAgendamentoMei(supabase, { modelo: item, p, gravar: false })
+      : await agendamentosNfse.criarAgendamento(supabase, { empresa, modelo: item, p, gravar: false })
   } catch (e) {
     if (!(e instanceof agendamentosNfse.ErroAgendamento)) throw e
     await enviarMensagem(remoteJid, `⚠️ ${e.message}`)
     return { statusCode: 200, body: 'NFS-e schedule rejected' }
   }
-  const periodo = recorrentes.periodoDaData(item, campos.data_servico)
-  const dados = {
-    cliente_id: empresa.cliente_id, ref_id: item.id, ambiente: empresa.ambiente, empresa_nome: empresa.nome, valor: r.valor,
-    texto_original: mensagem.slice(0, 2000), tipo: 'recorrente', nome: item.nome, cpf: item.cpf, data: campos.data_servico,
-    descricao: recorrentes.descricaoDa(item, periodo), semana: periodo.inicio, semana_fim: periodo.fim, mensal: recorrentes.ehMensal(item),
+  const base = {
+    cliente_id: empresa.cliente_id, ref_id: item.id, empresa_nome: empresa.nome, valor: r.valor,
+    texto_original: mensagem.slice(0, 2000), nome: item.nome, data: campos.data_servico,
     agendar: { dia: q.dia, hora: q.hora, horaPadrao: q.horaPadrao, executar_em: p.executar_em },
+  }
+  let dados
+  if (mei) {
+    dados = { ...base, tipo: 'mei', ambiente: 'producao', cpf: item.tomador_doc || '',
+      descricao: nfseMei.descricaoDoMes(campos.descricao || item.descricao || '', campos.data_servico) }
+  } else {
+    const periodo = recorrentes.periodoDaData(item, campos.data_servico)
+    dados = { ...base, tipo: 'recorrente', ambiente: empresa.ambiente, cpf: item.cpf,
+      descricao: recorrentes.descricaoDa(item, periodo), semana: periodo.inicio, semana_fim: periodo.fim, mensal: recorrentes.ehMensal(item) }
   }
   const remetente = body?.data?.pushName || participante(body) || null
   const { data: pedido, error: errPedido } = await supabase.from('nfse_whatsapp_pedidos')
@@ -723,21 +733,30 @@ async function prepararAgendamentoNfse(r, q, mensagem, body, remoteJid) {
 async function gravarAgendamentoNfse(pedido, remoteJid) {
   const d = pedido.dados || {}
   try {
-    const [{ data: empresa, error: e1 }, { data: modelo, error: e2 }] = await Promise.all([
-      supabase.from('nfse_empresas').select('cliente_id, ambiente').eq('cliente_id', d.cliente_id).maybeSingle(),
-      supabase.from('nfse_recorrentes').select('*').eq('id', d.ref_id).maybeSingle(),
-    ])
-    if (e1 || e2) throw new Error((e1 || e2).message)
-    if (!empresa) throw new agendamentosNfse.ErroAgendamento('a empresa não está mais configurada para emitir NFS-e.')
-    if (empresa.ambiente !== d.ambiente) throw new agendamentosNfse.ErroAgendamento(`o ambiente da empresa mudou para ${empresa.ambiente} depois da prévia. Peça de novo.`)
-    const ag = await agendamentosNfse.criarAgendamento(supabase, {
-      empresa, modelo,
-      p: { executar_em: d.agendar.executar_em, valor: d.valor, data_servico: d.data, tipo: 'periodo' },
-      criadoPor: `WhatsApp${pedido.remetente ? ` (${String(pedido.remetente).slice(0, 60)})` : ''}`,
-      avisarJid: remoteJid,
-    })
+    const criadoPor = `WhatsApp${pedido.remetente ? ` (${String(pedido.remetente).slice(0, 60)})` : ''}`
+    let ag
+    if (d.tipo === 'mei') {
+      const { data: modelo, error } = await supabase.from('nfse_mei_modelos').select('*').eq('id', d.ref_id).maybeSingle()
+      if (error) throw new Error(error.message)
+      ag = await agendamentosNfse.criarAgendamentoMei(supabase, {
+        modelo, p: { executar_em: d.agendar.executar_em, valor: d.valor, data_servico: d.data }, criadoPor, avisarJid: remoteJid,
+      })
+    } else {
+      const [{ data: empresa, error: e1 }, { data: modelo, error: e2 }] = await Promise.all([
+        supabase.from('nfse_empresas').select('cliente_id, ambiente').eq('cliente_id', d.cliente_id).maybeSingle(),
+        supabase.from('nfse_recorrentes').select('*').eq('id', d.ref_id).maybeSingle(),
+      ])
+      if (e1 || e2) throw new Error((e1 || e2).message)
+      if (!empresa) throw new agendamentosNfse.ErroAgendamento('a empresa não está mais configurada para emitir NFS-e.')
+      if (empresa.ambiente !== d.ambiente) throw new agendamentosNfse.ErroAgendamento(`o ambiente da empresa mudou para ${empresa.ambiente} depois da prévia. Peça de novo.`)
+      ag = await agendamentosNfse.criarAgendamento(supabase, {
+        empresa, modelo,
+        p: { executar_em: d.agendar.executar_em, valor: d.valor, data_servico: d.data, tipo: 'periodo' },
+        criadoPor, avisarJid: remoteJid,
+      })
+    }
     await supabase.from('nfse_whatsapp_pedidos').update({ estado: nfseWpp.ESTADOS.EMITIDA, mensagem: `Agendada: nfse_agendamentos ${ag.id}` }).eq('id', pedido.id)
-    await enviarMensagem(remoteJid, `✅ *NFS-e agendada para ${agendamentosNfse.quandoBR(ag.executar_em)}*\n🏢 ${d.empresa_nome}\n👤 ${d.nome} — ${fmtBRL(d.valor)}\nAviso aqui quando sair. Para cancelar: Gestor → Emitir NFS-e → Notas recorrentes.`)
+    await enviarMensagem(remoteJid, `✅ *NFS-e agendada para ${agendamentosNfse.quandoBR(ag.executar_em)}*\n🏢 ${d.empresa_nome}\n👤 ${d.nome} — ${fmtBRL(d.valor)}\nAviso aqui quando sair. Para cancelar: Gestor → ${d.tipo === 'mei' ? 'NFS-e MEI' : 'Emitir NFS-e → Notas recorrentes'}.`)
     return { statusCode: 200, body: JSON.stringify({ success: true, agendamento: ag.id }) }
   } catch (e) {
     console.error('Agendar NFS-e (sim):', e.message)

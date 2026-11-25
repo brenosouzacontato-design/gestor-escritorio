@@ -17,13 +17,13 @@ const campo = { width: '100%', padding: '6px 8px', fontSize: 13, boxSizing: 'bor
 
 // Data/hora em Brasília (o escritório usa o gestor no fuso de Brasília)
 const BRASILIA = 'America/Sao_Paulo'
-function agoraBrasilia(somarMin = 0) {
+export function agoraBrasilia(somarMin = 0) {
   const d = new Date(Date.now() + somarMin * 60000)
   const p = Object.fromEntries(new Intl.DateTimeFormat('en-CA', { timeZone: BRASILIA, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })
     .formatToParts(d).map((x) => [x.type, x.value]))
   return `${p.year}-${p.month}-${p.day}T${p.hour}:${p.minute}`
 }
-const amanhaAs9 = () => {
+export const amanhaAs9 = () => {
   const d = new Date(`${agoraBrasilia().slice(0, 10)}T12:00:00Z`)
   d.setUTCDate(d.getUTCDate() + 1)
   return `${d.toISOString().slice(0, 10)}T09:00`
@@ -155,12 +155,17 @@ const SITUACAO = {
 }
 
 // Lista dos agendamentos de um modelo: os que vão sair (com cancelar) e os últimos executados.
-export function ListaAgendamentos({ clienteId, lista, onMudou, onErro }) {
+// cancelarCom(a): outra forma de cancelar (a tela NFS-e MEI usa a function nfse-mei)
+export function ListaAgendamentos({ clienteId, lista, onMudou, onErro, cancelarCom = null }) {
   const [cancelando, setCancelando] = useState(null)
   if (!lista?.length) return null
   async function cancelar(a) {
     setCancelando(a.id)
-    try { await chamarNfse('agendamento_cancelar', { cliente_id: clienteId, id: a.id }); await onMudou?.() } catch (e) { onErro?.(e.message) } finally { setCancelando(null) }
+    try {
+      if (cancelarCom) await cancelarCom(a)
+      else await chamarNfse('agendamento_cancelar', { cliente_id: clienteId, id: a.id })
+      await onMudou?.()
+    } catch (e) { onErro?.(e.message) } finally { setCancelando(null) }
   }
   return (
     <div style={{ marginTop: 6 }}>
@@ -171,7 +176,7 @@ export function ListaAgendamentos({ clienteId, lista, onMudou, onErro }) {
             <AlarmClockIcon size={12} />
             <span>{quandoBR(a.executar_em)}</span>
             <b>{brl(a.valor)}</b>
-            <span style={{ color: 'var(--text3)' }}>{a.tipo === 'avulsa' ? 'avulsa' : 'do período'} · serviço {dataBR(a.data_servico)}</span>
+            <span style={{ color: 'var(--text3)' }}>{a.tipo === 'mei' ? `competência ${dataBR(a.data_servico)}` : `${a.tipo === 'avulsa' ? 'avulsa' : 'do período'} · serviço ${dataBR(a.data_servico)}`}</span>
             <span style={{ color: s.cor, fontWeight: 600 }}>{s.texto}</span>
             {(a.mensagem || a.envio) && a.situacao !== 'agendada' && <span style={{ color: 'var(--text2)' }}>{[a.mensagem, a.envio].filter(Boolean).join(' · ')}</span>}
             {a.criado_por && <span style={{ color: 'var(--text3)' }}>por {a.criado_por}</span>}
