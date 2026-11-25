@@ -18,6 +18,9 @@
 //   POST { acao: 'cancelar', cliente_id, id }                 → { ok }   (só antes de o robô pegar)
 //   POST { acao: 'arquivo', cliente_id, id, tipo: 'pdf'|'xml' } → { url }  (link assinado, 10 min)
 //   POST { acao: 'reenviar_whatsapp', cliente_id, id }        → { ok }
+//   POST { acao: 'agendar', cliente_id, modelo_id, executar_em, valor, competencia?, descricao? } → { agendamento }
+//        (emissão agendada: na hora marcada a nota entra na fila do robô; lib/nfse/agendamentos.js)
+//   POST { acao: 'cancelar_agendamento', cliente_id, id }     → { ok }
 //   Robô (cabeçalho x-robo-chave = SUPABASE_SERVICE_KEY):
 //     POST { cliente_id }              → { senha }
 //     POST { acao: 'entregar', id }    → { ok, destino }  (manda PDF/XML no WhatsApp do cliente, como o botão da tela)
@@ -29,6 +32,7 @@ const { ErroMei, normalizarEmpresa, normalizarModelo, normalizarNota, notaRepeti
 const { enviarDocumento, numeroWhatsapp } = require('./lib/whatsapp')
 const { gerarDanfse, desenharDanfse } = require('./lib/nfse/danfse/danfse')
 const { camposDaImpressao } = require('./lib/nfse/meiImpressao')
+const agendamentos = require('./lib/nfse/agendamentos')
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const BUCKET = 'documentos'
@@ -165,8 +169,9 @@ exports.handler = responder(async (event) => {
           ok(sb.from('nfse_mei_notas').select('*').eq('cliente_id', c.id).order('criado_em', { ascending: false }).limit(30)),
           ok(sb.from('nfse_mei_acessos').select('atualizado_em').eq('cliente_id', c.id).maybeSingle()),
         ])
+        const ags = await agendamentosMei(sb, c.id)
         return { modelos, notas, tem_senha: !!acesso, senha_em: acesso && acesso.atualizado_em,
-          whatsapp: numeroWhatsapp(c.whatsapp_entrega || c.telefone) }
+          whatsapp: numeroWhatsapp(c.whatsapp_entrega || c.telefone), agendamentos: ags.agendamentos, aviso_agendamento: ags.aviso || null }
       }
 
       case 'nova_empresa': {
@@ -247,6 +252,25 @@ exports.handler = responder(async (event) => {
         return { nota: nova }
       }
 
+      case 'agendar': {
+        const c = await cliente(sb, p.cliente_id)
+        const modelo = await ok(sb.from('nfse_mei_modelos').select('*').eq('id', uuid(p.modelo_id, 'modelo_id')).eq('cliente_id', c.id).maybeSingle())
+        const ag = await agendamentos.criarAgendamentoMei(sb, {
+          modelo, criadoPor: usuario.email || '',
+          p: { executar_em: p.executar_em, valor: p.valor, data_servico: p.competencia, descricao: p.descricao },
+        })
+        return { agendamento: agendamentos.resumo(ag) }
+      }
+
+      case 'cancelar_agendamento': {
+        const c = await cliente(sb, p.cliente_id)
+        const r = await ok(sb.from('nfse_agendamentos')
+          .update({ situacao: 'cancelada', mensagem: `Cancelado por ${usuario.email}`, executado_em: new Date().toISOString() })
+          .eq('id', uuid(p.id)).eq('cliente_id', c.id).eq('tipo', 'mei').eq('situacao', 'agendada').select('id'))
+        if (!r || !r.length) throw new ErroHttp(409, 'Esse agendamento não está mais aguardando (já saiu ou foi cancelado).')
+        return { ok: true }
+      }
+
       case 'tentar_de_novo': {
         const c = await cliente(sb, p.cliente_id)
         const n = await nota(sb, c.id, p.id)
@@ -289,6 +313,23 @@ exports.handler = responder(async (event) => {
     }
   } catch (e) {
     if (e instanceof ErroMei) throw new ErroHttp(400, e.message)
+    if (e instanceof agendamentos.ErroAgendamento) throw new ErroHttp(400, e.message)
     throw e
   }
 })
+
+// Agendamentos MEI da empresa: os que aguardam e os dos últimos 30 dias. Banco sem as colunas MEI
+// (supabase-schema-nfse-agendamentos-mei.sql): lista vazia com aviso.
+async function agendamentosMei(sb, clienteId) {
+  const { data, error } = await sb.from('nfse_agendamentos').select('*').eq('cliente_id', clienteId).eq('tipo', 'mei')
+  if (error) {
+    if (agendamentos.semTabela(error) || /mei_modelo_id|tipo/i.test(error.message || '')) return { agendamentos: [], aviso: agendamentos.SEM_COLUNAS_MEI }
+    throw new Error(error.message)
+  }
+  const corte = new Date(Date.now() - 30 * 86400000).toISOString()
+  const lista = (data || [])
+    .filter((a) => ['agendada', 'processando'].includes(a.situacao) || String(a.executado_em || a.criado_em) >= corte)
+    .sort((a, b) => String(a.executar_em).localeCompare(String(b.executar_em)))
+    .map(agendamentos.resumo)
+  return { agendamentos: lista }
+}

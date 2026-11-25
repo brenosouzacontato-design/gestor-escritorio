@@ -60,10 +60,11 @@ function escolher(texto, nomes) {
   return achados.length === 1 ? achados[0][1] : -1
 }
 
-// Empresas que podem entrar no fluxo (agendar: só as com modelo recorrente; MEI fica de fora)
+// Empresas que podem entrar no fluxo (agendar: só as com modelo recorrente ou, no MEI, modelo MEI)
+const meiDe = (cadastros, id) => ((cadastros || {})[id]?.mei || []).filter((m) => m.ativo !== false)
 function empresasDo(fluxo, empresas, cadastros) {
   return (empresas || []).filter((e) => e.ativo !== false)
-    .filter((e) => fluxo !== 'agendar' || (!e.mei && modelosDe(cadastros, e.cliente_id).length))
+    .filter((e) => fluxo !== 'agendar' || (e.mei ? meiDe(cadastros, e.cliente_id).length : modelosDe(cadastros, e.cliente_id).length))
     .sort((a, b) => String(a.nome).localeCompare(String(b.nome)))
 }
 
@@ -76,15 +77,16 @@ function tomadoresDe(fluxo, empresa, cadastros) {
   const recorrentes = modelosDe(cadastros, empresa.cliente_id).map((m) => ({
     tipo: 'recorrente', item: m, rotulo: `${m.nome} _(recorrente ${m.periodicidade === 'mensal' ? 'mensal' : 'semanal'})_`,
   }))
-  if (fluxo === 'agendar') return recorrentes
+  const mei = meiDe(cadastros, empresa.cliente_id).map((m) => ({
+    tipo: 'mei', item: { ...m, nome: m.tomador_nome || 'Tomador não identificado', cpf: m.tomador_doc || '' },
+    rotulo: `${m.tomador_nome || 'Tomador não identificado'} _(modelo MEI)_`,
+  }))
+  if (fluxo === 'agendar') return [...recorrentes, ...mei]
   return [
     ...recorrentes,
     ...(cad.tomadores || []).filter((t) => t.ativo !== false).sort((a, b) => String(a.nome).localeCompare(String(b.nome)))
       .map((t) => ({ tipo: 'tomador', item: t, rotulo: t.nome })),
-    ...(cad.mei || []).filter((m) => m.ativo !== false).map((m) => ({
-      tipo: 'mei', item: { ...m, nome: m.tomador_nome || 'Tomador não identificado', cpf: m.tomador_doc || '' },
-      rotulo: `${m.tomador_nome || 'Tomador não identificado'} _(modelo MEI)_`,
-    })),
+    ...mei,
   ]
 }
 
@@ -122,7 +124,7 @@ function passo(estado, texto, ctx) {
       const emps = empresasDo(fluxo, ctx.empresas, ctx.cadastros)
       if (!emps.length) {
         return { estado: { etapa: 'menu' }, mensagens: [fluxo === 'agendar'
-          ? '⚠️ Nenhuma empresa tem nota recorrente cadastrada (Gestor → Emitir NFS-e → Notas recorrentes).'
+          ? '⚠️ Nenhuma empresa tem modelo para agendar (nota recorrente em Gestor → Emitir NFS-e, ou modelo em NFS-e MEI).'
           : '⚠️ Nenhuma empresa está configurada para emitir NFS-e no gestor.'] }
       }
       return { estado: { etapa: 'empresa', fluxo }, mensagens: [`${fluxo === 'agendar' ? '⏰ *Agendar NFS-e*' : '🧾 *Emitir NFS-e*'}\nDe qual empresa?\n\n${lista(emps.map((e) => `${e.nome}${e.mei ? ' _(MEI)_' : ''}`))}${RODAPE}`] }
@@ -139,7 +141,7 @@ function passo(estado, texto, ctx) {
       }
       const novo = { ...s, etapa: 'tomador', empresa_id: e.cliente_id }
       if (toms.length === 1) return passo(novo, '1', ctx) // um só: já segue
-      return { estado: novo, mensagens: [`🏢 *${e.nome}*\n${s.fluxo === 'agendar' ? 'Qual nota recorrente?' : 'Para quem é a nota?'}\n\n${lista(toms.map((x) => x.rotulo))}${RODAPE}`] }
+      return { estado: novo, mensagens: [`🏢 *${e.nome}*\n${s.fluxo === 'agendar' ? 'Qual modelo?' : 'Para quem é a nota?'}\n\n${lista(toms.map((x) => x.rotulo))}${RODAPE}`] }
     }
 
     case 'tomador': {

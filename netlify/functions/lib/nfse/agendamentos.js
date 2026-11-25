@@ -45,12 +45,19 @@ function lerValor(v) {
 
 // Dados vindos da tela, validados contra o modelo. Devolve { campos } ou { erro }.
 // Não confere notas já emitidas (isso é com quem chama, que tem o banco).
-function validarAgendamento(p, { modelo, ambiente, agora = new Date() }) {
-  const em = quando(p.executar_em)
+// Dia e hora da emissão: { em, dia } ou { erro }
+function validarHorario(executarEm, agora) {
+  const em = quando(executarEm)
   if (!em) return { erro: 'Informe o dia e a hora da emissão' }
   if (em.getTime() < agora.getTime() - 60 * 1000) return { erro: 'O horário da emissão já passou' }
   if (em.getTime() > agora.getTime() + MAX_DIAS_FRENTE * 86400000) return { erro: 'Agende para no máximo um ano à frente' }
-  const diaExecucao = hojeBrasilia(em)
+  return { em, dia: hojeBrasilia(em) }
+}
+
+function validarAgendamento(p, { modelo, ambiente, agora = new Date() }) {
+  const h = validarHorario(p.executar_em, agora)
+  if (h.erro) return { erro: h.erro }
+  const { em, dia: diaExecucao } = h
   const valor = lerValor(p.valor)
   if (valor === null) return { erro: 'Informe o valor da nota' }
   const tipo = p.tipo ? String(p.tipo) : 'periodo'
@@ -119,7 +126,88 @@ async function criarAgendamento(db, { empresa, modelo, p, criadoPor = '', avisar
   return { ...registro, id: data && data[0] && data[0].id }
 }
 
+// ---------------------------------------------------------------- MEI (Emissor Nacional, docs/nfse-mei.md)
+// Agendamento de um modelo MEI (nfse_mei_modelos): na hora marcada a nota entra na fila do robô MEI
+// (nfse_mei_notas, 'na_fila'), como o botão Emitir da tela NFS-e MEI. data_servico = a competência.
+const SEM_COLUNAS_MEI = 'Para agendar notas MEI, falta rodar supabase-schema-nfse-agendamentos-mei.sql no SQL Editor do Supabase.'
+const semColunasMei = (error) => !!error && /mei_modelo_id|mei_nota_id|nfse_agendamentos_tipo_check|nfse_agendamentos_modelo_check|recorrente_id/i.test(`${error.code || ''} ${error.message || ''}`)
+
+// A nota MEI que vai para a fila (mesmas conferências da tela): { nota } ou lança ErroAgendamento.
+// hoje: o dia (AAAA-MM-DD) até onde a competência vale (o da emissão).
+async function notaMeiDoAgendamento(db, { modelo, valor, competencia, descricao, hoje }) {
+  const mei = require('./mei')
+  const { data: acesso, error } = await db.from('nfse_mei_acessos').select('cliente_id').eq('cliente_id', modelo.cliente_id).maybeSingle()
+  if (error) throw new Error(error.message)
+  if (!acesso) throw new ErroAgendamento('Cadastre antes a senha do Emissor Nacional desta empresa (Documentos → NFS-e MEI).')
+  let nota
+  try {
+    nota = mei.normalizarNota({ ...modelo, valor, competencia, descricao: descricao || modelo.descricao }, new Date(`${hoje}T12:00:00Z`))
+  } catch (e) {
+    if (e instanceof mei.ErroMei) throw new ErroAgendamento(e.message)
+    throw e
+  }
+  const { data: existentes, error: e2 } = await db.from('nfse_mei_notas').select('id, status, tomador_doc, valor, competencia, numero').eq('cliente_id', modelo.cliente_id)
+  if (e2) throw new Error(e2.message)
+  const rep = mei.notaRepetida(nota, existentes || [])
+  if (rep) {
+    throw new ErroAgendamento(`Já existe nota MEI igual (mesmo tomador e valor) em ${String(rep.competencia).slice(5, 7)}/${String(rep.competencia).slice(0, 4)}${rep.numero ? `, nº ${rep.numero}` : ''}. Para outra, use a tela NFS-e MEI.`)
+  }
+  return nota
+}
+
+// Como criarAgendamento, para um modelo MEI. p: { executar_em, valor, data_servico? (competência), descricao? }
+async function criarAgendamentoMei(db, { modelo, p, criadoPor = '', avisarJid = null, agora = new Date(), gravar = true }) {
+  if (!modelo || modelo.ativo === false) throw new ErroAgendamento('Modelo MEI não encontrado')
+  const h = validarHorario(p.executar_em, agora)
+  if (h.erro) throw new ErroAgendamento(h.erro)
+  const valor = lerValor(p.valor)
+  if (valor === null) throw new ErroAgendamento('Informe o valor da nota')
+  const competencia = String(p.data_servico || '').trim() || h.dia
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(competencia)) throw new ErroAgendamento('Competência inválida')
+  if (competencia > h.dia) throw new ErroAgendamento('A competência não pode ser depois do dia da emissão')
+  const descricao = String(p.descricao ?? '').trim().slice(0, 2000) || null
+  await notaMeiDoAgendamento(db, { modelo, valor, competencia, descricao, hoje: h.dia })
+  const periodo = `${competencia.slice(0, 7)}-01`
+  const { data: outros, error } = await db.from('nfse_agendamentos').select('id, executar_em')
+    .eq('mei_modelo_id', modelo.id).eq('situacao', 'agendada').eq('periodo', periodo)
+  if (semTabela(error)) throw new ErroAgendamento(SEM_TABELA)
+  if (semColunasMei(error)) throw new ErroAgendamento(SEM_COLUNAS_MEI)
+  if (error) throw new Error(error.message)
+  if ((outros || []).length) {
+    throw new ErroAgendamento(`Esse modelo já tem nota agendada para ${competencia.slice(5, 7)}/${competencia.slice(0, 4)} (${quandoBR(outros[0].executar_em)})`)
+  }
+  const registro = {
+    cliente_id: modelo.cliente_id, recorrente_id: null, mei_modelo_id: modelo.id, ambiente: 'producao',
+    executar_em: h.em.toISOString(), tipo: 'mei', periodo, data_servico: competencia, valor, descricao,
+    enviar_whatsapp: true, situacao: 'agendada', criado_por: String(criadoPor || '').slice(0, 150) || null,
+  }
+  if (avisarJid) registro.avisar_jid = avisarJid
+  if (!gravar) return registro
+  const { data, error: e2 } = await db.from('nfse_agendamentos').insert(registro).select('id')
+  if (semTabela(e2)) throw new ErroAgendamento(SEM_TABELA)
+  if (semColunasMei(e2)) throw new ErroAgendamento(SEM_COLUNAS_MEI)
+  if (e2) throw new Error(e2.message)
+  return { ...registro, id: data && data[0] && data[0].id }
+}
+
+// Na hora marcada: a nota MEI entra na fila do robô. Devolve a nota (nfse_mei_notas) ou lança Error.
+async function enfileirarMei(db, ag) {
+  const { data: modelo, error } = await db.from('nfse_mei_modelos').select('*').eq('id', ag.mei_modelo_id).maybeSingle()
+  if (error) throw new Error(error.message)
+  if (!modelo || modelo.ativo === false) throw new Error('O modelo MEI foi excluído.')
+  const nota = await notaMeiDoAgendamento(db, {
+    modelo, valor: Number(ag.valor), competencia: ag.data_servico, descricao: ag.descricao, hoje: hojeBrasilia(),
+  })
+  const { data: nova, error: e2 } = await db.from('nfse_mei_notas').insert({
+    ...nota, cliente_id: modelo.cliente_id, modelo_id: modelo.id, status: 'na_fila',
+    criado_por: `Agendamento${ag.criado_por ? ` (${String(ag.criado_por).slice(0, 80)})` : ''}`,
+  }).select('id').single()
+  if (e2) throw new Error(e2.message)
+  return nova
+}
+
 const resumo = (a) => ({
+  mei_modelo_id: a.mei_modelo_id || null, mei_nota_id: a.mei_nota_id || null,
   id: a.id, recorrente_id: a.recorrente_id, executar_em: a.executar_em, tipo: a.tipo, periodo: a.periodo,
   data_servico: a.data_servico, valor: Number(a.valor), descricao: a.descricao || '', enviar_whatsapp: a.enviar_whatsapp,
   situacao: a.situacao, nota_id: a.nota_id || null, mensagem: a.mensagem || '', envio: a.envio || '',
@@ -163,6 +251,12 @@ async function executarPendentes({ db, emitir, enviar, avisar = null, agora = ()
 
     let fim
     try {
+      if (ag.tipo === 'mei') {
+        // MEI: a nota vai para a fila do robô do Emissor Nacional, que emite e manda o PDF ao cliente
+        const nova = await enfileirarMei(db, ag)
+        fim = { situacao: 'emitida', mei_nota_id: nova.id, mensagem: 'Nota MEI na fila do robô: ele emite no portal e manda o PDF no WhatsApp do cliente' }
+        saida.emitidos += 1
+      } else {
       const { resultado, nota } = await emitir(ag)
       if (resultado && resultado.estado === 'autorizada') {
         fim = { situacao: 'emitida', nota_id: nota.id, mensagem: `NFS-e nº ${nota.numero_nfse || '?'} emitida` }
@@ -182,6 +276,7 @@ async function executarPendentes({ db, emitir, enviar, avisar = null, agora = ()
         }
         saida.erros += 1
       }
+      }
     } catch (e) {
       fim = { situacao: 'erro', mensagem: String(e.message || e).slice(0, 1000) }
       saida.erros += 1
@@ -196,6 +291,6 @@ async function executarPendentes({ db, emitir, enviar, avisar = null, agora = ()
 }
 
 module.exports = {
-  quando, quandoBR, lerValor, validarAgendamento, criarAgendamento, executarPendentes, resumo,
-  ErroAgendamento, SEM_TABELA, semTabela, TIPOS, TRAVADO_MS,
+  quando, quandoBR, lerValor, validarAgendamento, criarAgendamento, criarAgendamentoMei, executarPendentes, resumo,
+  ErroAgendamento, SEM_TABELA, SEM_COLUNAS_MEI, semTabela, TIPOS, TRAVADO_MS,
 }

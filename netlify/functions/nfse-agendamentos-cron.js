@@ -14,7 +14,7 @@ const brl = (v) => Number(v || 0).toLocaleString('pt-BR', { style: 'currency', c
 async function avisar(ag, fim) {
   if (!ag.avisar_jid) return
   const cabecalho = fim.situacao === 'emitida' ? `✅ *${fim.mensagem}* (agendada)` : '❌ *A NFS-e agendada não saiu.*'
-  const detalhe = fim.situacao === 'emitida' ? (fim.envio ? `\n📲 ${fim.envio}` : '') : `\n${String(fim.mensagem || '').slice(0, 500)}\nConfira em Gestor → Emitir NFS-e.`
+  const detalhe = fim.situacao === 'emitida' ? (fim.envio ? `\n📲 ${fim.envio}` : '') : `\n${String(fim.mensagem || '').slice(0, 500)}\nConfira em Gestor → ${ag.tipo === 'mei' ? 'NFS-e MEI' : 'Emitir NFS-e'}.`
   await enviarMensagem(ag.avisar_jid, `${cabecalho}\n💰 ${brl(ag.valor)} · marcada para ${quandoBR(ag.executar_em)}${detalhe}`)
 }
 
